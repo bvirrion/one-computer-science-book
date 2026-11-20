@@ -1,0 +1,47 @@
+$ python sqlrun.py plan.sql
+sql> SELECT count(*) AS loans FROM loans;
++-------+
+| loans |
++-------+
+| 400   |
++-------+
+(1 row)
+
+sql> EXPLAIN QUERY PLAN SELECT out_date FROM loans WHERE member_id = 41;
++----+--------+---------+------------+
+| id | parent | notused | detail     |
++----+--------+---------+------------+
+| 2  | 0      | 0       | SCAN loans |
++----+--------+---------+------------+
+(1 row)
+
+sql> CREATE INDEX loans_member ON loans(member_id);
+OK
+
+sql> EXPLAIN QUERY PLAN SELECT out_date FROM loans WHERE member_id = 41;
++----+--------+---------+-----------------------------------------------------+
+| id | parent | notused | detail                                              |
++----+--------+---------+-----------------------------------------------------+
+| 3  | 0      | 0       | SEARCH loans USING INDEX loans_member (member_id=?) |
++----+--------+---------+-----------------------------------------------------+
+(1 row)
+
+sql> CREATE INDEX loans_member_out ON loans(member_id, out_date);
+OK
+
+sql> EXPLAIN QUERY PLAN SELECT out_date FROM loans WHERE member_id = 41;
++----+--------+---------+------------------------------------------------------------------+
+| id | parent | notused | detail                                                           |
++----+--------+---------+------------------------------------------------------------------+
+| 2  | 0      | 0       | SEARCH loans USING COVERING INDEX loans_member_out (member_id=?) |
++----+--------+---------+------------------------------------------------------------------+
+(1 row)
+
+sql> EXPLAIN QUERY PLAN SELECT * FROM loans WHERE out_date > '2025-06-01';
++----+--------+---------+------------+
+| id | parent | notused | detail     |
++----+--------+---------+------------+
+| 2  | 0      | 0       | SCAN loans |
++----+--------+---------+------------+
+(1 row)
+

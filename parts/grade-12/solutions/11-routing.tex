@@ -1,0 +1,173 @@
+\section*{Chapter \ref{ch:g12:routing} --- Routing}
+
+\begin{solution}{exo:g12:routing:1}
+D hears its three neighbours, each knowing only itself: B at cost $100$ through B, E at $10$ through E, F at $10$
+through F, and itself at $0$.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:2}
+A -- C -- E -- G, three hops. Every route through B needs at least four: A, B, D, then E or F, then G.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:3}
+A -- B -- D -- F -- G, cost $10 + 100 + 10 + 10 = 130$. The fewest-hops \omterm{def:g12:routing:metric}{route costs} $100 + 1000 + 100 = 1200$.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:4}
+E's table gives D for A. D's \omterm{def:g11:network-protocols:routing-table}{next hop} for A is B ($100 + 10$), and B's is A. The route is E -- D -- B -- A, of cost
+$10 + 100 + 10 = 120$, the cost in E's table.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:5}
+\smallskip\noindent\hspace*{2em}\code{def dv_update(table, neighbour, neighbour_table, cost):}
+
+\noindent\hspace*{4em}\code{new = dict(table)}
+
+\noindent\hspace*{4em}\code{for dest, (d, _) in neighbour_table.items():}
+
+\noindent\hspace*{6em}\code{if dest not in new or cost + d < new[dest][0]:}
+
+\noindent\hspace*{8em}\code{new[dest] = (cost + d, neighbour)}
+
+\noindent\hspace*{4em}\code{return new}
+
+\smallskip\noindent The copy leaves the old table unchanged, so that a round can use the old tables of all routers.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:6}
+Each router keeps the \emph{longest} sum it hears. A route may then go back and forth: A's distance to E is $1100$
+after two rounds, $3100$ after four, $5100$ after six, and keeps growing. The tables never become stable, and the
+distances describe no real shortest route. The tests run eight rounds and check that it still grows.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:7}
+$n - 1$. News moves one link per round, and the farthest pair, the two ends, are $n - 1$ links apart; after round
+$n - 1$ every router knows every destination by its only route, and one more round changes nothing.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:8}
+\smallskip\noindent\hspace*{2em}\code{def cost_from_rate(rate, ref):}
+
+\noindent\hspace*{4em}\code{return max(1, ref // rate)}
+
+\smallskip\noindent A link faster than the reference would get $0$ from the integer division. A cost of $0$ would
+make a chain of such links as cheap as one of them, so routes could wander through many routers for free; the least
+cost is $1$. The price is that links faster than the reference all look the same, so the reference is chosen above
+the fastest link of the network.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:9}
+A -- B -- C -- E -- D -- F -- G, cost $10 + 10 + 1000 + 10 + 10 + 10 = 1050$. B -- D was the only fast way from
+the left half to the right; the slow link C -- E, at $1000$, is now on every route. A -- C -- E costs $1100$, more
+than A -- B -- C -- E at $1020$.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:10}
+Every router keeps D -- E in its map, since D lists it. Routes that use the link from E to D are then computed as if
+it worked, and packets sent that way are lost. The fix: keep a link in the map only when \emph{both} its ends list
+it, which means each end has checked that it receives from the other.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:11}
+For one list, the origin sends on its $2$ links, and each of the $n - 1$ other routers, on first receiving the list,
+sends it on its $2$ links except the one it came from: $2 + (n - 1) = n + 1$ messages. For the $n$ lists:
+$n(n + 1)$. In general, $2e - (n - 1)$ per list for $e$ links.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:12}
+By induction on $k$. For $k = 0$, each router knows only itself at $0$: the only route of $0$ links. Suppose it true
+after round $k$. In round $k + 1$, router $r$ takes for each destination $d$ the smallest $c + x$ over its
+neighbours $n$, where $c$ is the cost of the link to $n$ and $x$ the smallest cost from $n$ to $d$ with at most $k$
+links. A route from $r$ to $d$ of at most $k + 1$ links is either the empty route ($d = r$, kept at $0$), or a first
+link to some $n$ followed by a route of at most $k$ links from $n$: its cost is at least $c + x$ for that $n$. And
+each $c + x$ is the cost of such a route. So the minimum is the smallest cost with at most $k + 1$ links, and a
+destination is absent exactly when no neighbour knows it, that is, when no such route exists. The tests compare the
+two on $50$ random \omterm{def:g10:graphs-first-look:graph}{graphs}.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:13}
+After round $k$, the router updated in that round holds $k + 2$ and the other $k + 1$ (round $1$: B $3$, A $2$).
+Both have reached $M$ when the smaller does: $k + 1 = M$, so $k = M - 1$. For $M = 16$, $15$ rounds, as printed; for
+$M = 64$, $63$. At $30$ seconds a round, $15$ rounds last $450$ seconds, seven and a half minutes, during which
+packets for C bounce between A and B.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:14}
+In the loop over a neighbour's table, a route whose \omterm{def:g11:network-protocols:routing-table}{next hop} is the router receiving it is counted at $16$:
+
+\smallskip\noindent\hspace*{2em}\code{if poison and via == r:}
+
+\noindent\hspace*{4em}\code{d = INFINITY}
+
+\smallskip\noindent On the line of three, $2$ rounds, as with split horizon: B hears ``C at $16$'' from A at once. On
+the line of four, $3$ rounds: R3 knows at once, R2 one round later, R1 one more. The tests check both counts.
+\end{solution}
+
+\begin{solution}{exo:g12:routing:15}
+A distance of $16$ means unreachable, so a destination $16$ hops away cannot be told apart from one that does not
+exist: every route used must have at most $15$ hops, which bounds the diameter of the network. A larger ceiling would
+serve larger networks, but every count to infinity would last longer, about one round per unit of the ceiling
+(exercise \ref{exo:g12:routing:13}). The designers kept it small so that counts end quickly, and meant the protocol
+for small networks.
+\end{solution}
+
+\begin{solution}{pb:g12:routing:1}
+\textbf{1.} A: B at $1$ through B, C at $2$ through B. B: A at $1$ through A, C at $1$ through C. C: B at $1$
+through B, A at $2$ through B.
+
+\textbf{2.} Two rounds: in the first, each router learns its neighbours; in the second, A and C learn each other
+through B (exercise \ref{exo:g12:routing:7} with $n = 3$).
+
+\textbf{3.} B is A's only neighbour; A hears about the rest of the network only from B.
+
+\textbf{4.} A's route to C goes through B: that $2$ is B's own old link to C, plus one. It is out of date, but B
+cannot tell.
+
+\textbf{5.} Each round uses the tables of the previous round. B's only neighbour is now A, whose old table says
+$2$: B takes $3$. A still reads B's old table, which said $1$: A stays at $2$.
+
+\textbf{6.} A rebuilds its table from what its neighbours say now. B, its only neighbour and its \omterm{def:g11:network-protocols:routing-table}{next hop}, now says
+$3$, so A's best is $4$: it cannot keep $2$, since nothing supports it any more.
+
+\textbf{7.} A sends it to B, and B, whose \omterm{def:g11:network-protocols:routing-table}{next hop} for C is A, sends it back: the packet bounces between them until
+it is dropped.
+
+\textbf{8.} Each router copies the other's previous value plus one; the values alternate, so each one rises by two
+every two rounds, and in each round only one of them changes.
+
+\textbf{9.} At round $15$: A reaches $16$ in round $14$, B in round $15$, as printed.
+
+\textbf{10.} $15 \times 30 = 450$ seconds, seven and a half minutes.
+
+\textbf{11.} Its route to C, whose \omterm{def:g11:network-protocols:routing-table}{next hop} is B. Telling B ``I reach C'' would describe B's own route.
+
+\textbf{12.} B has no link to C any more, and its only neighbour tells it nothing about C, so B has no route at all.
+
+\textbf{13.} In round $1$, A still reads B's table of before the failure, with C at $1$. Only in round $2$ does it
+read B's new table, without C.
+
+\textbf{14.} After the failure, A and D both still reach C through B, so neither tells B. But A tells D, and D tells
+A, since each one's route goes through B, not through the other. In round $1$ B has no route; in round $2$ A takes
+D's ``C at $2$'' as $3$ through D, and in round $3$ B takes A's $3$ as $4$ through A. The false route goes around the
+triangle, one router at a time, gaining one hop per round, and the smallest distance reaches $16$ only at round
+$15$. The tests run this case.
+
+\textbf{15.} On the line, no: B already hears nothing, and with poison it hears $16$, which means the same. In the
+triangle, no: the loop passes through three routers, and each tells the next a route that goes through a third one,
+which neither split horizon nor poisoned reverse forbids.
+
+\textbf{16.} B, which sends a list with its one remaining link, to A. C has no link left, so it cannot send anything,
+and nobody needs to hear from it.
+
+\textbf{17.} One: from B to A. A has no other neighbour to pass it on to.
+
+\textbf{18.} It never learns distances from other routers. It computes them from its map, in which C is no longer
+connected to anything: \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} does not reach C, so C is unreachable as soon as the map is updated.
+
+\textbf{19.} Memory for the whole map, and a run of \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} at every change, against one line per
+destination and some additions for distance vectors; plus the flooding at every change.
+
+\textbf{20.} \textbf{On the line A -- B -- C, after the link B -- C fails, distance vectors count to infinity: $15$
+rounds pass before A and B both mark C unreachable, seven and a half minutes at $30$ seconds a round. With split
+horizon, B knows at round $1$ and A at round $2$; with link state, a single message from B to A is enough.}
+\end{solution}

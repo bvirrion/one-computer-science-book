@@ -1,0 +1,49 @@
+$ make
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c main.c
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c tokenize.c
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c folder.c
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c index.c
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c query.c
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c topk.c
+gcc -o search main.o tokenize.o folder.o index.o query.o topk.o -lm
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c naive.c
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c scan.c
+gcc -o naive naive.o scan.o tokenize.o folder.o index.o query.o topk.o -lm
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c measure.c
+gcc -o measure measure.o scan.o tokenize.o folder.o index.o query.o topk.o -lm
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c units_test.c
+gcc -o units_test units_test.o tokenize.o folder.o index.o query.o topk.o -lm
+$ make test
+./units_test
+18 checks, 0 failed
+$ ls corpus | head -3; ls corpus | wc -l
+README.md
+doc000.txt
+doc001.txt
+401
+$ ./search corpus
+400 documents, 5004 distinct words, 193455 postings, 2462055 bytes
+$ ./search corpus Quixotic
+2 documents contain every word; the best 2:
+   5.2983  doc007.txt
+   5.2983  doc211.txt
+$ ./search corpus nodo beli
+34 documents contain every word; the best 10:
+   6.0165  doc371.txt
+   4.7813  doc241.txt
+   4.2435  doc021.txt
+   4.2435  doc076.txt
+   3.8317  doc002.txt
+   3.8317  doc103.txt
+   3.8317  doc284.txt
+   3.4200  doc082.txt
+   3.4200  doc126.txt
+   3.4200  doc184.txt
+$ ./naive corpus nodo beli | cmp - <(./search corpus nodo beli) && echo identical
+identical
+$ ./search corpus quixotic nodo; echo "exit status $?"
+no document contains every word
+exit status 1
+$ ./search nowhere nodo; echo "exit status $?"
+search: cannot read the texts of nowhere
+exit status 2

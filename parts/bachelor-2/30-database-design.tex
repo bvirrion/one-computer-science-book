@@ -1,0 +1,616 @@
+% Book 4, Year 2, chapter 30 -- Database design: dependencies, normal forms and transactions.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 30.
+\chapter{Database Design: Dependencies, Normal Forms and Transactions}\label{ch:b2:database-design}
+
+For years the library kept its loans in one spreadsheet: one line per loan, with the book's title and author, the
+member's name and street, everything a librarian might want to read on the line. Built as a table from the town's
+database, it looks like this, and it shows what happens when member 55 moves house:
+
+\omcode{code/bachelor-2/30-database-design/listings/wide_table.sql}{1}{10}{The wide table, and a move recorded on every
+line but the last}\label{lst:b2:database-design:hook}
+
+\omoutput{code/bachelor-2/30-database-design/outputs/wide_table.txt}{Eleven lines changed, one forgotten: the member now
+lives in two streets at once.}\label{out:b2:database-design:hook}
+
+The listing loads \code{wide_build.sql}, which builds the table by joining loans, books, members, people and streets.
+Nothing in the table says that a member has one street: the fact is written twelve times, and the twelve copies can
+disagree. This chapter makes the intuition precise. Dependencies say which facts determine which; normal forms say
+when a table stores each fact once; \omterm{def:b2:database-design:decomposition}{decompositions} split a table without losing anything. The second half turns to the
+other way a database goes wrong, two programs changing it at the same moment, and ends with the \omterm{def:b2:database-design:index}{index} that makes a
+search fast.
+
+\begin{recall}
+The Year 1 volume: relations, attributes, keys, candidate and primary keys, foreign keys, relational algebra and its
+natural join, SQL queries, entity--relationship modelling. The grade 12 volume: the anomalies of a badly designed table,
+seen on examples.
+\end{recall}
+
+\section{Functional dependencies}\label{sec:b2:database-design:fd}
+
+\begin{definition}[Functional dependency, trivial dependency]\label{def:b2:database-design:fd}
+Let $R$ be a set of attributes and $X, Y \subseteq R$. A table over $R$ \emph{satisfies} the \emph{functional
+dependency}\index{functional dependency} $X \to Y$ if any two rows that agree on every attribute of $X$ also agree on every
+attribute of $Y$. The dependency is \emph{trivial}\index{trivial dependency} if $Y \subseteq X$; it is then satisfied by
+every table.
+\end{definition}
+
+A dependency is a rule about the world the table describes, not an observation about today's rows. The library's rules
+are that a loan determines its book, its member and its dates; a book determines its title, author, genre and pages; a
+member determines the name and the street; a street determines its postcode. The 400 lines satisfy other dependencies
+by accident: no two books have the same title yet, so \emph{title} $\to$ \emph{book} holds in the data, but nothing
+forbids two books called the same (\cref{exo:b2:database-design:9}).
+
+\begin{omfigure}
+\begin{tikzpicture}[a/.style={draw, rounded corners=2pt, font=\scriptsize\ttfamily, inner sep=2.5pt,
+  text height=1.4ex, text depth=0.4ex}, d/.style={->, >=Stealth, thick}]
+\node[a] (loan) at (0, 0) {loan};
+\foreach \n [remember=\n as \p (initially loan)] in {out, due, ret, book, title, author, genre, pages, member,
+  first, last, street, postcode} \node[a, right=1.6mm of \p] (\n) {\n};
+\coordinate (mIn) at ([xshift=-1.5mm]member.north); \coordinate (mOut) at ([xshift=1.5mm]member.north);
+\coordinate (blue) at ($(loan.north) + (0, 0.45)$); \coordinate (orange) at ($(mOut) + (0, 0.9)$);
+\coordinate (red) at ($(book.south) + (0, -0.45)$);
+\draw[omDef, thick] (loan.north) -- (blue) -- (blue -| mIn);
+\foreach \t in {out, due, ret, book} \draw[d, omDef] (blue -| \t.north) -- (\t.north);
+\draw[d, omDef] (blue -| mIn) -- (mIn);
+\draw[omProp, thick] (mOut) -- (orange) -- (orange -| street.north);
+\foreach \t in {first, last, street} \draw[d, omProp] (orange -| \t.north) -- (\t.north);
+\draw[omThm, thick] (book.south) -- (red) -- (red -| pages.south);
+\foreach \t in {title, author, genre, pages} \draw[d, omThm] (red -| \t.south) -- (\t.south);
+\draw[d, omMeth] (street.south) -- ++(0, -0.45) -| (postcode.south);
+\end{tikzpicture}
+\par\smallskip{\small The library's rules over the wide table's fourteen attributes. Blue: a loan determines its dates,
+its book and its member. Red: a book determines its title, author, genre and pages. Orange: a member determines the name
+and the street. Green: a street determines its postcode. Only the blue arrows start from a key.}
+\end{omfigure}
+
+From some dependencies others follow: if a member determines the street and a street the postcode, a member determines
+the postcode.
+
+\begin{definition}[Implication, Armstrong's axioms]\label{def:b2:database-design:armstrong}
+A set $F$ of dependencies over $R$ \emph{implies}\index{implication of dependencies} $X \to Y$, written $F \models X \to
+Y$, if every table over $R$ that satisfies all of $F$ satisfies $X \to Y$. \emph{Armstrong's
+axioms}\index{Armstrong's axioms} are three rules to derive dependencies, written $F \vdash X \to Y$:
+\emph{reflexivity}, $X \to Y$ whenever $Y \subseteq X$; \emph{augmentation}, from $X \to Y$ derive $XZ \to YZ$;
+\emph{transitivity}, from $X \to Y$ and $Y \to Z$ derive $X \to Z$. (We write $XZ$ for $X \cup Z$.)
+\end{definition}
+
+The \emph{union} rule, from $X \to Y$ and $X \to Z$ derive $X \to YZ$, and the \emph{\omterm{def:b2:database-design:decomposition}{decomposition}} rule, from $X \to YZ$
+derive $X \to Y$, follow from the three (\cref{exo:b2:database-design:8}).
+
+\begin{definition}[Attribute closure]\label{def:b2:database-design:closure}
+The \emph{attribute closure}\index{attribute closure} of $X$ under $F$ is $X^+ = \{A \in R : F \models X \to A\}$, the
+set of attributes that $X$ determines.
+\end{definition}
+
+\begin{theorem}[Armstrong's axioms are sound and complete]\label{thm:b2:database-design:armstrong}
+For every $F$, $X$ and $Y$: $F \vdash X \to Y$ if and only if $F \models X \to Y$.
+\end{theorem}
+
+\begin{proof}
+\emph{Soundness}: each rule turns satisfied dependencies into a satisfied one. Reflexivity: two rows that agree on $X$
+agree on its subset $Y$. Augmentation: two rows that agree on $XZ$ agree on $X$, hence on $Y$, and on $Z$. Transitivity:
+two rows that agree on $X$ agree on $Y$, hence on $Z$. By induction on the length of a derivation, every derived
+dependency holds in every table satisfying $F$.
+
+\emph{Completeness}: suppose $F \models X \to Y$, and let $D = \{A : F \vdash X \to A\}$; by reflexivity $X \subseteq D$.
+Build a table of two rows over $R$: both rows are $0$ on $D$; outside $D$, the first is $0$ and the second $1$. It
+satisfies every $V \to W$ of $F$: if the rows agree on $V$, then $V \subseteq D$, so $F \vdash X \to V$ by the union rule,
+then $F \vdash X \to W$ by transitivity, so $W \subseteq D$ by \omterm{def:b2:database-design:decomposition}{decomposition} and the rows agree on $W$. The table
+therefore satisfies $X \to Y$; its rows agree on $X \subseteq D$, so they agree on $Y$, and $Y \subseteq D$. By the union
+rule, $F \vdash X \to Y$.
+\end{proof}
+
+So the closure can be computed by derivation instead of by imagining every table, and there is a simple algorithm:
+
+\omcode{code/bachelor-2/30-database-design/listings/fd.py}{15}{24}{The closure of a set of attributes: apply every
+dependency whose left side is already in, until nothing changes}\label{lst:b2:database-design:closure}
+
+\begin{proposition}[The closure algorithm]\label{prop:b2:database-design:closure-algo}
+The function \code{closure} returns $X^+$, after at most $|F| + 1$ passes over $F$, so in time $O(|F|^2 \cdot |R|)$.
+\end{proposition}
+
+\begin{proof}
+\Cref{exo:b2:database-design:11}: every attribute added is derivable, and when the loop stops the set is closed under
+$F$, which forces it to contain $X^+$. Each pass but the last adds the right side of at least one dependency not used
+before.
+\end{proof}
+
+\begin{corollary}[A test for keys]\label{cor:b2:database-design:key-test}
+$X$ is a superkey of $R$ under $F$ exactly when $X^+ = R$; it is a candidate key when moreover $(X \setminus \{A\})^+ \neq R$
+for every $A \in X$.
+\end{corollary}
+
+\begin{proof}
+$X$ is a superkey when it determines every attribute, that is $F \models X \to R$, that is $R \subseteq X^+$. A candidate
+key is a superkey with no proper subset that is one; since a superset of a superkey is a superkey, it suffices to remove
+one attribute at a time.
+\end{proof}
+
+\begin{definition}[Minimal cover]\label{def:b2:database-design:cover}
+A \emph{minimal cover}\index{minimal cover} of $F$ is a set $G$ of dependencies equivalent to $F$ (each \omterm{def:b2:database-design:armstrong}{implies} every
+dependency of the other) in which every right side is a single attribute, no attribute can be removed from a left side,
+and no dependency can be removed, without losing the equivalence.
+\end{definition}
+
+\omcode{code/bachelor-2/30-database-design/listings/fd.py}{31}{57}{Candidate keys by increasing size, and a \omterm{def:b2:database-design:cover}{minimal
+cover}}\label{lst:b2:database-design:keys}
+
+\omcode{code/bachelor-2/30-database-design/listings/fd_demo.py}{5}{8}{The wide table's attributes and the library's
+rules}\label{lst:b2:database-design:rules}
+
+\omoutput{code/bachelor-2/30-database-design/outputs/fd_demo.txt}{Closures, the key, the cover, and the BCNF tables of
+\cref{sec:b2:database-design:decomposition}.}\label{out:b2:database-design:fd-demo}
+
+The key search \omterm{def:b2:text-algorithms:trie}{tries} the subsets in increasing size, skipping supersets of keys already found: exponential in general,
+fast here, where one attribute suffices. The wide table's only candidate key is the loan.
+
+\section{Normal forms}\label{sec:b2:database-design:normal-forms}
+
+\begin{definition}[Update, insertion and deletion anomaly]\label{def:b2:database-design:anomaly}
+A table has an \emph{update anomaly}\index{update anomaly} when one fact is stored on several rows, so that changing it
+means changing them all; an \emph{insertion anomaly}\index{insertion anomaly} when a fact cannot be recorded without an
+unrelated one, as a member without a loan; a \emph{deletion anomaly}\index{deletion anomaly} when removing a row removes
+an unrelated fact with it, as the last loan of a book removes the book.
+\end{definition}
+
+All three come from a dependency whose left side is not a key: \emph{book} $\to$ \emph{title} makes the title a fact
+about the book, stored once per loan of that book.
+
+\begin{definition}[Third normal form, Boyce--Codd normal form]\label{def:b2:database-design:normal-forms}
+Let $F$ hold on $R$. $R$ is in \emph{Boyce--Codd normal form}\index{Boyce--Codd normal form} (BCNF) if for every
+\omterm{def:b2:database-design:fd}{non-trivial} $X \to A$ implied by $F$ with $X \cup \{A\} \subseteq R$, $X$ is a superkey of $R$. It is in \emph{third
+normal form}\index{third normal form} (3NF) if for every such dependency, $X$ is a superkey or $A$ belongs to some
+candidate key of $R$.
+\end{definition}
+
+BCNF says that every fact the table records is a fact about a key; 3NF tolerates one \omterm{def:b2:cpp-classes-raii:exception}{exception}, attributes that are
+part of a key. The wide table is in neither: \emph{book}, \emph{member} and \emph{street} determine other attributes and
+are not keys.
+
+\section{Decomposition}\label{sec:b2:database-design:decomposition}
+
+\begin{definition}[Decomposition, lossless join, dependency preservation]\label{def:b2:database-design:decomposition}
+A \emph{decomposition}\index{decomposition} of $R$ is a list of attribute sets $R_1, \dots, R_m$ whose union is $R$; a table
+$T$ over $R$ is stored as its projections $\pi_{R_i}(T)$. The decomposition is
+\emph{lossless}\index{lossless-join decomposition} for $F$ if $T = \pi_{R_1}(T) \bowtie \dots \bowtie \pi_{R_m}(T)$ for
+every $T$ satisfying $F$; it \emph{preserves the dependencies}\index{dependency preservation} if the dependencies of $F$
+that hold inside the parts imply all of $F$.
+\end{definition}
+
+The join of the projections always contains $T$; a lossy \omterm{def:b2:database-design:decomposition}{decomposition} adds rows that were never there. Preservation
+matters for checking: a dependency that holds inside a part is enforced by that part's key, while one that spans two
+parts can be checked only by a join.
+
+\begin{theorem}[Heath's theorem]\label{thm:b2:database-design:heath}
+Let $R = X \cup Y \cup Z$ with $X, Y, Z$ disjoint. If a table over $R$ satisfies $X \to Y$, it is the join of its
+projections on $XY$ and $XZ$.
+\end{theorem}
+
+\begin{proof}
+\Cref{exo:b2:database-design:10}.
+\end{proof}
+
+\needspace{18\baselineskip}
+\omcode{code/bachelor-2/30-database-design/listings/fd.py}{67}{83}{A BCNF violation, and the BCNF \omterm{def:b2:database-design:decomposition}{decomposition} by
+repeated splits}\label{lst:b2:database-design:bcnf}
+
+\begin{theorem}[BCNF decomposition]\label{thm:b2:database-design:bcnf-lossless}
+The function \code{bcnf} stops, returns parts that are all in BCNF, and the \omterm{def:b2:database-design:decomposition}{decomposition} is \omterm{def:b2:database-design:decomposition}{lossless}.
+\end{theorem}
+
+\begin{proof}
+A split of $R$ on a violation $X \to Y$, with $Y = X^+ \cap R \setminus X$ non-empty and $X^+ \cap R \neq R$, produces $XY$
+and $R \setminus Y$, both strictly smaller than $R$: the recursion stops. A part is returned only when it has no violation,
+so it is in BCNF. Each split is \omterm{def:b2:database-design:decomposition}{lossless} by Heath's theorem with $Z = R \setminus XY$, since $X \to Y$ holds. By
+induction on the recursion, if $R \setminus Y$ is replaced by a \omterm{def:b2:database-design:decomposition}{lossless} \omterm{def:b2:database-design:decomposition}{decomposition} of it, the whole stays \omterm{def:b2:database-design:decomposition}{lossless},
+because a table satisfying $F$ projects onto $R \setminus Y$ as a table that satisfies the dependencies of $F$ that hold
+there, and the natural join is associative.
+\end{proof}
+
+\begin{omfigure}
+\begin{forest}
+for tree={font=\scriptsize, draw, rounded corners, align=center, l sep=14pt, s sep=8pt, inner sep=3pt},
+[{wide: 14 attributes, key loan}
+  [{book, title, author,\\genre, pages}, edge label={node[midway, left, font=\tiny] {on book}}]
+  [{loan, dates, book,\\member, first, last,\\street, postcode}
+    [{member, first, last,\\street, postcode}, edge label={node[midway, left, font=\tiny] {on member}}
+      [{street, postcode}, edge label={node[midway, left, font=\tiny] {on street}}]
+      [{member, first,\\last, street}]]
+    [{loan, out, due, ret,\\book, member}]]]
+\end{forest}
+\par\smallskip{\small The BCNF \omterm{def:b2:database-design:decomposition}{decomposition} of \cref{out:b2:database-design:fd-demo}. Each split takes a violating
+dependency $X \to Y$ and makes one table of $X$ with everything it determines, and another of the rest with $X$ kept as
+the link. The four leaves are the BCNF tables.}
+\end{omfigure}
+
+The SQL counterpart builds the four tables from the wide one and joins them back:
+
+\omcode{code/bachelor-2/30-database-design/listings/decomposed.sql}{1}{23}{The four BCNF tables, and the join that should
+give back the wide table}\label{lst:b2:database-design:decomposed}
+
+\omoutput{code/bachelor-2/30-database-design/outputs/decomposed.txt}{No row lost, none invented, and each key unique in
+the data.}\label{out:b2:database-design:decomposed}
+
+Only 23 streets appear because no member lives on the 24th. BCNF cannot always keep the
+dependencies inside the parts.
+
+\begin{example}[No BCNF decomposition preserves the dependencies]\label{ex:b2:database-design:no-preserving-bcnf}
+An address table over \emph{street}, \emph{town} and \emph{postcode} with the rules \emph{street town} $\to$
+\emph{postcode} and \emph{postcode} $\to$ \emph{town}. The keys are \{street, town\} and \{street, postcode\}, so
+\emph{postcode} $\to$ \emph{town} violates BCNF; every attribute belongs to a key, so the table is in 3NF. Any BCNF
+\omterm{def:b2:database-design:decomposition}{decomposition} must separate the three attributes, and \emph{street town} $\to$ \emph{postcode} then lies in no part.
+\end{example}
+
+\omoutput{code/bachelor-2/30-database-design/outputs/no_preserving.txt}{The address table: BCNF loses a dependency, 3NF
+keeps the table whole.}\label{out:b2:database-design:no-preserving}
+
+\omcode{code/bachelor-2/30-database-design/listings/fd.py}{97}{106}{3NF synthesis from a \omterm{def:b2:database-design:cover}{minimal
+cover}}\label{lst:b2:database-design:synthesis}
+
+\begin{theorem}[3NF synthesis]\label{thm:b2:database-design:3nf-synthesis}
+The \omterm{def:b2:database-design:decomposition}{decomposition} of \cref{lst:b2:database-design:synthesis}, one table for each left side of a \omterm{def:b2:database-design:cover}{minimal cover} with the
+attributes it determines in the cover, plus a candidate key if no table contains one, \omterm{def:b2:database-design:decomposition}{preserves the dependencies}, is
+\omterm{def:b2:database-design:decomposition}{lossless}, and has every table in 3NF.
+\end{theorem}
+
+\begin{proof}
+Every dependency of the \omterm{def:b2:database-design:cover}{minimal cover} lies inside the table of its left side, and the cover is equivalent to $F$: the
+dependencies are preserved. For losslessness, let $K$ be a table containing a key and run the chase of
+\cref{exo:b2:database-design:5}: the row of $K$ starts with the symbol $a$ on $K$, and the cover's dependencies, applied in
+the order in which the closure algorithm adds attributes to $K^+ = R$, give it $a$ on each attribute in turn, since each
+such dependency lies inside a table whose own row has $a$ everywhere. A row with $a$ everywhere means the join is
+\omterm{def:b2:database-design:decomposition}{lossless}. That each table is in 3NF uses the minimality of the cover; we admit it.
+\end{proof}
+
+So 3NF can always be reached without losing a dependency, and BCNF without losing information but perhaps a dependency.
+The synthesis often gives BCNF tables anyway, as for the library: its four 3NF tables are the four BCNF tables.
+
+One more kind of redundancy escapes functional dependencies. If a book has several authors and several subject
+keywords, unrelated to each other, a table (\emph{book}, \emph{author}, \emph{keyword}) must hold every pair: two authors
+and three keywords make six rows, with each author written three times.
+
+\begin{definition}[Multivalued dependency, fourth normal form]\label{def:b2:database-design:mvd}
+A table over $R$ satisfies the \emph{multivalued dependency}\index{multivalued dependency} $X \twoheadrightarrow Y$ if,
+with $Z = R \setminus XY$, whenever two rows agree on $X$, the row that takes $X$ and $Y$ from the first and $Z$ from the
+second is also in the table. $R$ is in \emph{fourth normal form}\index{fourth normal form} if for every \omterm{def:b2:database-design:fd}{non-trivial}
+$X \twoheadrightarrow Y$ that holds, $X$ is a superkey.
+\end{definition}
+
+Here \emph{book} $\twoheadrightarrow$ \emph{author}: every author of a book appears with every keyword of it. The table
+is in BCNF, its only key being all three attributes, but not in 4NF, and splitting it into (\emph{book}, \emph{author})
+and (\emph{book}, \emph{keyword}) is \omterm{def:b2:database-design:decomposition}{lossless} by the same argument as Heath's theorem. A \omterm{def:b2:database-design:fd}{functional dependency} is a
+special multivalued one; the chase of \cref{exo:b2:database-design:5} extends to both, and we leave it at that.
+
+\begin{history}
+% ledger: b2:codd-1970
+% ledger: b2:codd-3nf-1971
+% ledger: b2:bcnf-1974
+Edgar Codd published the relational model in 1970 and defined \omterm{def:b2:database-design:normal-forms}{third normal form} in 1971. Raymond Boyce and Codd
+formally developed the normal form that bears their names in 1974; Ian Heath had described it in 1971.
+\end{history}
+
+\section{Transactions}\label{sec:b2:database-design:transactions}
+
+Design removes the anomalies of one table. The other dangers come from time: a change made of several statements that
+stops in the middle, or two programs that change the same row at once.
+
+\begin{definition}[Transaction, commit, rollback]\label{def:b2:database-design:transaction}
+A \emph{transaction}\index{transaction} is a sequence of reads and writes that the database treats as one unit. It ends
+with a \emph{commit}\index{commit}, which makes all its writes permanent and visible to others, or a
+\emph{rollback}\index{rollback}, which cancels all of them.
+\end{definition}
+
+\begin{definition}[Atomicity, consistency, isolation, durability]\label{def:b2:database-design:acid}
+A database system guarantees \emph{atomicity}\index{atomicity} if a \omterm{def:b2:database-design:transaction}{transaction}'s writes take effect all or none;
+\emph{consistency}\index{consistency (transactions)} if a \omterm{def:b2:database-design:transaction}{transaction} that starts from a state satisfying the declared
+constraints and \omterm{def:b2:database-design:transaction}{commits} leaves one; \emph{isolation}\index{isolation} if concurrent \omterm{def:b2:database-design:transaction}{transactions} do not see each other's
+partial work, to a degree fixed by the \omterm{def:b2:database-design:isolation-level}{isolation level}; \emph{durability}\index{durability} if a committed \omterm{def:b2:database-design:transaction}{transaction}
+survives a crash.
+\end{definition}
+
+In SQLite, \code{BEGIN} starts a \omterm{def:b2:database-design:transaction}{transaction}; without it, each statement is a \omterm{def:b2:database-design:transaction}{transaction} of its own. The book's SQL
+runner \omterm{def:b2:database-design:transaction}{commits} after every statement, as an interactive tool does, so the \omterm{def:b2:database-design:transaction}{transactions} of this section are written in
+Python, which controls them explicitly:
+
+\omcode{code/bachelor-2/30-database-design/listings/rollback.py}{16}{25}{A late return recorded in two tables as one
+\omterm{def:b2:database-design:transaction}{transaction}}\label{lst:b2:database-design:rollback}
+
+\omoutput{code/bachelor-2/30-database-design/outputs/rollback.txt}{The fine of 0 breaks a constraint after the loan was
+already updated: the \omterm{def:b2:database-design:transaction}{rollback} undoes the update too.}\label{out:b2:database-design:rollback}
+
+Without the \omterm{def:b2:database-design:transaction}{transaction}, the first attempt would have left a loan returned with no fine recorded: the two tables would
+disagree, the very thing the design was meant to prevent.
+
+\begin{history}
+% ledger: b2:haerder-reuter-1983
+Theo Härder and Andreas Reuter coined the acronym ACID for these four properties in 1983, in a survey of \omterm{def:b2:database-design:transaction}{transaction}
+recovery.
+\end{history}
+
+\section{Isolation}\label{sec:b2:database-design:isolation}
+
+\begin{definition}[Schedule]\label{def:b2:database-design:schedule}
+A \emph{schedule}\index{schedule (of transactions)} of a set of \omterm{def:b2:database-design:transaction}{transactions} is the order in time of all their reads,
+writes, \omterm{def:b2:database-design:transaction}{commits} and \omterm{def:b2:database-design:transaction}{rollbacks}, each \omterm{def:b2:database-design:transaction}{transaction}'s own operations in their order. It is \emph{serial} if the \omterm{def:b2:database-design:transaction}{transactions}
+do not overlap.
+\end{definition}
+
+\begin{definition}[The anomalies of isolation]\label{def:b2:database-design:anomalies}
+In a \omterm{def:b2:database-design:schedule}{schedule} of two \omterm{def:b2:database-design:transaction}{transactions} $T_1$ and $T_2$: a \emph{dirty read}\index{dirty read} is $T_2$ reading a value written
+by $T_1$ that $T_1$ has not committed; a \emph{non-repeatable read}\index{non-repeatable read} is $T_1$ reading the same
+row twice and getting two values, because $T_2$ changed it and committed in between; a \emph{phantom
+read}\index{phantom read} is $T_1$ running the same query with a condition twice and getting different sets of rows,
+because $T_2$ inserted or deleted a matching row; a \emph{lost update}\index{lost update} is $T_1$ and $T_2$ both reading a
+value and both writing a new value computed from it, so that one write erases the other; a \emph{write
+skew}\index{write skew} is $T_1$ and $T_2$ each reading the same rows, checking a rule over them, and each writing a
+different row, so that both checks pass and the result breaks the rule.
+\end{definition}
+
+\begin{definition}[Isolation level]\label{def:b2:database-design:isolation-level}
+An \emph{isolation level}\index{isolation level} is a promise about which of these anomalies a database system lets
+\omterm{def:b2:database-design:transaction}{transactions} see. The SQL standard names four: \emph{read uncommitted}, \emph{read committed}, \emph{repeatable read}
+and \emph{serializable}, the last promising that every \omterm{def:b2:database-design:schedule}{schedule} has the same effect as some serial one.
+\end{definition}
+
+\begin{center}
+% ledger: b2:sql-isolation-levels
+\small
+\begin{tabular}{lccc}
+\hline
+\omterm{def:b2:database-design:isolation-level}{isolation level} & \omterm{def:b2:database-design:anomalies}{dirty read} & \omterm{def:b2:database-design:anomalies}{non-repeatable read} & \omterm{def:b2:database-design:anomalies}{phantom read} \\
+\hline
+read uncommitted & possible & possible & possible \\
+read committed & no & possible & possible \\
+repeatable read & no & no & possible \\
+serializable & no & no & no \\
+\hline
+\end{tabular}
+\par\smallskip{\small The standard \omterm{def:b2:database-design:isolation-level}{isolation levels}, and the anomalies each allows. A system may give more than a level
+promises: PostgreSQL's repeatable read shows no phantoms, and its read uncommitted behaves as read committed.}
+\end{center}
+
+SQLite takes the simplest road: its \omterm{def:b2:database-design:transaction}{transactions} are serializable, and it allows a single writer at a time. The one way
+to see an uncommitted change is to share a cache between two connections and turn on \code{read_uncommitted}.
+
+\begin{inpractice}
+% ledger: b2:sqlite-serializable
+% ledger: b2:sqlite-one-writer
+SQLite's documentation states that its \omterm{def:b2:database-design:transaction}{transactions} are serializable except for connections that share a cache with
+\code{read_uncommitted} on, and that one connection writes at a time: the others wait their turn.
+\end{inpractice}
+
+\omcode{code/bachelor-2/30-database-design/listings/dirty_read.py}{5}{27}{Two connections to one shared in-memory
+database}\label{lst:b2:database-design:dirty-read}
+
+\omoutput{code/bachelor-2/30-database-design/outputs/dirty_read.txt}{Refused, then a \omterm{def:b2:database-design:anomalies}{dirty read}, then the value the writer
+never committed is gone.}\label{out:b2:database-design:dirty-read}
+
+The \omterm{def:b2:database-design:anomalies}{lost update} needs no concurrency inside the database at all: it is enough that a program reads a value, computes,
+and writes, while another does the same. Two lending desks, each with its own connection to the library's file:
+
+\omcode{code/bachelor-2/30-database-design/listings/lost_update.py}{25}{51}{Read then write, unprotected and then inside
+\code{BEGIN IMMEDIATE}}\label{lst:b2:database-design:lost-update}
+
+\omoutput{code/bachelor-2/30-database-design/outputs/lost_update.txt}{Three copies, two lent: only the first way records
+2 instead of 1.}\label{out:b2:database-design:lost-update}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1cm, y=0.62cm, s/.style={font=\small, anchor=west}]
+\draw[thick, ->] (0, 0.4) -- (0, -5.4) node[below, font=\scriptsize] {time};
+\node[font=\small\bfseries] at (2.6, 1) {desk A}; \node[font=\small\bfseries] at (7.6, 1) {desk B};
+\node[font=\small\bfseries] at (11.6, 1) {shelf};
+\node[s] at (1, 0) {reads \code{available}: 3}; \node[font=\small] at (11.6, 0) {3};
+\node[s] at (6, -1) {reads \code{available}: 3}; \node[font=\small] at (11.6, -1) {3};
+\node[s] at (1, -2) {writes $3 - 1 = 2$}; \node[font=\small] at (11.6, -2) {2};
+\node[s] at (6, -3) {writes $3 - 1 = 2$}; \node[font=\small, text=omThm] at (11.6, -3) {2};
+\draw[omThm, thick, ->] (8.6, -3.35) to[bend right=12] (4.2, -4.4) node[below, font=\small] {A's lending is lost};
+\foreach \y in {0, -1, -2, -3} \draw[black!25] (0.9, \y - 0.5) -- (12.3, \y - 0.5);
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b2:database-design:anomalies}{lost update} of \cref{out:b2:database-design:lost-update}, one step per line. Each write is
+correct for the value its desk read; the second erases the first. Inside \code{BEGIN IMMEDIATE}, desk B could not have
+started before A committed, and it would have read 2.}
+\end{omfigure}
+
+There are two fixes. \code{BEGIN IMMEDIATE} takes the right to write at the start of the \omterm{def:b2:database-design:transaction}{transaction}, so the second desk
+is refused until the first \omterm{def:b2:database-design:transaction}{commits}, and then reads the new value. Or the read and the write become one statement,
+\code{UPDATE shelf SET available = available - 1}, which the database executes as a whole
+(\cref{exo:b2:database-design:6}).
+
+\begin{inpractice}
+% ledger: b2:sqlite-begin-immediate
+\code{BEGIN IMMEDIATE} starts a write \omterm{def:b2:database-design:transaction}{transaction} at once, and may fail with ``database is locked'' (\code{SQLITE_BUSY})
+while another connection has one; a program then waits and \omterm{def:b2:text-algorithms:trie}{tries} again. A plain \code{BEGIN} waits for the first write,
+and may fail there instead, after reading.
+\end{inpractice}
+
+Since SQLite never shows the other anomalies, a small simulator shows them: it runs a \omterm{def:b2:database-design:schedule}{schedule} of reads and writes under
+three rules for answering a read, the latest write even if uncommitted, the latest committed value, or a snapshot of the
+committed values when the \omterm{def:b2:database-design:transaction}{transaction} began. Under snapshots, a \omterm{def:b2:database-design:transaction}{transaction} that wants to \omterm{def:b2:database-design:transaction}{commit} a row that another
+\omterm{def:b2:database-design:transaction}{transaction} committed since it began is refused, the rule of ``first committer wins''.
+
+\omcode{code/bachelor-2/30-database-design/listings/schedules.py}{82}{102}{Two of the five staged \omterm{def:b2:database-design:schedule}{schedules}: the \omterm{def:b2:database-design:anomalies}{lost
+update} and the \omterm{def:b2:database-design:anomalies}{write skew}}\label{lst:b2:database-design:schedules}
+
+\omoutput{code/bachelor-2/30-database-design/outputs/schedules.txt}{Which anomaly each rule lets through.}\label{out:b2:database-design:schedules}
+
+Reading committed values removes \omterm{def:b2:database-design:anomalies}{dirty reads} only; snapshots remove the three anomalies of the standard's table and turn
+the \omterm{def:b2:database-design:anomalies}{lost update} into a refusal. \omterm{def:b2:database-design:anomalies}{Write skew} survives snapshots: the two \omterm{def:b2:database-design:transaction}{transactions} write different rows, so no write
+conflicts with another, yet the rule ``at least one copy stays'' is broken. Only a serializable level prevents it, for
+example by detecting that each read what the other wrote.
+
+\section{Using an index}\label{sec:b2:database-design:index}
+
+\begin{definition}[Index]\label{def:b2:database-design:index}
+An \emph{index}\index{index (database)} on columns of a table is a separate structure, kept up to date by the database
+system on every change, that maps values of those columns to the rows that hold them, in sorted order, so that the rows
+with a given value or in a given range are found without reading the whole table.
+\end{definition}
+
+The database chooses for each query whether to use an \omterm{def:b2:database-design:index}{index}. \code{EXPLAIN QUERY PLAN} shows the choice:
+
+\omcode{code/bachelor-2/30-database-design/listings/explain.sql}{1}{8}{The plan of the same query before and after an
+\omterm{def:b2:database-design:index}{index}}\label{lst:b2:database-design:explain}
+
+\omoutput{code/bachelor-2/30-database-design/outputs/explain.txt}{SCAN reads every row; SEARCH reads only the matching
+ones, through the \omterm{def:b2:database-design:index}{index}.}\label{out:b2:database-design:explain}
+
+The last query hides the column inside an expression, and the \omterm{def:b2:database-design:index}{index} no longer applies: \code{member_id + 0} is not a
+value that the \omterm{def:b2:database-design:index}{index} sorts.
+
+\begin{inpractice}
+% ledger: b2:sqlite-eqp
+SQLite's documentation says that SCAN is a full-table scan and SEARCH visits a subset of the rows, and warns that the
+format of \code{EXPLAIN QUERY PLAN} may change between releases: it is for people to read, not for programs to parse.
+\end{inpractice}
+
+On 400 loans either way is instant. On generated tables of growing size:
+
+\omcode{code/bachelor-2/30-database-design/listings/index_timing.py}{8}{34}{The loans of a member, by scan and by \omterm{def:b2:database-design:index}{index},
+timed on generated tables}\label{lst:b2:database-design:index-timing}
+
+\omoutput{code/bachelor-2/30-database-design/outputs/index_timing.txt}{Mean time of one query on the author's laptop,
+in microseconds.}\label{out:b2:database-design:index-timing}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{loglogaxis}[width=0.66\linewidth, height=5.2cm, xlabel={rows in the table}, ylabel={time of one query
+  ($\mu$s)}, legend pos=north west, legend style={font=\small}, xtick={10000,100000,1000000}]
+\addplot[mark=*, omThm] table[x=rows, y=scan] {code/bachelor-2/30-database-design/figures/index_timing.dat};
+\addplot[mark=square*, omDef] table[x=rows, y=index] {code/bachelor-2/30-database-design/figures/index_timing.dat};
+\legend{full scan, through the index}
+\end{loglogaxis}
+\end{tikzpicture}
+\par\smallskip{\small \Cref{out:b2:database-design:index-timing} on logarithmic axes, measured on a laptop. The scan
+grows in proportion to the table; the search through the \omterm{def:b2:database-design:index}{index} grows slowly, with the height of a tree, and with the
+cost of reaching rows scattered in memory.}
+\end{omfigure}
+
+The scan time grows tenfold with each tenfold table; the \omterm{def:b2:database-design:index}{index} time grows about fivefold over a table a hundred times larger, and on a million rows the \omterm{def:b2:database-design:index}{index} is
+about a thousand times faster. It is not free: building it took close to a second, and each later insertion or update of
+a loan must update it too. How the \omterm{def:b2:database-design:index}{index} is organised, a balanced tree with many keys per node, and how the system
+chooses among plans, are the subject of the Year 3 volume. An \omterm{def:b2:database-design:index}{index} does not always help either: a query that selects
+a large fraction of the table reads it faster in order (\cref{exo:b2:database-design:12}).
+
+\section{Exercises}\label{sec:b2:database-design:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:database-design:1}
+With $F = \{a \to b,\ bc \to d,\ d \to e,\ ea \to c\}$, compute by hand the closures of $\{a\}$, $\{b, c\}$ and
+$\{c, e\}$, then check with \code{exo_closure.py}. Is $\{a, d\}$ a superkey of $\{a, b, c, d, e\}$?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:database-design:2}
+A BCNF step on the wide table's violation \emph{book} $\to$ \emph{title author genre pages} splits off only
+\{book, title\}. What is wrong with the other part? Compare with the step that splits off the whole closure, using
+\code{exo_bcnf_step.py}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:database-design:3}
+The reading room's bookings have attributes \emph{seat}, \emph{day}, \emph{slot}, \emph{member} and \emph{desk}, with
+\emph{seat day slot} $\to$ \emph{member}, \emph{member day slot} $\to$ \emph{seat} and \emph{seat} $\to$ \emph{desk}. Find
+all the candidate keys by hand, then with \code{exo_keys.py}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:database-design:4}
+A schema with $n$ attributes has exactly one candidate key, of size $k$. Prove that it has exactly $2^{n-k}$ superkeys.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:database-design:5}
+Split the wide table into the member's attributes and the rest, keeping in both, in turn, the member, the street, or the
+last name. Which splits are \omterm{def:b2:database-design:decomposition}{lossless} by Heath's theorem? For the others, explain how a join could invent rows. Check
+with \code{exo_heath.py}, which runs the \emph{chase}: one row per part, with the symbol $a$ on the part's attributes and
+distinct symbols elsewhere; the dependencies force equal symbols where two rows agree on a left side; the
+\omterm{def:b2:database-design:decomposition}{decomposition} is \omterm{def:b2:database-design:decomposition}{lossless} exactly when some row ends with $a$ everywhere.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:database-design:6}
+In the first part of \cref{lst:b2:database-design:lost-update}, explain the bug as a \omterm{def:b2:database-design:schedule}{schedule}, and say why each of the
+two fixes prevents it. Which fix still works if the program must check that a copy is available before lending it?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:database-design:7}
+Add a \emph{name} determined by the member to the bookings of \cref{exo:b2:database-design:3}, and let \emph{seat day
+slot} determine \emph{desk} as well. Compute a \omterm{def:b2:database-design:cover}{minimal cover} and the 3NF synthesis by hand, then check with
+\code{exo_synthesis.py}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:database-design:8}
+Derive the union rule and the \omterm{def:b2:database-design:decomposition}{decomposition} rule from Armstrong's three axioms.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:database-design:9}
+Find, with \code{exo_extra_fds.py}, the dependencies between two single attributes that the town's 400 lines satisfy
+but the library's rules do not imply. Which of them would you add to the schema, and what would change?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:database-design:10}
+Prove \cref{thm:b2:database-design:heath}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:database-design:11}
+Prove \cref{prop:b2:database-design:closure-algo}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:database-design:12}
+A query selects the loans with \code{out_day} below a bound, through an \omterm{def:b2:database-design:index}{index} on \code{out_day} or by a full scan.
+Measure both as the fraction selected grows, with \code{exo_selectivity.py}, find where the \omterm{def:b2:database-design:index}{index} stops helping, and
+explain why.
+\end{exercise}
+
+\section{Problem: Redesigning the library's spreadsheet}\label{sec:b2:database-design:problem}
+
+\begin{problem}[{Weekend problem --- Redesigning the library's spreadsheet}]\label{pb:b2:database-design:1}
+The library replaces its spreadsheet by a database. The program below measures the old design, checks the new one and
+replays member 55's move in both; \cref{out:b2:database-design:index-timing} measures the \omterm{def:b2:database-design:index}{index} the desks will need.
+
+\omcode{code/bachelor-2/30-database-design/listings/redesign.py}{13}{39}{The old design measured, the new one
+checked}\label{lst:b2:database-design:problem}
+
+\omoutput{code/bachelor-2/30-database-design/outputs/redesign.txt}{Redundancy, violations, the four tables, and the move
+in each design.}\label{out:b2:database-design:problem}
+
+\medskip\noindent\textbf{Part I --- The dependencies of the wide table.}\par\nopagebreak
+\begin{enumerate}
+\item List the library's rules as functional dependencies, and say which are about loans, books, members and streets.
+\item Explain the 320 copies too many of the books' facts: what is stored 400 times, and what should be stored 80 times?
+\item Give an \omterm{def:b2:database-design:anomaly}{update anomaly}, an \omterm{def:b2:database-design:anomaly}{insertion anomaly} and a \omterm{def:b2:database-design:anomaly}{deletion anomaly} of the wide table, with the library's own
+facts.
+\item Why is \emph{title} $\to$ \emph{book}, which the data satisfy, not one of the rules?
+\item Does \emph{out} $\to$ \emph{due} hold? Should it be a rule, and what would that mean for the schema?
+\item Compute the closure of \{member\} and of \{street\}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Keys and normal forms.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Prove with the closure that \{loan\} is a candidate key of the wide table, and that it is the only one.
+\item Which dependencies violate BCNF? Why exactly three left sides?
+\item Is the wide table in 3NF? Use the definition.
+\item Is the table (\emph{member}, \emph{first}, \emph{last}, \emph{street}) in BCNF? And (\emph{street},
+\emph{postcode})?
+\item What would a table (\emph{member}, \emph{street}, \emph{postcode}) violate?
+\item Give the number of violations before and after the redesign, as the program prints them.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- A lossless decomposition.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Draw the splits that lead to the four tables, naming the dependency used at each.
+\item Prove that each split is \omterm{def:b2:database-design:decomposition}{lossless} with Heath's theorem.
+\item Is the \omterm{def:b2:database-design:decomposition}{decomposition} dependency-preserving? Check each rule.
+\item What did \cref{out:b2:database-design:decomposed} check on the town's data, and why are both counts needed?
+\item Why does the streets table have 23 rows and not 24?
+\item State the problem's result for the design.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Transactions and an index.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item How many rows does the move change in each design, and why can the new design not forget one?
+\item A loan and its fine are recorded together. Why must they be one \omterm{def:b2:database-design:transaction}{transaction}?
+\item Two desks lend the last copy of a book at the same moment. Which anomaly threatens, and how do you prevent it in
+SQLite?
+\item Which \omterm{def:b2:database-design:index}{index} do the desks need to list a member's loans, and what does \code{EXPLAIN QUERY PLAN} show before and
+after it?
+\item From \cref{out:b2:database-design:index-timing}, how much faster is the \omterm{def:b2:database-design:index}{index} on a million loans, and what does it
+cost?
+\item Complete the problem's result: from one wide table with three violating dependencies to four BCNF tables with
+none, and an \omterm{def:b2:database-design:index}{index} that is how many times faster on a million loans?
+\end{enumerate}
+\end{problem}

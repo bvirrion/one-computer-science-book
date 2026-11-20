@@ -1,0 +1,354 @@
+% Book 3, Year 1, chapter 25 -- shortest paths.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 25.
+% ledger: b1:dijkstra-1959, b1:bellman-1958, b1:floyd-1962, b1:warshall-1962
+\chapter{Shortest Paths}\label{ch:b1:shortest-paths}
+
+From the Town Square to the Hospital, the shortest way is 6.3 kilometres long and takes nine minutes at the speed
+limits. Another way is a kilometre longer and takes a minute and a half less, because it uses the faster roads.
+\omterm{def:b1:graph-traversals:bfs}{Breadth-first search} counts roads, neither metres nor seconds. This chapter weighs every road with a number, here its
+travel time or its length, and finds the paths of least total weight: from one place with Dijkstra's algorithm when
+weights are not negative, with Bellman--Ford's when they may be, in linear time when the \omterm{def:b1:graph-traversals:graph}{graph} is acyclic, and between
+all pairs of places at once with Floyd--Warshall's.
+
+\begin{recall}
+The second book ran Dijkstra's algorithm by hand on small maps. \omterm{def:b1:heaps:binary-heap}{Binary heaps} and \omterm{def:b1:heaps:pq}{priority queues} were built in
+\cref{ch:b1:heaps}; \omterm{def:b1:graph-traversals:topo}{topological orders} and \omterm{def:b1:graph-traversals:bfs}{breadth-first search} in \cref{ch:b1:graph-traversals}; tables of
+subproblems in \cref{ch:b1:dynamic-programming}.
+\end{recall}
+
+\section{Weighted shortest paths}\label{sec:b1:shortest-paths:weighted}
+
+\begin{definition}[Weight of a path, shortest path, weighted distance]\label{def:b1:shortest-paths:shortest}
+In a \omterm{def:b1:graph-traversals:graph}{directed graph} with a weight $w(u, v)$ on each \omterm{def:b1:graph-traversals:graph}{arc}, the \emph{weight} of a path is the sum of the weights of its
+\omterm{def:b1:graph-traversals:graph}{arcs}. The \emph{weighted distance}\index{weighted distance} $\delta(s, v)$ is the infimum of the weights of the paths
+from $s$ to $v$: $+\infty$ if there is none, $-\infty$ if there are paths of arbitrarily small weight. A
+\emph{shortest path}\index{shortest path} from $s$ to $v$ is a path of weight $\delta(s, v)$.
+\end{definition}
+
+An undirected road is two \omterm{def:b1:graph-traversals:graph}{arcs} of the same weight. The town's roads carry their length in metres, or their travel time
+at the speed limit, rounded to the second.
+
+\omcode{code/bachelor-1/25-shortest-paths/listings/wgraph.py}{14}{25}{The roads weighted by travel
+time}\label{lst:b1:shortest-paths:wgraph}
+
+\omoutput{code/bachelor-1/25-shortest-paths/outputs/wgraph.txt}{The road from the Station to the Town Hall is short,
+1000 m, but limited to 30 km/h.}\label{out:b1:shortest-paths:wgraph}
+
+\begin{definition}[Negative cycle]\label{def:b1:shortest-paths:negative}
+A \emph{negative cycle}\index{negative cycle} is a cycle of negative weight. If one is reachable from $s$ and reaches
+$v$, going round it again and again makes $\delta(s, v) = -\infty$.
+\end{definition}
+
+\begin{proposition}[Subpaths of shortest paths]\label{prop:b1:shortest-paths:subpath}
+Every subpath of a \omterm{def:b1:shortest-paths:shortest}{shortest path} is a \omterm{def:b1:shortest-paths:shortest}{shortest path} between its ends. And if there is no \omterm{def:b1:shortest-paths:negative}{negative cycle}, $\delta(s, v)
+\leq \delta(s, u) + w(u, v)$ for every \omterm{def:b1:graph-traversals:graph}{arc} $u \to v$ (the triangle inequality).
+\end{proposition}
+
+The proof is \cref{exo:b1:shortest-paths:9}; it is cut and paste again, as in \cref{ch:b1:dynamic-programming}.
+
+\begin{definition}[Relaxation]\label{def:b1:shortest-paths:relaxation}
+The algorithms keep an estimate $\code{dist}[v] \geq \delta(s, v)$, with $\code{dist}[s] = 0$ and $+\infty$ elsewhere at
+the start. To \emph{relax}\index{relaxation (of an edge)} the \omterm{def:b1:graph-traversals:graph}{arc} $u \to v$ is to set $\code{dist}[v] = \code{dist}[u] +
+w(u, v)$, and the parent of $v$ to $u$, if that is smaller.
+\end{definition}
+
+Every estimate is the weight of some path, the path of parents, so it never drops below the distance; and once
+$\code{dist}[u] = \delta(s, u)$, relaxing $u \to v$ for the last \omterm{def:b1:graph-traversals:graph}{arc} of a \omterm{def:b1:shortest-paths:shortest}{shortest path} to $v$ gives $\code{dist}[v] =
+\delta(s, v)$. The algorithms differ only in the order in which they \omterm{def:b1:shortest-paths:relaxation}{relax} \omterm{def:b1:graph-traversals:graph}{arcs}.
+
+\begin{definition}[Shortest-path tree]\label{def:b1:shortest-paths:tree}
+A \emph{shortest-path tree}\index{shortest-path tree} from $s$ is a \omterm{def:b1:induction-and-termination:rooted-tree}{rooted tree} on the \omterm{def:b1:graph-traversals:graph}{vertices} reachable from $s$,
+rooted at $s$, whose path from $s$ to each \omterm{def:b1:graph-traversals:graph}{vertex} $v$ is a \omterm{def:b1:shortest-paths:shortest}{shortest path}.
+\end{definition}
+
+\section{Dijkstra's algorithm with a heap}\label{sec:b1:shortest-paths:dijkstra}
+
+\begin{method}[Dijkstra's algorithm]\label{met:b1:shortest-paths:dijkstra}
+With non-negative weights: keep a set of \emph{settled} \omterm{def:b1:graph-traversals:graph}{vertices}, at first empty. Repeatedly settle the unsettled \omterm{def:b1:graph-traversals:graph}{vertex}
+of smallest estimate, and \omterm{def:b1:shortest-paths:relaxation}{relax} every \omterm{def:b1:graph-traversals:graph}{arc} leaving it.
+\end{method}
+
+A \omterm{def:b1:heaps:binary-heap}{binary heap} gives the smallest estimate. When an estimate decreases, the program pushes a new entry rather than
+moving the old one (\emph{lazy deletion}); the stale entry is skipped when it comes off the heap.
+
+\omcode{code/bachelor-1/25-shortest-paths/listings/dijkstra.py}{11}{34}{Dijkstra's algorithm with a \omterm{def:b1:heaps:binary-heap}{binary heap} and
+lazy deletion}\label{lst:b1:shortest-paths:dijkstra}
+
+\begin{theorem}[Dijkstra's invariant]\label{thm:b1:shortest-paths:dijkstra}
+With non-negative weights, every \omterm{def:b1:graph-traversals:graph}{vertex} $u$ has $\code{dist}[u] = \delta(s, u)$ when it is settled. So at the end
+\code{dist} holds the distances, and the parents form a \omterm{def:b1:shortest-paths:tree}{shortest-path tree}.
+\end{theorem}
+
+The proof is \cref{exo:b1:shortest-paths:10}: if $u$ were the first \omterm{def:b1:graph-traversals:graph}{vertex} settled with a wrong estimate, a \omterm{def:b1:shortest-paths:shortest}{shortest
+path} to $u$ would leave the settled set somewhere, at an \omterm{def:b1:graph-traversals:graph}{arc} $x \to y$, and $y$ would have an estimate at most
+$\delta(s, u)$, smaller than $u$'s.
+
+\begin{omfigure}
+\begin{tikzpicture}[v/.style={circle, draw, minimum size=6mm, inner sep=0pt, font=\small},
+  done/.style={v, fill=omDef!25}, >=stealth, font=\scriptsize]
+\foreach \dx/\title/\ds/\da/\db/\dc/\dt/\ss/\sa/\sb in {0/after s/0/4/1/$\infty$/$\infty$/done/v/v,
+  50/after b/0/3/1/6/$\infty$/done/v/done, 100/after a/0/3/1/4/9/done/done/done} {
+\begin{scope}[xshift=\dx mm]
+\node[\ss] (s) at (0,0) {s};
+\node[\sa] (a) at (1.6,0.9) {a}; \node[\sb] (b) at (1.6,-0.9) {b}; \node[v] (c) at (2.9,0) {c};
+\node[v] (t) at (4.0,0.9) {t};
+\draw[->] (s) -- node[above left=-1pt] {4} (a); \draw[->] (s) -- node[below left=-1pt] {1} (b);
+\draw[->] (b) -- node[left] {2} (a); \draw[->] (a) -- node[above right=-2pt] {1} (c);
+\draw[->] (b) -- node[below right=-2pt] {5} (c); \draw[->] (c) -- node[below right=-1pt] {3} (t);
+\draw[->] (a) -- node[above] {6} (t);
+\node[omDef] at (0,-0.55) {\ds}; \node[omDef] at (1.6,1.45) {\da}; \node[omDef] at (1.6,-1.45) {\db};
+\node[omDef] at (2.9,-0.55) {\dc}; \node[omDef] at (4.0,1.45) {\dt};
+\node at (2,-2.0) {\small \title};
+\end{scope}}
+\end{tikzpicture}
+\par\smallskip{\small Dijkstra's algorithm from \code{s}, after settling \code{s}, then \code{b}, then \code{a}; the
+estimates are written beside the \omterm{def:b1:graph-traversals:graph}{vertices}. Settling \code{b}, at 1, lowers \code{a} from 4 to 3; settling \code{a}
+lowers \code{c} from 6 to 4. Then \code{c} is settled at 4 and \code{t} at 7.}
+\end{omfigure}
+
+Each \omterm{def:b1:graph-traversals:graph}{vertex} is settled once and each \omterm{def:b1:graph-traversals:graph}{arc} relaxed once, so at most $m$ entries are pushed, plus the first; each push or
+pop costs $O(\log m) = O(\log n)$, since $m \leq n^2$. The total is $O((n + m) \log n)$. A heap with
+\emph{\omterm{def:b1:heaps:decrease-key}{decrease-key}} (\cref{ch:b1:heaps}) keeps one entry per \omterm{def:b1:graph-traversals:graph}{vertex}, at the same cost, and less memory.
+
+\omoutput{code/bachelor-1/25-shortest-paths/outputs/dijkstra.txt}{The fastest and the shortest way from the Town Square
+to the Hospital; ``pops'' counts the entries taken off the heap, stale ones included.}\label{out:b1:shortest-paths:dijkstra}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=10cm, height=8.6cm, xlabel={$x$ (km)}, ylabel={$y$ (km)}, xmin=-0.2, xmax=6, ymin=-0.2,
+    ymax=5.1, axis equal image, grid=none]
+  \addplot[black!25, line width=0.6pt] table[x=x, y=y]{code/bachelor-1/25-shortest-paths/figures/roads.dat};
+  \addplot[omThm, line width=1.6pt, dashed] table[x=x, y=y]{code/bachelor-1/25-shortest-paths/figures/short.dat};
+  \addplot[omDef, line width=1.6pt] table[x=x, y=y]{code/bachelor-1/25-shortest-paths/figures/fast.dat};
+  \addplot[only marks, mark=*, mark size=1.3pt, black!60] table[x=x, y=y]
+    {code/bachelor-1/25-shortest-paths/figures/places.dat};
+  \node[font=\scriptsize, anchor=north west] at (axis cs:4.35,1.40) {Town Square};
+  \node[font=\scriptsize, anchor=east] at (axis cs:1.28,4.875) {Hospital};
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The fastest route (solid, 445 s) and the shortest one (dashed, 6270 m), drawn from the data by
+\code{figures/routes.py}. They share their first two roads; then the fast one turns west through the Station onto
+faster roads, while the short one heads north.}
+\end{omfigure}
+
+\section{Negative weights and Bellman--Ford}\label{sec:b1:shortest-paths:bellman-ford}
+
+Weights may be negative: a reward, a gain of height, a refund. Dijkstra's algorithm then fails, because a \omterm{def:b1:graph-traversals:graph}{vertex} can be
+settled before a cheaper path reaches it through a negative \omterm{def:b1:graph-traversals:graph}{arc}.
+
+\begin{omfigure}
+\begin{tikzpicture}[v/.style={circle, draw, minimum size=6mm, inner sep=0pt, font=\small}, >=stealth,
+  font=\scriptsize]
+\node[v] (s) at (0,0) {s}; \node[v] (a) at (2,0.8) {a}; \node[v] (b) at (2,-0.8) {b}; \node[v] (t) at (4,0.8) {t};
+\draw[->] (s) -- node[above] {2} (a); \draw[->] (s) -- node[below] {3} (b);
+\draw[->, omThm, thick] (b) -- node[right] {$-2$} (a); \draw[->] (a) -- node[above] {1} (t);
+\end{tikzpicture}
+\par\smallskip{\small Dijkstra settles \code{a} at 2 and \omterm{def:b1:shortest-paths:relaxation}{relaxes} $a \to t$, giving \code{t} the estimate 3. Settling
+\code{b} at 3, the \omterm{def:b1:graph-traversals:graph}{arc} $b \to a$ lowers \code{a} to 1, but \code{a} is settled and its \omterm{def:b1:graph-traversals:graph}{arcs} are not relaxed again:
+\code{t} keeps 3, though its distance is 2.}
+\end{omfigure}
+
+\omoutput{code/bachelor-1/25-shortest-paths/outputs/dijkstra_neg.txt}{The listing of \cref{lst:b1:shortest-paths:dijkstra}
+on this \omterm{def:b1:graph-traversals:graph}{graph}.}\label{out:b1:shortest-paths:negative}
+
+\begin{method}[Bellman--Ford algorithm]\label{met:b1:shortest-paths:bellman-ford}
+\omterm{def:b1:shortest-paths:relaxation}{Relax} every \omterm{def:b1:graph-traversals:graph}{arc}, in any order; repeat, in \emph{rounds}, until a round changes nothing. If round $n$ still changes an
+estimate, report a \omterm{def:b1:shortest-paths:negative}{negative cycle}.
+\end{method}
+
+\omcode{code/bachelor-1/25-shortest-paths/listings/bellman_ford.py}{9}{22}{Bellman--Ford, with a stop at the first
+quiet round}\label{lst:b1:shortest-paths:bellman-ford}
+
+\begin{proposition}[Rounds of Bellman--Ford]\label{prop:b1:shortest-paths:rounds}
+If no \omterm{def:b1:shortest-paths:negative}{negative cycle} is reachable from $s$, then after $k$ rounds $\code{dist}[v] = \delta(s, v)$ for every \omterm{def:b1:graph-traversals:graph}{vertex} $v$
+that has a \omterm{def:b1:shortest-paths:shortest}{shortest path} of at most $k$ \omterm{def:b1:graph-traversals:graph}{arcs}; so $n - 1$ rounds suffice and round $n$ changes nothing. If a \omterm{def:b1:shortest-paths:negative}{negative
+cycle} is reachable from $s$, every round changes some estimate.
+\end{proposition}
+
+\begin{proof}
+Without a reachable \omterm{def:b1:shortest-paths:negative}{negative cycle}, every reachable $v$ has a \omterm{def:b1:shortest-paths:shortest}{shortest path} that is simple, so of at most $n - 1$ \omterm{def:b1:graph-traversals:graph}{arcs}.
+By induction on $k$: if $s = v_0, \dots, v_k = v$ is a \omterm{def:b1:shortest-paths:shortest}{shortest path}, $\code{dist}[v_{k-1}] = \delta(s, v_{k-1})$ after
+round $k - 1$ (its prefix is a \omterm{def:b1:shortest-paths:shortest}{shortest path}, \cref{prop:b1:shortest-paths:subpath}), and round $k$ \omterm{def:b1:shortest-paths:relaxation}{relaxes} $v_{k-1}
+\to v$. Estimates never go below distances, so they stop changing. Conversely, if a round changes nothing, then
+$\code{dist}[v] \leq \code{dist}[u] + w(u, v)$ for every \omterm{def:b1:graph-traversals:graph}{arc}; summing along a reachable cycle, where every estimate is
+finite, gives $0 \leq$ the weight of the cycle: no \omterm{def:b1:shortest-paths:negative}{negative cycle} is reachable.
+\end{proof}
+
+Each round costs $O(n + m)$, so the whole costs $O(nm)$, far more than Dijkstra's algorithm, but it accepts any weights.
+
+\omoutput{code/bachelor-1/25-shortest-paths/outputs/bellman_ford.txt}{Five rounds suffice on the town, the last one
+quiet; the \omterm{def:b1:graph-traversals:graph}{arc} $t \to b$ closes the cycle $b \to a \to t \to b$ of weight $-1$.}\label{out:b1:shortest-paths:bellman-ford}
+
+Bellman published the method in 1958 as an algorithm for a routing problem; Ford had described the relaxation of \omterm{def:b1:graph-traversals:graph}{arcs}
+in a report for the same kind of problem.
+
+\section{Shortest paths in a DAG}\label{sec:b1:shortest-paths:dag}
+
+In a \omterm{def:b1:graph-traversals:dag}{directed acyclic graph}, relaxing the \omterm{def:b1:graph-traversals:graph}{arcs} leaving each \omterm{def:b1:graph-traversals:graph}{vertex}, the \omterm{def:b1:graph-traversals:graph}{vertices} taken in a \omterm{def:b1:graph-traversals:topo}{topological order}, gives
+all distances from $s$ in one pass, whatever the signs of the weights: when $u$ is reached, every \omterm{def:b1:graph-traversals:graph}{arc} entering $u$ has
+been relaxed, and by induction along the order $\code{dist}[u] = \delta(s, u)$. The cost is $O(n + m)$, the
+\omterm{def:b1:graph-traversals:topo}{topological order} included. The same pass with maxima in place of minima gives \emph{longest} paths, a problem that is
+hard in general \omterm{def:b1:graph-traversals:graph}{graphs} but easy without cycles.
+
+\begin{definition}[Critical path]\label{def:b1:shortest-paths:critical}
+A project is a set of tasks with durations and prerequisites, which form a DAG. The earliest start of a task is the
+largest total duration of a chain of tasks that must precede it; a \emph{critical path}\index{critical path} is a chain
+of tasks of largest total duration: its length is the shortest possible duration of the project.
+\end{definition}
+
+\omcode{code/bachelor-1/25-shortest-paths/listings/dag_paths.py}{32}{45}{Earliest starts and a \omterm{def:b1:shortest-paths:critical}{critical path}, in
+\omterm{def:b1:graph-traversals:topo}{topological order}}\label{lst:b1:shortest-paths:dag}
+
+\omoutput{code/bachelor-1/25-shortest-paths/outputs/dag_paths.txt}{A small software project: delay any task of the
+\omterm{def:b1:shortest-paths:critical}{critical path} and the launch is delayed.}\label{out:b1:shortest-paths:dag}
+
+The manual can start on day 7 and has until day 10, when training must start: it has three days of slack. The tasks of
+the \omterm{def:b1:shortest-paths:critical}{critical path} have none.
+
+\section{All pairs: Floyd--Warshall}\label{sec:b1:shortest-paths:floyd}
+
+For the distances between all pairs, one can run Dijkstra's algorithm from every \omterm{def:b1:graph-traversals:graph}{vertex}, at a cost of $O(n (n + m) \log
+n)$. A dynamic programme on the adjacency matrix is shorter to write and handles negative weights.
+
+\begin{method}[Floyd--Warshall algorithm]\label{met:b1:shortest-paths:floyd}
+Number the \omterm{def:b1:graph-traversals:graph}{vertices} $0, \dots, n - 1$. Let $D_k(i, j)$ be the smallest weight of a path from $i$ to $j$ whose
+intermediate \omterm{def:b1:graph-traversals:graph}{vertices} are all less than $k$. Then $D_0(i, j)$ is $0$ if $i = j$, $w(i, j)$ for an \omterm{def:b1:graph-traversals:graph}{arc} and $+\infty$
+otherwise, and
+\[ D_{k+1}(i, j) = \min\bigl(D_k(i, j),\; D_k(i, k) + D_k(k, j)\bigr). \]
+The table is updated \omterm{def:b1:sorting:comparison-sort}{in place}, $k$ in the outer loop; $D_n$ is the distance table.
+\end{method}
+
+\omcode{code/bachelor-1/25-shortest-paths/listings/floyd.py}{9}{36}{Floyd--Warshall, with a table of next \omterm{def:b1:graph-traversals:graph}{vertices} to
+rebuild the paths}\label{lst:b1:shortest-paths:floyd}
+
+The triple loop costs $\Theta(n^3)$ and the tables $\Theta(n^2)$. On a dense \omterm{def:b1:graph-traversals:graph}{graph}, where $m$ is close to $n^2$, it beats
+$n$ runs of Dijkstra by a logarithm and more; on a sparse one, such as roads, $n$ runs of Dijkstra cost about $n^2
+\log n$ and win when $n$ is large. Updating \omterm{def:b1:sorting:comparison-sort}{in place} is safe: in round $k$, the entries $D(i, k)$ and $D(k, j)$ do not
+change, since a path to or from $k$ gains nothing by going through $k$ again, without \omterm{def:b1:shortest-paths:negative}{negative cycles}.
+
+\omoutput{code/bachelor-1/25-shortest-paths/outputs/floyd.txt}{All pairs in the town; the one-way road makes the
+return from the Library longer.}\label{out:b1:shortest-paths:floyd}
+
+Floyd published the algorithm in 1962 as a short procedure for \omterm{def:b1:shortest-paths:shortest}{shortest paths}; the same year, Warshall proved the
+same loop correct for the reachability relation, with ``or'' and ``and'' in place of ``min'' and ``$+$''.
+
+\begin{definition}[Eccentricity, centre, diameter]\label{def:b1:shortest-paths:centre}
+In a \omterm{def:b1:graph-traversals:connected}{strongly connected} \omterm{def:b1:graph-traversals:weighted}{weighted graph}, the \emph{eccentricity}\index{eccentricity} of a \omterm{def:b1:graph-traversals:graph}{vertex} is its greatest
+distance to another \omterm{def:b1:graph-traversals:graph}{vertex}. A \emph{centre}\index{centre (of a graph)} is a \omterm{def:b1:graph-traversals:graph}{vertex} of smallest eccentricity, the
+\emph{radius}; the \emph{diameter}\index{diameter (of a graph)} is the greatest eccentricity, the largest distance
+between two \omterm{def:b1:graph-traversals:graph}{vertices}.
+\end{definition}
+
+\section{Exercises}\label{sec:b1:shortest-paths:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:shortest-paths:1}
+In the \omterm{def:b1:graph-traversals:graph}{graph} drawn for Dijkstra's algorithm, give the order in which the \omterm{def:b1:graph-traversals:graph}{vertices} are settled and the final distances, starting
+from \code{a} instead of \code{s}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:shortest-paths:2}
+Run Bellman--Ford from $s$ on the \omterm{def:b1:graph-traversals:graph}{arcs} $a \to c$ (2), $b \to a$ ($-1$), $s \to a$ (4), $s \to b$ (2), $b \to c$ (5),
+relaxed in this order in every round. Give the estimates after each round, and the number of rounds.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:shortest-paths:3}
+Three \omterm{def:b1:graph-traversals:graph}{vertices} 0, 1, 2 have \omterm{def:b1:graph-traversals:graph}{arcs} $0 \to 1$ (5), $1 \to 2$ (2), $0 \to 2$ (9), $2 \to 0$ (1). Give the matrices $D_0$, $D_1$
+and $D_2$ of Floyd--Warshall.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:shortest-paths:4}
+In the project of \cref{out:b1:shortest-paths:dag}, the database now takes 3 days. What are the new length and \omterm{def:b1:shortest-paths:critical}{critical
+path}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:shortest-paths:5}
+This version fixes a \omterm{def:b1:graph-traversals:graph}{vertex}'s distance when it is first pushed. Explain the output and the difference with
+\cref{lst:b1:shortest-paths:dijkstra}.
+\omcode{code/bachelor-1/25-shortest-paths/listings/exo_settle_push.py}{6}{14}{Fixed when pushed}
+\omoutput[2-2]{code/bachelor-1/25-shortest-paths/outputs/exo_settle_push.txt}{\omterm{def:b1:graph-traversals:graph}{Arcs} $s \to a$ (5), $s \to b$ (1), $b \to
+a$ (1).}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:shortest-paths:6}
+With the loop on $k$ innermost, 350 entries of the town's table are wrong. Why?
+\omcode{code/bachelor-1/25-shortest-paths/listings/exo_floyd_inner.py}{17}{21}{The loops in another order}
+\omoutput[2-2]{code/bachelor-1/25-shortest-paths/outputs/exo_floyd_inner.txt}{Against Floyd--Warshall.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:shortest-paths:7}
+Compute the smallest weight of a path of at most $k$ \omterm{def:b1:graph-traversals:graph}{arcs} from $s$ to every \omterm{def:b1:graph-traversals:graph}{vertex}, with any weights, in $O(k(n + m))$,
+and test it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:shortest-paths:8}
+Each \omterm{def:b1:graph-traversals:graph}{arc} has a capacity, for instance the height limit of a road. Find, from $s$, the paths whose smallest capacity is
+as large as possible, by a variant of Dijkstra's algorithm, and justify it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:shortest-paths:9}
+Prove \cref{prop:b1:shortest-paths:subpath}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:shortest-paths:10}
+Prove \cref{thm:b1:shortest-paths:dijkstra}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:shortest-paths:11}
+In a weighted DAG, count the \omterm{def:b1:shortest-paths:shortest}{shortest paths} from $s$ to every \omterm{def:b1:graph-traversals:graph}{vertex} in $O(n + m)$, and prove it.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:shortest-paths:12}
+Write a function that returns a \omterm{def:b1:shortest-paths:negative}{negative cycle} of a \omterm{def:b1:graph-traversals:graph}{graph}, as a list of \omterm{def:b1:graph-traversals:graph}{vertices}, or \code{None}, in $O(nm)$.
+\end{exercise}
+
+\section{Problem: The centre of Brenmoor}\label{sec:b1:shortest-paths:problem}
+
+\begin{problem}[{Weekend problem --- The centre of Brenmoor}]\label{pb:b1:shortest-paths:1}
+Where in Brenmoor should the new ambulance station go, so that the farthest place is as close as possible? Travel times
+are those of \cref{lst:b1:shortest-paths:wgraph}.
+\omcode{code/bachelor-1/25-shortest-paths/listings/centre.py}{8}{9}{Eccentricities from the distance
+table}\label{lst:b1:shortest-paths:centre}
+\omoutput{code/bachelor-1/25-shortest-paths/outputs/centre.txt}{The three most central places, the two least central,
+the \omterm{def:b1:shortest-paths:centre}{centre} and the \omterm{def:b1:shortest-paths:centre}{diameter}.}\label{out:b1:shortest-paths:centre}
+
+\medskip\noindent\textbf{Part I --- Modelling.}
+\begin{enumerate}
+\item Compute the travel time of a road of 1360 m at 50 km/h, as the program does.
+\item Why does the Station have an \omterm{def:b1:graph-traversals:graph}{arc} of 120 s to the Town Hall but only 35 s to River Park?
+\item How many \omterm{def:b1:graph-traversals:graph}{arcs} does the town have, and why not 106?
+\item Why are the weights in whole seconds, and what does rounding cost on a route of seven roads?
+\item Why must a one-way road be an \omterm{def:b1:graph-traversals:graph}{arc}, not an edge, in this model?
+\item Could the weights be negative here? Which algorithms would still apply?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Dijkstra from the Town Square.}
+\begin{enumerate}[resume]
+\item Read the fastest and the shortest routes to the Hospital, and compare their lengths and times.
+\item Why did the search pop 35 entries for 30 places?
+\item Bound the number of pops in terms of $n$ and $m$.
+\item Why do the parents form a tree, and why is it a \omterm{def:b1:shortest-paths:tree}{shortest-path tree}?
+\item Up to which place do the two routes agree, and what does \cref{prop:b1:shortest-paths:subpath} say of their first parts?
+\item \omterm{def:b1:graph-traversals:bfs}{Breadth-first search} found a route of six roads to the Hospital in \cref{out:b1:graph-traversals:bfs}: compare it with the two routes.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- All pairs.}
+\begin{enumerate}[resume]
+\item Prove by induction on $k$ that $D_k(i, j)$, as defined by the recurrence, is the smallest weight of a path from
+$i$ to $j$ with all intermediate \omterm{def:b1:graph-traversals:graph}{vertices} less than $k$.
+\item Deduce that $D_n$ is the distance table.
+\item Show that the in-place update computes the same table.
+\item Explain how \code{nxt} rebuilds a route, and why \code{nxt[i][j] = nxt[i][k]} is right.
+\item Why do the Library and the Town Square have different distances in the two directions?
+\item Compare the costs of Floyd--Warshall and of 30 runs of Dijkstra on the town.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The centre.}
+\begin{enumerate}[resume]
+\item Explain \code{max(d[i])}: why is the distance from a place to itself harmless?
+\item Read the \omterm{def:b1:shortest-paths:centre}{centre}, the radius and the \omterm{def:b1:shortest-paths:centre}{diameter}.
+\item Why does the Post Office appear as farthest for several places?
+\item Show that the \omterm{def:b1:shortest-paths:centre}{diameter} is at most twice the radius when every road is two-way.
+\item Does that bound hold for Brenmoor, with its one-way road?
+\item State the named result, \emph{the town's \omterm{def:b1:shortest-paths:centre}{centre} and \omterm{def:b1:shortest-paths:centre}{diameter}}, with its proof.
+\end{enumerate}
+\end{problem}

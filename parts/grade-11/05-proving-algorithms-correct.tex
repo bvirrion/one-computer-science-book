@@ -1,0 +1,346 @@
+% Provenance (never printed): NSI premiere "Algorithmique: parcours sequentiel, tris par insertion et par
+% selection, recherche dichotomique; terminaison (variant) et correction (invariant)". See sources/book2/BRIEFS.md.
+\chapter{Proving Algorithms Correct}\label{ch:g11:proving-algorithms-correct}
+
+A binary search passes every one of its ten tests. The next day, asked for a number that is not in the list, it never
+answers: the program runs until someone stops it. The tests were not wrong; they were too few, as tests always are. A
+test checks one input. To be sure of all the inputs, one needs an argument.
+
+This chapter gives the two arguments that settle most loops. The first shows that a loop stops; the second, that what
+it computes is right. Both are short, both can be checked in the code itself with \code{assert}, and together they find
+the bug of the binary search above, and others like it, before any test does.
+
+\begin{recall}
+A \code{while} loop repeats its body as long as its condition is true (Book 1, grade 6). Linear search looks at each
+element in turn; binary search halves a sorted list at each step; selection sort and insertion sort put a list in
+order (Book 1, grade 8). A specification states what a function needs and what it promises, and an assertion
+stops the program if a condition is false (chapter \ref{ch:g10:specifications-and-tests}). Euclid's algorithm finds
+the greatest common divisor of two numbers by repeated remainders (mathematics, grade 9).
+\end{recall}
+
+\section{Does it stop?}\label{sec:g11:proving-algorithms-correct:termination}
+
+A \code{for} loop over a list stops: it has as many turns as the list has elements. A \code{while} loop stops only if
+its condition becomes false, and nothing guarantees that it will.
+
+\begin{definition}[Variant, termination]\label{def:g11:proving-algorithms-correct:variant}
+An algorithm has the property of \emph{termination}\index{termination} if it stops on every input that meets its
+\omterm{def:g10:specifications-and-tests:pre-post}{precondition}. A \emph{variant}\index{variant (loop variant)} of a loop is a whole number, computed from the
+variables, that is never negative while the loop runs and that strictly decreases at each turn.
+\end{definition}
+
+A loop with a \omterm{def:g11:proving-algorithms-correct:variant}{variant} stops: a whole number that is at least $0$ and loses at least $1$ at each turn cannot do so more
+times than its first value. Euclid's algorithm is an example. Its \omterm{def:g11:proving-algorithms-correct:variant}{variant} is $b$: the new $b$ is the remainder
+\texttt{a \% b}, which is smaller than $b$ and never negative.
+
+\omcode{code/grade-11/05-proving-algorithms-correct/listings/variant_check.py}{1}{13}{Euclid's algorithm, printing its
+\omterm{def:g11:proving-algorithms-correct:variant}{variant} at each turn.}\label{lst:g11:proving-algorithms-correct:variant}
+
+\omoutput{code/grade-11/05-proving-algorithms-correct/outputs/variant_check.txt}{The \omterm{def:g11:proving-algorithms-correct:variant}{variant} $b$ falls at each turn and
+the loop stops when it reaches $0$: four turns, then twelve.}\label{out:g11:proving-algorithms-correct:variant}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=10cm, height=5cm, xlabel={turn}, ylabel={variant $b$}, xmin=-0.5, xmax=12, ymin=0,
+    ymax=160, xtick={0,2,...,12}]
+  \addplot[const plot, very thick, omDef, mark=*, mark size=1.5pt] coordinates {(0,144) (1,89) (2,55) (3,34) (4,21)
+    (5,13) (6,8) (7,5) (8,3) (9,2) (10,1) (11,0)};
+\end{axis}
+\end{tikzpicture}
+
+{\small The \omterm{def:g11:proving-algorithms-correct:variant}{variant} of \code{gcd(233, 144)}, from the run above: a staircase that only goes down, one step per turn,
+and cannot go below $0$.}
+\end{omfigure}
+
+The \omterm{def:g11:proving-algorithms-correct:variant}{variant} does not have to fall by $1$ each turn; it may fall by much more. What matters is that it falls by at
+least $1$ and starts from a finite value, which bounds the number of turns.
+
+\section{Is the answer right?}\label{sec:g11:proving-algorithms-correct:invariant}
+
+\begin{definition}[Correct algorithm]\label{def:g11:proving-algorithms-correct:correct}
+An algorithm is \emph{correct}\index{correct algorithm} with respect to a specification if, on every input that meets
+the \omterm{def:g10:specifications-and-tests:pre-post}{precondition}, it stops and its result meets the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition}.
+\end{definition}
+
+\begin{definition}[Loop invariant]\label{def:g11:proving-algorithms-correct:invariant}
+A \emph{loop invariant}\index{loop invariant} is a statement about the variables that is true before the first
+turn of a loop and that each turn keeps true: if it holds at the start of a turn, it holds at the end.
+\end{definition}
+
+An invariant is then true when the loop stops, together with the negation of the loop's condition. A good invariant is
+chosen so that these two facts, put together, give the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition}.
+
+\begin{method}[Proving a loop with an invariant]
+\begin{enumerate}
+  \item Write the invariant, often ``the part already handled is right'', with the loop's index.
+  \item \textbf{Start}: show that it is true before the first turn.
+  \item \textbf{Keep}: suppose it is true at the start of a turn; show that it is still true after the turn.
+  \item \textbf{End}: add the fact that the loop's condition is false; deduce the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition}.
+  \item Give a \omterm{def:g11:proving-algorithms-correct:variant}{variant}, to show that the end is reached.
+\end{enumerate}
+\end{method}
+
+The function \code{largest} returns the largest element of a list. Its invariant is ``\code{best} is the largest of
+\code{t[:i]}''. Start: with \code{i = 1}, \code{t[:1]} holds only \code{t[0]}, which is \code{best}. Keep: if
+\code{t[i]} is larger than \code{best}, it becomes \code{best}, otherwise \code{best} stays; either way it is the
+largest of \code{t[:i + 1]}, and \code{i} grows by one. End: the loop stops when \code{i} equals \code{len(t)}, so
+\code{t[:i]} is the whole list. \omterm{def:g11:proving-algorithms-correct:variant}{Variant}: \code{len(t) - i}.
+
+\omcode{code/grade-11/05-proving-algorithms-correct/listings/largest.py}{1}{15}{The largest element, with its invariant
+written as an assertion.}\label{lst:g11:proving-algorithms-correct:largest}
+
+\omoutput{code/grade-11/05-proving-algorithms-correct/outputs/largest.txt}{No assertion fails on these two lists.}\label{out:g11:proving-algorithms-correct:largest}
+
+An assertion of the invariant does not prove it; it checks it on the inputs that are run, and stops the program at the
+first turn where it fails, which points at the bug. The proof covers all the inputs; the assertion catches the gap
+between the proof and the code.
+
+\section{Selection sort}\label{sec:g11:proving-algorithms-correct:selection}
+
+Selection sort finds a smallest element of the part not yet sorted and swaps it to the front of that part. Its
+invariant has two halves: \code{t[:i]} is sorted, and no element of \code{t[:i]} is larger than an element of
+\code{t[i:]}.
+
+\omcode{code/grade-11/05-proving-algorithms-correct/listings/selection_sort.py}{1}{19}{Selection sort, checking both
+halves of its invariant.}\label{lst:g11:proving-algorithms-correct:selection}
+
+\omoutput{code/grade-11/05-proving-algorithms-correct/outputs/selection_sort.txt}{The bar separates \code{t[:i + 1]},
+sorted after the turn, from the rest.}\label{out:g11:proving-algorithms-correct:selection}
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum size=8mm, font=\small}]
+  \foreach \v [count=\k from 0] in {3, 12, 47, 29, 18, 12} {
+    \ifnum\k<2 \def\fillc{omMeth!20}\else\def\fillc{white}\fi
+    \node[c, fill=\fillc] (c\k) at (0.8*\k, 0) {\v};
+  }
+  \node[c, fill=omDef!20] at (c5) {12};
+  \draw[decorate, decoration={brace, amplitude=4pt}] (-0.4,0.5) -- node[above=4pt, font=\footnotesize, align=center]
+    {\code{t[:2]}\\sorted} (1.2,0.5);
+  \draw[decorate, decoration={brace, amplitude=4pt}] (1.2,0.5) -- node[above=4pt, font=\footnotesize, align=center]
+    {\code{t[2:]}\\none smaller than $12$} (4.4,0.5);
+  \draw[<->, thick, omThm] (c2.south) to[bend right=30] node[below, font=\footnotesize] {swap} (c5.south);
+  \node[font=\footnotesize, right] at (4.6,0) {smallest of \code{t[2:]}};
+\end{tikzpicture}
+
+{\small Selection sort at the start of turn $2$: the sorted part, the rest, and the swap that will put a smallest
+element of the rest in place $2$.}
+\end{omfigure}
+
+Start: with \code{i = 0}, \code{t[:0]} is empty, and both halves hold. Keep: the turn puts in place \code{i} a smallest
+element of \code{t[i:]}. By the second half, it is at least as large as everything in \code{t[:i]}, so the
+first \code{i + 1} elements are sorted; being a smallest of \code{t[i:]}, it is no larger than anything left in \code{t[i + 1:]}. End: with
+\code{i = len(t)}, the whole list is sorted. The swap only exchanges two elements, so the list keeps the same elements.
+\omterm{def:g11:proving-algorithms-correct:variant}{Variant} of the outer loop: \code{len(t) - i}; the inner loop is a \code{for} loop and stops.
+
+\section{Insertion sort}\label{sec:g11:proving-algorithms-correct:insertion}
+
+Insertion sort takes the elements one by one and slides each into place among those before it, which are already
+sorted. It has two loops, and each has its own invariant.
+
+\omcode{code/grade-11/05-proving-algorithms-correct/listings/insertion_sort.py}{1}{14}{Insertion sort, with its outer
+invariant asserted.}\label{lst:g11:proving-algorithms-correct:insertion}
+
+\omoutput{code/grade-11/05-proving-algorithms-correct/outputs/insertion_sort.txt}{After turn $i$, the first $i + 1$
+elements are sorted.}\label{out:g11:proving-algorithms-correct:insertion}
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum size=8mm, font=\small}]
+  \foreach \v [count=\k from 0] in {3, 12, 29, 47, \phantom{0}, 12} {
+    \ifnum\k<4 \def\fillc{omMeth!20}\else\def\fillc{white}\fi
+    \node[c, fill=\fillc] (c\k) at (0.8*\k, 0) {\v};
+  }
+  \node[c, fill=omDef!20] (x) at (3.2, 1.5) {18};
+  \draw[->, thick, omThm] (c3.south) to[bend right=60] node[below, font=\scriptsize] {1} (c4.south);
+  \draw[->, thick, omThm] (c2.south) to[bend right=60] node[below, font=\scriptsize] {2} (c3.south);
+  \draw[->, thick, omDef] (x.west) to[bend right=30] node[above left, font=\footnotesize] {lands in place $2$}
+    (c2.north);
+  \node[font=\footnotesize, right] at (3.7,1.5) {$x$, taken out of place $4$};
+\end{tikzpicture}
+
+{\small Turn $4$ of insertion sort. The sorted part was $3, 12, 29, 47$; the elements larger than $x = 18$ move one place
+right, first $47$ then $29$, and $x$ lands in the gap.}
+\end{omfigure}
+
+The outer invariant is ``\code{t[:i]} is sorted''. The inner invariant, for the \code{while} loop, is: the elements of
+\code{t[j + 1:i + 1]} are larger than $x$, in order, and putting $x$ in place \code{j} would give the old
+\code{t[:i]} with $x$ added. Each inner turn moves one larger element right and lowers \code{j}; the inner loop stops
+when \code{j} is $0$ or when \code{t[j - 1]} is not larger than $x$. In both cases $x$, written in place \code{j}, is
+not smaller than what comes before it and is smaller than what comes after: \code{t[:i + 1]} is sorted, and the outer
+invariant is kept. The inner \omterm{def:g11:proving-algorithms-correct:variant}{variant} is \code{j}, the outer one \code{len(t) - i}.
+
+\section{Binary search}\label{sec:g11:proving-algorithms-correct:binary-search}
+
+Binary search finds \code{x} in a sorted list by keeping a window \code{t[lo:hi]} outside of which \code{x} cannot be,
+and halving it.
+
+\omcode{code/grade-11/05-proving-algorithms-correct/listings/binary_search.py}{1}{20}{Binary search, its invariant and its
+\omterm{def:g11:proving-algorithms-correct:variant}{variant}.}\label{lst:g11:proving-algorithms-correct:binary-search}
+
+\omoutput{code/grade-11/05-proving-algorithms-correct/outputs/binary_search.txt}{Three searches. Looking for $20$, the
+window shrinks to nothing and the answer is \code{None}.}\label{out:g11:proving-algorithms-correct:binary-search}
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum width=7mm, minimum height=6mm, font=\footnotesize}]
+  \foreach \row/\lo/\md/\hi in {0/0/5/10, 1/6/8/10, 2/6/7/8} {
+    \foreach \v [count=\k from 0] in {3, 8, 12, 15, 21, 30, 34, 41, 47, 52} {
+      \pgfmathtruncatemacro{\kind}{(\k < \lo || \k >= \hi) ? 0 : (\k == \md ? 1 : 2)}
+      \ifcase\kind \def\fillc{black!12}\or\def\fillc{omDef!25}\else\def\fillc{white}\fi
+      \node[c, fill=\fillc] at (0.7*\k, -1.1*\row) {\v};
+    }
+    \node[font=\footnotesize, anchor=west] at (7.2, -1.1*\row) {\texttt{lo=\lo}, \texttt{mid=\md}, \texttt{hi=\hi}};
+  }
+\end{tikzpicture}
+
+{\small Looking for $41$: the grey cells are outside the window, where $41$ cannot be; the blue cell is \code{mid}.
+The third \code{mid} holds $41$.}
+\end{omfigure}
+
+The invariant: \code{x} is neither in \code{t[:lo]} nor in \code{t[hi:]}. Start: both are empty. Keep: if
+\code{t[mid] < x}, then, the list being sorted, every element of \code{t[:mid + 1]} is less than \code{x}, so
+\code{lo = mid + 1} keeps the invariant; if \code{t[mid] > x}, every element of \code{t[mid:]} is larger, and
+\code{hi = mid} keeps it. End: if the loop stops with \code{lo >= hi}, the window is empty, and by the invariant
+\code{x} is nowhere: \code{None} is right. The \omterm{def:g11:proving-algorithms-correct:variant}{variant} is \code{hi - lo}: \code{mid} lies in the window, so both
+\code{lo = mid + 1} and \code{hi = mid} make it smaller.
+
+The \omterm{def:g11:proving-algorithms-correct:variant}{variant} is where the opening bug hides. Writing \code{lo = mid} keeps the invariant, but not the \omterm{def:g11:proving-algorithms-correct:variant}{variant}: when
+\code{hi = lo + 1}, \code{mid} equals \code{lo}, and \code{lo = mid} changes nothing.
+
+\omcode{code/grade-11/05-proving-algorithms-correct/listings/binary_search_bug.py}{1}{25}{The opening bug, with a guard
+added for the demonstration.}\label{lst:g11:proving-algorithms-correct:bug}
+
+\omoutput{code/grade-11/05-proving-algorithms-correct/outputs/binary_search_bug.txt}{Every test passes, since each one
+searches a number of the list; a number not in it makes the window stop shrinking at \code{lo=3},
+\code{hi=4}.}\label{out:g11:proving-algorithms-correct:bug}
+
+\begin{history}[Meaning given to programs]
+The idea of attaching statements to the points of a program and proving that each step keeps them true was published
+by Robert W. Floyd in 1967, for flowcharts. In 1969, C.~A.~R.~Hoare turned it into rules for reasoning about the
+instructions of a programming language, one rule per kind of instruction, the loop rule resting on an invariant.
+% ledger: g11:floyd-1967
+% ledger: g11:hoare-1969
+\end{history}
+
+\section{Exercises}\label{sec:g11:proving-algorithms-correct:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g11:proving-algorithms-correct:1}
+Write the list \code{[5, 2, 9, 1, 7]} after the first two turns of selection sort.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:proving-algorithms-correct:2}
+Give a \omterm{def:g11:proving-algorithms-correct:variant}{variant} of the loop \code{while n > 0: n = n - 2}, for \code{n} a whole number, and say why it is one.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:proving-algorithms-correct:3}
+Give the values of \code{lo}, \code{mid} and \code{hi} at each turn when the chapter's \code{search} looks for $52$
+in the list of the output.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:proving-algorithms-correct:4}
+For the loop \code{s = 0}, then \code{for i in range(len(t)): s = s + t[i]}, is the statement ``\code{s} is the sum
+of \code{t[:i]}'' true before the first turn?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:proving-algorithms-correct:5}
+A student writes \code{largest} with \code{for i in range(1, len(t) - 1)}. On \code{[4, 9, 2, 11]} it returns $9$.
+Which step of the proof fails?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:proving-algorithms-correct:6}
+Prove that this loop stops for every whole number \code{n}, by giving a \omterm{def:g11:proving-algorithms-correct:variant}{variant}: \code{while n > 1}, if \code{n} is
+even, \code{n = n // 2}, otherwise \code{n = n - 1}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:proving-algorithms-correct:7}
+Write \code{index_of_min(t, i)} that returns the index of a smallest element of \code{t[i:]}, ending with an
+\code{assert} of its \omterm{def:g10:specifications-and-tests:pre-post}{postcondition}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:proving-algorithms-correct:8}
+In the chapter's \code{search}, a student writes \code{hi = mid - 1}. The loop always stops, but on the list of the
+output it misses $8$, $21$ and $41$. Which part of the proof fails, and why?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:proving-algorithms-correct:9}
+Prove, with an invariant, that the loop of exercise \ref{exo:g11:proving-algorithms-correct:4} computes the sum of
+\code{t}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:proving-algorithms-correct:10}
+Write a loop that counts the occurrences of \code{x} in \code{t}, and state the invariant that proves it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:proving-algorithms-correct:11}
+Write \code{is_sorted(t)} with one loop that compares neighbours, and prove it \omterm{def:g11:proving-algorithms-correct:correct}{correct}: it returns \code{True} exactly
+when \code{t} is sorted.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:proving-algorithms-correct:12}
+Write out in full the proof that insertion sort sorts its list: the outer invariant, the inner invariant, why the
+inner loop keeps it, and why both loops stop.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:proving-algorithms-correct:13}
+Prove that the chapter's \code{search} returns an index of \code{x} whenever \code{x} is in the list.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:proving-algorithms-correct:14}
+The loop \code{while n != 1}, with \code{n = n // 2} if \code{n} is even and \code{n = 3 * n + 1} otherwise, stops for
+every \code{n} anyone has tried; from $27$ it takes $111$ turns. Why do neither \code{n} nor the number of turns
+left serve as a \omterm{def:g11:proving-algorithms-correct:variant}{variant}? What would a proof that it always stops need?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:proving-algorithms-correct:15}
+A function \code{f} gives \code{False} on \code{lo}, \code{lo + 1}, \dots{} up to some point, then \code{True}
+up to \code{hi - 1}. Write \code{first_true(f, lo, hi)} that returns the first number where \code{f} is true, or \code{hi} if there is
+none, by halving, with its invariant and its \omterm{def:g11:proving-algorithms-correct:variant}{variant}.
+\end{exercise}
+
+\section{Problem: The Integer Square Root}\label{sec:g11:proving-algorithms-correct:problem}
+
+\begin{problem}[{Weekend problem --- an integer square root, proved and timed}]\label{pb:g11:proving-algorithms-correct:1}
+The integer square root of a whole number $n$ is the largest whole number $r$ such that $r^2 \le n$: for $n = 15$ it is
+$3$, for $n = 16$ it is $4$. The program below computes it twice, by counting up from $0$ and by halving a window, and
+counts the turns of each.
+
+\omcode{code/grade-11/05-proving-algorithms-correct/listings/isqrt.py}{1}{34}{Two integer square roots, checked against
+Python's own on a million numbers.}\label{lst:g11:proving-algorithms-correct:isqrt}
+
+\omoutput{code/grade-11/05-proving-algorithms-correct/outputs/isqrt.txt}{Each pair is the result and the number of
+turns.}\label{out:g11:proving-algorithms-correct:isqrt}
+
+\medskip\noindent\textbf{Part I --- The specification.}
+\begin{enumerate}
+  \item Write the \omterm{def:g10:specifications-and-tests:pre-post}{precondition} and the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition} of an integer square root function.
+  \item Show that $r$ meets the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition} exactly when $r^2 \le n < (r + 1)^2$.
+  \item Give the integer square roots of $0$, $1$, $99$, $100$ and $101$.
+  \item Why does such an $r$ exist, and why only one?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Counting up.}
+\begin{enumerate}[resume]
+  \item State an invariant of the loop of \code{isqrt_linear} that, at the end, gives the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition}.
+  \item Prove that it holds at the start and is kept.
+  \item Show that \code{n - r * r} is a \omterm{def:g11:proving-algorithms-correct:variant}{variant}.
+  \item How many turns does it take for $n$? For $n = 10^6$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Halving.}
+\begin{enumerate}[resume]
+  \item Check that \code{lo * lo <= n < hi * hi} holds before the first turn.
+  \item Show that each turn keeps it, in each of the two branches.
+  \item Show that at the end \code{lo} meets the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition}.
+  \item Show that \code{mid} always lies strictly between \code{lo} and \code{hi} inside the loop.
+  \item Deduce a \omterm{def:g11:proving-algorithms-correct:variant}{variant}, and that the loop stops.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- How many turns.}
+\begin{enumerate}[resume]
+  \item Follow the turns of \code{isqrt_halving(15)} and check the count printed.
+  \item Show that if \code{hi - lo} is at most $2^k$ at the start of a turn, it is at most $2^{k - 1}$ at the end.
+  \item Deduce that for $n + 1 \le 2^k$, the loop makes at most $k$ turns.
+  \item Compute $2^{20}$; deduce a bound on the turns for $n \le 10^6$.
+  \item Compare with the run: maximum and first $n$ reaching it. Why is the first such $n$ not $2^{19}$?
+  \item What does the line \code{assert r == math.isqrt(n)} add to the proof, and what does the proof add to it?
+  \item State the result: correctness, \omterm{def:g11:proving-algorithms-correct:variant}{termination} and the number of turns, against counting up.
+\end{enumerate}
+\end{problem}

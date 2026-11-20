@@ -1,0 +1,377 @@
+\chapter{Concurrency: Deadlock, Monitors and Lock-Free Structures}\label{ch:b3:concurrency}
+
+Two threads that share memory can do together what neither can do alone, and they can also wait for each other for ever, take the same item twice, or see each other's writes in an order neither of them wrote. This chapter states precisely what a concurrent program must guarantee, then studies the three ways it most often fails. \omterm{def:b3:concurrency:deadlock}{Deadlock} is characterised, prevented and detected, and five philosophers at a round table are explored state by state until every interleaving has been seen. \omterm{def:b3:concurrency:monitor}{Monitors} package a lock and its conditions, and a scripted scheduler shows why the condition must be tested in a loop. Finally the processor itself is questioned: a two-line test, run 100,000 times on the laptop, catches it reordering a write and a read, and a stack built without locks is broken and repaired.
+
+\begin{recall}
+In the Year~2 volume the threads of a process share its memory and run interleaved, in an order nobody controls. A race condition makes a result depend on that order; a lock, or mutex, gives one thread at a time a critical section; a thread holding a lock can sleep on a condition variable until another signals it; a semaphore counts permits. An atomic operation happens as one indivisible step, and Peterson's algorithm gives mutual exclusion to two threads with ordinary loads and stores. A thread that waits for ever while others keep running is starving. The Year~1 volume found cycles in directed graphs by depth-first search.
+\end{recall}
+
+\section{Safety and liveness}\label{sec:b3:concurrency:properties}
+
+An \emph{execution} of a concurrent program is a sequence of steps, each taken by one thread, as an interleaving of the threads' own sequences. A property of the program is a property of all its executions.
+
+\begin{definition}[Safety property, liveness property]\label{def:b3:concurrency:properties}
+A \emph{safety property}\index{safety property} says that something bad never happens: if an execution violates it, some finite prefix of the execution already shows the violation, and no continuation can repair it. A \emph{liveness property}\index{liveness property} says that something good eventually happens: no finite prefix can violate it, since the good thing may still come.
+\end{definition}
+
+Mutual exclusion is a \omterm{def:b3:concurrency:properties}{safety property}: two threads inside the critical section at once is a bad step, seen in a finite prefix. ``Every thread that wants the lock eventually gets it'' is a \omterm{def:b3:concurrency:properties}{liveness property}: at any finite moment the waiting thread might still get it later. A program that does nothing is perfectly safe; liveness is what forces it to make progress, and the two are proved differently, safety by an invariant that every step preserves, liveness by a measure that every step brings closer to the goal.
+
+\begin{definition}[Deadlock, livelock, Coffman conditions]\label{def:b3:concurrency:deadlock}
+A set of threads is in \emph{deadlock}\index{deadlock} when each of them waits for something that only another thread of the set can provide, so that none of them will ever move again. In a \emph{livelock}\index{livelock} the threads keep taking steps, but none of the steps makes progress. The \emph{Coffman conditions}\index{Coffman conditions} for a deadlock over resources are: mutual exclusion (a resource is held by one thread at a time), hold and wait (a thread holds resources while it waits for others), no \omterm{def:b3:kernel-and-scheduling:switch}{preemption} (a resource is released only by its holder), and circular wait (a cycle of threads, each waiting for a resource the next one holds).
+\end{definition}
+
+The four conditions are named after the first to describe them, E. G. Coffman, M. Elphick and A. Shoshani, in a survey of 1971. % ledger: b3:coffman-conditions
+They are all necessary, so breaking any one of them prevents \omterm{def:b3:concurrency:deadlock}{deadlock}: a resource that can be shared, a thread that requests everything at once, a resource that can be taken back, or an order on the requests. \omterm{def:b3:concurrency:deadlock}{Deadlock} is a safety failure, since a finite prefix reaches a state with no way out. \omterm{def:b3:concurrency:deadlock}{Livelock} and starvation are liveness failures: steps go on, and the good thing never happens.
+
+\section{Deadlock}\label{sec:b3:concurrency:deadlock}
+
+\begin{definition}[Resource-allocation graph, lock ordering]\label{def:b3:concurrency:rag}
+A \emph{resource-allocation graph}\index{resource-allocation graph} has a node for each thread and each resource, an edge $P \to R$ when thread $P$ waits for resource $R$, and an edge $R \to P$ when $R$ is held by $P$. \emph{Lock ordering}\index{lock ordering} fixes a total order on the locks and requires every thread to acquire the locks it holds together in increasing order.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, p/.style={draw, circle, fill=omDef!15, minimum size=8mm, inner sep=0pt}, r/.style={draw, fill=omThm!20, minimum size=7mm}]
+  \node[p] (P1) at (0, 0) {P1};
+  \node[r] (R2) at (2.2, 0) {R2};
+  \node[p] (P2) at (4.4, 0) {P2};
+  \node[r] (R3) at (4.4, -1.8) {R3};
+  \node[p] (P3) at (2.2, -1.8) {P3};
+  \node[r] (R1) at (0, -1.8) {R1};
+  \node[p] (P4) at (2.2, 1.5) {P4};
+  \draw[->, omDef, thick] (P1) -- (R2);
+  \draw[->, omDef, thick] (R2) -- (P2);
+  \draw[->, omDef, thick] (P2) -- (R3);
+  \draw[->, omDef, thick] (R3) -- (P3);
+  \draw[->, omDef, thick] (P3) -- (R1);
+  \draw[->, omDef, thick] (R1) -- (P1);
+  \draw[->] (P4) -- (R2);
+  \node[anchor=west, align=left] at (5.2, -0.6) {$P \to R$: $P$ waits for $R$\\$R \to P$: $R$ is held by $P$};
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b3:concurrency:rag}{resource-allocation graph} with one instance of each resource. The cycle P1, R2, P2, R3, P3, R1 is a \omterm{def:b3:concurrency:deadlock}{deadlock}; P4 is not in it, but waits behind it for ever. The chapter's \code{rag_cycle.py} finds the cycle by depth-first search; with P3's request withdrawn, it finds none.}
+\end{omfigure}
+
+\begin{theorem}[Cycles and deadlock]\label{thm:b3:concurrency:cycle}
+When every resource has a single instance and a waiting thread waits for one resource, the threads of a cycle in the \omterm{def:b3:concurrency:rag}{resource-allocation graph} are deadlocked; and if some threads are deadlocked, the graph has a cycle.
+\end{theorem}
+
+\begin{proof}
+Facts used: each resource node has at most one outgoing edge (one holder), each waiting thread exactly one (one request), and a waiting thread does not move until its resource is released.
+
+A cycle alternates threads and resources: $P_1 \to R_1 \to P_2 \to \dots \to P_k \to R_k \to P_1$. $P_1$ waits for $R_1$, held by $P_2$, which releases it only after it moves, and $P_2$ waits for $R_2$, and so on round the cycle: no thread of the cycle can be the first to move, so none ever moves.
+
+Conversely, let $D$ be a set of deadlocked threads. Start at any $P \in D$: it waits for a resource, whose holder is in $D$ (only a thread of $D$ can provide it), and that thread waits in turn. Following these edges from $P$ never leaves the graph's finitely many nodes and never stops, since each node on the way has an outgoing edge; so it returns to a node already visited, and that loop is a cycle.
+\end{proof}
+
+With several instances of a resource, a cycle is necessary but no longer sufficient: another instance may be freed by a thread outside the cycle (exercise~\ref{exo:b3:concurrency:6} detects \omterm{def:b3:concurrency:deadlock}{deadlock} in that case).
+
+\begin{theorem}[Lock ordering prevents deadlock]\label{thm:b3:concurrency:ordering}
+If every thread acquires its locks in increasing order of one total order, no set of threads waiting for locks can be deadlocked.
+\end{theorem}
+
+\begin{proof}
+Facts used: theorem~\ref{thm:b3:concurrency:cycle}; a thread waiting for lock $L$ holds only locks smaller than $L$, since it acquires in increasing order.
+
+Suppose a \omterm{def:b3:concurrency:deadlock}{deadlock}. By theorem~\ref{thm:b3:concurrency:cycle} there is a cycle $P_1 \to L_1 \to P_2 \to L_2 \to \dots \to P_k \to L_k \to P_1$. $P_2$ holds $L_1$ and waits for $L_2$, so $L_1 < L_2$; likewise $L_2 < L_3$, \dots, $L_k < L_1$, since $P_1$ holds $L_k$ and waits for $L_1$. Then $L_1 < L_1$, impossible.
+\end{proof}
+
+Five philosophers sit round a table, each with a plate, and one fork lies between each pair of plates. A philosopher thinks, gets hungry, takes the fork on the left, then the fork on the right, eats, and puts both down. Edsger Dijkstra posed the problem with five philosophers and rejected this naive protocol, one lock per fork, because of the \omterm{def:b3:concurrency:deadlock}{deadlock} it allows: if all of them take their left fork at once, each waits for ever for the right one. % ledger: b3:ewd310-philosophers
+The \omterm{def:b3:concurrency:deadlock}{deadlock} is easy to state; it is more instructive to find it, together with every other state, by trying all interleavings (\cref{lst:b3:concurrency:philosophers}).
+
+\omcode{code/bachelor-3/13-concurrency/listings/philosophers.py}{13}{47}{The philosophers as a state machine. A state is each philosopher's position in its loop and each fork's owner; a breadth-first search visits every state that some interleaving reaches. With \code{ordered}, each philosopher takes the lower-numbered of its forks first.}\label{lst:b3:concurrency:philosophers}
+
+\omoutput{code/bachelor-3/13-concurrency/outputs/philosophers.txt}{Every reachable state of $n$ philosophers, and the states with no move. Position 1 means ``holds the first fork''; the deadlocked state for $n = 5$ has everyone holding a fork, philosopher $i$ holding fork $i$.}\label{out:b3:concurrency:philosophers}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, s/.style={draw, rounded corners, minimum width=11mm, minimum height=6mm, fill=black!4}, every label/.style={}, lab/.style={font=\scriptsize, fill=white, inner sep=1pt}]
+  \node[s] (TT) at (0, 0) {T T};
+  \node[s] (HT) at (-2.4, -1.4) {H T};
+  \node[s] (TH) at (2.4, -1.4) {T H};
+  \node[s] (ET) at (-4.4, 0) {E T};
+  \node[s] (TE) at (4.4, 0) {T E};
+  \node[s, fill=omDef!25] (HH) at (0, -2.8) {H H};
+  \draw[->] (TT) -- node[lab] {0} (HT);
+  \draw[->] (TT) -- node[lab] {1} (TH);
+  \draw[->] (HT) -- node[lab] {0} (ET);
+  \draw[->] (TH) -- node[lab] {1} (TE);
+  \draw[->] (ET) -- node[lab] {0} (TT);
+  \draw[->] (TE) -- node[lab] {1} (TT);
+  \draw[->] (HT) -- node[lab] {1} (HH);
+  \draw[->] (TH) -- node[lab] {0} (HH);
+  \node[anchor=west, font=\scriptsize, align=left] at (0.8, -2.8) {no move: deadlock};
+\end{tikzpicture}
+\par\smallskip{\small The whole state graph for two philosophers, the 6 states of \cref{out:b3:concurrency:philosophers}. T thinks, H holds the left fork, E eats; an edge is labelled with the philosopher who moves. Every state can reach the \omterm{def:b3:concurrency:deadlock}{deadlock}.}
+\end{omfigure}
+
+There is exactly one deadlocked state for every $n$, and ordered acquisition removes it, as theorem~\ref{thm:b3:concurrency:ordering} promised: only the last philosopher's order changes, since its forks are $n - 1$ and $0$. The number of states grows by a factor of about 2.4 per philosopher; the weekend problem explains the numbers exactly.
+
+Prevention constrains every program in advance. Dijkstra's banker does better when each thread declares in advance the most it will ever need of each kind of resource: it grants a request only if the state after it is safe. % ledger: b3:ewd123-banker
+
+\begin{definition}[Safe state, banker's algorithm, deadlock detection]\label{def:b3:concurrency:banker}
+Each thread $i$ declares a maximum claim; it holds $\mathit{alloc}_i$ and may still ask for $\mathit{need}_i$, the claim minus what it holds; $\mathit{available}$ is what nobody holds. A state is a \emph{safe state}\index{safe state} if there is an order of the threads in which each can be given its whole $\mathit{need}$ from what is available plus what the threads before it have returned, then finish and return everything. The \emph{banker's algorithm}\index{banker's algorithm} grants a request only if the state after granting it is safe, and otherwise makes the thread wait. \emph{Deadlock detection}\index{deadlock detection} lets threads request freely, and from time to time searches for a set of threads deadlocked in the current state, to break the \omterm{def:b3:concurrency:deadlock}{deadlock} by killing or rolling back one of them.
+\end{definition}
+
+\omcode{code/bachelor-3/13-concurrency/listings/banker.py}{5}{33}{The safety test, greedily, and a request.}\label{lst:b3:concurrency:banker}
+
+\omoutput{code/bachelor-3/13-concurrency/outputs/banker.txt}{Five threads, three kinds of resource. P1's small request is refused: it would leave no safe order. P4's is granted.}\label{out:b3:concurrency:banker}
+
+\begin{theorem}[The greedy safety test]\label{thm:b3:concurrency:greedy}
+\code{safe_order} returns an order if and only if the state is safe.
+\end{theorem}
+
+\begin{proof}
+Facts used: a thread that finishes returns everything it holds, so $\mathit{work}$ never decreases; a thread that can finish with some $\mathit{work}$ can finish with any larger one.
+
+If it returns an order, each thread in it had its $\mathit{need}$ covered by $\mathit{work}$ when chosen, which is the definition of a safe order. Conversely, suppose the state has a safe order $Q$, and suppose the greedy loop stops early with a set $U$ of threads left over. Let $u$ be the first thread of $Q$ in $U$. The threads before $u$ in $Q$ are all finished by the greedy loop, so the greedy $\mathit{work}$ is at least what $Q$ offers $u$, which covers $\mathit{need}_u$: the loop could still choose $u$, and does not stop. So it never stops early.
+\end{proof}
+
+A \omterm{def:b3:concurrency:banker}{safe state} is not deadlocked, and an unsafe state is not necessarily deadlocked either: threads may finish without ever asking for their whole claim. The banker refuses whenever \omterm{def:b3:concurrency:deadlock}{deadlock} becomes possible, not only when it is certain, and the price is throughput and a maximum claim known in advance. Exercise~\ref{exo:b3:concurrency:10} proves that it keeps its promise.
+
+\section{Monitors}\label{sec:b3:concurrency:monitors}
+
+\begin{definition}[Monitor, Hoare semantics, Mesa semantics]\label{def:b3:concurrency:monitor}
+A \emph{monitor}\index{monitor} is a module whose data are reached only through its procedures, which run under one lock, one thread at a time; a thread inside may wait on a condition variable, which releases the lock, until another thread signals it. Under \emph{Hoare semantics}\index{Hoare semantics} the signaller hands the monitor at once to the woken thread, which therefore finds the condition true. Under \emph{Mesa semantics}\index{Mesa semantics} the woken thread only becomes ready; it runs later, after reacquiring the lock, when another thread may have entered first and made the condition false again.
+\end{definition}
+
+C. A. R. Hoare's \emph{\omterm{def:b3:concurrency:monitor}{Monitors}} appeared in the Communications of the ACM in October 1974, % ledger: b3:hoare-1974
+and Lampson and Redell's account of \omterm{def:b3:concurrency:monitor}{monitors} in the Mesa language in February 1980. % ledger: b3:lampson-redell-1980
+POSIX condition variables follow Mesa, and add that a wait may return with no signal at all, a spurious wake-up: the standard asks the caller to test its condition again on every return. % ledger: b3:posix-spurious
+So the wait goes inside a \code{while}, as in the bounded buffer of \cref{lst:b3:concurrency:buffer}.
+
+\omcode{code/bachelor-3/13-concurrency/listings/monitor_buffer.c}{11}{39}{A bounded buffer as a \omterm{def:b3:concurrency:monitor}{monitor}: one mutex, two conditions.}\label{lst:b3:concurrency:buffer}
+
+\omoutput{code/bachelor-3/13-concurrency/outputs/monitor_buffer.txt}{Two producers and two consumer threads through a buffer of 8 slots. The output prints only what the program guarantees: the totals after every thread has joined.}\label{out:b3:concurrency:buffer}
+
+Nothing in C stops a thread from touching \code{buf.count} without the lock. In Rust the mutex owns the data: the only way to the buffer is the guard that \code{lock} returns, and \code{wait} consumes the guard and gives a new one back (\cref{lst:b3:concurrency:rust}).
+
+\omcode{code/bachelor-3/13-concurrency/listings/monitor_rust.rs}{15}{34}{The same \omterm{def:b3:concurrency:monitor}{monitor} in Rust. A guard is the lock: forgetting to unlock is impossible, and so is forgetting to lock.}\label{lst:b3:concurrency:rust}
+
+\omoutput{code/bachelor-3/13-concurrency/outputs/monitor_rust.txt}{The Rust buffer, with the same totals.}\label{out:b3:concurrency:rust}
+
+Why the \code{while}? A bug that needs a particular interleaving rarely shows in a test run, so \code{monitor_sim.py} runs a \omterm{def:b3:concurrency:monitor}{monitor} under a script: each thread is a Python generator that stops at every wait, and the script decides who runs next (\cref{lst:b3:concurrency:sim}).
+
+\omcode{code/bachelor-3/13-concurrency/listings/monitor_sim.py}{5}{17}{The consumer and the producer. \code{yield} is where a thread leaves the \omterm{def:b3:concurrency:monitor}{monitor} to wait; \code{run}, in the same file, resumes the threads in the order the script gives, wakes a waiter on a signal under either semantics, and treats \texttt{\textasciitilde C1} as a spurious wake-up of \code{C1}.}\label{lst:b3:concurrency:sim}
+
+\omoutput{code/bachelor-3/13-concurrency/outputs/monitor_sim.txt}{The script: C1 waits on an empty buffer; P puts an item and signals; then C2 runs, and then C1. Under \omterm{def:b3:concurrency:monitor}{Mesa semantics} C2 enters before C1 and takes the item, and an \code{if} lets C1 take from an empty buffer.}\label{out:b3:concurrency:sim}
+
+Under \omterm{def:b3:concurrency:monitor}{Hoare semantics} the woken C1 runs at once and finds the item; under \omterm{def:b3:concurrency:monitor}{Mesa semantics} C2 barges in first, and only the \code{while} sends C1 back to sleep. With spurious wake-ups even Hoare's guarantee is gone (exercise~\ref{exo:b3:concurrency:5}). The rule costs one test per wake-up and removes a whole class of bugs.
+
+\section{Memory models and atomic operations}\label{sec:b3:concurrency:memory}
+
+Every argument so far assumed that the threads' steps interleave: that a write by one thread is seen by the others at once, in program order. Lamport gave that assumption its name in 1979: a multiprocessor is sequentially consistent if every execution gives the same result as some sequential order of all the processors' operations, each processor's in the order of its program. % ledger: b3:lamport-sc
+
+\begin{definition}[Memory model, sequential consistency]\label{def:b3:concurrency:memory-model}
+A \emph{memory model}\index{memory model} specifies which values each read of a shared location may return in a concurrent program. Under \emph{sequential consistency}\index{sequential consistency} every execution behaves as some interleaving of the threads' operations, each thread's in its program order, every read returning the latest write before it in that interleaving.
+\end{definition}
+
+Take two variables \code{x} and \code{y}, both 0. Thread 1 writes $x = 1$ and then reads \code{y} into $r_1$; thread 2 writes $y = 1$ and then reads \code{x} into $r_2$. Under \omterm{def:b3:concurrency:memory-model}{sequential consistency} $r_1 = r_2 = 0$ is impossible: in the interleaving, consider whichever of the two reads comes last; both writes came before it, since each write precedes its own thread's read, so that read returns 1. Three outcomes remain. \Cref{lst:b3:concurrency:litmus} runs the test.
+
+\omcode{code/bachelor-3/13-concurrency/listings/sb_litmus.c}{14}{34}{The store-buffering test. A fresh pair of variables per trial; the threads meet before each one, then wait a few random steps so that their operations overlap.}\label{lst:b3:concurrency:litmus}
+
+\omoutput{code/bachelor-3/13-concurrency/outputs/sb_litmus.txt}{One run on the author's laptop (the counts change from run to run). With relaxed atomics, thousands of trials give $r_1 = r_2 = 0$, the outcome that no interleaving produces; with sequentially consistent ones, none does.}\label{out:b3:concurrency:litmus}
+
+The first version of this listing passed the order to the threads in a variable, and found the forbidden outcome zero times out of 100,000 for both orders. The compiler's assembly showed why: given a memory order it cannot see at compile time, gcc compiled the store as for \code{memory_order_seq_cst}, which is what the macro's comment now warns about.
+
+The processor allows it. Picture each core of an x86 processor with a store buffer, a first-in first-out queue of its pending writes, drained to memory later so that the core need not wait for each write: thread 1's read of \code{y} can complete while $x = 1$ still sits in its buffer, invisible to thread 2, as drawn below. The x86-TSO model of Peter Sewell and colleagues explains the store-buffering outcome exactly this way, % ledger: b3:tso-sb
+and gives the processor's behaviour a precise definition. % ledger: b3:sewell-2010
+Peterson's algorithm, which writes its own flag and then reads the other's, is exactly this pattern, and fails on such a machine unless its operations are made sequentially consistent.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth]
+  \node[draw, fill=omDef!12, minimum width=30mm, minimum height=9mm, align=center] (c1) at (0, 0) {core 1\\$x = 1$; $r_1 = y$};
+  \node[draw, fill=omDef!12, minimum width=30mm, minimum height=9mm, align=center] (c2) at (6, 0) {core 2\\$y = 1$; $r_2 = x$};
+  \node[draw, fill=omThm!20, minimum width=30mm, align=center] (b1) at (0, -1.5) {store buffer: $x = 1$};
+  \node[draw, fill=omThm!20, minimum width=30mm, align=center] (b2) at (6, -1.5) {store buffer: $y = 1$};
+  \node[draw, fill=black!5, minimum width=75mm, minimum height=8mm] (m) at (3, -3.1) {memory: $x = 0$, $y = 0$};
+  \draw[->] (c1) -- (b1);
+  \draw[->] (c2) -- (b2);
+  \draw[->, dashed] (b1) -- node[left, font=\scriptsize] {later} (b1 |- m.north);
+  \draw[->, dashed] (b2) -- node[right, font=\scriptsize] {later} (b2 |- m.north);
+  \draw[->, omDef, thick] (m.west) to[out=180, in=180] node[left, font=\scriptsize, align=right] {reads $y$:\\$r_1 = 0$} (c1.west);
+  \draw[->, omDef, thick] (m.east) to[out=0, in=0] node[right, font=\scriptsize, align=left] {reads $x$:\\$r_2 = 0$} (c2.east);
+\end{tikzpicture}
+\par\smallskip{\small Store buffering. Each write waits in its core's buffer while the read that follows it goes to memory, where the other write has not arrived: both reads return 0.}
+\end{omfigure}
+
+\begin{definition}[Read-modify-write operation, compare-and-swap, acquire and release ordering]\label{def:b3:concurrency:atomics}
+A \emph{read-modify-write operation}\index{read-modify-write operation} reads a location and writes it in one atomic operation, as \code{atomic_fetch_add} does. \emph{Compare-and-swap}\index{compare-and-swap} (CAS) is the read-modify-write that, given a location, an expected value and a new value, writes the new value only if the location holds the expected one, and reports whether it did. A load with \emph{acquire ordering}\index{acquire ordering} keeps every later read and write of its thread after it; a store with \emph{release ordering}\index{release ordering} keeps every earlier read and write of its thread before it. A thread whose acquire load reads the value of another thread's release store sees all the writes that thread made before the store.
+\end{definition}
+
+C11's \code{<stdatomic.h>} gives every atomic operation sequentially consistent ordering by default, and an \code{_explicit} form takes one of the weaker orders: relaxed, acquire, release, acquire-release, or the default. % ledger: b3:c11-seqcst-default
+Acquire and release are the pattern of a lock and of a message: write the data, then set a flag with a release store; the reader that sees the flag with an acquire load sees the data. On x86 they cost no extra instruction, only constraints on the compiler; % ledger: b3:x86-release-acquire
+the sequentially consistent store of the litmus test is the one that costs a barrier. The order that the release and acquire pairs build between threads is often called a happens-before order; programs whose threads only meet through such pairs, and through locks, behave as if the memory were sequentially consistent.
+
+\section{Lock-free structures}\label{sec:b3:concurrency:lock-free}
+
+A lock serialises; if its holder is preempted, everybody waits. A structure built from CAS alone guarantees progress differently.
+
+\begin{definition}[Lock-free, wait-free, ABA problem]\label{def:b3:concurrency:lock-free}
+An implementation of a shared object is \emph{lock-free}\index{lock-free} if, whenever threads are running its operations, some operation completes after a finite number of steps of the system, whatever the scheduling. It is \emph{wait-free}\index{wait-free} if every operation completes in a finite number of its own thread's steps. The \emph{ABA problem}\index{ABA problem} arises when a thread reads a value A, then between its read and its CAS other threads change A to B and back to A: the CAS succeeds when it should not.
+\end{definition}
+
+R. K. Treiber's stack, in an IBM report of April 1986, is the simplest \omterm{def:b3:concurrency:lock-free}{lock-free} structure: % ledger: b3:treiber-1986
+a linked list whose head is changed only by CAS. A push links its node to the head it read and swings the head to the node if the head has not changed; a pop swings the head to the successor of the node it read. A failed CAS means another operation succeeded, which is why the structure is \omterm{def:b3:concurrency:lock-free}{lock-free}. \Cref{lst:b3:concurrency:treiber} keeps its nodes in an array and names them by index, so that a node is never freed while another thread may read it, a separate problem; the head packs the index of the top node with a tag.
+
+\omcode{code/bachelor-3/13-concurrency/listings/treiber.c}{16}{37}{Treiber's stack. On failure, \code{atomic_compare_exchange_weak} writes the current head into \code{old}, and the loop retries with it.}\label{lst:b3:concurrency:treiber}
+
+\omoutput{code/bachelor-3/13-concurrency/outputs/treiber.txt}{Four threads each pop a node and push it back, 200,000 times, on a stack of 64 nodes. At the end, the stack is a list of all 64.}\label{out:b3:concurrency:treiber}
+
+What is the tag for? \Cref{lst:b3:concurrency:aba} replays the bad interleaving by hand on a simulated stack, and the figure after its output draws it.
+
+\omcode{code/bachelor-3/13-concurrency/listings/aba_replay.py}{40}{56}{The interleaving, scripted. \code{Stack}, in the same file, has \code{read}, \code{cas}, \code{pop} and \code{push} as in \cref{lst:b3:concurrency:treiber}; a tagged head is compared with its tag.}\label{lst:b3:concurrency:aba}
+
+\omoutput{code/bachelor-3/13-concurrency/outputs/aba_replay.txt}{With a bare head, thread 1's CAS sees A again and succeeds: the head becomes B, a node that thread 2 holds, and C is the only other node left. With a tag, the CAS sees that the head has changed twice, fails, and retries correctly.}\label{out:b3:concurrency:aba}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, n/.style={draw, circle, minimum size=7mm, inner sep=0pt, fill=black!4}]
+  \foreach \x/\t in {0/{1. thread 1 reads A, then B}, 4.6/{2. thread 2 pops A, B; pushes A}, 9.2/{3. thread 1's CAS: A is still on top}} {
+    \node[font=\scriptsize, align=center, text width=40mm] at (\x + 1, 1.1) {\t};
+  }
+  \node[font=\scriptsize] (h1) at (-0.6, 0) {head};
+  \node[n] (a1) at (0.4, 0) {A}; \node[n] (b1) at (1.3, 0) {B}; \node[n] (c1) at (2.2, 0) {C};
+  \draw[->] (h1) -- (a1); \draw[->] (a1) -- (b1); \draw[->] (b1) -- (c1);
+  \node[font=\scriptsize] (h2) at (4.0, 0) {head};
+  \node[n] (a2) at (5.0, 0) {A}; \node[n] (c2) at (5.9, 0) {C};
+  \node[n, fill=omThm!25] (b2) at (5.45, -1.1) {B};
+  \node[font=\scriptsize, anchor=west] at (5.8, -1.1) {in thread 2's hands};
+  \draw[->] (h2) -- (a2); \draw[->] (a2) -- (c2);
+  \node[font=\scriptsize] (h3) at (8.6, 0) {head};
+  \node[n, fill=omThm!25] (b3) at (9.6, 0) {B}; \node[n] (c3) at (10.5, 0) {C};
+  \node[n] (a3) at (9.6, -1.1) {A};
+  \node[font=\scriptsize, anchor=west] at (9.95, -1.1) {returned by thread 1};
+  \draw[->] (h3) -- (b3); \draw[->] (b3) -- (c3);
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:concurrency:lock-free}{ABA problem} in three snapshots. Thread 1's CAS compares only the head, A, and swings it to the successor it read in snapshot 1. B is now on the stack and in thread 2's hands at once.}
+\end{omfigure}
+
+The tag counts the changes of the head, so a head that went from A to something else and back is no longer equal to what thread 1 read. Maged Michael and Michael Scott describe the same modification counter, and note that it makes the \omterm{def:b3:concurrency:lock-free}{ABA problem} extremely unlikely, not impossible: a 32-bit tag can wrap round. % ledger: b3:ms-aba
+Without the tag, the real stack breaks too (\cref{lst:b3:concurrency:notag}).
+
+\omcode{code/bachelor-3/13-concurrency/listings/treiber_notag.c}{1}{3}{The same stack, with a tag that never changes.}\label{lst:b3:concurrency:notag}
+
+\omoutput{code/bachelor-3/13-concurrency/outputs/treiber_notag.txt}{One run on the author's laptop. Every pop found a node, yet at the end the head leads to one node whose successor is itself: 63 nodes are lost.}\label{out:b3:concurrency:notag}
+
+It failed the same way in every run on the laptop. A \omterm{def:b3:concurrency:lock-free}{lock-free} FIFO queue is harder, since it has two ends. Michael and Scott's queue of 1996 % ledger: b3:michael-scott-1996
+is a linked list whose head always points to a dummy node, with a tail pointer to the last or the second-to-last node, both changed by CAS with modification counters. % ledger: b3:ms-queue
+An enqueuer that finds the tail lagging behind first tries to move it on, then retries: a thread helps the operation it is blocked by instead of waiting for it. % ledger: b3:ms-helping
+
+\begin{definition}[Linearisability, linearisation point]\label{def:b3:concurrency:linearisability}
+A history of a concurrent object records, for each operation, its thread, its argument, its result and the interval between its call and its return. The history is \emph{linearisable}\index{linearisability} if there is an order of all its operations that is a correct sequential history of the object and keeps every operation that returned before another one was called before that one. An implementation is linearisable if all its histories are; it is usually proved so by choosing for each operation a \emph{linearisation point}\index{linearisation point}, one step between its call and its return at which it appears to take effect at once.
+\end{definition}
+
+Maurice Herlihy and Jeannette Wing defined \omterm{def:b3:concurrency:linearisability}{linearisability} in 1990. % ledger: b3:herlihy-wing-1990
+For Treiber's stack the \omterm{def:b3:concurrency:linearisability}{linearisation point} of a push or pop is its successful CAS, and of a pop on an empty stack the load that read the empty head (exercise~\ref{exo:b3:concurrency:11}). A history can also be checked by brute force, by trying every order allowed (\cref{lst:b3:concurrency:lin}).
+
+\omcode{code/bachelor-3/13-concurrency/listings/linearizable.py}{6}{26}{A \omterm{def:b3:concurrency:linearisability}{linearisability} checker for a FIFO queue: at each step, try every operation that no remaining operation finished before, if the sequential queue gives the recorded result.}\label{lst:b3:concurrency:lin}
+
+\omoutput{code/bachelor-3/13-concurrency/outputs/linearizable.txt}{Three histories. Overlapping operations can take effect in either order; in the third, 1 was enqueued and returned before 2 was enqueued, and a dequeue returning 2 matches no order.}\label{out:b3:concurrency:lin}
+
+The search may try every order of the operations, a number exponential in the history's length; on the short histories of a test, it finds bugs that a sequential test cannot see.
+
+\begin{history}[Concurrency]
+Dijkstra's Eindhoven notes \emph{Cooperating sequential processes} treat ``the problem of the deadly embrace'' and give the \omterm{def:b3:concurrency:banker}{banker's algorithm}, % ledger: b3:ewd123-banker
+and his \emph{Hierarchical ordering of sequential processes}, published in Acta Informatica in 1971, % ledger: b3:dijkstra-1971
+seats the five philosophers at their table. Coffman, Elphick and Shoshani's survey \emph{System \omterm{def:b3:concurrency:deadlock}{deadlocks}} appeared in June 1971, % ledger: b3:coffman-1971
+Hoare's \omterm{def:b3:concurrency:monitor}{monitors} in 1974 and Lampson and Redell's Mesa experience in 1980; Lamport's definition of \omterm{def:b3:concurrency:memory-model}{sequential consistency} was published in the IEEE Transactions on Computers in September 1979, % ledger: b3:lamport-1979
+Herlihy and Wing's \omterm{def:b3:concurrency:linearisability}{linearisability} in July 1990, % ledger: b3:herlihy-wing-1990
+and the x86-TSO model in the Communications of the ACM in July 2010. % ledger: b3:sewell-2010
+\end{history}
+
+\section{Exercises}\label{sec:b3:concurrency:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:concurrency:1}
+A system has 12 units of one resource and three threads with maximum claims 10, 4 and 9, holding 5, 2 and 2. Is the state safe? If the second thread asks for one more unit, should the banker grant it? And if the third one does?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:concurrency:2}
+P1 waits for R1, held by P2; P2 waits for R2, held by P3; P3 waits for R3, held by P1; P4 waits for R1. Draw the \omterm{def:b3:concurrency:rag}{resource-allocation graph} and find the deadlocked threads. What changes if R3 is released?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:concurrency:3}
+In the store-buffering test, give for each of the three outcomes that \omterm{def:b3:concurrency:memory-model}{sequential consistency} allows an interleaving that produces it.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:concurrency:4}
+Without running it, predict what \code{explore(3)} of \cref{lst:b3:concurrency:philosophers} returns: how many states, and which deadlocked state. Check against \cref{out:b3:concurrency:philosophers}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:concurrency:5}
+Run the script \texttt{["C1", "\textasciitilde C1", "C1"]} through \code{monitor_sim.run} with \omterm{def:b3:concurrency:monitor}{Hoare semantics} and an \code{if}: what does C1 do? Explain why Hoare's guarantee does not help, and fix the consumer. (\code{test_concurrency.py} checks both semantics.)
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:concurrency:6}
+Write \code{deadlocked(available, alloc, request)}, which returns the threads that can never finish when each resource has several instances: thread $i$ holds $\mathit{alloc}_i$ and waits for $\mathit{request}_i$. Give an example in which the \omterm{def:b3:concurrency:rag}{resource-allocation graph} has a cycle but no thread is deadlocked.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:concurrency:7}
+Philosophers try another protocol: take the left fork; if the right one is taken, put the left one down and start again. Show that it cannot \omterm{def:b3:concurrency:deadlock}{deadlock}, and find a schedule for two philosophers in which neither ever eats. Which kind of failure is it?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:concurrency:8}
+With the waiter of the weekend problem, a philosopher thinks, is hungry, or eats, and two neighbours never eat together. Count by hand the states of three philosophers, and check the 20 printed by \code{waiter.py}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:concurrency:9}
+Linearise each history of a FIFO queue, or show that no linearisation exists. (a)~A enqueues 1 during $[0, 10]$; B dequeues 1 during $[1, 3]$ and then 2 during $[4, 6]$; C enqueues 2 during $[2, 5]$. (b)~A enqueues 1 during $[0, 1]$, B enqueues 2 during $[2, 3]$, C dequeues 2 during $[4, 5]$, D dequeues 1 during $[6, 7]$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:concurrency:10}
+Each thread declares its maximum claim, never exceeds it, and returns everything when it finishes, which it does once it has received its claim. Prove that if the initial state is safe and the banker grants only requests that leave a \omterm{def:b3:concurrency:banker}{safe state}, every thread eventually finishes.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:concurrency:11}
+Prove that Treiber's stack (\cref{lst:b3:concurrency:treiber}), with tags that never wrap round, is \omterm{def:b3:concurrency:linearisability}{linearisable}, with the \omterm{def:b3:concurrency:linearisability}{linearisation points} of the text.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:concurrency:12}
+\code{exercises/ex12_counter.c} increments a counter by CAS in a loop. Prove it \omterm{def:b3:concurrency:lock-free}{lock-free}; is it \omterm{def:b3:concurrency:lock-free}{wait-free}? Compare with \code{atomic_fetch_add}.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:concurrency:problem}
+
+\begin{problem}[{Weekend problem --- Dinner at the Brenmoor inn}]\label{pb:b3:concurrency:1}
+The Brenmoor inn has a round table for $n$ guests and one fork between each pair of plates. This problem explains the numbers of \cref{out:b3:concurrency:philosophers}, proves that the naive protocol has exactly one deadlocked state, compares two fixes, and finds a guest who starves although nothing is deadlocked.
+
+\omcode{code/bachelor-3/13-concurrency/listings/waiter.py}{8}{19}{The waiter's protocol: a hungry guest is given both forks at once, when neither neighbour is eating. The function \code{starving_cycle} in the same file searches the reachable states for a closed walk in which guest 0 stays hungry while every other guest moves.}\label{lst:b3:concurrency:waiter}
+
+\omoutput{code/bachelor-3/13-concurrency/outputs/waiter.txt}{The waiter's states, and a schedule, repeatable for ever, that starves guest 0.}\label{out:b3:concurrency:waiter}
+
+\medskip\noindent\textbf{Part I --- The naive protocol's deadlock.} Each guest takes the left fork, then the right one (fork $i$ is guest $i$'s left, fork $i + 1 \bmod n$ the right).
+\begin{enumerate}
+\item For $n = 5$, give a schedule that reaches \omterm{def:b3:concurrency:deadlock}{deadlock} in five steps.
+\item Show that a state with no move has nobody eating, and then that every guest holds a fork: it is the state of \cref{out:b3:concurrency:philosophers}.
+\item Which \omterm{def:b3:concurrency:deadlock}{Coffman conditions} hold in that state? Draw its \omterm{def:b3:concurrency:rag}{resource-allocation graph}.
+\item Show that the deadlocked state can be reached from every reachable state.
+\item Under a scheduler that picks a guest who can move at random, does the system \omterm{def:b3:concurrency:deadlock}{deadlock} with probability 1? Use question 4.
+\item Why does testing a philosopher program a few hundred times often miss this \omterm{def:b3:concurrency:deadlock}{deadlock}, when it is always a few steps away?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Counting the states.} Position T thinks, H holds the left fork, E eats.
+\begin{enumerate}[resume]
+\item Show that a state is determined by the guests' positions alone: the owner of every fork follows.
+\item Show that a tuple of positions is possible if and only if no guest in E has a right neighbour in H or E.
+\item Count such cyclic tuples as the trace of $M^n$ for a $3 \times 3$ matrix $M$ indexed by T, H, E. Give $M$.
+\item Find the eigenvalues of $M$, and deduce $S(n) = (1 + \sqrt{2})^n + (1 - \sqrt{2})^n$. Check it against the output for $n = 2$ to $7$.
+\item Show that every possible tuple is reachable from the start, where everyone thinks.
+\item Conclude: exactly one deadlocked state among $S(n)$ reachable states. Show that $S(n) = 2S(n - 1) + S(n - 2)$.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Two fixes.}
+\begin{enumerate}[resume]
+\item With ordered acquisition, which guest's order changes? Why does theorem~\ref{thm:b3:concurrency:ordering} apply?
+\item The ordered counts are 5, 12, 29, 70, 169 and 408. How many states does ordering remove for each $n$? Do these numbers satisfy the recurrence of question 12?
+\item In the waiter's protocol, which tuples of T, H, E are possible? Count them as in question 9 and check 20, 56, 152, 416 and 1,136.
+\item Prove that the waiter's protocol never \omterm{def:b3:concurrency:deadlock}{deadlocks}.
+\item Write the waiter as a \omterm{def:b3:concurrency:monitor}{monitor} in C: one mutex, and one condition variable per guest. What does a hungry guest wait for, whom does a guest who stops eating signal, and where must the \code{while} be?
+\item Which of the two fixes lets more guests eat at once?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Starvation under the waiter.}
+\begin{enumerate}[resume]
+\item Check three steps of the schedule in \cref{out:b3:concurrency:waiter}: each is a legal move, and guest 0 stays hungry with a neighbour eating.
+\item The schedule is a closed walk in which every other guest moves. Why is this starvation, and neither \omterm{def:b3:concurrency:deadlock}{deadlock} nor \omterm{def:b3:concurrency:deadlock}{livelock}?
+\item Can the ordered protocol starve a guest? Find a schedule for $n = 3$.
+\item Propose a rule for the waiter that bounds every guest's wait, and say what it costs.
+\item A real scheduler is not an adversary. Why does the starving schedule still matter?
+\item Sum up: the deadlocked states, the state counts and their formulas, and what each fix guarantees and does not.
+\end{enumerate}
+\end{problem}

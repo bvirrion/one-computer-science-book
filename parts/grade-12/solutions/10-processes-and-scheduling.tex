@@ -1,0 +1,212 @@
+\section*{Chapter \ref{ch:g12:processes-and-scheduling} --- Processes and Scheduling}
+
+\begin{solution}{exo:g12:processes-and-scheduling:1}
+In order of arrival: X from $0$ to $4$, Y from $4$ to $5$, Z from $5$ to $8$. The Gantt line is \code{XXXXYZZZ}.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:2}
+X waits $0$, Y waits $4$, Z waits $5$: a mean of $9/3 = 3$.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:3}
+\code{XYZXZXZX}. Y is done after its first unit; Z after its third turn, at time $7$; X runs alone at the end.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:4}
+A switch happens each time the next slice belongs to another \omterm{def:g12:processes-and-scheduling:process}{process}. With $q = 2$ the $10$ slices are A, B, C, A, D,
+B, C, A, C, C: $8$ switches, since C's last two slices follow each other. With $q = 4$ the $6$ slices A, B, C, D, A, C
+make $5$.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:5}
+\smallskip\noindent\hspace*{2em}\code{def turnaround(workload, slices):}
+
+\noindent\hspace*{4em}\code{finish = {name: end for name, _, end in slices}}
+
+\noindent\hspace*{4em}\code{return {name: finish[name] - arrival for name, arrival, _ in workload}}
+
+\smallskip\noindent The dictionary keeps the last slice of each name, which is where the \omterm{def:g12:processes-and-scheduling:process}{process} finishes.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:6}
+Each \omterm{def:g12:processes-and-scheduling:process}{process} runs once, for at most $2$ units: A from $0$ to $2$, B from $2$ to $4$, C from $4$ to $6$, D from $6$ to
+$8$. Then the queue is empty and the simulation stops. Only D, whose burst is $2$, has finished; A, B and C are left
+with $3$, $1$ and $6$ units, and will never run again. The tests check these remainders.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:7}
+$20$. An interleaving of $6$ steps is fixed by choosing which $3$ of the $6$ places hold P's steps, in their own
+order; the other places hold Q's. There are $\binom{6}{3} = 20$ such choices. For $a$ and $b$ steps:
+$\binom{a+b}{a}$, which is how \code{interleavings} enumerates them, with \code{combinations}.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:8}
+\smallskip\noindent\hspace*{2em}\code{def sjf(workload):}
+
+\noindent\hspace*{4em}\code{pending, time, slices = sorted(workload, key=lambda w: w[1]), 0, []}
+
+\noindent\hspace*{4em}\code{while pending:}
+
+\noindent\hspace*{6em}\code{arrived = [w for w in pending if w[1] <= time]}
+
+\noindent\hspace*{6em}\code{if not arrived:}
+
+\noindent\hspace*{8em}\code{time = pending[0][1]}
+
+\noindent\hspace*{8em}\code{continue}
+
+\noindent\hspace*{6em}\code{job = min(arrived, key=lambda w: (w[2], w[1]))}
+
+\noindent\hspace*{6em}\code{pending.remove(job)}
+
+\noindent\hspace*{6em}\code{slices.append((job[0], time, time + job[2]))}
+
+\noindent\hspace*{6em}\code{time += job[2]}
+
+\noindent\hspace*{4em}\code{return slices}
+
+\smallskip\noindent On the chapter's workload, A is alone at time $0$ and runs to $5$; then D ($2$), B ($3$) and C
+($8$): D from $5$ to $7$, B to $10$, C to $18$. Turnarounds $5$, $9$, $16$, $4$: a mean of $8.5$, against $10.25$ for
+first come, first served.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:9}
+The \omterm{def:g12:processes-and-scheduling:race}{lock} stays held by a \omterm{def:g12:processes-and-scheduling:process}{process} that has left the \omterm{def:g12:processes-and-scheduling:race}{critical section}. Every other \omterm{def:g12:processes-and-scheduling:process}{process} that tries to acquire it
+waits for ever, and so does the same \omterm{def:g12:processes-and-scheduling:process}{process} on its next call. The fix releases the \omterm{def:g12:processes-and-scheduling:race}{lock} on every path: in Python,
+\code{with lock:} around the \omterm{def:g12:processes-and-scheduling:race}{critical section}, which releases it however the block is left, even by an exception.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:10}
+P loads $0$; Q loads $0$, adds, stores $1$; P adds to its own copy, $1$, and stores $1$. The final counter is $1$: Q's
+update is lost, overwritten by P's.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:11}
+The first design rules out \omterm{def:g12:processes-and-scheduling:race}{mutual exclusion} as far as the processes are concerned: none of them ever holds the
+printer, only the server does, so no \omterm{def:g12:processes-and-scheduling:process}{process} can wait for another to give it back. The second rules out hold and
+wait: a \omterm{def:g12:processes-and-scheduling:process}{process} that waits holds nothing, and a \omterm{def:g12:processes-and-scheduling:process}{process} that holds its resources never waits for more.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:12}
+Between its \code{acquire} and its \code{release}, a \omterm{def:g12:processes-and-scheduling:process}{process} holds the \omterm{def:g12:processes-and-scheduling:race}{lock}, and the other cannot pass its own
+\code{acquire}. So the three steps of one \omterm{def:g12:processes-and-scheduling:process}{process} are never interleaved with those of the other: one \omterm{def:g12:processes-and-scheduling:process}{process}, say the
+first to acquire, does load, add, store, and releases; only then can the second load. Two cases, P first or Q first,
+and in both the second \omterm{def:g12:processes-and-scheduling:process}{process} loads the value $1$ stored by the first and stores $2$. Steps outside the \omterm{def:g12:processes-and-scheduling:race}{lock} are
+only \code{acquire} and \code{release}, which do not touch the counter. The program finds the same: exactly $2$ runs,
+both ending at $2$.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:13}
+A depth-first search that marks the vertices still being explored: meeting one of them again closes a cycle.
+
+\smallskip\noindent\hspace*{2em}\code{def has_cycle(waits_for):}
+
+\noindent\hspace*{4em}\code{state = {}}
+
+\noindent\hspace*{4em}\code{def visit(v):}
+
+\noindent\hspace*{6em}\code{state[v] = "open"}
+
+\noindent\hspace*{6em}\code{for w in waits_for.get(v, []):}
+
+\noindent\hspace*{8em}\code{if state.get(w) == "open" or (w not in state and visit(w)):}
+
+\noindent\hspace*{10em}\code{return True}
+
+\noindent\hspace*{6em}\code{state[v] = "done"}
+
+\noindent\hspace*{6em}\code{return False}
+
+\noindent\hspace*{4em}\code{return any(v not in state and visit(v) for v in list(waits_for))}
+
+\smallskip\noindent A vertex marked \code{done} has no cycle below it, so it is never explored twice. The tests try a
+cycle of three processes and a chain without one.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:14}
+First come, first served: waits $0$, $6$, $14$, $17$, a mean of $37/4 = 9.25$. Shortest job first runs $2$, $3$, $6$,
+$8$: waits $0$, $2$, $5$, $11$, a mean of $18/4 = 4.5$.
+
+When all arrive at $0$, the \omterm{def:g12:processes-and-scheduling:process}{process} in place $k$ (from $1$ to $n$) makes the $n - k$ processes after it wait for its
+burst, so the total waiting time is the sum of each burst times the number of processes after it. Take any order in
+which a longer burst $b$ comes just before a shorter one $c < b$. Swapping the two changes nothing for the others,
+and changes the total by $c - b < 0$: the swap improves the order. So an order with the smallest total has no such
+pair: its bursts are increasing, which is shortest job first. The tests compare it with all $24$ orders.
+\end{solution}
+
+\begin{solution}{exo:g12:processes-and-scheduling:15}
+Number the philosophers and forks $0$ to $4$; philosopher $k$ uses forks $k$ and $k + 1$ (fork $0$ for the last).
+If all five take their left fork at once, every fork is held and each waits for the right one, held by a neighbour:
+a cycle of five, a \omterm{def:g12:processes-and-scheduling:deadlock}{deadlock}. With the rule ``lower-numbered fork first'', philosophers $0$ to $3$ still start on the
+left, but philosopher $4$ starts with fork $0$. A cycle would need each philosopher to hold one fork and wait for a
+higher-numbered one; philosopher $4$ would hold fork $0$ and wait for fork $4$, but then philosopher $0$ holds
+nothing, and the cycle breaks. The function \code{philosophers} tries every reachable state and confirms: a \omterm{def:g12:processes-and-scheduling:deadlock}{deadlock}
+without the rule, none with it.
+\end{solution}
+
+\begin{solution}{pb:g12:processes-and-scheduling:1}
+\textbf{1.} $20 + 3 + 6 + 2 + 4 = 35$ units.
+
+\textbf{2.} The core does one unit of work per unit of time, and the work starts at $0$, so at least $35$; five
+processes also need at least four switches, so at least $39$.
+
+\textbf{3.} By arrival, with a switch between each: A from $0$ to $20$, B $21$--$24$, C $25$--$31$, D $32$--$34$,
+E $35$--$39$.
+
+\textbf{4.} $20$, $23$, $29$, $31$, $34$: $137 / 5 = 27.4$, the value printed.
+
+\textbf{5.} Each unit of work is followed by a switch, so $22$ units are lost. B, D and E finish sooner than under
+first come, first served (turnarounds $20$, $16$, $30$ against $23$, $31$, $34$), but C, sharing the core one unit at
+a time, takes $41$ instead of $29$, and A $57$ instead of $20$. The total grows by $27$ units, the mean by $5.4$.
+
+\textbf{6.} $22$ switches of $1$ unit, and $35 + 22 = 57$, the time printed: the core is never idle.
+
+\textbf{7.} With $q \ge 20$, every \omterm{def:g12:processes-and-scheduling:process}{process} finishes in its first turn, so nobody returns to the queue: the processes
+run once each, in order of arrival, which is first come, first served. The tests check $q = 20$ to $29$.
+
+\textbf{8.} With $q = 12$, A is interrupted at $12$ and goes behind B, C, D and E, who all finish in their first turn;
+A comes back for its last $8$ units. The short processes finish $8$ units sooner; the extra switch makes everything
+end at $40$.
+
+\textbf{9.} $q = 6$, with $20.2$: $7.2$ less than first come, first served.
+
+\textbf{10.} A $0$--$6$, B $7$--$10$, C $11$--$17$, D $18$--$20$, E $21$--$25$, then A alone from $26$ to $40$. B, C, D
+and E finish at $10$, $17$, $20$, $25$; A at $40$.
+
+\textbf{11.} $6$ is the longest burst of the short processes ($3$, $6$, $2$, $4$): each of them finishes in one turn,
+while A, the long one, is interrupted once and goes to the back.
+
+\textbf{12.} Every short \omterm{def:g12:processes-and-scheduling:process}{process} already finishes in one turn, so a longer \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} only lengthens A's first slice:
+B, C, D and E each finish one unit later per unit of \omterm{def:g12:processes-and-scheduling:scheduler}{quantum}. The total grows by $4$, the mean by $0.8$, as printed.
+
+\textbf{13.} Finishing times for $q = 4$: A $42$, B $8$, C $29$, D $16$, E $26$; for $q = 5$: A $42$, B $9$, C $31$,
+D $18$, E $23$. A's first slice is one unit longer, which delays B by $1$; C needs a second turn in both cases, and
+everything before it is longer, so C and D lose $2$. E gains $3$: it arrives at $5$, which with $q = 5$ is exactly
+when A's slice ends, so E joins the queue before A; with $q = 4$, A is back in the queue at $4$, ahead of E. In all
+$+1 + 2 + 2 - 3 = +2$ units, so the mean grows by $0.4$.
+
+\textbf{14.} First come, first served: B arrives at $1$ and starts at $21$, a response time of $20$. With $q = 6$:
+it starts at $7$, a response of $6$.
+
+\textbf{15.} The typist wants short response times, so a short \omterm{def:g12:processes-and-scheduling:scheduler}{quantum}: with $q = 1$ every \omterm{def:g12:processes-and-scheduling:process}{process} starts within a
+few units. The person waiting for a report wants the short turnarounds of $q = 6$.
+
+\textbf{16.} Without switches, the $22$ lost units disappear, and \omterm{def:g12:processes-and-scheduling:scheduler}{round robin} with $q = 1$ shares the core finely,
+which lets the short processes finish early. It is still not best: the four short ones are slowed down by sharing
+with each other, a little more than with $q = 2$ or $3$, where each takes longer turns.
+
+\textbf{17.} No: shortest job first gives $24.0$. A is alone at time $0$ and, once started, runs to its end; the
+short processes all wait $20$ units. \omterm{def:g12:processes-and-scheduling:scheduler}{Round robin} \omterm{def:g12:processes-and-scheduling:interrupt}{interrupts} A, which shortest job first never does. A real \omterm{def:g12:processes-and-scheduling:scheduler}{scheduler}
+cannot apply it as written because it does not know the bursts in advance: they depend on what the programs do.
+
+\textbf{18.} $4 / 4004 \approx 0.1\,\%$ of the time. Here, with $q = 6$ and a switch of $1$, up to $1/7$, about
+$14\,\%$: the toy cost is a thousand times heavier.
+
+\textbf{19.} A \omterm{def:g12:processes-and-scheduling:process}{process} that blocks often, waiting for a key or the network, uses little of its \omterm{def:g12:processes-and-scheduling:scheduler}{quantum}, and is ready
+again as soon as its event comes. Serving it first keeps its response short, and costs the long computations little,
+since it soon gives the core back.
+
+\textbf{20.} \textbf{For five processes, one of $20$ units and four of $2$ to $6$, with a switch costing one unit,
+\omterm{def:g12:processes-and-scheduling:scheduler}{round robin} with a \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} of $6$ gives the smallest mean turnaround, $20.2$ units, against $27.4$ for first come,
+first served and $32.8$ for a \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} of $1$.}
+\end{solution}

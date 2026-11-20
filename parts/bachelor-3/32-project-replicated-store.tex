@@ -1,0 +1,304 @@
+% Book 5, Year 3, chapter 32 -- project: a replicated key-value store in Rust.
+% Provenance (never printed): sources/book5/BRIEFS.md, chapter 32.
+\chapter{Project: A Replicated Key-Value Store}\label{ch:b3:project-replicated-store}
+
+The key-value server of the Year~2 volume keeps its map on one machine: when that machine stops, the service stops, and when its disk dies, the data dies with it. This chapter builds the same kind of server again, in Rust with the standard library only, and runs it as three replicas that agree on every write through \omterm{def:b3:replication-and-consensus:raft}{Raft}. It survives the crash of any one replica, a crash in the middle of a write to the disk, and a leader killed while clients are writing; a recorded history of the clients' operations is then checked for \omterm{def:b3:concurrency:linearisability}{linearisability}. The work is done in six milestones, each with its code, its output and its tests, and ends with a measurement.
+
+\begin{recall}
+\omterm{def:b3:replication-and-consensus:raft}{Raft} (\cref{def:b3:replication-and-consensus:raft}): \omterm{def:b3:replication-and-consensus:raft}{election terms}, \omterm{def:b3:replication-and-consensus:raft}{leader election}, the \omterm{def:b3:replication-and-consensus:raft}{replicated log}, the commitment rule for entries of the leader's own \omterm{def:b3:replication-and-consensus:raft}{election term}, log matching (\cref{thm:b3:replication-and-consensus:log-matching}) and leader completeness. \omterm{def:b3:concurrency:linearisability}{Linearisability} and the brute-force checker that tries every allowed order (\cref{def:b3:concurrency:linearisability}). The \omterm{def:b3:transactions-and-recovery:wal}{write-ahead log}, whose records reach the disk before the changes they describe are relied upon (\cref{def:b3:transactions-and-recovery:wal}). The \omterm{def:b3:distributed-systems:failures}{crash failures} of \cref{def:b3:distributed-systems:failures}. From the Year~2 volume: the line-based key-value protocol over TCP, which must frame its messages because TCP carries a stream of bytes; threads and channels in Rust; the CRC-32, which detects every burst of errors up to 32 bits long.
+\end{recall}
+
+\textbf{Specification.} The store keeps a map from keys to values, both words without spaces. A client opens a TCP connection to a replica and sends one command per line, \code{SET key value}, \code{GET key} or \code{DEL key}, and receives one line for each: \code{OK}, \code{VALUE v}, \code{NOTFOUND}, \code{ERR} with a reason, or \code{REDIRECT n} when replica $n$ should be asked instead; two more commands, \code{STATUS} and \code{DUMP}, report a replica's role and its whole map, for testing. The three replicas listen on \code{127.0.0.1:24321} to \code{24323}. Every write goes through the \omterm{def:b3:replication-and-consensus:raft}{Raft} leader and is acknowledged only once it is committed, so writes are \omterm{def:b3:concurrency:linearisability}{linearisable}; reads are answered by the leader from its map. Every replica forces its \omterm{def:b3:replication-and-consensus:raft}{Raft} state to a \omterm{def:b3:transactions-and-recovery:wal}{write-ahead log} before it acts on it, so a replica that restarts, after a crash at any byte of a write, recovers everything it acknowledged. Any one replica may crash at any time; the store keeps answering, and the replica catches up when it comes back.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >={Stealth[length=1.8mm]},
+  b/.style={draw, rounded corners=2pt, align=center, minimum height=13mm, minimum width=34mm},
+  w/.style={draw, font=\scriptsize, fill=omMeth!12, minimum width=20mm, minimum height=5mm}]
+\node[b, fill=omDef!8] (n1) at (0,0) {node 1, leader\\[-1pt]{\scriptsize\code{127.0.0.1:24321}}\\[-1pt]{\scriptsize Raft, map, threads}};
+\node[b] (n2) at (7,1.6) {node 2, follower\\[-1pt]{\scriptsize\code{127.0.0.1:24322}}};
+\node[b] (n3) at (7,-1.6) {node 3, follower\\[-1pt]{\scriptsize\code{127.0.0.1:24323}}};
+\foreach \n in {1,2,3} \node[w, below=1.5mm of n\n] (w\n) {\texttt{node\n/wal.log}};
+\foreach \n in {1,2,3} \draw[->, omMeth] (n\n) -- (w\n);
+\node[draw, rounded corners=2pt, minimum width=15mm, minimum height=9mm] (c) at (-4.4,0) {client};
+\draw[->] ([yshift=1.8mm]c.east) -- node[above, font=\scriptsize] {\code{SET k v}} ([yshift=1.8mm]n1.west);
+\draw[<-] ([yshift=-1.8mm]c.east) -- node[below, font=\scriptsize] {\code{OK}} ([yshift=-1.8mm]n1.west);
+\draw[->, omProp] ([yshift=1.2mm]n1.east) -- node[above, sloped, font=\scriptsize] {\code{APPEND}} ([yshift=1.2mm]n2.west);
+\draw[<-, omProp] ([yshift=-1.2mm]n1.east) -- node[below, sloped, font=\scriptsize] {\code{APPENDED}} ([yshift=-1.2mm]n2.west);
+\draw[->, omProp] ([yshift=1.2mm]n1.east) -- node[above, sloped, font=\scriptsize] {\code{APPEND}} ([yshift=1.2mm]n3.west);
+\draw[<-, omProp] ([yshift=-1.2mm]n1.east) -- node[below, sloped, font=\scriptsize] {\code{APPENDED}} ([yshift=-1.2mm]n3.west);
+\draw[->, dashed] (c.south) to[bend right=22] node[below, font=\scriptsize, pos=0.6] {\code{GET k} to node 3: \code{REDIRECT 1}} (n3.south west);
+\end{tikzpicture}
+\par\smallskip{\small The store at work. A client writes to the leader, which appends the command to its log, forces it to its log file, and sends it to both followers; each follower forces it to its own file and answers. With one follower's answer the entry is on a majority of disks, and the leader applies it to its map and replies \code{OK}. A follower asked by a client redirects it to the leader.}
+\end{omfigure}
+
+The code is one Cargo crate, \code{store}, of about 1,400 lines in eight modules: \code{protocol} (the client protocol), \code{wal} (the log file), \code{raft} (the consensus algorithm), \code{sim} (a simulated network for testing \code{raft}), \code{node} (a replica as a process), \code{client}, \code{lincheck} (the \omterm{def:b3:concurrency:linearisability}{linearisability} checker) and \code{main} (the command line). One binary, \code{store}, runs a replica with \code{store node 2} and serves as a client and a tool with its other subcommands.
+
+\section{Milestone 1: one node and its protocol}\label{sec:b3:project-replicated-store:protocol}
+
+A command is one line of text: words separated by spaces, ended by a newline. The newline is the framing: TCP may deliver a line in several pieces or several lines in one piece, and the server reads bytes until it has a whole line before it parses anything. The parser turns a line into a command or into the reason it is not one; the reason goes back to the client after \code{ERR}.
+
+\omcode{code/bachelor-3/32-project-replicated-store/listings/store/src/protocol.rs}{26}{47}{The parser. A key may not contain \code{=}, because \code{DUMP} prints its pairs as \code{key=value}; a line longer than 1,024 bytes is refused before it is split.}\label{lst:b3:project-replicated-store:parse}
+
+Each connection is served by its own thread, which reads lines, parses them, and hands every valid command to the replica's main loop together with a channel on which to receive the reply. The thread never touches the map; only the main loop does, so the map needs no lock. The same port also receives the other replicas' messages: a connection whose first line is \code{PEER n} comes from replica $n$, and from then on carries \omterm{def:b3:replication-and-consensus:raft}{Raft} messages.
+
+\omcode{code/bachelor-3/32-project-replicated-store/listings/store/src/node.rs}{87}{118}{A connection. \code{read_line} returns only at a newline or at the end of the stream; a client's line goes to the main loop as an event, and the thread waits for the reply on its own channel.}\label{lst:b3:project-replicated-store:serve}
+
+A cluster of one replica is already a \omterm{def:b3:replication-and-consensus:raft}{Raft} cluster: its majority is one, so it elects itself as soon as its election timeout expires, and it commits an entry as soon as the entry is in its own log file. The session below starts such a replica and talks to it twice: first through a raw TCP connection opened by the shell, then with the \code{store send} client.
+
+\omoutput{code/bachelor-3/32-project-replicated-store/outputs/m1_session.txt}{A single replica. Six lines written in one go come back as six replies, in order, two of them errors. The log of the replica shows that it found an empty log file at start and led \omterm{def:b3:replication-and-consensus:raft}{election term}~1.}\label{out:b3:project-replicated-store:m1}
+
+The client of \code{store send} opens a connection, writes the command, reads one line, and prints which replica answered. When the answer is \code{REDIRECT n}, it asks replica $n$ in turn, at most four times; the output then shows every replica on the way. The tests of this milestone print every command and every reply and parse them back, and check the error message of malformed lines.
+
+\section{Milestone 2: the write-ahead log}\label{sec:b3:project-replicated-store:wal}
+
+\omterm{def:b3:replication-and-consensus:raft}{Raft} keeps three things across a crash: the current \omterm{def:b3:replication-and-consensus:raft}{election term}, the server it voted for in that term, and its log; the \omterm{def:b3:replication-and-consensus:raft}{Raft} paper requires them to be updated on stable storage before the server responds to any message. % ledger: b3:raft-persist
+The store writes them as records appended to one file per replica, \code{wal.log}. A vote record holds an \omterm{def:b3:replication-and-consensus:raft}{election term} and a vote; an entry record holds an index, an \omterm{def:b3:replication-and-consensus:raft}{election term} and a command. Each record starts with the length of its payload and the CRC-32 of the payload, both as 4-byte little-endian integers.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=4.6mm, y=1cm,
+  f/.style={draw, minimum height=9mm, inner sep=1pt, align=center, anchor=south west}]
+\foreach \x/\n/\top/\val in {0/4/length/13, 4/4/CRC-32/{\tiny 0x85028524}, 8/1/V/{}, 9/8/election term/1, 17/4/voted for/1} {
+  \node[f, minimum width=\n*4.6mm, fill=omDef!8] at (\x,1.3) {\top\\\val};
+  \node[anchor=north] at (\x+\n/2,1.3) {\n};
+}
+\node[anchor=east, align=right, font=\small] at (-0.3,1.75) {vote\\[-2pt]{\scriptsize 21 bytes, at 0}};
+\foreach \x/\n/\top/\val in {0/4/length/21, 4/4/CRC-32/{\tiny 0xDA839FBB}, 8/1/E/{}, 9/8/index/1, 17/8/election term/1, 25/4/command/\code{NOOP}} {
+  \node[f, minimum width=\n*4.6mm, fill=omMeth!10] at (\x,-0.2) {\top\\\val};
+  \node[anchor=north] at (\x+\n/2,-0.2) {\n};
+}
+\node[anchor=east, align=right, font=\small] at (-0.3,0.25) {entry\\[-2pt]{\scriptsize 29 bytes, at 21}};
+\end{tikzpicture}
+\par\smallskip{\small The first two records of the log file of \cref{out:b3:project-replicated-store:m2}, with the size of each field in bytes. The length counts the payload only, from the letter on; the checksum is computed over the same bytes. An entry's command takes the rest of the payload, so its length is the payload's length minus 17.}
+\end{omfigure}
+
+\omcodes{code/bachelor-3/32-project-replicated-store/listings/store/src/wal.rs}{28-47,68-86}{Encoding a record, and decoding a whole file. Decoding stops at the first record that is cut short or whose checksum fails, and returns the length of the good part.}\label{lst:b3:project-replicated-store:decode}
+
+A crash in the middle of an append leaves a torn record at the end of the file: its header, part of its payload, or nothing at all. The length field alone would not notice the case of a record whose payload is all there but whose bytes are not those written, for instance after a \omterm{def:b3:file-systems:disk}{sector} was written only in part; the checksum notices it (exercise~\ref{exo:b3:project-replicated-store:5} breaks the decoder in the other way).
+
+\begin{proposition}[Replay of a torn log]\label{prop:b3:project-replicated-store:replay}
+Let a log file be the encodings $e_1 e_2 \cdots e_n$ of records $r_1, \ldots, r_n$, and let $P$ be any prefix of it, of length $L$. Then \code{decode_all} on $P$ returns $r_1, \ldots, r_k$ and the length $|e_1 \cdots e_k|$, where $k$ is the largest number with $|e_1 \cdots e_k| \leq L$.
+\end{proposition}
+
+\begin{proof}
+Facts used: \code{decode_payload} inverts the payload part of \code{encode}; the checksum of an unchanged payload matches. By induction on $j \leq k$, after $j$ steps the decoder has returned $r_1, \ldots, r_j$ and stands at offset $|e_1 \cdots e_j|$: for $j < k$, the record $e_{j+1}$ lies wholly inside $P$, so its header and its payload are read in full, its checksum matches, and its payload decodes to $r_{j+1}$. At offset $|e_1 \cdots e_k|$ either fewer than 8 bytes remain, and the header cannot be read, or the header of $e_{k+1}$ is there but the $len$ bytes of its payload are not all in $P$, since $e_{k+1}$ does not end inside $P$; in both cases the loop stops.
+\end{proof}
+
+On start, \code{Wal::open} reads the file, keeps the good records and cuts the file at the end of the last one, so that the next record is appended right after it rather than after the torn bytes, where no replay would ever reach it. An append is one \code{write_all} of all the step's records followed by \code{sync_all}, which returns only once the file's data and metadata have been sent to the disk. % ledger: b3:rust-sync-all
+
+\omcode{code/bachelor-3/32-project-replicated-store/listings/store/src/wal.rs}{92}{117}{Opening a log file, and appending to it: one write and one forced flush for all the records of a step.}\label{lst:b3:project-replicated-store:wal}
+
+The session writes twice, shows the beginning of the log file in hexadecimal, stops the replica, and cuts the last 5 bytes off the file. A real crash can only tear a record whose \code{sync_all} had not returned, so a record whose client never received \code{OK}; the session tears an acknowledged record only because a shell cannot crash a process in the middle of a write on cue.
+
+\omoutput{code/bachelor-3/32-project-replicated-store/outputs/m2_session.txt}{The log file after two writes: a vote, the leader's empty entry \code{NOOP}, then the two writes, 21, 29, 40 and 42 bytes, 132 in all. Cut to 127 bytes, the file replays to three records; the replica cuts it to 90 bytes, wins \omterm{def:b3:replication-and-consensus:raft}{election term}~2 and appends a vote and a new empty entry: $90 + 21 + 29 = 140$. The torn write is gone and the earlier one is read back.}\label{out:b3:project-replicated-store:m2}
+
+The tests of this milestone cut a file of six records at every one of its bytes and check that \code{Wal::open} returns exactly the whole records before the cut, leaves the file at their length, and accepts a new record after them; they flip each byte of the file in turn and check that the replay stops at the record holding it; and they check the CRC-32 against its standard check value, \code{0xCBF43926} for the ASCII string \code{123456789}.
+
+\section{Milestone 3: Raft as a pure state machine}\label{sec:b3:project-replicated-store:raft}
+
+A \omterm{def:b3:replication-and-consensus:raft}{Raft} node reacts to three things: time passing, a message arriving, and a client's command. In \code{raft.rs} each is a method call, \code{tick}, \code{receive} and \code{propose}, and none of them reads a clock, a socket or a file. Each fills an \code{Output} with what the node must do next: the records to force to the log file, the messages to send, and the entries newly committed, to apply. The order is part of the contract: the records first, then the messages. Because the module does nothing else, it can run unchanged inside a test, on a simulated network, or inside a process on a real one.
+
+\omcode{code/bachelor-3/32-project-replicated-store/listings/store/src/raft.rs}{151}{188}{Time. A follower or candidate whose timer expires starts an election in a new \omterm{def:b3:replication-and-consensus:raft}{election term}, persisting its vote for itself before it asks for the others'; a leader sends its appends every \code{HEARTBEAT} ticks. A new leader at once proposes an empty entry.}\label{lst:b3:project-replicated-store:tick}
+
+The empty entry \code{NOOP} is the device of the \omterm{def:b3:replication-and-consensus:raft}{Raft} paper: a new leader does not know which entries of its log are committed, and the commitment rule lets it commit only entries of its own \omterm{def:b3:replication-and-consensus:raft}{election term}, so it commits an empty one and the earlier entries with it. % ledger: b3:raft-noop
+The vote follows the election restriction of \cref{ch:b3:replication-and-consensus}: a candidate gets a vote only if its log is at least as up to date as the voter's, compared by the \omterm{def:b3:replication-and-consensus:raft}{election term} of the last entry first and then by the length.
+
+\omcode{code/bachelor-3/32-project-replicated-store/listings/store/src/raft.rs}{236}{255}{A request for a vote. A message with a larger \omterm{def:b3:replication-and-consensus:raft}{election term} has already made the node a follower in that term. The vote is persisted before the answer is sent.}\label{lst:b3:project-replicated-store:vote}
+
+\omcode{code/bachelor-3/32-project-replicated-store/listings/store/src/raft.rs}{309}{345}{A follower receiving entries, once it has refused any message of an older \omterm{def:b3:replication-and-consensus:raft}{election term}. It refuses when it has no entry at \code{prev_index} with the leader's \omterm{def:b3:replication-and-consensus:raft}{election term} there, and its answer tells the leader where to try next; otherwise it removes a conflicting suffix and appends the new entries.}\label{lst:b3:project-replicated-store:append}
+
+\omcode{code/bachelor-3/32-project-replicated-store/listings/store/src/raft.rs}{347}{358}{The leader's commitment rule, tried after every successful answer from a follower.}\label{lst:b3:project-replicated-store:commit}
+
+Testing this code on real processes would find few bugs: real networks lose few messages, and crashes happen when the tester decides. The simulator of \code{sim.rs} runs three nodes in one process, on a network of its own. Time advances in ticks. A message is delivered 1 to 3 ticks after it is sent, or lost with a given probability; at each tick each node crashes with a given probability, stays down 20 to 59 ticks, and restarts from the records it had forced to its simulated disk, nothing else. The leader proposes a new command every 2 ticks. Every random choice comes from one generator seeded by the run's number, so a run that fails can be replayed exactly.
+
+\omcode{code/bachelor-3/32-project-replicated-store/listings/store/src/sim.rs}{173}{210}{A tick of the simulator: restarts, crashes, then each running node's tick and the leader's next command. A crash keeps the node's disk and loses everything else.}\label{lst:b3:project-replicated-store:sim}
+
+After every step the simulator checks the safety properties of \omterm{def:b3:replication-and-consensus:raft}{Raft}. Election safety: no \omterm{def:b3:replication-and-consensus:raft}{election term} has two leaders. Leader completeness: a node that becomes leader holds every entry already applied anywhere. State machine safety: no index is ever applied with two different entries. At the end of the run, log matching: two logs that agree on the \omterm{def:b3:replication-and-consensus:raft}{election term} at some index agree on everything up to it.
+
+\omoutput{code/bachelor-3/32-project-replicated-store/outputs/m3_session.txt}{One run told event by event, and a thousand runs with 5\,\% of messages lost and a crash probability of 0.2\,\% per node and tick: 2,217 crashes, 1,699 elections, 182,137 committed entries, and no property broken.}\label{out:b3:project-replicated-store:m3}
+
+A run with no violation proves nothing about the next, but the simulator does catch broken implementations. Two faults can be switched on in it, and crashes made more frequent, 0.5\,\% per node and tick: a node that loses its vote records at restart, and a crash that loses the records of the node's last step, as if the node had sent its messages before forcing its log. Out of 2,000 runs, the first breaks safety in 107 and the second in 18, while the correct code breaks it in none (exercise~\ref{exo:b3:project-replicated-store:11}).
+
+\section{Milestone 4: three processes}\label{sec:b3:project-replicated-store:network}
+
+A replica is a process with three kinds of threads. The listener accepts connections and starts a thread for each (\cref{lst:b3:project-replicated-store:serve}). For each other replica a sender thread owns the connection to it: it receives \omterm{def:b3:replication-and-consensus:raft}{Raft} messages on a channel, writes them, and reconnects when the connection breaks; a message that cannot be written is dropped, which \omterm{def:b3:replication-and-consensus:raft}{Raft} tolerates, since the leader sends again at its next heartbeat. The main loop owns everything else: the \omterm{def:b3:replication-and-consensus:raft}{Raft} node, the map and the log file. Every input reaches it as an event on one channel, so it handles one input at a time and needs no lock.
+
+\omterm{def:b3:replication-and-consensus:raft}{Raft} messages travel as lines of text, as client commands do:
+
+\begin{center}
+\small
+\begin{tabular}{p{0.45\linewidth}p{0.45\linewidth}}
+\hline
+line & message \\
+\hline
+\texttt{VOTE?\ t last\_index last\_term} & request for a vote in \omterm{def:b3:replication-and-consensus:raft}{election term} $t$ \\
+\code{VOTE t g} & the answer, $g = 1$ if granted \\
+\code{APPEND t prev prev_term commit n} & entries after index \code{prev}; the next $n$ lines are the entries, each \code{term command} \\
+\code{APPENDED t s match} & the answer, $s = 1$ on success; \code{match} is the last index known to agree \\
+\hline
+\end{tabular}
+\end{center}
+
+\omcode{code/bachelor-3/32-project-replicated-store/listings/store/src/node.rs}{192}{211}{The main loop waits for an event until the next tick is due; a tick is due every 10 ms whether or not events keep arriving. With \code{--batch} it also takes every other event already waiting, for the measurement at the end of the chapter.}\label{lst:b3:project-replicated-store:loop}
+
+\omcode{code/bachelor-3/32-project-replicated-store/listings/store/src/node.rs}{212}{243}{The events. A client's write is proposed to \omterm{def:b3:replication-and-consensus:raft}{Raft} and its reply channel kept in \code{pending} under the entry's index; a read is answered at once from the map; a follower answers with the leader it knows.}\label{lst:b3:project-replicated-store:events}
+
+The election timeouts of a replica are drawn between 15 and 30 ticks of 10 ms, 150 to 300 ms, the interval the \omterm{def:b3:replication-and-consensus:raft}{Raft} paper gives as an example. % ledger: b3:raft-timeouts
+For the sessions of this chapter the flag \code{--stagger} gives replica $n$ a timeout of about $100 + 200(n - 1)$ ms instead, so that replica~1 is the first to stand and the sessions can be rerun with the same leader. Each replica writes to its own directory, \code{node1} to \code{node3}, its log file and a file \code{pid} holding its process number, which the sessions use to stop it.
+
+\omoutput{code/bachelor-3/32-project-replicated-store/outputs/m4_session.txt}{Three replicas. Replica~1 is elected in \omterm{def:b3:replication-and-consensus:raft}{election term}~1; asked by a client, the followers redirect it. Replica~3 applies the write only when it learns that it is committed, from a later append, so the session waits for its map to equal the leader's before printing it.}\label{out:b3:project-replicated-store:m4}
+
+\section{Milestone 5: killing the leader}\label{sec:b3:project-replicated-store:kill}
+
+The session of this milestone writes five keys through replica~1 and then kills it with \code{kill -9}, which gives the process no chance to do anything more: its threads, its connections and its map vanish, and only its log file remains.
+
+\omoutput{code/bachelor-3/32-project-replicated-store/outputs/m5_session.txt}{The leader killed. Replica~2 is elected in \omterm{def:b3:replication-and-consensus:raft}{election term}~2 and serves the five keys written through replica~1; after its restart, replica~1 replays its log, six entries, and the new leader sends it the two it missed.}\label{out:b3:project-replicated-store:m5}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=1.12cm, y=1cm, >={Stealth[length=1.6mm]},
+  ev/.style={fill, circle, inner sep=1.2pt}]
+\foreach \n/\y in {1/2.8, 2/1.4, 3/0} \node[anchor=east, font=\small] at (-0.2,\y) {node \n};
+\draw[thick] (0,2.8) -- (3.2,2.8); \draw[thick, dashed, black!40] (3.2,2.8) -- (8.8,2.8); \draw[thick] (8.8,2.8) -- (12,2.8);
+\draw[thick] (0,1.4) -- (12,1.4); \draw[thick] (0,0) -- (12,0);
+\node[ev] at (0.4,2.8) {}; \node[above, align=center] at (0.4,2.8) {leader,\\term 1};
+\node[above, align=center] at (1.8,2.8) {\code{SET} a to e,\\committed};
+\draw[->, omProp] (1.5,2.8) -- (1.7,1.4); \draw[->, omProp] (1.9,2.8) -- (2.3,0);
+\node[font=\normalsize, red!70!black] at (3.2,2.8) {$\times$}; \node[above=1.5mm] at (3.2,2.8) {\code{kill -9}};
+\node[ev] at (4.2,1.4) {}; \node[above, align=center] at (4.2,1.4) {candidate,\\term 2};
+\draw[->] (4.2,1.4) -- node[left] {\code{VOTE?}} (4.5,0);
+\draw[->] (4.9,0) -- node[right] {\code{VOTE}} (5.2,1.4);
+\node[ev] at (5.6,1.4) {}; \node[above, align=center] at (5.7,1.4) {leader,\\term 2};
+\node[ev] at (6.8,0) {}; \node[below, align=center] at (6.8,0) {\code{GET c}:\\\code{REDIRECT 2}};
+\node[ev] at (7.1,1.4) {}; \node[below] at (7.1,1.4) {\code{VALUE 1}};
+\node[ev] at (8.0,1.4) {}; \node[above, align=center] at (8.0,1.4) {\code{SET f 2}:\\\code{OK}};
+\node[ev] at (8.8,2.8) {}; \node[above, align=center] at (8.8,2.8) {up: 6 entries,\\term 1};
+\draw[->, omProp] (9.6,1.4) -- node[right, align=left] {\code{APPEND}, prev 6,\\entries 7 and 8} (9.9,2.8);
+\node[ev] at (11.3,2.8) {}; \node[above, align=center] at (11.3,2.8) {6 keys,\\caught up};
+\end{tikzpicture}
+\par\smallskip{\small The events of \cref{out:b3:project-replicated-store:m5}, in their order, not to scale. While replica~1 is down, replicas 2 and 3 are a majority: they elect a leader and commit. Entry 7 is the new leader's \code{NOOP}, entry 8 the write of \code{f}.}
+\end{omfigure}
+
+None of the five acknowledged writes can be lost. Each was acknowledged only once it was on the log files of a majority, replica~1 and at least one of the others; any new leader needs the vote of one of those two replicas besides its own, and the election restriction makes that replica refuse a candidate whose log lacks the entry. This is leader completeness, recalled above; the session only shows one case of it, and the test \code{kill_the_leader} of the crate repeats it with twenty writes spread over the three replicas.
+
+A client whose write was in flight when the leader died is in a different position: its connection breaks, or its reply never comes, and it cannot tell whether its write was committed. The new leader may hold the entry and commit it, or not hold it. When a replica that was leader loses its role, it answers every write still pending with \code{ERR unknown outcome}, the only truthful answer; the same happens to a write whose index was later filled by another leader's entry.
+
+\omcode{code/bachelor-3/32-project-replicated-store/listings/store/src/node.rs}{244}{272}{The end of the main loop: the records forced before any message leaves, then the messages, then the committed entries applied in order, each one answering its client if this replica proposed it.}\label{lst:b3:project-replicated-store:apply}
+
+\section{Milestone 6: the consistency check}\label{sec:b3:project-replicated-store:check}
+
+The command \code{store load} runs four client threads, each sending 150 random commands on three keys and recording each one as a line: the client, the times at which the request was sent and the reply received, in microseconds on one clock shared by the threads, the key, and the result. A request whose reply never came, or came as an error, is recorded with \code{?} in place of its end and of any result it would have had: it may or may not have taken effect, at any time after it started.
+
+The checker treats each key as a register, a value that a write replaces, a read returns and a delete empties, and searches as in \cref{ch:b3:concurrency}: pick an operation that may come first, that is one that started before every remaining operation with a reply had ended; apply it to the register if its recorded result matches; recurse. It remembers the states it has already refuted, a set of remaining operations with a register value, so that it never explores them twice. Operations without a reply may be left out at the end.
+
+\omcodes{code/bachelor-3/32-project-replicated-store/listings/store/src/lincheck.rs}{46-55,57-86}{The search for one key. \code{step} says how the register changes if the operation takes effect now, or that it cannot, because its result would differ.}\label{lst:b3:project-replicated-store:lincheck}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=1.05cm, y=0.75cm, >={Stealth[length=1.6mm]},
+  op/.style={draw, fill=omDef!10, minimum height=4mm, inner sep=0pt}]
+\draw[->] (0,-0.6) -- (12,-0.6) node[right] {ms};
+\foreach \t in {0,2,...,10} { \draw (\t,-0.65) -- (\t,-0.55); \node[below] at (\t,-0.65) {\t}; }
+\foreach \c/\y in {1/4, 2/3, 3/2, 4/1} \node[anchor=east, font=\small] at (-0.2,\y) {client \c};
+\newcommand{\hop}[4]{\node[op, minimum width=#3*1.05cm-0.4pt, anchor=west] at (#1,#2) {}; \node at (#1+#3/2,#2+0.45) {#4};}
+\hop{0}{4}{4}{\code{SET a}}
+\hop{2}{3}{4}{\code{GET}: \code{a}}
+\hop{3}{2}{5}{\code{SET b}}
+\hop{7}{3}{2}{\code{GET}: \code{b}}
+\hop{10}{4}{1}{\code{GET}: ?}
+\node[op, minimum width=5.6cm, anchor=west, fill=omDef!4, dashed] at (5,1) {}; \node at (7.5,1.45) {\code{DEL}, no reply};
+\draw[dashed, ->] (10.4,1) -- (11.8,1);
+\foreach \x/\y/\k in {1/4/1, 3.5/3/2, 5/2/3, 8/3/4, 9.5/1/5} { \fill[omProp] (\x,\y) circle (2pt); \node[omProp, below=1pt] at (\x,\y-0.15) {\k}; }
+\end{tikzpicture}
+\par\smallskip{\small A small history of one key, each request drawn from its sending to its reply. The numbered dots are one linearisation: the write of \code{a}, the read of \code{a}, the write of \code{b}, the read of \code{b}, and then the delete, which may also never have happened. The last read may therefore return \code{b} or nothing, and the checker accepts both; it refuses \code{a}, which was overwritten before that read began.}
+\end{omfigure}
+
+Checking each key on its own is enough, because \omterm{def:b3:concurrency:linearisability}{linearisability} is local.
+
+\begin{proposition}[Locality]\label{prop:b3:project-replicated-store:local}
+A history of operations on several keys is \omterm{def:b3:concurrency:linearisability}{linearisable} if the operations on each key, taken alone, form a \omterm{def:b3:concurrency:linearisability}{linearisable} history.
+\end{proposition}
+
+\begin{proof}
+Facts used: \cref{def:b3:concurrency:linearisability}. Fix for each key $k$ a linearisation, an order $o_1, o_2, \ldots$ of its operations that is a correct history of a register and keeps the real-time order. Give each operation $o_j$ the time $t(o_j) = \max_{i \leq j} \mathrm{start}(o_i)$. Then $t(o_j) \geq \mathrm{start}(o_j)$, and $t(o_j) \leq \mathrm{end}(o_j)$: if some $o_i$ with $i \leq j$ started after $o_j$ ended, $o_j$ would precede $o_i$ in real time and come before it in the order, so $i > j$, a contradiction. The times never decrease along the order. Now sort all the operations of all keys by time, and operations of one key with equal times by their place in that key's order. The result keeps each key's order, so each key sees a correct register history, and the operations on different keys do not interact. It keeps the real-time order: if $a$ ended before $b$ started, then $t(a) \leq \mathrm{end}(a) < \mathrm{start}(b) \leq t(b)$.
+\end{proof}
+
+The session runs the load against three replicas and kills the leader 0.4 seconds into it, then checks the history.
+
+\omoutput{code/bachelor-3/32-project-replicated-store/outputs/m6_session.txt}{Six hundred operations, of which those in flight at the kill have unknown outcomes; the history has a linearisation on each of the three keys.}\label{out:b3:project-replicated-store:m6}
+
+A history found \omterm{def:b3:concurrency:linearisability}{linearisable} shows only that this run did nothing wrong. The store's reads are in fact not always \omterm{def:b3:concurrency:linearisability}{linearisable}: a leader answers a read from its map, and in two situations its map is behind the committed state (exercise~\ref{exo:b3:project-replicated-store:7}). The \omterm{def:b3:replication-and-consensus:raft}{Raft} paper's remedy is that a leader must make sure it has not been deposed before it answers a read, by exchanging heartbeats with a majority first; a lease based on heartbeats avoids the exchange but makes safety depend on bounded clock drift. % ledger: b3:raft-reads
+The crate's tests cover the six milestones:
+
+\begin{center}
+\small
+\begin{tabular}{p{0.22\linewidth}p{0.68\linewidth}}
+\hline
+test file & what it checks \\
+\hline
+\code{lincheck.rs} & the protocol printed and parsed back; the checker on hand-made histories, among them that of the figure above, a stale read, and unanswered writes and deletes \\
+\code{wal_crash.rs} & a cut at every byte (\cref{prop:b3:project-replicated-store:replay}); every flipped byte stops the replay at its record; the CRC-32 check value \\
+\code{raft_sim.rs} & 2,000 simulated runs with no safety violation; the summary of \cref{out:b3:project-replicated-store:m3}; both faults caught; the election restriction; a stale read by a deposed leader \\
+\code{cluster.rs} & three processes: the leader killed, every acknowledged write read back from the new leader, the old leader caught up; a history under a kill checked \omterm{def:b3:concurrency:linearisability}{linearisable} \\
+\hline
+\end{tabular}
+\end{center}
+
+\section{Measurement}\label{sec:b3:project-replicated-store:measure}
+
+\omterm{def:b3:replication-and-consensus:replication}{Replication} has a price. The command \code{store bench} runs 16 clients that send \code{SET} commands to the leader for 3 seconds, each waiting for its reply before sending the next, and counts the acknowledged writes. The flag \code{--batch} makes the main loop take every event already waiting, up to 256, before it forces the log, so that one \code{sync_all} covers the writes of many clients.
+
+\omoutput{code/bachelor-3/32-project-replicated-store/outputs/bench.txt}{Writes per second on the author's laptop, one replica and three on the same machine, each without and with batching.}\label{out:b3:project-replicated-store:bench}
+
+Without batching each write costs a forced flush of the log at the leader, and with three replicas a second one at a follower before the leader can count a majority: one replica acknowledges about 260 writes a second, three about 150. With batching the writes waiting at the same moment share their flushes, and the gain is large, more than sixfold for one replica and more than twofold for three. Exercise~\ref{exo:b3:project-replicated-store:12} builds a model of these numbers.
+
+\begin{inpractice}
+Three things a store for real use needs are left out of this one. Pipelining: the leader may send new entries to a follower before the previous ones are acknowledged, so that the network and the disks work at once. A bound on the log, which here grows forever: a replica can write a snapshot of its map from time to time and delete the log before it, and send the snapshot to a follower too far behind (exercise~\ref{exo:b3:project-replicated-store:9} only compacts the file). Changes to the set of replicas, which \cref{ch:b3:replication-and-consensus} mentions: adding a replica must never let the old and the new sets form two majorities at once.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b3:project-replicated-store:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:project-replicated-store:1}
+Write the bytes a client sends to set the key \code{ferry} to \code{8h15}, and count them. Then give the reply of the server to each of the lines \code{SET a=b 1}, \code{SET a b=c}, \code{GET a b}, \code{DEL}\,\textvisiblespace\,\textvisiblespace\code{a} (two spaces), \code{status}, and to the three bytes \code{GET} sent with no newline just before the client closes the connection.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:project-replicated-store:2}
+The replica of \cref{out:b3:project-replicated-store:m2} crashes when exactly 100 bytes of its log file have reached the disk. Which records does it find at restart, how long is the file after \code{Wal::open}, and which value of \code{bridge} can a client read? Which clients may have received \code{OK}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:project-replicated-store:3}
+Three replicas hold logs whose entries have the \omterm{def:b3:replication-and-consensus:raft}{election terms} S1: 1, 1, 2; S2: 1, 1, 3; S3: 1, 1. All three are in \omterm{def:b3:replication-and-consensus:raft}{election term} 3 and none has voted in it. Which of them can win \omterm{def:b3:replication-and-consensus:raft}{election term} 4? If S1 wins, what happens to the third entry of S2, and why does that lose no acknowledged write?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:project-replicated-store:4}
+Three replicas are started with \code{--stagger}, and the session runs \code{store send 1 SET x 1}, kills replica~2 with \code{kill -9}, runs \code{store send 3 SET y 2}, kills replica~3 the same way, and runs \code{store send 1 SET z 3}, \code{store send 1 GET x} and \code{store send 1 STATUS}. Predict every line the commands print, and explain the third one.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:project-replicated-store:5}
+A first version of \code{decode_all} trusted the length field: it took the bytes from the end of the header to \code{min(at + 8 + len, bytes.len())} as the payload, without checking the checksum. Cut the log file of the two writes \code{SET bridge open} and \code{SET bridge closed} 5 bytes before its end and show what this version replays. Fix it, and test the fix at every cut.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:project-replicated-store:6}
+Add a command \code{CAS key old new}, which sets \code{key} to \code{new} if it holds \code{old}, replies \code{OK} if it did, \code{VALUE v} with the value found if it did not, and \code{NOTFOUND} if the key is absent. Should the leader decide it when it receives it, or when it applies it? Implement the decision and test that every replica gives the same answers on a log of four commands.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:project-replicated-store:7}
+Show two runs in which a \code{GET} answered by the store returns a value that a history cannot linearise: one with a leader cut off from the two other replicas, one with a leader just elected. Then describe a read index: what the leader records on receiving a \code{GET}, what it waits for, and why each of the two runs is then answered correctly or not at all.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:project-replicated-store:8}
+With three replicas, no loss and no other traffic, count the \omterm{def:b3:replication-and-consensus:raft}{Raft} messages from the moment the leader proposes a write to the moment it applies it, and the messages from which the followers learn that the write is committed. What are the counts for $N$ replicas?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:project-replicated-store:9}
+The log file only grows: every vote record stays, and so does every entry later replaced by a different one. Write a function that compacts a list of records into the shortest list that replays to the same \omterm{def:b3:replication-and-consensus:raft}{election term}, vote and log, and test that the two replay to the same state on a log of 20 \omterm{def:b3:replication-and-consensus:raft}{election terms} in which each term writes five entries from index $2t$ on. How many of its 121 records remain?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:project-replicated-store:10}
+Prove that the search of \cref{lst:b3:project-replicated-store:lincheck} returns true if and only if the history of the key has a linearisation from which some operations without a reply have been removed. Prove first that an operation can be the first of such a linearisation only if it started before every operation with a reply had ended, then that remembering refuted states changes no result.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:project-replicated-store:11}
+The simulator's first fault restarts a node without its vote records; the second loses, at a crash, the records of the node's last step, after its messages were sent. For each, explain which \omterm{def:b3:concurrency:properties}{safety property} breaks and how, and construct a short run that breaks it. Of 2,000 runs with 5\,\% loss and 0.5\,\% crashes per node and tick, the first fault breaks safety in 107 runs, 106 of them first through election safety, and the second in 18 runs, 17 of them first through leader completeness. Why does each fault break that property most often?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:project-replicated-store:12}
+From \cref{out:b3:project-replicated-store:bench}, estimate the time of one forced flush on the author's laptop. Build a model of the four numbers, with the flush time and the number of writes waiting when the main loop takes its events, and say what bounds the gain of batching with 16 clients. Why is the gain smaller with three replicas than with one?
+\end{exercise}

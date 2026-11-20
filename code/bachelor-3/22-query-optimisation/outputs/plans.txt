@@ -1,0 +1,78 @@
+$ python sqlrun.py plans.sql
+sql> EXPLAIN QUERY PLAN
+...> SELECT b.title, p.last_name, l.due_date
+...> FROM loans l JOIN books b ON b.book_id = l.book_id
+...>   JOIN members m ON m.member_id = l.member_id
+...>   JOIN people p ON p.person_id = m.person_id
+...> WHERE l.return_date IS NULL OR l.return_date > l.due_date;
++----+--------+---------+----------------------------------------------+
+| id | parent | notused | detail                                       |
++----+--------+---------+----------------------------------------------+
+| 5  | 0      | 0       | SCAN l                                       |
+| 12 | 0      | 0       | SEARCH b USING INTEGER PRIMARY KEY (rowid=?) |
+| 15 | 0      | 0       | SEARCH m USING INTEGER PRIMARY KEY (rowid=?) |
+| 18 | 0      | 0       | SEARCH p USING INTEGER PRIMARY KEY (rowid=?) |
++----+--------+---------+----------------------------------------------+
+(4 rows)
+
+sql> EXPLAIN QUERY PLAN
+...> SELECT p.last_name, count(*) AS loans
+...> FROM people p JOIN members m ON m.person_id = p.person_id
+...>   JOIN loans l ON l.member_id = m.member_id
+...> GROUP BY p.person_id;
++----+--------+---------+----------------------------------------------+
+| id | parent | notused | detail                                       |
++----+--------+---------+----------------------------------------------+
+| 8  | 0      | 0       | SCAN l                                       |
+| 10 | 0      | 0       | SEARCH m USING INTEGER PRIMARY KEY (rowid=?) |
+| 13 | 0      | 0       | SEARCH p USING INTEGER PRIMARY KEY (rowid=?) |
+| 16 | 0      | 0       | USE TEMP B-TREE FOR GROUP BY                 |
++----+--------+---------+----------------------------------------------+
+(4 rows)
+
+sql> CREATE INDEX loans_member ON loans(member_id);
+OK
+
+sql> EXPLAIN QUERY PLAN
+...> SELECT p.last_name, count(*) AS loans
+...> FROM people p JOIN members m ON m.person_id = p.person_id
+...>   JOIN loans l ON l.member_id = m.member_id
+...> GROUP BY p.person_id;
++----+--------+---------+----------------------------------------------+
+| id | parent | notused | detail                                       |
++----+--------+---------+----------------------------------------------+
+| 8  | 0      | 0       | SCAN l USING COVERING INDEX loans_member     |
+| 10 | 0      | 0       | SEARCH m USING INTEGER PRIMARY KEY (rowid=?) |
+| 13 | 0      | 0       | SEARCH p USING INTEGER PRIMARY KEY (rowid=?) |
+| 16 | 0      | 0       | USE TEMP B-TREE FOR GROUP BY                 |
++----+--------+---------+----------------------------------------------+
+(4 rows)
+
+sql> ANALYZE;
+OK
+
+sql> SELECT tbl, idx, stat FROM sqlite_stat1 WHERE tbl IN ('loans', 'members', 'people');
++---------+--------------+-------+
+| tbl     | idx          | stat  |
++---------+--------------+-------+
+| people  | NULL         | 120   |
+| members | NULL         | 60    |
+| loans   | loans_member | 400 7 |
++---------+--------------+-------+
+(3 rows)
+
+sql> EXPLAIN QUERY PLAN
+...> SELECT p.last_name, count(*) AS loans
+...> FROM people p JOIN members m ON m.person_id = p.person_id
+...>   JOIN loans l ON l.member_id = m.member_id
+...> GROUP BY p.person_id;
++----+--------+---------+----------------------------------------------------------+
+| id | parent | notused | detail                                                   |
++----+--------+---------+----------------------------------------------------------+
+| 8  | 0      | 0       | SCAN m                                                   |
+| 10 | 0      | 0       | SEARCH l USING COVERING INDEX loans_member (member_id=?) |
+| 14 | 0      | 0       | SEARCH p USING INTEGER PRIMARY KEY (rowid=?)             |
+| 17 | 0      | 0       | USE TEMP B-TREE FOR GROUP BY                             |
++----+--------+---------+----------------------------------------------------------+
+(4 rows)
+

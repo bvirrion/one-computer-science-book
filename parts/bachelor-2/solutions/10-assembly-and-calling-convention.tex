@@ -1,0 +1,207 @@
+% Solutions of Book 4, chapter 10 (assembly-and-calling-convention).
+\section*{Chapter \ref{ch:b2:assembly-and-calling-convention} --- Assembly Language and the Calling Convention}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:1}
+\omoutput[2-5]{code/bachelor-2/10-assembly-and-calling-convention/outputs/exo_regs.txt}{The register dump at the
+end.}
+$-5$ is \code{0xfffffffb}. \code{srai} by 1 copies the sign bit in: $\lfloor -5/2 \rfloor = -3$ (it rounds down,
+unlike C's division, which gives $-2$). \code{srli} by 28 brings in zeros and keeps the top four bits,
+\code{0xf} $= 15$. \code{slti} compares signed: $-5 < 0$, so 1. \code{sltiu} compares unsigned, and no number is
+below 0: 0. \code{xori} with $-1$ flips every bit: $\lnot(-5) = 4$. \code{a0} is 0 because the program sets it
+before returning.
+\end{solution}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:2}
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/exo_bge.txt}{The output.}
+\code{bge t1, t0, loop} branches back while $k \ge n$, the opposite of the intended test. After the first turn $k =
+2 < 10$, the branch falls through, and the sum is 1. With the test at the bottom
+(\cref{met:b2:assembly-and-calling-convention:compile-loop}), the branch must go back while the loop's condition
+$k \le n$ holds, that is \code{bge t0, t1, loop} (``$n \ge k$''), as in \cref{lst:b2:assembly-and-calling-convention:first}.
+It then prints 55.
+\end{solution}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:3}
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/exercises/max.S}{12}{22}{The maximum, a leaf}
+The function keeps the best value in \code{t0} and walks a pointer to the end; it prints 19. The branch
+\code{bge t0, t1, next} compares signed words: on unsigned words it must be \code{bgeu}, or a value above $2^{31}$
+would be read as negative and lose to every small one. The pointer comparison \code{bgeu} is unsigned in both cases,
+as addresses are.
+\end{solution}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:4}
+\omoutput[2-6]{code/bachelor-2/10-assembly-and-calling-convention/outputs/exo_encode.txt}{The check, with the
+fields.}
+\code{addi a0, a0, -1} is I-type: imm $= -1$ is twelve 1s; rs1 $= 10 = 01010$, funct3 000, rd $= 01010$, \omterm{def:b2:assembly-and-calling-convention:format}{opcode}
+0010011. The bits \code{1111 1111 1111 0101 0000 0101 0001 0011} are \code{0xfff50513}.
+\code{sw ra, 12(sp)} is S-type: $12 = 0000000\,01100$, so imm[11:5] $= 0000000$ and imm[4:0] $= 01100$; rs2 $= 1$,
+rs1 $= 2$, funct3 010: \code{0x00112623}. The branch is at \code{main} $+ 8$, so its offset is $-8$, in 13 bits
+\code{1 1111 1111 1000}: bit 12 is 1, bits 10--5 are 111111, bits 4--1 are 1100, bit 11 is 1. The B fields are
+then $1111111$ and $11001$, with rs2 $= 0$, rs1 $= 10$: \code{0xfe050ce3}.
+\end{solution}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:5}
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/exo_decode.txt}{The check.}
+\code{00b50633}: \omterm{def:b2:assembly-and-calling-convention:format}{opcode} 0110011 (R), rd 12, funct3 0, rs1 10, rs2 11, funct7 0: \code{add a2, a0, a1}.
+\code{00452283}: \omterm{def:b2:assembly-and-calling-convention:format}{opcode} 0000011, a load; funct3 010 is \code{lw}; rd 5, rs1 10, imm 4: \code{lw t0, 4(a0)}.
+\code{fe0518e3}: \omterm{def:b2:assembly-and-calling-convention:format}{opcode} 1100011, funct3 001, \code{bne}, rs1 10, rs2 0; the B \omterm{def:b2:assembly-and-calling-convention:immediate}{immediate} reassembles to $-16$, so the
+target is $\code{0x00010008} - 16 = \code{0x0000fff8}$. \code{00c000ef}: \omterm{def:b2:assembly-and-calling-convention:format}{opcode} 1101111, \code{jal}, rd 1; the J
+\omterm{def:b2:assembly-and-calling-convention:immediate}{immediate} is 12, target \code{0x00010018}. \code{0005a503}: \code{lw a0, 0(a1)}. The branch target lies below the
+text, which shows that these five words are a fragment of a larger program.
+\end{solution}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:6}
+The first \code{call inc} sets \code{ra} to the address of the second \code{call}, which overwrites \code{main}'s
+return address for good; the second \code{call inc} sets \code{ra} to the address of the \code{ret} that follows
+it. \code{inc} returns there, and that \code{ret} jumps to \code{ra}, that is to itself, for ever: line 17 is where
+\code{rv} stops. A function that calls must save \code{ra} (\cref{met:b2:assembly-and-calling-convention:frame}):
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/exercises/exo_ra_fixed.S}{12}{22}{The fix: a frame for
+\code{ra}}
+It then prints 42.
+\end{solution}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:7}
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/exercises/strcmp.S}{3}{11}{\code{strcmp}, a leaf}
+The loop stops at the first difference, or at the end of both strings together; the result is the difference of the
+two bytes read with \code{lbu}, so a byte above 127 counts as large, as C requires. The program prints \code{-1 0
+-1}: \code{L} comes before \code{R}, and \code{Mill} is a prefix of \code{Mill Lane}, whose space is compared with the
+NUL that ends \code{Mill}. Being a leaf using only \code{t} and \code{a} registers, it needs no frame.
+\end{solution}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:8}
+(a) Suppose $\mathit{hi} \cdot 2^{12} + \mathit{lo} \equiv \mathit{hi}' \cdot 2^{12} + \mathit{lo}' \pmod{2^{32}}$.
+Modulo $2^{12}$, $\mathit{lo} \equiv \mathit{lo}'$; both lie in an interval of 4096 consecutive integers, so
+$\mathit{lo} = \mathit{lo}'$. Then $2^{12}(\mathit{hi} - \mathit{hi}') \equiv 0 \pmod{2^{32}}$, so $\mathit{hi}
+\equiv \mathit{hi}' \pmod{2^{20}}$, and both are in $[0, 2^{20})$: they are equal.
+(b) One \code{addi} from \code{zero} when $c$, read signed, is in $[-2048, 2047]$ ($\mathit{hi} = 0$); one
+\code{lui} when the low 12 bits of $c$ are zero ($\mathit{lo} = 0$), as \code{0x7ffff000} in
+\cref{out:b2:assembly-and-calling-convention:constants}.
+(c) $c = \code{0x7ffff800}$: the low part is \code{0x800}, so $\mathit{lo} = 2048 - 4096 = -2048$ and $\mathit{hi}
+= (c + \code{0x800}) / 2^{12} = \code{0x80000}$. \code{lui} gives \code{0x80000000}, which is negative when read
+signed, and adding $-2048$ gives \code{0x7ffff800}: the wrap-around of the 32-bit sum is exactly what makes it right.
+\end{solution}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:9}
+\code{int} needs alignment 4 and \code{short} 2: \code{days} at offset 0, \code{rate} at 4, \code{lost} at 6; the
+size is rounded up to a multiple of 4, so 8, with one byte of padding.
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/exercises/loan_fine.S}{6}{17}{\code{fine}, a leaf}
+\code{lbu} reads the \code{char}, \code{lh} the signed \code{short}; \code{blez} is the reversed test of
+\code{d > 0}. On the three loans (30 days at 10, 12 days at 10, lost) it prints 90, 0 and 2000.
+\end{solution}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:10}
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/exercises/bsearch.S}{4}{25}{A recursive binary search}
+Only \code{ra} needs saving: no value is used after a recursive call, whose result is returned as it is. The test
+finds every key at its index and returns $-1$ for 100, 1 and 999. That is also why the calls are \omterm{def:b2:functional-programming:tail}{tail calls} in
+disguise: after \code{call find} the function only restores \code{ra} and returns, so it could instead free its
+frame and jump to \code{find} with \code{j}, leaving the original \code{ra} in place; the search then runs in a
+single frame, like a loop. The empty case returns before allocating a frame at all.
+\end{solution}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:11}
+(a) $C(0) = C(1) = 1$ and $C(n) = 1 + C(n-1) + C(n-2)$ for $n \ge 2$. Let $D(n) = C(n) + 1$: then $D(n) = D(n-1) +
+D(n-2)$ with $D(0) = D(1) = 2$, so $D(n) = 2F_{n+1}$ by induction (as $F_1 = F_2 = 1$), and $C(n) = 2F_{n+1} - 1$.
+(b) The deepest chain is \code{fib(n)}, \code{fib(n-1)}, \ldots, \code{fib(1)}; the last one allocates no frame, so
+for $n \ge 2$ there are $n - 1$ frames of 16 bytes, $16(n-1)$ bytes, below \code{main}'s own 16. The stack grows
+linearly although the number of calls grows exponentially.
+(c) Each call is one \code{jal} and one \code{ret} (a \code{jalr}); \code{main} adds its own \code{ret}. The test
+expects $2C(n) + 1 = 4F_{n+1} - 1$ jumps, 355 for $n = 10$.
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/exercises/fib.S}{3}{20}{\code{fib} with three saved
+registers}
+\end{solution}
+
+\begin{solution}{exo:b2:assembly-and-calling-convention:12}
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/exercises/switch2.S}{6}{22}{The case value shifted to
+start at 0}
+Subtracting 3 maps the cases 3 to 7 to the indices 0 to 4; the gap 6 gets an entry pointing to the default. A value
+$v < 3$, negative ones included, gives $v - 3 < 0$, whose bit pattern read unsigned is at least $2^{31}$, so the
+single test \code{bgeu t0, t1, other} rejects it together with every $v > 7$. On the shelves 3, 4, 5, 6, 7, 2, 8 the
+program prints \code{ABB?D??}.
+\end{solution}
+
+\begin{solution}{pb:b2:assembly-and-calling-convention:1}
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/check_digit.txt}{The C version.}
+
+\textbf{1.} From the right: $6 \cdot 3 + 0 \cdot 1 + 0 \cdot 3 + 4 \cdot 1 = 22$; $(10 - 2) \bmod 10 = 8$.
+
+\textbf{2.} Every code has at least one digit, so the body runs at least once and the test can sit at the bottom.
+For \code{check_digit(0)} the body runs once on the digit 0: the sum is 0 and the result $(10 - 0) \bmod 10 = 0$, the
+same value a \code{while} would give, but the \code{do} form counts 0 as the one-digit code it is.
+
+\textbf{3.} Changing the digit $d$ at weight $w$ into $d' \ne d$ changes the sum by $w(d' - d)$, with $0 < |d' - d|
+\le 9$. For $w = 1$ that is not a multiple of 10; for $w = 3$, since 3 and 10 are coprime, $3(d' - d) \equiv 0
+\pmod{10}$ would force $10 \mid d' - d$. So the sum changes modulo 10, and $s \mapsto (10 - s) \bmod 10$ is a
+bijection on the residues: the check digit changes.
+
+\textbf{4.} $x$ and $y$ at adjacent positions have the weights 3 and 1 in some order: the sum changes by $\pm(3x + y
+- 3y - x) = \pm 2(x - y)$. That is a multiple of 10 exactly when $x - y$ is a multiple of 5: swapping two digits that
+differ by 5, such as 2 and 7, is not caught.
+
+\textbf{5.} \code{code}, \code{i} and \code{sum} are used after the call. The digit and the position are consumed by
+the call, and the constant 10 can be loaded again.
+
+\textbf{6.} $2^{32} - 1 = 4\,294\,967\,295$ has ten digits: every code of nine digits fits, and ten-digit codes only up
+to that value.
+
+\textbf{7.} \code{s0} holds \code{code}, \code{s1} holds \code{i}, \code{s2} holds \code{sum}. They are callee-saved,
+so \code{weigh}, or any function the loop calls later, must leave them intact; in \code{t} or \code{a} registers the
+loop would have to save them around each call.
+
+\textbf{8.} The \omterm{def:b2:assembly-and-calling-convention:prologue}{epilogue} undoes the \omterm{def:b2:assembly-and-calling-convention:prologue}{prologue} in reverse: \code{lw s2, 0(sp)}, \code{lw s1, 4(sp)}, \code{lw s0,
+8(sp)}, \code{lw ra, 12(sp)}, \code{addi sp, sp, 16}, then \code{ret}, as in lines 32 to 38 of \code{count.S},
+where \code{li a0, 0} sets the exit status just before the \code{ret}. Four words fill the 16 bytes exactly.
+
+\textbf{9.} \code{remu a0, s0, t0} and \code{divu s0, s0, t0}. The C variable is \code{unsigned}: a code above $2^{31}$
+read signed would be negative, and \code{rem} and \code{div} would give negative digits.
+
+\textbf{10.} \code{bnez s0, digit} at the bottom of the loop: the \code{do}--\code{while} form of
+\cref{met:b2:assembly-and-calling-convention:compile-loop}, one branch per digit.
+
+\textbf{11.} \code{a2} is caller-saved: \code{weigh} may change it. The present \code{weigh} happens not to touch it,
+so the program would still print the right digits, but only by accident: the next version of \code{weigh}, or a
+compiler that inlines something into it, may use \code{a2} and the total is lost, the bug of
+\cref{lst:b2:assembly-and-calling-convention:clobber} with the roles reversed.
+
+\textbf{12.} The first \code{remu} computes $s \bmod 10$, which the formula needs; avoiding it would mean keeping
+the sum reduced modulo 10 in the loop, one \code{remu} per digit instead of one in all. The second can be replaced by
+a comparison: $10 - (s \bmod 10)$ is between 1 and 10, and only 10 must become 0.
+
+\textbf{13.} It calls nothing, so \code{ra} stays intact, and it uses only \code{t0}, \code{t1}, \code{a0} and
+\code{a1}, which are caller-saved: nothing to save, no frame.
+
+\textbf{14.} $i \mathbin{\&} 1$ is the last bit of $i$: 0 for even $i$, giving $3 - 0 = 3$, and 1 for odd $i$, giving
+$3 - 2 = 1$.
+
+\textbf{15.} Yes: \code{t0} and \code{t1} are caller-saved. The loop itself uses \code{t0} for the constant 10 before
+the call, and would be broken if it relied on it afterwards; it reloads 10 into \code{t0} after the loop instead
+(line 23), as the convention requires of a caller.
+
+\textbf{16.} The \code{mv a1, s1}, the \code{call} and the \code{ret} disappear (\code{andi} reads \code{s1}
+directly): 3 instructions per digit, 11 instead of 14.
+
+\textbf{17.} One more instruction per call, so one more per digit: $15n + 26$.
+
+\textbf{18.} From question 21: $14 \cdot 2 + 26 = 54$ for 12, and $14 \cdot 9 + 26 = 152$ for the two nine-digit codes;
+the test checks them, and their check digits 3, 5 and 7, against a Python reference.
+
+\textbf{19.} In \code{main}, \code{li}, \code{remu}, \code{divu}, \code{mv} and \code{jal} (5); in \code{weigh}, six
+including \code{ret}; back in the loop, \code{add}, \code{addi} and \code{bnez} (3): 14 per digit.
+
+\textbf{20.} Before the loop: five for the \omterm{def:b2:assembly-and-calling-convention:prologue}{prologue}, then \code{li}, \code{ecall}, \code{mv} and two \code{li}: 10.
+After it: \code{li}, \code{remu}, \code{sub}, \code{remu}, the printing of the digit and of the newline (six), then
+the four loads, \code{addi}, \code{li} and \code{ret} (seven): 16. In all 26.
+
+\textbf{21.} The code outside the loop is straight-line, and so is the body, \code{weigh} included: the only branch is
+\code{bnez}. For an $n$-digit code, $10^{n-1} \le c < 10^n$ (or $c = 0$, $n = 1$), and after $k$ turns \code{s0}
+holds $\lfloor c / 10^k \rfloor$, which is nonzero for $k < n$ and zero for $k = n$: the loop runs exactly $n$ times.
+The count is $10 + 14n + 16 = 14n + 26$: $a = 14$, $b = 26$.
+
+\textbf{22.} $14 + 26 = 40$, $56 + 26 = 82$ and $126 + 26 = 152$, the three counts printed; the test adds the
+seven-digit code 9780306, $98 + 26 = 124$.
+
+\textbf{23.} No branch depends on a digit's value: the weight is computed without a branch (question 14), and
+\code{divu} and \code{remu} count as one instruction each whatever their operands. Only the number of turns varies.
+
+\textbf{24.} The check digit of an $n$-digit code, hand-compiled under the \omterm{def:b2:assembly-and-calling-convention:convention}{calling convention} with a helper call per
+digit, executes \emph{exactly} $14n + 26$ instructions: $an + b$ with $a = 14$ and $b = 26$, proved from the code and
+counted by \code{rv} on every tested code.
+\end{solution}

@@ -1,0 +1,359 @@
+\chapter{Bottom-Up Parsing}\label{ch:b3:bottom-up-parsing}
+
+The parser of the last chapter decides which production to use before it has read what the production covers, from one token of lookahead. That is why $E \to E + T$ had to be rewritten and why the full \omterm{def:b3:top-down-parsing:ll1}{LL(1) grammar} of Moor needed 37 nonterminals. A bottom-up parser waits: it reads tokens onto a stack and decides that a production applies only once it has seen the whole of the production's right side, and one token after it. The grammars it accepts are a much larger class, \omterm{def:b3:top-down-parsing:left-recursion}{left recursion} is no trouble, and the decision can be taken by a finite automaton built from the grammar by a program. This chapter builds that automaton and the tables read from it, meets the two conflicts a grammar can cause, and ends with a \omterm{def:b3:bottom-up-parsing:generator}{parser generator} of our own that turns a grammar file into a working parser for Moor's expressions.
+
+\section{Shift and reduce}\label{sec:b3:bottom-up-parsing:shift-reduce}
+
+\begin{recall}
+FIRST and FOLLOW (chapter~\ref{ch:b3:top-down-parsing}); the end marker \$ follows the start symbol. A deterministic finite automaton reads a word symbol by symbol and is in one state after each; a pushdown automaton adds a stack (Year 2 volume). A rightmost derivation always rewrites the rightmost nonterminal; each sentential form it passes through is a \emph{right sentential form}.
+\end{recall}
+
+Take the grammar of sums and products in its natural, left-recursive form (\cref{lst:b3:bottom-up-parsing:expr}). A bottom-up parser keeps a stack of grammar symbols and has two moves. It can \emph{shift}: push the next input token. Or it can \emph{reduce}: if the top of the stack is the right side of a production, replace it by the left side. It accepts when the input is used up and the stack holds the start symbol alone.
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/expr.grammar}{1}{4}{Sums and products, left-recursive: a bottom-up parser takes this grammar as it is. The rules are numbered from 1 in reading order; rule 0 will be \code{Start -> E}.}\label{lst:b3:bottom-up-parsing:expr}
+
+On \code{id + id * id}, the parser shifts the first \code{id} and reduces it to $F$, then $T$, then $E$. It shifts \code{+} and \code{id}, reduces the \code{id} to $F$ and $T$, and now stops reducing: with \code{*} next, $E + T$ on the stack must not become $E$, because the $T$ is the left operand of a product. It shifts \code{*} and \code{id}, reduces \code{id} to $F$, $T * F$ to $T$, and only then $E + T$ to $E$. \Cref{out:b3:bottom-up-parsing:trace} prints the whole run; the first column, a state number, is explained in the next section.
+
+\omoutput{code/bachelor-3/03-bottom-up-parsing/outputs/sr_trace.txt}{The shift--reduce parser on \code{id + id * id}: the state on top of the stack, the symbols on the stack, the input left, and the move. The last line lists the rules reduced, by number.}\label{out:b3:bottom-up-parsing:trace}
+
+\begin{definition}[Shift--reduce parsing, handle]\label{def:b3:bottom-up-parsing:shift-reduce}
+\emph{Shift--reduce parsing}\index{shift--reduce parsing} reads the input from left to right onto a stack, shifting tokens and reducing right sides of productions at the top of the stack to their left sides. A \emph{handle}\index{handle} of a right sentential form $\gamma$ is a production $A \to \beta$ together with a position of $\beta$ in $\gamma$ such that replacing that $\beta$ by $A$ gives the previous form of a rightmost derivation of $\gamma$.
+\end{definition}
+
+In $E + T * \mathtt{id}$, the \omterm{def:b3:bottom-up-parsing:shift-reduce}{handle} is $F \to \mathtt{id}$ at the last position; $E + T$ is the right side of a production, but it is not a \omterm{def:b3:bottom-up-parsing:shift-reduce}{handle} there, because $E * \mathtt{id}$ is not a right sentential form. The whole difficulty of bottom-up parsing is to recognise \omterm{def:b3:bottom-up-parsing:shift-reduce}{handles}. A correct parser reduces exactly the \omterm{def:b3:bottom-up-parsing:shift-reduce}{handles}, and so traces a rightmost derivation backwards: the figure below numbers the nodes of the parse tree in the order the parser builds them.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, level distance=9mm, sibling distance=17mm,
+  every node/.style={inner sep=1.5pt}, tk/.style={font=\ttfamily\small},
+  st/.style={circle, draw=omDef, fill=omDef!10, inner sep=0.6pt, font=\scriptsize, minimum size=3.6mm}]
+  \node (e8) {$E$}
+    child {node (e3) {$E$} child {node (t2) {$T$} child {node (f1) {$F$} child {node[tk] {id}}}}}
+    child {node[tk] {+}}
+    child {node (t7) {$T$}
+      child {node (t5) {$T$} child {node (f4) {$F$} child {node[tk] {id}}}}
+      child {node[tk] {*}}
+      child {node (f6) {$F$} child {node[tk] {id}}}};
+  \foreach \n/\k in {f1/1, t2/2, e3/3, f4/4, t5/5, f6/6, t7/7, e8/8}
+    \node[st, anchor=west, xshift=1pt] at (\n.east) {\k};
+  \node[align=left, anchor=west, font=\small] at (4.6,-1.6) {%
+    the rightmost derivation:\\[2pt]
+    $E \Rightarrow E + T \Rightarrow E + T * F$\\
+    $\phantom{E} \Rightarrow E + T * \mathtt{id} \Rightarrow E + F * \mathtt{id}$\\
+    $\phantom{E} \Rightarrow E + \mathtt{id} * \mathtt{id} \Rightarrow T + \mathtt{id} * \mathtt{id}$\\
+    $\phantom{E} \Rightarrow F + \mathtt{id} * \mathtt{id} \Rightarrow \mathtt{id} + \mathtt{id} * \mathtt{id}$};
+\end{tikzpicture}
+\par\smallskip{\small The parse tree of \texttt{id + id * id}, each interior node numbered by the reduction that built it. Reduction 8 is the first step of the rightmost derivation on the right, reduction 1 its last.}
+\end{omfigure}
+
+\begin{proposition}[Reductions are a reversed rightmost derivation]\label{prop:b3:bottom-up-parsing:rightmost}
+If a shift--reduce parse of $w$ reduces only \omterm{def:b3:bottom-up-parsing:shift-reduce}{handles}, its reductions, read from last to first, are the steps of a rightmost derivation of $w$.
+\end{proposition}
+
+\begin{proof}
+At every moment the stack $\gamma$ followed by the unread input $x$ is a right sentential form $\gamma x$: true at the start ($\gamma = \varepsilon$, $x = w$), unchanged by a shift, and a reduction of a \omterm{def:b3:bottom-up-parsing:shift-reduce}{handle} replaces $\gamma x$ by the previous form of a rightmost derivation of $\gamma x$. The last form is the start symbol, so the forms, read backwards, are a derivation of $w$; each step rewrites the nonterminal that the corresponding reduction created, and since the input to its right is all terminals, it is the rightmost nonterminal.
+\end{proof}
+
+So a bottom-up parser builds a Rightmost derivation in reverse, reading Left to right: its grammars are the LR grammars. What remains is to know, from the stack and the next token, whether the top of the stack is a \omterm{def:b3:bottom-up-parsing:shift-reduce}{handle}.
+
+\section{LR(0) items and their automaton}\label{sec:b3:bottom-up-parsing:items}
+
+The parser must know, at each moment, which productions it may be in the middle of, and how far in. An item records exactly that.
+
+\begin{definition}[LR(0) item, item closure, goto function]\label{def:b3:bottom-up-parsing:items}
+An \emph{LR(0) item}\index{LR(0) item} is a production with a dot in its right side, such as $T \to T \cdot * F$: the part before the dot has been seen, the part after it is expected. The \emph{item closure}\index{item closure} of a set of items adds $B \to \cdot\,\delta$ for every production of $B$ whenever some item has its dot before the nonterminal $B$, and repeats until nothing changes. The \emph{goto function}\index{goto function} maps a set of items $I$ and a symbol $X$ to the closure of the items $A \to \alpha X \cdot \beta$ for which $A \to \alpha \cdot X \beta$ is in $I$.
+\end{definition}
+
+Expecting a $B$ means expecting the start of any of $B$'s productions: that is the closure. The \omterm{def:b3:bottom-up-parsing:items}{goto function} is the move of a parser that has just seen an $X$, read or reduced. The grammar is first \emph{augmented} with a new start rule $\mathit{Start} \to E$, so that acceptance is the reduction of rule~0. \Cref{lst:b3:bottom-up-parsing:items} is both functions; an item is a pair (rule, position of the dot).
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/lr0.rs}{25}{46}{\omterm{def:b3:bottom-up-parsing:items}{Item closure} and goto. A state is a sorted set of items, so two states are equal when they hold the same items.}\label{lst:b3:bottom-up-parsing:items}
+
+\begin{definition}[Viable prefix, LR(0) automaton]\label{def:b3:bottom-up-parsing:automaton}
+An item $A \to \beta \cdot \delta$ is \emph{valid} for a string $\gamma$ of grammar symbols if $\mathit{Start} \Rightarrow^*_{\mathrm{rm}} \alpha A w \Rightarrow_{\mathrm{rm}} \alpha\beta\delta w$ with $\gamma = \alpha\beta$. A \emph{viable prefix}\index{viable prefix} is a string for which some item is valid: a prefix of a right sentential form that does not run past the end of its \omterm{def:b3:bottom-up-parsing:shift-reduce}{handle}. The \emph{LR(0) automaton}\index{LR(0) automaton} of a grammar has as start state the closure of $\{\mathit{Start} \to \cdot\,S\}$, as states every set reachable from it by the \omterm{def:b3:bottom-up-parsing:items}{goto function}, and a transition labelled $X$ from $I$ to $\mathrm{goto}(I, X)$ whenever that set is not empty.
+\end{definition}
+
+\Cref{lst:b3:bottom-up-parsing:automaton} discovers the states in order: for each state, the symbols that follow a dot, and for each such symbol the target, new or already known. On the expression grammar it finds 12 states (\cref{out:b3:bottom-up-parsing:states}); the figure after it draws them.
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/lr0.rs}{54}{80}{The \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton}: a worklist over the states found so far.}\label{lst:b3:bottom-up-parsing:automaton}
+
+\omoutput[1-14,21-22,27,30-36]{code/bachelor-3/03-bottom-up-parsing/outputs/lr0_states.txt}{The \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton} of the expression grammar: each state's items, kernel first, and its transitions as \textit{symbol}:\textit{target}. The closure items of I4, I6 and I7 are left out.}\label{out:b3:bottom-up-parsing:states}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, >=Stealth,
+  st/.style={draw, rounded corners=1.5pt, fill=omDef!6, align=left, inner sep=2.5pt, font=\ttfamily\scriptsize},
+  lab/.style={font=\ttfamily\scriptsize, fill=white, inner sep=1pt}]
+  \node[st] (I0) at (0,0) {\textbf{I0}\\Start -> . E\\E -> . E + T\\E -> . T\\T -> . T * F\\T -> . F\\F -> . ( E )\\F -> . id};
+  \node[st] (I1) at (4.1,2.9) {\textbf{I1}\\Start -> E .\\E -> E . + T};
+  \node[st] (I2) at (4.1,1.2) {\textbf{I2}\\E -> T .\\T -> T . * F};
+  \node[st] (I3) at (4.1,-0.2) {\textbf{I3}\\T -> F .};
+  \node[st] (I5) at (4.1,-1.3) {\textbf{I5}\\F -> id .};
+  \node[st] (I4) at (4.1,-2.9) {\textbf{I4}\\F -> ( . E )\\[1pt]\textrm{also (:4 T:2}\\\textrm{F:3 id:5}};
+  \node[st] (I6) at (8.0,2.9) {\textbf{I6}\\E -> E + . T\\[1pt]\textrm{also (:4 F:3 id:5}};
+  \node[st] (I7) at (8.0,1.0) {\textbf{I7}\\T -> T * . F\\[1pt]\textrm{also (:4 id:5}};
+  \node[st] (I8) at (8.0,-2.9) {\textbf{I8}\\E -> E . + T\\F -> ( E . )\\[1pt]\textrm{also +:6}};
+  \node[st] (I9) at (11.8,2.9) {\textbf{I9}\\E -> E + T .\\T -> T . * F};
+  \node[st] (I10) at (11.8,1.0) {\textbf{I10}\\T -> T * F .};
+  \node[st] (I11) at (11.8,-2.9) {\textbf{I11}\\F -> ( E ) .};
+  \draw[->] (I0.north east) -- node[lab, pos=0.5] {E} (I1.west);
+  \draw[->] (I0.east) ++(0,0.5) -- node[lab, pos=0.55] {T} (I2.west);
+  \draw[->] (I0.east) ++(0,0.1) -- node[lab, pos=0.55] {F} (I3.west);
+  \draw[->] (I0.east) ++(0,-0.3) -- node[lab, pos=0.55] {id} (I5.west);
+  \draw[->] (I0.south east) -- node[lab, pos=0.5] {(} (I4.west);
+  \draw[->] (I1) -- node[lab] {+} (I6);
+  \draw[->] (I2) -- node[lab] {*} (I7);
+  \draw[->] (I4) -- node[lab] {E} (I8);
+  \draw[->] (I6) -- node[lab] {T} (I9);
+  \draw[->] (I7) -- node[lab] {F} (I10);
+  \draw[->] (I8) -- node[lab] {)} (I11);
+  \draw[->] (I9.south west) -- node[lab] {*} (I7.north east);
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton} of the expression grammar. Each box shows the kernel items (those whose dot is not at the start, and the start rule); the closure adds the others, as in I0. The moves that would cross the picture are written in the box as ``also'' \textit{symbol}:\textit{target}. A state with an item whose dot is at the end (I1, I2, I3, I5, I9, I10, I11) may reduce.}
+\end{omfigure}
+
+\begin{theorem}[The automaton recognises viable prefixes]\label{thm:b3:bottom-up-parsing:viable}
+Let $\gamma$ be a string of grammar symbols. There is a path from the start state labelled $\gamma$ if and only if $\gamma$ is a \omterm{def:b3:bottom-up-parsing:automaton}{viable prefix}, and the state it reaches holds exactly the items valid for $\gamma$.
+\end{theorem}
+
+\begin{proof}
+We prove that every item of the state reached by a path labelled $\gamma$ is valid for $\gamma$; since a state is never empty, $\gamma$ is then viable. The converse, that every item valid for $\gamma$ is in that state (so every \omterm{def:b3:bottom-up-parsing:automaton}{viable prefix} labels a path), is exercise~\ref{exo:b3:bottom-up-parsing:10}. Assume the grammar has no useless nonterminal: each derives some word of terminals.
+
+\emph{Closure keeps validity.} Let $A \to \beta \cdot B\delta$ be valid for $\gamma$: $\mathit{Start} \Rightarrow^*_{\mathrm{rm}} \alpha A w \Rightarrow_{\mathrm{rm}} \alpha\beta B\delta w$ with $\gamma = \alpha\beta$. Let $\delta \Rightarrow^* x$, a word of terminals. Rewriting $\delta$ first keeps the derivation rightmost, since $\delta$ is to the right of $B$: $\alpha\beta B\delta w \Rightarrow^*_{\mathrm{rm}} \alpha\beta B x w \Rightarrow_{\mathrm{rm}} \alpha\beta\eta x w$ for any production $B \to \eta$. So $B \to \cdot\,\eta$ is valid for $\alpha\beta = \gamma$.
+
+\emph{Induction on the length of $\gamma$.} For $\gamma = \varepsilon$ the state is the closure of $\mathit{Start} \to \cdot\,S$, which is valid for $\varepsilon$ by the zero-step derivation. For $\gamma X$, the state reached is $\mathrm{goto}(I, X)$ where $I$ is the state reached by $\gamma$. Its kernel items $A \to \beta X \cdot \delta$ come from items $A \to \beta \cdot X\delta$ of $I$, valid for $\gamma$ by induction, and the same derivation shows $A \to \beta X \cdot \delta$ valid for $\gamma X$. The rest of the state is closure, which keeps validity.
+\end{proof}
+
+The theorem is what makes bottom-up parsing work. The stack of the parser always holds a \omterm{def:b3:bottom-up-parsing:automaton}{viable prefix}, so instead of the symbols it can hold the states of the automaton along the path: the state on top summarises the whole stack. If that state has a completed item $A \to \beta\,\cdot$, then $\beta$ is at the top of the stack and the item is valid: reducing it may be right. If it has an item $A \to \beta \cdot a \delta$ and the next token is $a$, shifting may be right. When only one of the two can apply, the automaton has found the \omterm{def:b3:bottom-up-parsing:shift-reduce}{handle}.
+
+\section{SLR tables}\label{sec:b3:bottom-up-parsing:slr}
+
+\begin{definition}[SLR table, shift--reduce and reduce--reduce conflicts]\label{def:b3:bottom-up-parsing:slr}
+The \emph{SLR table}\index{SLR table} of a grammar has a row per state of its \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton}. Its action part has a column per terminal and \$: cell $[I, a]$ holds \emph{shift} $J$ if the automaton moves from $I$ to $J$ on $a$, \emph{reduce} $A \to \beta$ if $A \to \beta\,\cdot$ is in $I$ and $a \in \mathrm{FOLLOW}(A)$, and \emph{accept} if $a = \$$ and $\mathit{Start} \to S\,\cdot$ is in $I$. Its goto part has a column per nonterminal, read from the automaton's moves. A cell with a shift and a reduce is a \emph{shift--reduce conflict}\index{shift--reduce conflict}; a cell with two reduces is a \emph{reduce--reduce conflict}\index{reduce--reduce conflict}. A grammar is SLR if its table has no conflict.
+\end{definition}
+
+The S stands for Simple: FOLLOW is a crude test of whether a reduction makes sense, but on the expression grammar it is enough. In state I2, $E \to T\,\cdot$ asks for a reduction and $T \to T \cdot * F$ for a shift on \code{*}; $\mathrm{FOLLOW}(E) = \{+, ), \$\}$ does not contain \code{*}, so the cell $[2, *]$ holds the shift alone. That is precedence, found by the table and not written by hand: a product binds tighter because the grammar says that $T * F$ is a $T$. \Cref{lst:b3:bottom-up-parsing:table} builds the table and \cref{out:b3:bottom-up-parsing:table} prints it.
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/slr.rs}{19}{46}{The \omterm{def:b3:bottom-up-parsing:slr}{SLR table}: shifts and gotos from the automaton's moves, reduces from FOLLOW. A cell is a list, so that conflicts are kept and can be reported.}\label{lst:b3:bottom-up-parsing:table}
+
+\omoutput{code/bachelor-3/03-bottom-up-parsing/outputs/slr_table.txt}{The \omterm{def:b3:bottom-up-parsing:slr}{SLR table} of the expression grammar: \code{s5} shifts and goes to state 5, \code{r2} reduces by rule 2, $E \to T$. No cell has two actions.}\label{out:b3:bottom-up-parsing:table}
+
+\begin{method}[The LR driver]\label{met:b3:bottom-up-parsing:driver}
+Keep a stack of states, initially the start state. Repeat, with $s$ the state on top and $a$ the next token: if $[s, a]$ is shift $j$, push $j$ and advance; if it is reduce $A \to \beta$, pop $|\beta|$ states, then push $\mathrm{goto}[t, A]$ where $t$ is the state now on top; if it is accept, stop; if it is empty, report an error at $a$.
+\end{method}
+
+\Cref{lst:b3:bottom-up-parsing:driver} is the driver; the symbols are kept beside the states only for the trace. It is the same for every grammar: everything the grammar says is in the table. The driver is a pushdown automaton, as the top-down one was; the difference is in what the stack means. A top-down stack holds what is still expected; a bottom-up stack holds what has been seen.
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/slr.rs}{67}{103}{The heart of the driver: one match on the action. The reduction pops one state per symbol of the right side and takes the goto from the state uncovered.}\label{lst:b3:bottom-up-parsing:driver}
+
+An LR parser detects an error as early as a left-to-right parser can: it never shifts a token that cannot continue a \omterm{def:b3:bottom-up-parsing:automaton}{viable prefix}, since a shift follows a move of the automaton and every path spells a \omterm{def:b3:bottom-up-parsing:automaton}{viable prefix} (\cref{thm:b3:bottom-up-parsing:viable}). It may still perform a few reductions before the error is found, because FOLLOW lets it reduce on a token that cannot, in this context, follow. Exercise~\ref{exo:b3:bottom-up-parsing:9} watches it happen.
+
+\section{Conflicts and their resolution}\label{sec:b3:bottom-up-parsing:conflicts}
+
+\subsection{The dangling else}
+
+\Cref{lst:b3:bottom-up-parsing:ifelse} is the oldest conflict in the trade. In \code{if c then if c then other else other}, the \code{else} may belong to either \code{if}: the grammar is ambiguous.
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/ifelse.grammar}{1}{2}{An \code{if} with an optional \code{else}, and no braces: the dangling else.}\label{lst:b3:bottom-up-parsing:ifelse}
+
+The \omterm{def:b3:bottom-up-parsing:slr}{SLR table} has one conflict (the figure below). In state I6 the parser has read \code{if c then S}: it may reduce the \code{if} without an \code{else}, since $\mathrm{else} \in \mathrm{FOLLOW}(S)$, or shift the \code{else} and give it to this \code{if}. Every language with this syntax resolves it the same way: the \code{else} goes to the nearest \code{if}, which is the shift. An ambiguous grammar is never LR, so no table construction can do better; a \omterm{def:b3:bottom-up-parsing:generator}{parser generator} reports the conflict and, unless told otherwise, shifts. Our driver takes the first action of a cell, which is the shift, and so behaves the same. Moor has no such conflict: its \code{if} and \code{else} take blocks in braces, and the closing brace says where the inner statement ends.
+
+\begin{omfigure}
+\begin{tikzpicture}
+\node {\small\renewcommand{\arraystretch}{1.15}%
+\begin{tabular}{r|cccccc|c}
+state & \texttt{if} & \texttt{c} & \texttt{then} & \texttt{else} & \texttt{other} & \texttt{\$} & $S$ \\ \hline
+0 & s2 & & & & s3 & & 1 \\
+1 & & & & & & acc & \\
+2 & & s4 & & & & & \\
+3 & & & & r3 & & r3 & \\
+4 & & & s5 & & & & \\
+5 & s2 & & & & s3 & & 6 \\
+6 & & & & \colorbox{omSafe!20}{s7\,/\,r1} & & r1 & \\
+7 & s2 & & & & s3 & & 8 \\
+8 & & & & r2 & & r2 &
+\end{tabular}};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:bottom-up-parsing:slr}{SLR table} of the \code{if} grammar: rule 1 is the \code{if} without \code{else}, rule 2 the one with it, rule 3 \code{S -> other}. $\mathrm{FOLLOW}(S) = \{\mathrm{else}, \$\}$, so in state 6 the reduction of rule 1 lands on the \code{else} column, where the automaton also shifts.}
+\end{omfigure}
+
+\subsection{Precedence declarations}
+
+Grammar writers use the same trick on purpose. The grammar $E \to E + E \mid E * E \mid (\,E\,) \mid \mathit{id}$ is ambiguous and its table full of conflicts, but each conflict opposes a production, say $E \to E + E\,\cdot$, to a token, say \code{*}. Give operators precedences and associativities: then shift if the token binds tighter than the production's last operator, reduce if it binds less tightly, and on a tie reduce for a left-associative operator and shift for a right-associative one. The table of a short, flat grammar then parses as the layered one does. Exercise~\ref{exo:b3:bottom-up-parsing:6} implements the rule; \omterm{def:b3:bottom-up-parsing:generator}{parser generators} take it as declarations such as \texttt{\%left PLUS MINUS}, one line per level, loosest first.
+
+\subsection{A grammar SLR cannot do}
+
+\Cref{lst:b3:bottom-up-parsing:lr} is a small model of assignments through pointers, in the style of C: a left side $L$ is a name or a dereferenced value, a right side $R$ is any left side, read.
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/lr.grammar}{1}{4}{Assignments through pointers. The grammar is not ambiguous, yet it is not SLR.}\label{lst:b3:bottom-up-parsing:lr}
+
+After reading an $L$ at the start, the parser is in a state with $S \to L \cdot = R$ and $R \to L\,\cdot$. The equals sign is in $\mathrm{FOLLOW}(R)$, because of $L \to * R$ and $S \to L = R$: in \code{*x = y}, the $R$ under the star is followed by \code{=}. So SLR puts a reduction in the \code{=} column next to the shift (\cref{out:b3:bottom-up-parsing:conflicts}). Yet no right sentential form starts with $R =$: reducing there is never right. FOLLOW is a property of the nonterminal everywhere in the grammar; what the parser needs is the set of tokens that can follow \emph{in this state}. Items that carry that set are the cure.
+
+\begin{definition}[LR(1) item, LALR table]\label{def:b3:bottom-up-parsing:lr1}
+An \emph{LR(1) item}\index{LR(1) item} $[A \to \beta \cdot \delta,\ a]$ is an \omterm{def:b3:bottom-up-parsing:items}{LR(0) item} with a look-ahead terminal $a$: the item is valid for $\gamma$ if $\mathit{Start} \Rightarrow^*_{\mathrm{rm}} \alpha A w \Rightarrow_{\mathrm{rm}} \alpha\beta\delta w$ with $\gamma = \alpha\beta$ and $w$ starting with $a$ (or $a = \$$ if $w$ is empty). The closure adds $[B \to \cdot\,\eta,\ b]$ for every $b \in \mathrm{FIRST}(\delta' a)$ when an item $[A \to \beta \cdot B\delta',\ a]$ is present; the canonical LR(1) automaton is built from these items as the LR(0) one is, and a reduction by $[A \to \beta\,\cdot,\ a]$ goes in column $a$ only. The \emph{core} of a set of LR(1) items is the set of their \omterm{def:b3:bottom-up-parsing:items}{LR(0) items}. The \emph{LALR table}\index{LALR table} is built from the LR(1) automaton by merging the states with the same core, taking the union of their look-aheads.
+\end{definition}
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/lr1.rs}{12}{34}{The closure of \omterm{def:b3:bottom-up-parsing:lr1}{LR(1) items}: the look-ahead of a new item is FIRST of what follows $B$, and the old look-ahead too if all of that is \omterm{def:b3:top-down-parsing:first-follow}{nullable}.}\label{lst:b3:bottom-up-parsing:closure1}
+
+With look-aheads, the state reached on $L$ from the start holds $[S \to L \cdot = R,\ \$]$ and $[R \to L\,\cdot,\ \$]$: reduce on \$, shift on \code{=}, no conflict. The price is the number of states. A state of the LR(1) automaton is an LR(0) state with look-aheads, and the same LR(0) state may appear with different look-aheads: for this grammar, 14 states instead of 10 (\cref{out:b3:bottom-up-parsing:conflicts}); for a real language, ten times more is common. LALR merges them back. It has exactly the states of the \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton}, so its tables are as small as SLR's, and look-aheads nearly as sharp as LR(1)'s; the figure below shows the four merges for this grammar.
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/lr1.rs}{71}{89}{LALR by merging: one state per distinct core, with the union of the items, and the transitions mapped.}\label{lst:b3:bottom-up-parsing:lalr}
+
+\omoutput{code/bachelor-3/03-bottom-up-parsing/outputs/conflicts.txt}{Three grammars under SLR, LR(1) and LALR. The \code{if} grammar keeps its conflict whatever the method; the assignment grammar loses it under both LR(1) and LALR.}\label{out:b3:bottom-up-parsing:conflicts}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\ttfamily\scriptsize, >=Stealth,
+  one/.style={draw, rounded corners=1.5pt, fill=omDef!6, inner sep=2.5pt, anchor=west},
+  la/.style={draw, rounded corners=1.5pt, fill=omMeth!12, inner sep=2.5pt, anchor=west},
+  tag/.style={font=\scriptsize\rmfamily, anchor=east}]
+  \foreach \y/\core in {0/{L -> * . R}, -1.35/{L -> id .}, -2.7/{R -> L .}, -4.05/{L -> * R .}} {
+    \node[tag] at (2.0,\y+0.28) {before \texttt{=}};
+    \node[tag] at (2.0,\y-0.28) {after \texttt{=}};
+    \node[one] (a) at (2.1,\y+0.28) {[\core, =\,\$]};
+    \node[one] (b) at (2.1,\y-0.28) {[\core, \$]};
+    \node[la] (m) at (7.6,\y) {[\core, =\,\$]};
+    \draw[->] (a.east) -- (m.west);
+    \draw[->] (b.east) -- (m.west);
+  }
+  \node[font=\small\rmfamily] at (3.4,0.85) {LR(1) states};
+  \node[font=\small\rmfamily] at (8.8,0.85) {merged (LALR)};
+\end{tikzpicture}
+\par\smallskip{\small The four pairs of LR(1) states of the assignment grammar that share a core (each box shows the item that names the state; the states of \texttt{L -> * . R} also hold closure items). Reached through the left side, before \texttt{=}, the look-aheads are \texttt{=} and \$; after \texttt{=}, only \$. Merging takes the union and creates no conflict: 14 LR(1) states become 10.}
+\end{omfigure}
+
+The weekend problem works through both grammars by hand, and shows that merging can never create a \omterm{def:b3:bottom-up-parsing:slr}{shift--reduce conflict} that the LR(1) table did not have. It can create a \omterm{def:b3:bottom-up-parsing:slr}{reduce--reduce conflict}, but such grammars are rare; the bison run of the next section shows a generator whose default tables have exactly as many states as the \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton}, with no conflict on the assignment grammar.
+
+\section{Parser generators}\label{sec:b3:bottom-up-parsing:generators}
+
+\begin{definition}[Parser generator]\label{def:b3:bottom-up-parsing:generator}
+A \emph{parser generator}\index{parser generator} is a program that takes a grammar, usually with precedence declarations and with an action to run at each reduction, and writes the source of a parser for it: the tables and a fixed driver. It reports every conflict it could not resolve.
+\end{definition}
+
+Bison is a \omterm{def:b3:bottom-up-parsing:generator}{parser generator} of the GNU project, as its version line says. \Cref{lst:b3:bottom-up-parsing:bison} is the \code{if} grammar in that format, without actions; the part between the two \texttt{\%\%} lines is the grammar, one rule per nonterminal, alternatives after \code{|}. \Cref{out:b3:bottom-up-parsing:bison} runs bison on it and on the assignment grammar.
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/ifelse.y}{1}{7}{The \code{if} grammar for bison. Tokens are declared; lower-case names are nonterminals.}\label{lst:b3:bottom-up-parsing:bison}
+
+\omoutput{code/bachelor-3/03-bottom-up-parsing/outputs/bison.txt}{Bison on the two grammars: one \omterm{def:b3:bottom-up-parsing:slr}{shift--reduce conflict} for the dangling else, none for the assignment grammar. The state counts are those of \code{lr.output}, bison's report, built first with its default construction and then with canonical LR(1).}\label{out:b3:bottom-up-parsing:bison}
+
+\begin{dated}{2026}
+Bison 3.8.2, run on the author's laptop. Bison resolved the dangling else by shifting and warned once. It accepted the assignment grammar, which an SLR generator would refuse, and its report has 11 states; asked for canonical LR(1) tables it has 15. Both are one more than our counts, 10 and 14: bison's augmented rule is $\mathit{\$accept} \to s\ \mathit{\$end}$, and shifting the end marker takes one more state.
+\end{dated}
+
+The generated C file is over a thousand lines: tables compressed into arrays, the driver, and error recovery. Our own generator is smaller. It reads a grammar in the format of chapter~\ref{ch:b3:top-down-parsing}, refuses it if the \omterm{def:b3:bottom-up-parsing:slr}{SLR table} has a conflict, and otherwise prints the tables as Rust constants, with 0 for an error, $k > 0$ for a shift to state $k - 1$ and $k < 0$ for a reduction by rule $-k - 1$. \Cref{lst:b3:bottom-up-parsing:moorgram} is the whole of Moor's expressions, one nonterminal per level, written as the grammar of a language manual would write them, \omterm{def:b3:top-down-parsing:left-recursion}{left recursion} included.
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/moor_expr.grammar}{1}{11}{Moor's expressions for the generator: eight levels, calls with zero or more arguments, and array indexing.}\label{lst:b3:bottom-up-parsing:moorgram}
+
+\omoutput[1-2,5-9,41-44]{code/bachelor-3/03-bottom-up-parsing/outputs/lrgen.txt}{The beginning of the generated file: 56 states, the rules as data, and the first rows of the action table.}\label{out:b3:bottom-up-parsing:lrgen}
+
+The generated file is saved as \code{moor_expr_tables.rs} (a test checks that it is exactly the generator's output). \Cref{lst:b3:bottom-up-parsing:lrmoor} is the driver of \cref{met:b3:bottom-up-parsing:driver} on those arrays, fed by the \omterm{def:b3:lexical-analysis:scanner}{scanner} of chapter~\ref{ch:b3:lexical-analysis}. Beside each state it keeps a value: the text of a token when it is shifted, and when a rule is reduced, the tree that \code{build} makes from the values of the right side. That function is the place where a generator user writes actions; here it builds the S-expression of chapter~\ref{ch:b3:top-down-parsing}'s trees.
+
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/lr_moor.rs}{50}{75}{An LR parser for Moor's expressions on the generated tables, with a value stack beside the state stack.}\label{lst:b3:bottom-up-parsing:lrmoor}
+
+\omoutput{code/bachelor-3/03-bottom-up-parsing/outputs/lr_moor.txt}{The generated parser and the hand-written \omterm{def:b3:top-down-parsing:precedence}{precedence climbing} of chapter~\ref{ch:b3:top-down-parsing} build the same trees, and reject the same input.}\label{out:b3:bottom-up-parsing:lrmoor}
+
+The two parsers agree on every test expression. One was written by hand from \omterm{def:b3:top-down-parsing:precedence}{binding powers}, the other generated from a grammar a reader can check line by line against the language's definition. The generator has also proved something: the grammar has no conflict, so it is unambiguous (exercise~\ref{exo:b3:bottom-up-parsing:8}).
+
+\begin{inpractice}[Hand-written or generated]
+Both kinds of parser are in daily use. A generated parser follows its grammar exactly and makes grammar changes cheap; a hand-written recursive-descent parser makes it easy to give good error messages and to handle the odd corner of a real language. A common compromise keeps a grammar file under test, as this chapter does, and checks with a generator that it stays conflict-free, whatever parser the compiler ships.
+\end{inpractice}
+
+\begin{history}[LR parsing]
+Donald Knuth defined the LR($k$) grammars and their parsers in ``On the translation of languages from left to right'', published in December 1965. % ledger: b3:knuth-1965
+Frank DeRemer's ``Simple LR($k$) grammars'', published in July 1971, gave the \omterm{def:b3:bottom-up-parsing:slr}{SLR tables} of this chapter, built on the states of the \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton} and so much smaller than Knuth's. % ledger: b3:deremer-1971
+\end{history}
+
+\section{Exercises}\label{sec:b3:bottom-up-parsing:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:bottom-up-parsing:1}
+Compute the \omterm{def:b3:bottom-up-parsing:items}{item closure} of $\{F \to (\,\cdot\,E\,)\}$ in the expression grammar. Which state of \cref{out:b3:bottom-up-parsing:states} is it?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:bottom-up-parsing:2}
+The parser of \cref{out:b3:bottom-up-parsing:table} reads \code{( id ) * id}. Its state stack is 0\,4\,8 and the next token is \code{)}. Give its next three actions, and the rules it reduces over the whole parse.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:bottom-up-parsing:3}
+Find the \omterm{def:b3:bottom-up-parsing:shift-reduce}{handle} of each right sentential form of the expression grammar: $E + T * F$; $T * F + \mathtt{id}$; $E + F * \mathtt{id}$.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:bottom-up-parsing:4}
+Classify each state as having a \omterm{def:b3:bottom-up-parsing:slr}{shift--reduce conflict}, a \omterm{def:b3:bottom-up-parsing:slr}{reduce--reduce conflict} or none under SLR, on the token given: (a) $\{A \to z\,\cdot,\ B \to z\,\cdot\}$ with $\mathrm{FOLLOW}(A) = \{c\}$, $\mathrm{FOLLOW}(B) = \{c, d\}$; (b) $\{S \to L \cdot = R,\ R \to L\,\cdot\}$ with $= \in \mathrm{FOLLOW}(R)$; (c) $\{\mathit{Start} \to E\,\cdot,\ E \to E \cdot + T\}$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:bottom-up-parsing:5}
+\Cref{lst:b3:bottom-up-parsing:kernel} builds the \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton} with a different goto. It finds 12 states on the expression grammar, as it should, yet two of the three parses in \cref{out:b3:bottom-up-parsing:kernel} fail. Find the bug, say which states are wrong and why the first parse still succeeds, and fix it.
+\omcode{code/bachelor-3/03-bottom-up-parsing/listings/kernel_bug.rs}{11}{14}{The \omterm{def:b3:bottom-up-parsing:items}{goto function} of \code{kernel_bug.rs}.}\label{lst:b3:bottom-up-parsing:kernel}
+\omoutput{code/bachelor-3/03-bottom-up-parsing/outputs/kernel_bug.txt}{Its three parses; \code{Ok} lists the rules reduced.}\label{out:b3:bottom-up-parsing:kernel}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:bottom-up-parsing:6}
+Write \code{table(g, prec)} for the file \code{exercises/ex6_prec.rs}: the \omterm{def:b3:bottom-up-parsing:slr}{SLR table} in which every \omterm{def:b3:bottom-up-parsing:slr}{shift--reduce conflict} between a production and a token that both have a precedence is resolved by the rule of \cref{sec:b3:bottom-up-parsing:conflicts}; a production's precedence is that of its last terminal, and a tie on a non-associative operator leaves the cell empty, an error. Check it on \code{exercises/ambig.grammar} with \code{==} non-associative, \code{+} and \code{-} left, \code{*} left, and \texttt{\textasciicircum} right, from loosest to tightest. How many conflicts does the plain \omterm{def:b3:bottom-up-parsing:slr}{SLR table} have?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:bottom-up-parsing:7}
+Build by hand the \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton} of $S \to (\,S\,)\,S \mid \varepsilon$. How many states has it, and is the grammar SLR? What does a completed item $S \to \cdot$ mean?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:bottom-up-parsing:8}
+Prove that every SLR grammar is unambiguous.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:bottom-up-parsing:9}
+Trace the SLR parser of the expression grammar on \code{id + * id} and on \code{( id + id}. Where is each error found, and which reductions happen before it on the second input?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:bottom-up-parsing:10}
+Prove the other half of \cref{thm:b3:bottom-up-parsing:viable}: if an item is valid for $\gamma$, then there is a path labelled $\gamma$ from the start state and its last state holds the item. (Induct on the length of the rightmost derivation that makes the item valid.)
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:bottom-up-parsing:11}
+Let $G_n$ have terminals $a_1, \dots, a_n$ and the productions $S \to X_i$, $X_i \to a_i$ and $X_i \to a_j X_i$ for every $i$ and every $j \ne i$. It has $n^2 + n$ productions. Show that its \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton} has $n\,2^n + n^2 - n + 2$ states. (\code{exercises/ex11_family.rs} writes $G_n$.)
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:bottom-up-parsing:12}
+LALR look-aheads can be computed on the \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton} without building the LR(1) one: start with \$ on $\mathit{Start} \to \cdot\,S$ in the start state, and propagate, along each transition and into each closure, until nothing changes. Write this propagation and check that it gives, state by state, the look-aheads of \cref{lst:b3:bottom-up-parsing:lalr}. Why is it cheaper?
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:bottom-up-parsing:problem}
+
+\begin{problem}[{Weekend problem --- Two grammars for one if}]\label{pb:b3:bottom-up-parsing:1}
+Brenmoor's school teaches programming with a small language of its own, and its compiler is built with a \omterm{def:b3:bottom-up-parsing:generator}{parser generator}. Two of the generator's reports have puzzled the teachers: one about \code{if}, one about assignments through pointers. The grammars are \cref{lst:b3:bottom-up-parsing:ifelse,lst:b3:bottom-up-parsing:lr}. Work each answer out by hand, then check it with the chapter's programs; \code{exercises/pb_if.rs} adds what they lack.
+
+\medskip\noindent\textbf{Part I --- The dangling else.}
+\begin{enumerate}
+\item Give the two parse trees of \code{if c then if c then other else other}.
+\item Build the \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton} of the \code{if} grammar. How many states has it?
+\item Which state holds both a completed item and an item with its dot before a terminal?
+\item Is the grammar LR(0), that is, can every state decide without looking at the next token?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The SLR table.}
+\begin{enumerate}[resume]
+\item Compute $\mathrm{FOLLOW}(S)$.
+\item Fill the \omterm{def:b3:bottom-up-parsing:slr}{SLR table} and find its conflicts.
+\item With the conflict resolved by shifting, parse the input of question 1. Which \code{if} gets the \code{else}?
+\item With the conflict resolved by reducing instead, what happens to the same input, and to \code{if c then other else other}?
+\item How many LR(1) states has the grammar, and how many conflicts? Explain the number of conflicts without building the states.
+\item Write an unambiguous grammar for the same statements, with ``matched'' statements (every \code{if} has its \code{else}) and ``unmatched'' ones. Is it SLR, and how many LR(0) states has it?
+\item Give two reasons why a language designer would rather keep the short grammar and the shift.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Assignments through pointers.}
+\begin{enumerate}[resume]
+\item Describe the language of the assignment grammar in words, and list its sentences of at most three tokens.
+\item Show that the grammar is unambiguous.
+\item Build its \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton}. How many states has it?
+\item Compute $\mathrm{FOLLOW}(R)$, and say which production puts \code{=} in it.
+\item Find the SLR conflict: its state, its token and its two actions.
+\item Show that the reduction in that cell can never be right: no right sentential form starts with $R\,=$.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- LR(1) and LALR.}
+\begin{enumerate}[resume]
+\item Compute the closure of $[\mathit{Start} \to \cdot\,S,\ \$]$. How many \omterm{def:b3:bottom-up-parsing:lr1}{LR(1) items} has it?
+\item Give the LR(1) state reached from it on $L$, and its actions.
+\item How many states has the LR(1) automaton?
+\item Which LR(1) states share a core? How many states has the LALR automaton, and does it have a conflict?
+\item Prove that merging states with the same core never creates a \omterm{def:b3:bottom-up-parsing:slr}{shift--reduce conflict}.
+\item Give a reason why merging can create a \omterm{def:b3:bottom-up-parsing:slr}{reduce--reduce conflict}, although it did not here.
+\item The expression grammar has 22 LR(1) states and 12 LALR states. Which construction would you use for the school's language, and why?
+\item Sum up: for each of the two grammars, what does SLR, LR(1) and LALR make of it, and what should each report tell the teachers?
+\end{enumerate}
+\end{problem}

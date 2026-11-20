@@ -1,0 +1,99 @@
+\section*{Chapter \ref{ch:b3:parallel-programming} --- Parallel Programming}
+
+\begin{solution}{exo:b3:parallel-programming:1}
+$S_8 = 1 / (0.1 + 0.9/8) = 1/0.2125 \approx 4.71$, and the limit is $1/0.1 = 10$. A \omterm{def:b3:parallel-programming:speedup}{speed-up} of 6 on 8 processors needs $f + (1 - f)/8 = 1/6$, so $7f/8 = 1/6 - 1/8 = 1/24$ and $f = 1/21 \approx 4.8\,\%$.
+\end{solution}
+
+\begin{solution}{exo:b3:parallel-programming:2}
+The four additions $a + b$, $c + d$, $e + f$, $g + h$ have no inputs computed by other nodes; the two products each use two of them, and the final addition uses both products. \omterm{def:b3:parallel-programming:workspan}{Work} 7, \omterm{def:b3:parallel-programming:workspan}{span} 3 (an addition, a product, the final addition), \omterm{def:b3:parallel-programming:workspan}{parallelism} $7/3$. The second expression is a chain of four additions, each using the one before: \omterm{def:b3:parallel-programming:workspan}{work} 4, \omterm{def:b3:parallel-programming:workspan}{span} 4, \omterm{def:b3:parallel-programming:workspan}{parallelism} 1. Since addition is associative, $((a + b) + (c + d)) + e$ gives the same value with \omterm{def:b3:parallel-programming:workspan}{span} 3.
+\end{solution}
+
+\begin{solution}{exo:b3:parallel-programming:3}
+On 8 processors, $\max(W/p, S) = \max(125{,}000, 1{,}000) = 125{,}000 \le T_8 \le 125{,}000 + 1{,}000 = 126{,}000$. On 10,000 processors, $\max(100, 1{,}000) = 1{,}000 \le T_p \le 100 + 1{,}000 = 1{,}100$. The \omterm{def:b3:parallel-programming:workspan}{parallelism} is $W/S = 1{,}000$: the \omterm{def:b3:parallel-programming:speedup}{speed-up} can never exceed it, and beyond about a thousand processors the \omterm{def:b3:parallel-programming:workspan}{span} dominates, so further processors add almost nothing.
+\end{solution}
+
+\begin{solution}{exo:b3:parallel-programming:4}
+(a) is vectorised: each iteration reads $y_{i+1}$ before iteration $i + 1$ overwrites it, and a vector of four iterations also reads $y_{i+1}, \ldots, y_{i+4}$ before writing $y_i, \ldots, y_{i+3}$, so the order of reads and writes on each element is kept. (b) is vectorised: the four iterations of a 16-byte vector read $y_{i-4}, \ldots, y_{i-1}$, all written by earlier vectors. (c) is not: iteration $i$ needs the value iteration $i - 1$ has just written, so no two iterations can run at once. GCC reports lines 4 and 10 vectorised, with 16-byte vectors and 8-byte ones for the remainder, and line 16 missed; a test checks it.
+\end{solution}
+
+\begin{solution}{exo:b3:parallel-programming:5}
+Each \code{+=} is three steps. In the script, thread 0 loads 0 and adds 5; thread 1 loads \code{total}, still 0, before thread 0 stores 5; thread 0 stores 5; thread 1 adds 3 to its register, 0, and stores 3 over the 5. The 5 is lost, and the remaining additions give $3 + 7 + 4 = 14$ instead of 19. On real hardware the steps interleave at random, and the total varies from run to run. The fix, \code{exercises/ex5_sum.c}, gives each thread a local running sum over its own slice and stores it in its own slot of an array; the main thread adds the slots after joining all the threads, when no thread writes any more. Nothing is shared while the threads run, so no interleaving can lose an update. A C test compares the result with the sequential sum for 55 sizes and $p = 1$ to 8.
+\end{solution}
+
+\begin{solution}{exo:b3:parallel-programming:6}
+\code{exercises/ex6_max.rs} returns \code{None} for an empty slice or $p = 0$. Otherwise it cuts the slice into chunks of $\lceil n/p \rceil$ elements, spawns one scoped thread per chunk returning the chunk's maximum (never empty, so \code{unwrap} is safe), and returns the maximum of the joined results. The scope guarantees that every thread has finished before the slice it borrows can be dropped. The Rust test compares it with \code{a.iter().max()} for 300 sizes and $p = 1$ to 9, including $p$ larger than the slice.
+\end{solution}
+
+\begin{solution}{exo:b3:parallel-programming:7}
+Facts used: induction on rounds. Claim: after the round of stride $d$, position $j$ holds $a_{\max(0, j - 2d + 1)} + \cdots + a_j$. Before the first round, with $d$ read as $1/2$, it holds $a_j$. A round of stride $d$ adds to $x_j$, for $j \ge d$, the old $x_{j-d}$, the sum of the $d$ values ending at $j - d$; together they cover the $2d$ values ending at $j$ (or all values from $a_0$, clipped at the left). For $j < d$, the old value already starts at $a_0$. After the round $d = n/2$, every position holds $a_0 + \cdots + a_j$. The round of stride $2^r$ does $n - 2^r$ additions, $\sum_{r=0}^{k-1} (n - 2^r) = nk - (n - 1)$ in all, in $k$ rounds; each addition reads only results of the previous round, so the \omterm{def:b3:parallel-programming:workspan}{span} is $k = \log_2 n$, as \code{workspan.py} measures. For $n = 2^{20}$ and $p = 8$, Brent's bound is $19{,}922{,}945/8 + 20 \approx 2{,}490{,}388$ for Hillis and Steele and $2{,}097{,}150/8 + 40 \approx 262{,}184$ for Blelloch: 9.5 times less. Even Hillis and Steele's lower bound, $W/p \approx 2{,}490{,}368$, is above Blelloch's upper bound: with 8 processors the extra \omterm{def:b3:parallel-programming:workspan}{work} costs far more than the shorter \omterm{def:b3:parallel-programming:workspan}{span} saves.
+\end{solution}
+
+\begin{solution}{exo:b3:parallel-programming:8}
+Facts used: the DAG's recursive structure. Merge sort of $n$ elements is two sorts of $n/2$ followed by a merge chain of $n$ nodes, and one element needs no node. The \omterm{def:b3:parallel-programming:workspan}{work} satisfies $W(n) = 2W(n/2) + n$, $W(1) = 0$, so $W(2^k) = k 2^k$: each of the $k$ levels of merges outputs $n$ elements. Both halves run in parallel and the merge chain needs both, so the \omterm{def:b3:parallel-programming:workspan}{span} satisfies $S(n) = S(n/2) + n$, $S(1) = 0$: $S(2^k) = 2^k + 2^{k-1} + \cdots + 2 = 2n - 2$. The \omterm{def:b3:parallel-programming:workspan}{parallelism} $nk/(2n - 2)$ is a little above $k/2 = \log_2(n)/2$: 5.0 for 1,024 elements, and only 12 for $2^{24}$, far below $n$. The last merge alone is a chain of $n$ steps, half the \omterm{def:b3:parallel-programming:workspan}{span}; \code{psort.c} merges sequentially in the same way, so its \omterm{def:b3:parallel-programming:workspan}{parallelism} is just as small, and the top merges keep most threads idle (exercise~\ref{exo:b3:parallel-programming:12}).
+\end{solution}
+
+\begin{solution}{exo:b3:parallel-programming:9}
+$T'(p) = -(1 - f)/p^2 + c$ vanishes at $p^* = \sqrt{(1 - f)/c}$, and $T'' > 0$, so it is a minimum. For $f = 0.05$, $c = 0.001$: $p^* = \sqrt{950} \approx 30.8$; \code{exercises/ex9_overhead.py} finds the best integer, 31, with $T = 0.05 + 0.95/31 + 0.031 \approx 0.112$, a \omterm{def:b3:parallel-programming:speedup}{speed-up} of 8.96, against Amdahl's limit of 20 without the cost. Beyond $p^*$ the cost grows faster than the parallel part shrinks: adding processors makes the program slower, and the \omterm{def:b3:parallel-programming:speedup}{speed-up} falls. With a cost ten times smaller, the best $p$ is 97 and the \omterm{def:b3:parallel-programming:speedup}{speed-up} 14.39.
+\end{solution}
+
+\begin{solution}{exo:b3:parallel-programming:10}
+Facts used: binary search takes $O(\log n)$ steps; a recurrence $S(n) \le S(3n/4) + c \log n$ solves to $O(\log^2 n)$. Let $A$ be the larger input, of $m \ge n/2$ elements, and $B$ the other. The median of $A$ splits it into two halves of at most $m/2$ elements, and binary search splits $B$ at the same value; the elements of the lower parts are all at most those of the upper parts, so the two merges of the parts, placed side by side, give the merged output. Each part has at most $m/2 + |B| = n - m/2 \le 3n/4$ elements. \emph{\omterm{def:b3:parallel-programming:workspan}{Span}:} the two recursive merges run in parallel, so $S(n) \le S(3n/4) + c\log n$; unrolling, the sizes shrink geometrically, there are $O(\log n)$ levels, and each costs $O(\log n)$: $S(n) = O(\log^2 n)$. \emph{\omterm{def:b3:parallel-programming:workspan}{Work}:} $W(n) = W(\alpha n) + W((1 - \alpha)n) + c\log n$ with $1/4 \le \alpha \le 3/4$. Show $W(n) \le an - b\log_2 n$ by induction: the right-hand side is at most $an - b(\log_2(\alpha n) + \log_2((1 - \alpha)n)) + c\log_2 n = an - 2b\log_2 n - b\log_2(\alpha(1 - \alpha)) + c\log_2 n$, and $\alpha(1 - \alpha) \ge 3/16$, so it is at most $an - b\log_2 n$ as soon as $(b - c)\log_2 n \ge b\log_2(16/3)$, which holds for $b = 2c$ and $n \ge 29$; small $n$ are covered by choosing $a$ large. So $W(n) = O(n)$. \emph{Merge sort:} $W(n) = 2W(n/2) + O(n) = O(n\log n)$, the same \omterm{def:b3:parallel-programming:workspan}{work} as sequentially, and $S(n) = S(n/2) + O(\log^2 n) = O(\log^3 n)$: the \omterm{def:b3:parallel-programming:workspan}{parallelism} grows as $n/\log^2 n$, against $\log n$ with a sequential merge.
+\end{solution}
+
+\begin{solution}{exo:b3:parallel-programming:11}
+Facts used: induction on the blocks. Let the blocks be $B_0, \ldots, B_{q-1}$, $q \le p$ (the last may be shorter, and an empty input gives no block). \code{offset[i]} is computed as \code{offset[i-1] + sums[i-1]}, from \code{offset[0] = 0}, so by induction it is the sum of the blocks before $B_i$. Pass 2 starts each block's running total from its offset, so the value written at a position of $B_i$ is the sum of the blocks before $B_i$ plus the values of $B_i$ up to it: the inclusive \omterm{def:b3:parallel-programming:scan}{prefix sum}. Each block writes only its own part of \code{out}, which \code{chunks_mut} hands to its thread alone. \emph{Additions:} pass 1 does $n$ (one per value), the middle $q - 1$, pass 2 $n$: $2n + q - 1$, against $n$ for the sequential scan. \emph{Time:} with blocks of $n/p$, $T_p = n/p + (p - 1) + n/p = 2n/p + p - 1$. The \omterm{def:b3:parallel-programming:speedup}{speed-up} over the sequential scan, in additions, is $n/(2n/p + p - 1) < n/(2n/p) = p/2$. For large $p$ the middle step dominates once $p^2$ approaches $n$; it is itself a scan of $p$ values and can be done by Blelloch's tree in $O(\log p)$ rounds, giving $T_p = 2n/p + O(\log p)$.
+\end{solution}
+
+\begin{solution}{exo:b3:parallel-programming:12}
+At the top level one merge of $n$ elements runs alone; at the next, two merges of $n/2$ run on two threads, and so on for $\log_2 p$ levels: $n + n/2 + \cdots + 2n/p = 2n(1 - 1/p)$ steps. Below, each of the $p$ threads sorts $n/p$ elements in $(n/p)\log_2(n/p)$ steps. So $T_p = (n/p)\log_2(n/p) + 2n(1 - 1/p)$ and $T_1 = n\log_2 n$. For $n = 2^{24}$: $T_1 = 24n$, $T_2 = 12.5n$, $T_4 = 7n$, $T_8 = 4.375n$, predicted \omterm{def:b3:parallel-programming:speedup}{speed-ups} 1.92, 3.43 and 5.49. \Cref{out:b3:parallel-programming:psort} measured 1.89, 3.24 and 4.47 on the author's laptop: close for 2 threads, then further and further below. The model counts steps as if memory were free, but a merge does almost nothing but read and write memory: two inputs, an output, and a copy back. As more threads merge at once they share the path to memory, as the memory-bound sum of \cref{out:b3:parallel-programming:sum} did, so the gap grows with $p$. The shape to expect is a curve under the model's, bending away from it as $p$ grows.
+\end{solution}
+
+\begin{solution}{pb:b3:parallel-programming:1}
+\textbf{1.} The first total is $a_0$; each later one is one addition, $n - 1$ in all (the program adds from 0, one more). As a DAG it is a chain: \omterm{def:b3:parallel-programming:workspan}{work} $n - 1$, \omterm{def:b3:parallel-programming:workspan}{span} $n - 1$, \omterm{def:b3:parallel-programming:workspan}{parallelism} 1.
+
+\textbf{2.} Each total is the previous total plus one value: every addition needs the result of the one before.
+
+\textbf{3.} With inclusive totals $T_j = a_0 + \cdots + a_j$, the rain from day $i$ to day $j$ is $T_j - T_{i-1}$ (or $T_j$ if $i = 0$): one subtraction, whatever the length of the period.
+
+\textbf{4.} Associativity: $a_0 + \cdots + a_i$ can be grouped in any way, so partial sums of blocks or of tree nodes can be computed first and combined later.
+
+\textbf{5.} Integer addition is exact and associative. Floating-point addition rounds, so a parallel scan that groups the additions differently would give totals that differ in their last digits from the sequential ones, and the program's check of equality would fail.
+
+\textbf{6.} The exclusive totals end at 133 after the eighth day, and the eighth day had no rain: 13.3\,mm fell in the first week, 6.2\,mm of it on its second day.
+
+\textbf{7.} \omterm{def:b3:parallel-programming:workspan}{Work} $2(n - 1) = 33{,}554{,}430$ additions, in $2 \times 24 = 48$ rounds.
+
+\textbf{8.} $2(2^{20} - 1) = 2{,}097{,}150$, the value printed.
+
+\textbf{9.} The last up-sweep addition computes the total at the root, which the down-sweep replaces by 0: no addition uses it, so the longest path of the DAG has $2k - 1$ nodes, one fewer than the rounds.
+
+\textbf{10.} $33{,}554{,}430 / 47 \approx 713{,}924$.
+
+\textbf{11.} $24 \cdot 2^{24} - (2^{24} - 1) = 385{,}875{,}969$, eleven and a half times as many. Its \omterm{def:b3:parallel-programming:workspan}{span} is half of Blelloch's, which pays only when there are about as many processors as values, as on the lanes of a GPU for a short array.
+
+\textbf{12.} It uses $p$ blocks instead of a tree of $n$ leaves: two passes over the data, each split among the threads, and a sequential scan of the $p$ block sums in between. Its \omterm{def:b3:parallel-programming:workspan}{work} is about $2n$, as Blelloch's, but it has only three phases, and each thread reads consecutive memory.
+
+\textbf{13.} $T_p \le 2(2^{24} - 1)/p + 47$.
+
+\textbf{14.} The sequential scan does about $n$ additions, so a guaranteed \omterm{def:b3:parallel-programming:speedup}{speed-up} of $n / (2(n - 1)/p + 47)$.
+
+\textbf{15.} 0.50, 1.00, 2.00 and 4.00, to two decimals: the \omterm{def:b3:parallel-programming:workspan}{span} changes nothing visible.
+
+\textbf{16.} $T_p \ge W/p = 2(n - 1)/p$, so the \omterm{def:b3:parallel-programming:speedup}{speed-up} is at most $np/(2(n - 1))$, about $p/2$: 4 on 8 processors.
+
+\textbf{17.} The \omterm{def:b3:parallel-programming:workspan}{parallelism}, over 700,000, dwarfs 8: the \omterm{def:b3:parallel-programming:workspan}{span} term 47 is negligible against $W/p$, about 4 million, so the upper and lower bounds differ by about one part in 100,000.
+
+\textbf{18.} On 1,000 processors, $n/(2n/1{,}000 + 47) \approx 499.3$ guaranteed, against 500 at most: still almost equal, since 1,000 is far below the \omterm{def:b3:parallel-programming:workspan}{parallelism}.
+
+\textbf{19.} It reads the data twice, once to sum each block and once to scan it, where the sequential scan reads it once; but the first pass only reads, with no writes, and so costs less than a scan pass. The result, 0.62, lies between 0.5 and 1.
+
+\textbf{20.} About 1.9 on 8 threads, against the bound of 4.
+
+\textbf{21.} The scan does one addition for each 8-byte value it reads and each it writes: it is limited by memory, like the memory-bound sum. The compute-bound loop does about 120 operations per value and touches no memory.
+
+\textbf{22.} Both are bound by the same shared path to memory, which a few threads already saturate; beyond that, more threads only queue for it.
+
+\textbf{23.} More computation per value read: a scan fused with the \omterm{def:b3:parallel-programming:workspan}{work} that produces or consumes the values, while they are in cache, or a scan with an expensive operation. On data that fit in the cores' caches, too, the threads would not compete for memory.
+
+\textbf{24.} The theory guarantees almost exactly 4 on 8 cores for $n = 2^{24}$ (Brent's bound and the \omterm{def:b3:parallel-programming:workspan}{work} law agree to five digits), half of 8 because the parallel scan does twice the additions. The laptop measures about 1.9 in one run, under half the bound: on this machine the scan is limited by memory, not by additions, and the curve flattens after five or six threads.
+\end{solution}

@@ -1,0 +1,301 @@
+\chapter{Software Security}\label{ch:b3:software-security}
+
+Cryptography protects data on its way between programs. Most attacks do not break it: they go around it, through the programs themselves. A login desk that copies a name without checking its length, a query built by pasting text into SQL, a page that shows a comment as it was typed, a service that does what it is asked with more rights than the asker has: each is a programming error that turns into a way in. This chapter takes the library's own toy programs, a login desk in C and a small web app in Python, finds each error, shows exactly what it allows, and fixes it. Every attack runs on the chapter's own code, on the reader's own machine, against nothing else: understanding an attack is the way to write code that resists it.
+
+\begin{recall}
+A function's local variables live in its stack frame, below the saved frame pointer and the return address. A write past the end of an array is a buffer overflow: undefined behaviour, which the compiler may assume never happens, and AddressSanitizer reports at run time (Year~1 volume). HTTP requests carry cookies, which a server sets to recognise a returning browser (grade~10 and Year~2 volumes). SQL queries come from the Year~1 volume, Rust's checked indexing from the Year~2 volume, and \omterm{def:b3:public-key-cryptography:passwords}{password hashing} from \cref{ch:b3:public-key-cryptography}.
+\end{recall}
+
+\section{Threat models}\label{sec:b3:software-security:threat}
+
+\begin{definition}[Threat model, asset, adversary, trust boundary, attack surface]\label{def:b3:software-security:threat}
+A \emph{threat model}\index{threat model} is a written description of what a system must protect, from whom, and how it can be attacked. An \emph{asset}\index{asset} is something of value the system must protect: data, a service, a reputation. An \emph{adversary}\index{adversary} is someone who wants to harm an asset, described by its goals and by what it can do, its \omterm{def:b3:symmetric-cryptography:security}{attack model} (\cref{def:b3:symmetric-cryptography:security}). A \emph{trust boundary}\index{trust boundary} is a line in the system across which data or commands pass from a less trusted part to a more trusted one. The \emph{attack surface}\index{attack surface} is the set of places where an adversary can send data or commands into the system.
+\end{definition}
+
+The library's web app lets readers log in, read and post comments, and renew their loans. Its \omterm{def:b3:software-security:threat}{assets} are the accounts and their passwords, the loans, the comments and the app's files; its adversaries are an outsider on the network and, more often, a reader with an account who wants more than a reader's rights. Every request from a browser crosses a \omterm{def:b3:software-security:threat}{trust boundary}; so does every value passed on to the database, the operating system's shell or the file system, which interpret what they receive. The STRIDE checklist names six kinds of threat to look for at each boundary: spoofing an identity, tampering with data, repudiation of an action, information disclosure, denial of service and elevation of privilege. % ledger: b3:stride
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, node distance=0.6cm and 1.1cm, b/.style={draw, rounded corners=2pt, fill=omDef!8, minimum height=0.7cm, align=center}, st/.style={draw, fill=black!5, minimum height=0.7cm, align=center}, ar/.style={-{Stealth}, thick}]
+  \node[b] (ada) {Ada's browser};
+  \node[b, below=of ada, fill=omThm!12] (eve) {Eve's browser};
+  \node[b, right=2.1cm of $(ada)!0.5!(eve)$, minimum height=2.2cm, text width=2.4cm] (app) {web app\\ (Python process)\\ sessions, routes};
+  \node[st, right=2.6cm of app, yshift=1.1cm] (db) {SQLite\\ database};
+  \node[st, right=2.6cm of app] (fs) {public files};
+  \node[st, right=2.6cm of app, yshift=-1.1cm] (sh) {shell};
+  \draw[ar] (ada) -- (app); \draw[ar] (eve) -- (app);
+  \draw[ar] (app) -- node[pos=0.7, above, sloped, font=\footnotesize] {SQL} (db.west);
+  \draw[ar] (app) -- node[pos=0.7, above, font=\footnotesize] {path} (fs);
+  \draw[ar] (app) -- node[pos=0.7, below, sloped, font=\footnotesize] {command} (sh.west);
+  \draw[omThm, dashed, very thick] ($(app.west)+(-0.55,1.6)$) -- ($(app.west)+(-0.55,-1.6)$) node[below, font=\footnotesize] {network};
+  \draw[omThm, dashed, very thick] ($(app.east)+(0.6,1.6)$) -- ($(app.east)+(0.6,-1.6)$) node[below, font=\footnotesize, align=center] {interpreters};
+\end{tikzpicture}
+\par\smallskip{\small The toy app's data flows and its trust boundaries, dashed. Data from a browser crosses the first boundary; text that the app passes to the database, the file system or the shell crosses the second, where another program interprets it.}
+\end{omfigure}
+
+\section{Memory-safety errors and their defences}\label{sec:b3:software-security:memory}
+
+The login desk is a C program. Its \code{check} function copies the typed name into a 16-byte array with \code{strcpy}, which copies until the terminating zero byte, however far that is.
+
+\omcode{code/bachelor-3/29-software-security/listings/toy_login.c}{7}{13}{The login desk's check. The flag \code{is_admin} is never set to 1 anywhere in the program.}\label{lst:b3:software-security:login}
+
+\begin{definition}[Stack smashing, integer overflow vulnerability]\label{def:b3:software-security:memory}
+\emph{Stack smashing}\index{stack smashing} is a buffer overflow in a stack frame that overwrites other data of the frame: another local variable, the saved frame pointer or the return address. An \emph{integer overflow vulnerability}\index{integer overflow vulnerability} is an arithmetic overflow in a size or index computation, which makes a later check or allocation use a wrong, usually too small, value.
+\end{definition}
+
+Where the bytes go depends on the frame the compiler built. The disassembly of \code{check} gives it.
+
+\omoutput{code/bachelor-3/29-software-security/outputs/frame.txt}{The plain build keeps \code{is_admin} at \texttt{-0x4(\%rbp)} and \code{name} at \texttt{-0x20(\%rbp)}. The build with the stack protector moves \code{is_admin} below the array, to \code{-0x24}, and stores the canary at \code{-0x8}.}\label{out:b3:software-security:frame}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, x=1cm, y=0.13cm, cell/.style={draw, minimum width=2.9cm, anchor=south west, inner sep=0pt}]
+  \foreach \x/\t in {0/{plain build}, 6.9/{with the stack protector}} \node[font=\small\bfseries] at (\x+1.45,50) {\t};
+  % plain: offsets from rbp, top is higher addresses
+  \draw[fill=black!8] (0,40) rectangle (2.9,48) node[midway] {return address};
+  \draw[fill=black!8] (0,32) rectangle (2.9,40) node[midway] {saved rbp};
+  \draw[fill=omThm!20] (0,28) rectangle (2.9,32) node[midway] {\code{is_admin}};
+  \draw[fill=white] (0,16) rectangle (2.9,28) node[midway] {padding, 12 bytes};
+  \draw[fill=omDef!15] (0,0) rectangle (2.9,16) node[midway] {\code{name[16]}};
+  \foreach \y/\l in {32/{rbp}, 28/{$-4$}, 16/{$-16$}, 0/{$-32$}} \node[anchor=east] at (0,\y) {\l};
+  \draw[-{Stealth}, thick, omThm] (3.2,0) -- (3.2,30) node[midway, right, align=left] {strcpy writes\\ upwards: byte 28\\ is \code{is_admin}};
+  % canary
+  \begin{scope}[xshift=6.9cm]
+  \draw[fill=black!8] (0,40) rectangle (2.9,48) node[midway] {return address};
+  \draw[fill=black!8] (0,32) rectangle (2.9,40) node[midway] {saved rbp};
+  \draw[fill=omThm!35] (0,24) rectangle (2.9,32) node[midway] {canary};
+  \draw[fill=white] (0,16) rectangle (2.9,24) node[midway] {padding, 8 bytes};
+  \draw[fill=omDef!15] (0,0) rectangle (2.9,16) node[midway] {\code{name[16]}};
+  \draw[fill=omThm!20] (0,-4) rectangle (2.9,0) node[midway] {\code{is_admin}};
+  \foreach \y/\l in {32/{rbp}, 24/{$-8$}, 0/{$-32$}, -4/{$-36$}} \node[anchor=east] at (0,\y) {\l};
+  \draw[-{Stealth}, thick, omThm] (3.2,0) -- (3.2,26) node[midway, right, align=left] {byte 24 starts\\ the canary};
+  \end{scope}
+\end{tikzpicture}
+\par\smallskip{\small The frame of \code{check} in the two builds, from \cref{out:b3:software-security:frame}, with offsets from the frame pointer in bytes. In the plain build the 29th byte of a name lands in \code{is_admin}; with the protector the array sits just below the canary, and the flag is out of reach below it.}
+\end{omfigure}
+
+So the 29th byte typed lands in the low byte of \code{is_admin}, and the terminating zero of a 28-byte name lands there too, harmlessly. The program is run with five names; the captured runs, like every compiled program in this book, have address randomisation turned off, which this attack does not need anyway.
+
+\omoutput{code/bachelor-3/29-software-security/outputs/toy_login.txt}{Names of 16, 17 and 28 bytes already write past the array, without visible effect. The 29-byte name opens the admin desk.}\label{out:b3:software-security:login}
+
+Nothing in the output warns that the first overflows happened: undefined behaviour need not show. AddressSanitizer, whose shadow memory marks the bytes around each array, stops at the first one, the 16-byte name, whose terminating zero is the 17th byte.
+
+\omoutput[1-9,14-18]{code/bachelor-3/29-software-security/outputs/toy_login_asan.txt}{The same input under AddressSanitizer: a write of 17 bytes at offset 48 of the frame, just past \code{name}, which occupies offsets 32 to 47.}\label{out:b3:software-security:asan}
+
+Elias Levy's article ``Smashing the Stack for Fun and Profit'', published in 1996 under the name Aleph One, described how an overflow that reaches the return address makes a function return into code of the attacker's choice. % ledger: b3:aleph-one-1996
+Years before, in November 1988, the Morris worm had spread partly through a buffer overflow in a network service, the finger daemon. % ledger: b3:morris-worm-1988
+Defences have accumulated since, each against one step of such an attack.
+
+\begin{definition}[Stack canary, address-space layout randomisation, non-executable memory, control-flow integrity]\label{def:b3:software-security:defences}
+A \emph{stack canary}\index{stack canary} is a value that the compiler stores between a function's arrays and its saved registers on entry, and checks on exit, ending the program if it changed. \emph{Address-space layout randomisation}\index{address-space layout randomisation} (ASLR) loads the stack, the heap, the libraries and the program at random addresses at each run, so that an attacker cannot know where code or data lies. \emph{Non-executable memory}\index{non-executable memory} marks the stack and the heap as not executable, so that bytes written there cannot run as instructions. \emph{Control-flow integrity}\index{control-flow integrity} (CFI) checks at run time that every indirect jump, call and return goes to a target that the program's code allows.
+\end{definition}
+
+StackGuard introduced the canary in 1997 and published it in 1998; GCC's \code{-fstack-protector} guards the functions that have arrays of 8 bytes or more, and \code{-fstack-protector-all} guards them all; a guard found overwritten ends the program with a message. % ledger: b3:stackguard-1998, b3:gcc-stack-protector
+The PaX project published the first ASLR, for Linux, in July 2001. % ledger: b3:pax-aslr-2001
+
+\omoutput{code/bachelor-3/29-software-security/outputs/toy_login_canary.txt}{With a canary in every function: the 28-byte name overwrites the canary, and the check at the function's exit ends the program with signal 6, an abort, before \code{check} returns.}\label{out:b3:software-security:canary}
+
+A canary detects the overflow after it happened, at the function's exit; it cannot stop an overflow that changes a variable used before the exit. Here the compiler also moved the flag below the array, which is what saves it. The fix is a length check before the copy, or a function that takes the size of the destination.
+
+\omcode{code/bachelor-3/29-software-security/listings/toy_login_fixed.c}{7}{17}{The length checked before the copy: the name and its terminating zero must fit in the array.}\label{lst:b3:software-security:fixed}
+
+\omoutput{code/bachelor-3/29-software-security/outputs/toy_login_fixed.txt}{The same five names: every name of 16 bytes or more is refused before the copy, and the desk stays a reader's.}\label{out:b3:software-security:fixed}
+
+Sizes can also be wrong before any copy. A file reader that computes \code{count * sizeof(loan)} in 32 bits allocates 8 bytes for $2^{29} + 1$ records, since $(2^{29} + 1) \cdot 8 = 2^{32} + 8$ wraps around to 8, and then writes as many records as \code{count} says.
+
+\omoutput[1-6,11-14]{code/bachelor-3/29-software-security/outputs/short_alloc.txt}{The integer overflow, then the heap overflow it causes, at the second record: AddressSanitizer reports a write just past an 8-byte region.}\label{out:b3:software-security:shortalloc}
+
+Rust removes the error at its root: indexing and slicing are checked, and a copy that does not fit stops the program with a panic, before a single byte is written outside the array.
+
+\omcode{code/bachelor-3/29-software-security/listings/bounds.rs}{7}{13}{The same copy in Rust: \code{name[..typed.len()]} panics if the name is longer than 16 bytes.}\label{lst:b3:software-security:bounds}
+
+\omoutput{code/bachelor-3/29-software-security/outputs/bounds.txt}{The 16-byte name fits exactly, since Rust strings need no terminating zero; the 17-byte name panics. The panic message is printed by a hook that leaves out the thread's number.}\label{out:b3:software-security:bounds}
+
+The checks cost a few instructions, and the canary a few more; AddressSanitizer, a debugging tool, more than doubles the size of \code{main}, and its documentation gives a typical slowdown of 2 times. % ledger: b3:asan
+
+\omoutput[3-10]{code/bachelor-3/29-software-security/outputs/costs.txt}{Each build at \code{-O2}: the instructions of \code{main}, into which \code{check} is inlined, and the size of the program file.}\label{out:b3:software-security:costs}
+
+\section{Injection and validation of input}\label{sec:b3:software-security:injection}
+
+\begin{definition}[SQL injection, parameterised query, command injection, path traversal]\label{def:b3:software-security:injection}
+An \emph{SQL injection}\index{SQL injection} happens when text from an \omterm{def:b3:software-security:threat}{adversary} is pasted into the text of an SQL statement, so that it changes the statement instead of being a value in it. A \emph{parameterised query}\index{parameterised query} sends the statement with placeholders, and the values separately, so that the database parses the statement before it sees any value. A \emph{command injection}\index{command injection} is the same error with a command line given to a shell. A \emph{path traversal}\index{path traversal} is a file name from an \omterm{def:b3:software-security:threat}{adversary} that, joined to a directory, names a file outside it, for instance with \code{..}.
+\end{definition}
+
+\omcode{code/bachelor-3/29-software-security/listings/login_sql.py}{17}{27}{Two logins: one builds the SQL text with the typed name in it; the other passes the name and the hash as parameters. To stay short, the toy hashes with plain SHA-256, not with the slow salted hash a real desk needs.}\label{lst:b3:software-security:sql}
+
+\omoutput{code/bachelor-3/29-software-security/outputs/login_sql.txt}{The name \code{admin' --} closes the string, and \code{--} turns the rest of the statement, the password check, into a comment. The \omterm{def:b3:software-security:injection}{parameterised query} looks for a user of that exact name and finds none.}\label{out:b3:software-security:sql}
+
+Python's \code{sqlite3} documentation says to always use placeholders instead of string formatting to bind values; the \code{subprocess} documentation gives the same warning for a command run with \code{shell=True}. % ledger: b3:web-defences
+
+\omoutput{code/bachelor-3/29-software-security/outputs/cmd_inject.txt}{With \code{shell=True}, the semicolon in the title starts a second command, here a harmless second \code{echo}; with a list of arguments, the title reaches \code{echo} as one argument.}\label{out:b3:software-security:cmd}
+
+\begin{definition}[Input validation, output encoding]\label{def:b3:software-security:validation}
+\emph{Input validation}\index{input validation} checks, where data enters, that it has the expected form, preferably against a list of what is allowed, and rejects the rest. \emph{Output encoding}\index{output encoding} rewrites data where it leaves for an interpreter, according to that interpreter's syntax, so that every character is read as data: HTML escaping for a web page, quoting for a shell, placeholders for SQL.
+\end{definition}
+
+The two are complementary: validation rejects what makes no sense for the application, a loan of $-3$ weeks or a name of 4,000 characters, but a valid name can still contain a quote, and only encoding at the point of use, for the language of that place, makes it harmless.
+
+\section{Web vulnerabilities and their fixes}\label{sec:b3:software-security:web}
+
+\begin{definition}[Cross-site scripting, cross-site request forgery, session token]\label{def:b3:software-security:web}
+\emph{Cross-site scripting}\index{cross-site scripting} (XSS) happens when a page includes text from an \omterm{def:b3:software-security:threat}{adversary} without encoding it, so that a script in the text runs in other users' browsers with the rights of the site. \emph{Cross-site request forgery}\index{cross-site request forgery} (CSRF) happens when a page on another site makes a user's browser send a request to the site, which the browser accompanies with the user's cookies, so that the site performs it as the user. A \emph{session token}\index{session token} is the random value that a site gives a browser after login, usually in a cookie, and that identifies the session in every later request.
+\end{definition}
+
+The toy app serves its pages on \code{127.0.0.1}, port 45291, with Python's \code{http.server}. Its tokens come from \code{secrets}. With \code{safe=False} it shows comments as they were typed; with \code{safe=True} it escapes them with \code{html.escape}, which turns \code{<}, \code{>}, \code{&} and quotes into entities. % ledger: b3:web-defences
+
+\omcode{code/bachelor-3/29-software-security/listings/webapp.py}{23}{33}{The page: the comments, escaped or not, and a form that carries the session's CSRF token.}\label{lst:b3:software-security:page}
+
+\omoutput{code/bachelor-3/29-software-security/outputs/xss_demo.txt}{Eve's comment reaches Ada's page as a script in the unsafe app, and as text in the safe one. The safe app also marks the session cookie \code{HttpOnly} and \code{SameSite=Strict}.}\label{out:b3:software-security:xss}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, node distance=0.5cm and 1.4cm, b/.style={draw, rounded corners=2pt, fill=omDef!8, align=center, minimum height=0.8cm}, ar/.style={-{Stealth}, thick}]
+  \node[b, fill=omThm!12] (eve) {Eve posts\\ \code{<script>...</script>}};
+  \node[b, right=of eve] (db) {app stores\\ the comment};
+  \node[b, right=of db] (page) {app builds\\ Ada's page};
+  \node[b, right=of page] (ada) {Ada's browser\\ renders it};
+  \draw[ar] (eve) -- (db); \draw[ar] (db) -- (page); \draw[ar] (page) -- (ada);
+  \node[below=0.5cm of page, draw, omThm, very thick, rounded corners=2pt, align=center, font=\footnotesize] (esc) {escape here, for HTML:\\ \code{&lt;script&gt;}};
+  \draw[omThm, -{Stealth}] (esc) -- (page);
+\end{tikzpicture}
+\par\smallskip{\small Stored \omterm{def:b3:software-security:web}{cross-site scripting}. The comment is harmless in the database; it becomes code only when it is pasted into HTML, so that is where it must be encoded, for that context.}
+\end{omfigure}
+
+An \code{HttpOnly} cookie cannot be read by scripts, which limits what an injected script can steal; a content security policy, sent by the server, tells the browser which scripts a page may run, and is a standard defence against such injection. Both reduce the damage; neither replaces the encoding. % ledger: b3:web-defences
+
+For CSRF, the app writes a random token, tied to the session, into each of its forms, and refuses any state-changing request whose form does not carry it. A page on another site can make Ada's browser send the request, with her cookie, but cannot read the app's pages to learn the token.
+
+\omoutput{code/bachelor-3/29-software-security/outputs/csrf_demo.txt}{The forged renewal is performed by the unsafe app and refused by the safe one; Ada's own request, from the app's form, passes in both.}\label{out:b3:software-security:csrf}
+
+A browser also refuses to send a \code{SameSite=Strict} cookie with a request that comes from another site; the token check does not depend on the browser's help.
+
+\section{Authentication and access control}\label{sec:b3:software-security:access}
+
+Authentication establishes who sends a request: a password, checked against its slow salted hash as in \cref{ch:b3:public-key-cryptography}, then a \omterm{def:b3:software-security:web}{session token}, random, long, sent only over HTTPS, and invalidated at logout. Access control then decides what that user may do.
+
+\begin{definition}[Access-control matrix, access-control list, capability, role-based access control]\label{def:b3:software-security:access}
+An \emph{access-control matrix}\index{access-control matrix} has a row for each subject (a user or a process), a column for each object (a file, a route, a record), and in each cell the rights of the subject on the object. An \emph{access-control list}\index{access-control list} (ACL) is a column of the matrix, stored with its object. A \emph{capability}\index{capability (security)} is an unforgeable reference that names an object and some rights on it; the capabilities a subject holds form its row. \emph{Role-based access control}\index{role-based access control} gives rights to roles, such as reader or librarian, and roles to users.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, x=2.35cm, y=0.62cm]
+  \foreach \o [count=\j] in {loans.csv, fines.csv, ada-notes.txt, eve-notes.txt} \node[font=\footnotesize\ttfamily] at (\j,0) {\o};
+  \foreach \s [count=\i] in {ada, eve, export-service} \node[anchor=east, font=\footnotesize\ttfamily] at (0.45,-\i) {\s};
+  \foreach \i/\j/\r in {1/1/r, 1/3/rw, 2/1/r, 2/4/rw, 3/1/r, 3/2/rw, 3/3/w, 3/4/w} \node at (\j,-\i) {\r};
+  \foreach \i/\j in {1/2, 1/4, 2/2, 2/3} \node[black!40] at (\j,-\i) {--};
+  \draw[omThm, very thick, rounded corners=3pt] (1.55,0.45) rectangle (2.45,-3.45);
+  \draw[omDef, very thick, rounded corners=3pt] (0.5,-1.55) rectangle (4.5,-2.45);
+  \node[omThm, font=\footnotesize] at (2,-4.0) {ACL of fines.csv};
+  \node[omDef, font=\footnotesize, anchor=west] at (4.55,-2) {eve's capabilities};
+\end{tikzpicture}
+\par\smallskip{\small The toy app's \omterm{def:b3:software-security:access}{access-control matrix}. A column is an object's \omterm{def:b3:software-security:access}{access-control list}; a row, the capabilities its subject holds.}
+\end{omfigure}
+
+\omcode{code/bachelor-3/29-software-security/listings/acl.py}{24}{39}{The export service writes a report to a file named by its caller. The confused version checks its own rights; the fixed one also checks the caller's.}\label{lst:b3:software-security:acl}
+
+\begin{definition}[Least privilege, privilege separation, confused deputy]\label{def:b3:software-security:privilege}
+\emph{Least privilege}\index{least privilege} gives every subject only the rights its legitimate purpose needs. \emph{Privilege separation}\index{privilege separation} splits a program into parts with different rights, so that the part exposed to adversaries holds few. A \emph{confused deputy}\index{confused deputy} is a program that holds rights of its own and, acting for a less privileged caller, uses them on an object the caller chose, which the caller could not have touched itself.
+\end{definition}
+
+Saltzer and Schroeder stated \omterm{def:b3:software-security:privilege}{least privilege} among their design principles in 1975, and Hardy named the \omterm{def:b3:software-security:privilege}{confused deputy} in 1988, from a compiler that wrote its output to a file named by its user, a billing file included. % ledger: b3:saltzer-schroeder-1975, b3:hardy-1988
+
+\omoutput{code/bachelor-3/29-software-security/outputs/acl.txt}{The matrix read both ways. Eve cannot write \code{fines.csv}, but the confused export service writes it for her; the fixed one refuses.}\label{out:b3:software-security:acl}
+
+The ACL check asked the wrong question: may the service write the file? The right question is whether the request may, and a \omterm{def:b3:software-security:access}{capability} system answers it by construction, since the caller hands the deputy the \omterm{def:b3:software-security:access}{capability} for the output file, and cannot hand one it does not hold.
+
+\begin{dated}{2026}
+OWASP's Top Ten, a list of the most critical security risks of web applications, was first published in 2003 and has been revised regularly since, the latest edition in 2025. It is a useful checklist for a \omterm{def:b3:software-security:threat}{threat model}, not a substitute for one. % ledger: b3:owasp-top10
+\end{dated}
+
+\section{Exercises}\label{sec:b3:software-security:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:software-security:1}
+The town hall publishes a form where residents book a room; the bookings go into a database, a clerk approves them in a back-office page, and a nightly script e-mails the confirmations. List the \omterm{def:b3:software-security:threat}{assets}, two adversaries, and the trust boundaries that a booking crosses.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:software-security:2}
+A reader's name is shown in an HTML page, inside an HTML attribute, in a URL query string, in an SQL query and in a shell command. For each place, say what must be done to the name, and why validation alone at login is not enough.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:software-security:3}
+Ada wants to let the reading club read one of her notes for a week, and to revoke that later. Compare doing it with an \omterm{def:b3:software-security:access}{access-control list} and with a \omterm{def:b3:software-security:access}{capability}. Which makes it easier to know who can read the note? To revoke?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:software-security:4}
+Predict what the safe app prints for the comment \code{Tom & Jerry's <b>"best"</b>}, after \code{html.escape} with its default arguments.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:software-security:5}
+\code{serve_buggy} in \code{exercises/ex5_path.py} serves files from a public folder by joining the requested name to it. Show a name that reads a file outside the folder, then write \code{serve_fixed}, which resolves the path, follows symbolic links, and refuses anything outside the folder.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:software-security:6}
+Write the CSRF check of the toy app: a random token per session, a function that compares the token of a form with the session's in constant time, and a decorator \code{require_csrf} that refuses state-changing requests without it. Why must the comparison be in constant time?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:software-security:7}
+From the second half of \cref{out:b3:software-security:frame}, compute the shortest name that makes the canary build abort, and check it. Can any name, of any length, make this build open the admin desk?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:software-security:8}
+Prove that a \omterm{def:b3:software-security:injection}{parameterised query} cannot change its statement's structure: model the statement as a sequence of tokens produced by the SQL tokenizer from the text with placeholders, and show that the values, bound after tokenizing, appear in the parse tree only as literals. Why does this argument fail for string formatting?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:software-security:9}
+Explain how \code{count * sizeof(loan)} wraps around in \code{short_alloc.c}, and write \code{alloc_loans(count)}, which refuses any count whose size would not fit in 32 bits. Which counts are refused?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:software-security:10}
+Model the HTML tokenizer in text content as a machine with a data state, which emits characters as text, and states that \code{<} enters (tag open) and \code{&} enters (character reference). Prove that after \code{html.escape}, every input is emitted as text, character for character, and that the rendered text equals the input.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:software-security:11}
+Design least-privilege roles for the toy app among visitor, reader, librarian and administrator, for the routes view page, post comment, renew own loan, renew any loan, delete comment, export loans and manage users. Write the matrix, a function that every route calls, and argue why the administrator should not hold the librarian's rights.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:software-security:12}
+Run \code{aslr.py}. Which bits of the addresses change from run to run, and which do not? Explain why ASLR does not stop the flag overwrite of \cref{out:b3:software-security:login}, what it does make harder, and why canaries are still needed.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:software-security:problem}
+
+\begin{problem}[{Weekend problem --- The library's login desk}]\label{pb:b3:software-security:1}
+The login desk of \cref{lst:b3:software-security:login} has run for years. A reader reports that a long name once opened the admin desk. The problem reconstructs the attack from the compiled program, then applies each defence in turn.
+
+\medskip\noindent\textbf{Part I --- The frame layout.}
+\begin{enumerate}
+  \item In the first half of \cref{out:b3:software-security:frame}, which instruction stores 0 in \code{is_admin}, and at what offset?
+  \item Which instruction passes the address of \code{name} to \code{strcpy}, and at what offset is \code{name}?
+  \item What does \texttt{-0x28(\%rbp)} hold?
+  \item How many bytes lie between the start of \code{name} and the start of \code{is_admin}? How many of them belong to \code{name}?
+  \item Why might the compiler leave 12 bytes unused between them?
+  \item Does the C standard promise this layout? What does that mean for the attack?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The minimal input.}
+\begin{enumerate}[resume]
+  \item Which byte of the typed name lands in the low byte of \code{is_admin}?
+  \item Why does the 28-byte name not open the desk, although it writes 29 bytes?
+  \item Give the length of the shortest name that opens the admin desk, and check it in \cref{out:b3:software-security:login}.
+  \item Would the name \code{X} repeated 29 times work? A name whose 29th byte is the zero byte?
+  \item Which lengths of name write past \code{name} without changing the outcome?
+  \item The integer is 4 bytes and the machine little-endian. Which value does \code{is_admin} hold after the 29-byte name ending in \code{X}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Each defence in turn.}
+\begin{enumerate}[resume]
+  \item What does the canary build do with the same five names, and why does it stop at the fourth?
+  \item Why can no name reach \code{is_admin} in the canary build?
+  \item Which input does AddressSanitizer stop at, and why that one?
+  \item What does the bounds-checked C version print for the five names?
+  \item What does the Rust version do, and why is it 17 bytes and not 16 that fail there?
+  \item Which of these four would you ship, and which would you use only while testing?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- What each catches and what it costs.}
+\begin{enumerate}[resume]
+  \item From \cref{out:b3:software-security:costs}, how many instructions does the canary add to \code{main}? The length check?
+  \item How much does AddressSanitizer add to the instructions and to the program file, and what else does it need at run time?
+  \item Which defences detect the overflow, and which prevent it?
+  \item Which would catch an overflow that changes a variable that is used before the function returns?
+  \item What does the length check cost at run time, per login?
+  \item Sum up: how many bytes does the attack need and why, what does the canary do with it, and what does the bounds check cost?
+\end{enumerate}
+\end{problem}

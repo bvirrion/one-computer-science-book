@@ -1,0 +1,338 @@
+% Provenance (never printed): see sources/outline_sources.md and sources/book1/BRIEFS.md (g9/07).
+\chapter{Project: A Game on a Grid}\label{ch:g9:project-grid-game}
+
+The last project of this book is a game: a maze in the terminal, drawn with
+\omterm{def:g7:strings:string}{characters}, where the player hunts for a treasure. It uses everything the
+grade has built: \omterm{def:g9:grids-and-images:grid}{grids}, dictionaries, \omterm{def:g8:files-and-data-tables:text-file}{text files}, \omterm{def:g7:functions:function}{functions}, tests. As in the
+earlier projects, it grows in versions, and each version runs and is tested
+before the next one starts. Here is what the finished game must do:
+
+\begin{quote}
+\itshape The player starts at S and must reach the treasure T without walking
+through walls. The treasure is behind a gate, which opens only once every gem
+of the maze has been collected. The player has a limited number of moves, and
+sees the maze drawn again after each move that they type. Each level is read
+from a \omterm{def:g8:files-and-data-tables:text-file}{text file}, so that new levels need no new code.
+\end{quote}
+
+\begin{recall}
+A \omterm{def:g9:grids-and-images:grid}{grid} is a \omterm{def:g7:lists:list}{list} of \omterm{def:g7:lists:list}{lists}, and \code{grid[r][c]} is the cell in row \code{r},
+column \code{c} (\cref{ch:g9:grids-and-images}). A \omterm{def:g8:dictionaries:dictionary}{dictionary} keeps \omterm{def:g6:variables-and-input:value}{values}
+under keys (\cref{ch:g8:dictionaries}); a \omterm{def:g8:files-and-data-tables:text-file}{text file} is read with \code{open}
+(\cref{ch:g8:files-and-data-tables}). A project grows in versions, each one
+tested (\cref{ch:g7:project-quiz-game}, \cref{ch:g8:project-data-explorer}).
+\end{recall}
+
+\section{What must it do?}
+
+The paragraph above, turned into checks small enough to test:
+
+\begin{enumerate}
+  \item A level \omterm{def:g3:files-and-folders:file}{file} gives the number of moves on its first line, then the
+    maze, one row per line: \texttt{\#} for a wall, \code{.} for the floor,
+    \code{S}, \code{T}, \code{g} for a gem and \code{=} for the gate.
+  \item A level with no S, two S's, no T or rows of different lengths is
+    refused with a message.
+  \item The player cannot enter a wall, nor the gate while a gem is left.
+  \item Stepping on a gem collects it; the last gem opens the gate.
+  \item Each move costs one move; a blocked move costs nothing.
+  \item The game ends with a win on T, or a loss when no moves are left.
+\end{enumerate}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=0.75cm, y=0.75cm]
+  \foreach \row [count=\r from 0] in {XXXXXXXXX,XS--X-XTX,X-X-X-X=X,XgX---X-X,X-XXXgX-X,X-------X,XXXXXXXXX} {
+    \StrLen{\row}[\len]
+    \foreach \c in {1,...,\len} {
+      \StrChar{\row}{\c}[\ch]
+      \pgfmathtruncatemacro{\x}{\c - 1}
+      \if\ch X
+        \fill[ocInk!80] (\x,-\r) rectangle ++(1,-1);
+      \else
+        \draw[black!25] (\x,-\r) rectangle ++(1,-1);
+        \if\ch S \node[font=\bfseries, ocBlue] at (\x+0.5,-\r-0.5) {S}; \fi
+        \if\ch T \node[font=\bfseries, ocRed] at (\x+0.5,-\r-0.5) {T}; \fi
+        \if\ch g \fill[ocMint] (\x+0.5,-\r-0.5) circle (0.22); \fi
+        \if\ch = \fill[ocYellow!80!black] (\x+0.1,-\r-0.42) rectangle ++(0.8,-0.16); \fi
+      \fi
+    }
+  }
+\end{tikzpicture}
+
+{\small Level 1: walls in dark, the start S, the treasure T, two gems (green)
+and the gate (yellow bar) that keeps T closed until both gems are collected.}
+\end{omfigure}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1cm, y=1cm, font=\footnotesize]
+  \draw[-{Stealth[length=2mm]}, thick] (0,0) -- (12.3,0);
+  \foreach \v/\t/\x in {v1/{the state}/0.8, v2/{level files, checks}/3.2, v3/{drawing}/5.6, v4/{the rules}/8.0, v5/{the game loop}/10.4} {
+    \fill[ocBlue] (\x,0) circle (0.09);
+    \node[above, font=\footnotesize\ttfamily] at (\x,0.15) {\v};
+    \node[below, align=center, text width=2.2cm] at (\x,-0.15) {\t};
+  }
+\end{tikzpicture}
+
+{\small The five versions, with what each one adds; a sixth \omterm{def:g4:programs-and-operating-system:program}{program} checks
+levels by trying every sequence of moves.}
+\end{omfigure}
+
+\section{Representing the state}
+
+Everything the game must remember, at any moment, is its \emph{state}: the
+maze, where the player is, the gems left and the moves left. The maze is a \omterm{def:g9:grids-and-images:grid}{grid}
+of \omterm{def:g7:strings:string}{characters}, one \omterm{def:g7:lists:list}{list} per row, so that a cell can be changed when a gem is
+collected; the rest goes into a \omterm{def:g8:dictionaries:dictionary}{dictionary}, with the \omterm{def:g9:grids-and-images:grid}{grid} itself:
+
+\omcode{code/grade-9/07-project-grid-game/listings/maze_v1.py}{1}{18}{Version 1: the
+state of a game.}\label{lst:g9:project-grid-game:v1}
+
+\Needspace*{9\baselineskip}
+\omoutput{code/grade-9/07-project-grid-game/outputs/maze_v1.txt}{Rows and columns
+counted from 0, as for every \omterm{def:g9:grids-and-images:grid}{grid}.}\label{out:g9:project-grid-game:v1}
+
+\code{repr} prints a \omterm{def:g7:strings:string}{string} with its quotes, so that a space or a dot is easy
+to see. The start cell is replaced by floor: S only marks where the player
+begins, and the player's position lives in the \omterm{def:g8:dictionaries:dictionary}{dictionary}.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, box/.style={draw=ocInk, rounded corners=2pt,
+    fill=ocBlue!10, align=left, inner sep=4pt}]
+  \node[box, font=\small\ttfamily] (g) at (0,0) {\#\#\#\#\#\#\#\#\#\\ \#.{}.{}.{}\#.{}\#T\#\\ \#.{}\#.{}\#.{}\#=\#\\ \#g\#.{}.{}.{}\#.{}\#\\ \#.{}\#\#\#g\#.{}\#\\ \#.{}.{}.{}.{}.{}.{}.{}\#\\ \#\#\#\#\#\#\#\#\#};
+  \node[box, anchor=west] (d) at (3.6,0) {\texttt{state}\\[2pt]
+    \texttt{"grid"}: the maze (left)\\
+    \texttt{"row"}: 1, \texttt{"col"}: 1\\
+    \texttt{"gems\_left"}: 2\\
+    \texttt{"moves\_left"}: 20};
+  \draw[-{Stealth}, ocBlue] (d.west) -- (g.east);
+\end{tikzpicture}
+
+{\small The state at the start of level 1: one \omterm{def:g8:dictionaries:dictionary}{dictionary}, whose \texttt{"grid"}
+is the \omterm{def:g7:lists:list}{list} of rows; the S has become floor.}
+\end{omfigure}
+
+\section{Reading a maze file}
+
+Version 2 reads the level from a \omterm{def:g3:files-and-folders:file}{file} and checks it before using it. A level
+that breaks a rule gets a message saying what is wrong; a \omterm{def:g7:functions:function}{function} that returns
+an empty \omterm{def:g7:strings:string}{string} when all is well is easy to test.
+
+\omcode{code/grade-9/07-project-grid-game/listings/maze_v2.py}{4}{31}{Version 2:
+checking a level, then reading it.}\label{lst:g9:project-grid-game:v2}
+
+\Needspace*{13\baselineskip}
+\omcode{code/grade-9/07-project-grid-game/listings/maze_v2.py}{33}{42}{Version 2:
+two \omterm{def:g3:files-and-folders:file}{files} checked.}\label{lst:g9:project-grid-game:v2-main}
+
+\Needspace*{6\baselineskip}
+\omoutput{code/grade-9/07-project-grid-game/outputs/maze_v2.txt}{The second \omterm{def:g3:files-and-folders:file}{file}
+has two S's.}\label{out:g9:project-grid-game:v2}
+
+\code{parse_level} looks for S row by row: \code{"S" in lines[r]} tells whether
+the row holds it, and \code{lines[r].index("S")} gives its column. Row 0 of the
+\omterm{def:g9:grids-and-images:grid}{grid} is line 1 of the \omterm{def:g3:files-and-folders:file}{file}, after the number of moves.
+
+\section{Drawing as text}
+
+\omcode{code/grade-9/07-project-grid-game/listings/maze_v3.py}{33}{46}{Version 3:
+drawing the maze with the player.}\label{lst:g9:project-grid-game:v3}
+
+\Needspace*{12\baselineskip}
+\omoutput{code/grade-9/07-project-grid-game/outputs/maze_v3.txt}{The player, @,
+at the start.}\label{out:g9:project-grid-game:v3}
+
+\section{The rules as functions}
+
+Each rule becomes a small \omterm{def:g7:functions:function}{function} on the state. \code{can_move} looks at the
+cell the player would enter; \code{move} moves, collects a gem and opens the
+gate after the last one; \code{won} tells whether the player stands on T.
+
+\omcode{code/grade-9/07-project-grid-game/listings/maze_v4.py}{45}{73}{Version 4:
+the rules.}\label{lst:g9:project-grid-game:v4}
+
+The maze is surrounded by walls, so \code{can_move} never looks outside the
+\omterm{def:g9:grids-and-images:grid}{grid}: a level must keep its border (Exercise~\ref{exo:g9:project-grid-game:4}
+shows what happens otherwise). Before a game \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop} exists, a fixed sequence of
+moves tries the rules:
+
+\Needspace*{13\baselineskip}
+\omcode{code/grade-9/07-project-grid-game/listings/maze_v4.py}{75}{84}{Version 4:
+five moves, typed in the \omterm{def:g4:programs-and-operating-system:program}{program}.}\label{lst:g9:project-grid-game:v4-main}
+
+\omoutput{code/grade-9/07-project-grid-game/outputs/maze_v4.txt}{The wall above
+blocks the first move; the gem is collected on the way
+down.}\label{out:g9:project-grid-game:v4}
+
+The tests of the chapter check each rule on hand-made \omterm{def:g9:grids-and-images:grid}{grids} of a few cells: a
+gate that opens when the only gem is taken, a gate that stays closed while one
+gem is left, a treasure reached with the right number of moves left.
+
+\section{A turn and the game loop}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, node distance=0.5cm,
+    act/.style={draw=ocInk, rounded corners=2pt, fill=ocBlue!10, align=center, minimum height=7mm, text width=3.1cm},
+    test/.style={draw=ocInk, fill=ocYellow!40, align=center, minimum height=7mm, text width=3.1cm},
+    side/.style={draw=ocInk, rounded corners=2pt, align=center, minimum height=7mm, text width=2.9cm}]
+  \node[act] (read) {read a move};
+  \node[test, below=of read] (ok) {w, a, s or d?};
+  \node[test, below=of ok] (can) {\code{can_move}?};
+  \node[act, below=of can] (mv) {\code{move}, then \code{draw}};
+  \node[test, below=of mv] (won) {\code{won}?};
+  \node[test, below=of won] (left) {moves left?};
+  \node[side, right=1.2cm of ok, fill=black!6] (m1) {print ``type w, a, s or d''};
+  \node[side, right=1.2cm of can, fill=black!6] (m2) {print ``blocked''};
+  \node[side, right=1.2cm of won, fill=ocMint!40] (win) {treasure reached:\\ a win};
+  \node[side, right=1.2cm of left, fill=ocRed!20] (lost) {no moves left:\\ a loss};
+  \draw[-{Stealth}] (read) -- (ok);
+  \draw[-{Stealth}] (ok) -- node[right] {yes} (can);
+  \draw[-{Stealth}] (can) -- node[right] {yes} (mv);
+  \draw[-{Stealth}] (mv) -- (won);
+  \draw[-{Stealth}] (won) -- node[right] {no} (left);
+  \draw[-{Stealth}] (ok) -- node[above] {no} (m1);
+  \draw[-{Stealth}] (can) -- node[above] {no} (m2);
+  \draw[-{Stealth}] (won) -- node[above] {yes} (win);
+  \draw[-{Stealth}] (left) -- node[above] {no} (lost);
+  \draw[-{Stealth}] (left.west) -- ++(-0.7,0) |- node[pos=0.25, left] {yes} (read.west);
+  \draw[-{Stealth}] (m1.north) |- (read.east);
+  \draw[-{Stealth}] (m2.east) -- ++(0.35,0) |- ([yshift=1mm]read.east);
+\end{tikzpicture}
+
+{\small One turn of the game, as a flowchart. A typing mistake or a wall costs
+no move; every real move ends with the maze drawn again.}
+\end{omfigure}
+
+Version 5 adds \code{play}, the game \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop}. The \omterm{def:g4:programs-and-operating-system:program}{program} now waits for the
+player at each turn and reacts to the key typed.
+
+\omcode{code/grade-9/07-project-grid-game/listings/maze_v5.py}{75}{100}{Version 5:
+the game \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop}.}\label{lst:g9:project-grid-game:v5}
+
+To test a game without a player at the keyboard, the moves come from a \omterm{def:g3:files-and-folders:file}{file} of
+keys, one per line: the \omterm{def:g1:what-is-a-computer:input}{output} shows each one after its prompt. A winning
+game:
+
+\omoutput[1-11,84-92,147-156]{code/grade-9/07-project-grid-game/outputs/maze_v5.txt}{A
+won game of 16 moves: the start, the second gem (the gate opens), the
+treasure.}\label{out:g9:project-grid-game:v5}
+
+And a lost one, by a player who walks right and left until the moves run out:
+
+\omoutput[1,181-190]{code/grade-9/07-project-grid-game/outputs/lost_game.txt}{The
+end of a lost game.}\label{out:g9:project-grid-game:lost}
+
+\section{A second level and a check by every sequence}
+
+Is a level winnable at all? A level whose gem is walled in can never open its
+gate. A \omterm{def:g4:programs-and-operating-system:program}{program} can find out by trying \emph{every} sequence of moves. With 4
+possible moves, there are 4 sequences of one move, $4 \times 4 = 16$ of two
+moves, and $4^n$ of $n$ moves: the count is multiplied by 4 at each step, as
+the count of \omterm{def:g5:bits-and-bytes:binary}{binary numbers} is multiplied by 2 at each new \omterm{def:g5:bits-and-bytes:bit}{bit}
+(\cref{ch:g8:binary-and-hexadecimal}).
+
+\begin{omfigure}
+\begin{tikzpicture}[level distance=11mm, font=\small\ttfamily,
+    level 1/.style={sibling distance=32mm}, level 2/.style={sibling distance=7.5mm}]
+  \node[circle, draw=ocInk, fill=ocBlue!15] {}
+    child {node {w} child {node {w}} child {node {a}} child {node {s}} child {node {d}}}
+    child {node {a} child {node {w}} child {node {a}} child {node {s}} child {node {d}}}
+    child {node {s} child {node {w}} child {node {a}} child {node {s}} child {node {d}}}
+    child {node {d} child {node {w}} child {node {a}} child {node {s}} child {node {d}}};
+  \node[anchor=west, font=\small] at (6.4,-1.1) {4 sequences};
+  \node[anchor=west, font=\small] at (6.4,-2.2) {16 sequences};
+\end{tikzpicture}
+
+{\small Every sequence of one and of two moves: each branch splits into four,
+so $n$ moves make $4^n$ sequences.}
+\end{omfigure}
+
+To \omterm{def:g7:lists:list}{list} them, the \omterm{def:g4:programs-and-operating-system:program}{program} counts from 0 to $4^n - 1$ and writes each number in
+base 4, with the digits 0, 1, 2, 3 replaced by \code{w}, \code{a}, \code{s},
+\code{d}. Each sequence is then replayed on a fresh state from the level text:
+
+\omcode{code/grade-9/07-project-grid-game/listings/try_all_moves.py}{1}{35}{Trying
+every sequence of up to 7 moves.}\label{lst:g9:project-grid-game:all}
+
+\omoutput{code/grade-9/07-project-grid-game/outputs/try_all_moves.txt}{A small
+level and an impossible one.}\label{out:g9:project-grid-game:all}
+
+On \code{tiny.txt}, no sequence of fewer than 6 moves wins, and exactly one of
+the 4,096 sequences of 6 moves does. On \code{level2.txt}, none of the 21,844
+sequences of up to 7 moves wins. Is that a proof that it never can? For this
+level, yes, because the gem is walled in on all four sides, which the eye sees
+at once; for a large maze, $4^n$ grows far too fast to try every sequence, and
+cleverer searches are the subject of the next book.
+
+\section{Exercises}
+
+\begin{exercise}[$\star$]\label{exo:g9:project-grid-game:1}
+Starting from level 1, the player types \code{s}, \code{s}, \code{s}. Draw the
+maze as version 5 shows it, with the line of gems and moves left.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g9:project-grid-game:2}
+At the start of level 1, what does \code{can_move(state, "w")} return, and why?
+And \code{can_move(state, "d")}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g9:project-grid-game:3}
+Add a ``wait'' move, \code{x}: the player stays in place, but it costs a move.
+Find the smallest change to version 5 that does it.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g9:project-grid-game:4}
+A maze without a border of walls is checked by this \omterm{def:g7:functions:function}{function}. What does it
+print? Explain each answer, then fix the \omterm{def:g7:functions:function}{function}.
+
+\omcode{code/grade-9/07-project-grid-game/exercises/wrap_bug.py}{1}{10}{Moves on a
+maze without a border.}\label{lst:g9:project-grid-game:wrap-bug}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:project-grid-game:5}
+Write a \omterm{def:g7:functions:function}{function} \code{replay(text, sequence)} that plays a \omterm{def:g7:strings:string}{string} of moves on a
+level and returns the number of moves used to win, or $-1$ if the sequence does
+not win. How many moves did the winning game of
+\cref{out:g9:project-grid-game:v5} use?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:project-grid-game:6}
+In this version of \code{move}, the gate of level 1 opens too soon. When does it
+open? Fix it.
+
+\omcode{code/grade-9/07-project-grid-game/exercises/gate_bug.py}{1}{13}{A gate that
+opens early.}\label{lst:g9:project-grid-game:gate-bug}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:project-grid-game:7}
+A level may hold two teleport squares, marked \code{o}: a player who steps on
+one jumps to the other. Write \code{move_teleport(state, key)}, using
+\code{move}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:project-grid-game:8}
+How many sequences of 6 moves are there? Of 10 moves? If a \omterm{def:g1:what-is-a-computer:computer}{computer} replays a
+million sequences per second, how long do the sequences of 15 moves take?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:project-grid-game:9}
+Write a \omterm{def:g7:functions:function}{function} \code{winnable(text, most)} that tells whether some sequence
+of at most \code{most} moves wins the level. Check it on \code{tiny.txt} and
+\code{level2.txt}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g9:project-grid-game:10}
+Add a ``fog'' mode: \code{draw_fog(state, sight)} draws only the cells at most
+\code{sight} rows and \code{sight} columns from the player, and a \code{?}
+everywhere else.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g9:project-grid-game:11}
+A maze has no gems and no gate. Show that if the treasure can be reached at all,
+it can be reached in at most (number of floor cells $- 1$) moves.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g9:project-grid-game:12}
+Write a \omterm{def:g7:functions:function}{function} \code{shortest(text, most)} that returns a shortest winning
+sequence, by trying the lengths 1, 2, 3, \ldots{} in order. What does it return
+for \code{tiny.txt}?
+\end{exercise}

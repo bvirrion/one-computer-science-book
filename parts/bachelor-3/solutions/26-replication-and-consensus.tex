@@ -1,0 +1,99 @@
+\section*{Chapter \ref{ch:b3:replication-and-consensus} --- Replication and Consensus}
+
+\begin{solution}{exo:b3:replication-and-consensus:1}
+Only \omterm{def:b3:replication-and-consensus:consistency}{eventual consistency}: the single read is the last one, so convergence holds trivially. It is not causal, since the write precedes the read in A's program order and A's read must then return 1; not sequential nor \omterm{def:b3:concurrency:linearisability}{linearisable}, for the same reason. A store that allows it does not let a client read its own writes: a reader who reserved a book and reloads the page may not see the reservation. A test runs the four checkers on it.
+\end{solution}
+
+\begin{solution}{exo:b3:replication-and-consensus:2}
+By \cref{thm:b3:replication-and-consensus:quorums}: $(3, 1, 3)$ overlaps ($4 > 3$), but a write needs all three, so no replica may be down for writes. $(4, 2, 2)$ does not overlap ($4 = 4$): replicas 1, 2 and 3, 4 are disjoint \omterm{def:b3:replication-and-consensus:quorum}{quorums}. $(4, 2, 3)$ overlaps, and works with one replica down. $(7, 4, 4)$ overlaps and works with three down. $(6, 3, 3)$ does not overlap. In general reads and writes both work with $\min(N - R, N - W)$ replicas down: 0, 2, 1, 3 and 3.
+\end{solution}
+
+\begin{solution}{exo:b3:replication-and-consensus:3}
+Compare (last \omterm{def:b3:replication-and-consensus:raft}{election term}, length): S1 (2, 3), S2 (3, 4), S3 (1, 2), S4 (2, 4), S5 (3, 3). A server grants its vote to a candidate whose pair is at least its own. S2's pair is the largest: all five can vote for it. S5 can get S1, S3, S4 and itself. S4 can get S1, S3 and itself: three, a majority. S1 gets only S3 and itself, S3 only itself. So S2, S4 or S5 can win. S4 can win although it lacks S2's entry of \omterm{def:b3:replication-and-consensus:raft}{election term} 3: that entry is on S2 alone, so it was never committed, and losing it is allowed.
+\end{solution}
+
+\begin{solution}{exo:b3:replication-and-consensus:4}
+At $t = 199$: S2, S3 and S4 have \omterm{def:b3:replication-and-consensus:raft}{commit index} 2 (x=1 and y=9 are on three servers, a majority, and y=9 is of S2's \omterm{def:b3:replication-and-consensus:raft}{election term}); S1 and S5 have 1. S5's entries y=2 and z=3 are stored on S5 and S1 only, two of five, so S5 cannot commit them. At $t = 260$, after the cut heals, S5 and S1 adopt \omterm{def:b3:replication-and-consensus:raft}{election term} 2, their entries 2 and 3 are replaced by y=9, and every server has \omterm{def:b3:replication-and-consensus:raft}{commit index} 2.
+\end{solution}
+
+\begin{solution}{exo:b3:replication-and-consensus:5}
+S1, leader of \omterm{def:b3:replication-and-consensus:raft}{election term} 1, commits a everywhere, then, cut off with S2, appends b at index 2, which reaches S2 only; S1 crashes. S5 is elected for \omterm{def:b3:replication-and-consensus:raft}{election term} 2 by S3, S4 and itself, appends c at index 2, keeps it, and crashes. S1 restarts; its first candidacy, for \omterm{def:b3:replication-and-consensus:raft}{election term} 2, fails since S3 and S4 have voted in it; the second wins \omterm{def:b3:replication-and-consensus:raft}{election term} 3 with S2 and S3, whose logs end at index 2 or 1 with \omterm{def:b3:replication-and-consensus:raft}{election term} 1. S1 sends b to S3 and S4. Now b is on S1, S2, S3, S4: with the buggy rule, S1 commits index 2 = b. S1 crashes. S5 restarts and wins \omterm{def:b3:replication-and-consensus:raft}{election term} 4: its last entry, c of \omterm{def:b3:replication-and-consensus:raft}{election term} 2, is more up to date than everyone's last entry of \omterm{def:b3:replication-and-consensus:raft}{election term} 1, so S2, S3 and S4 vote for it. S5 overwrites index 2 with c and commits it with d: index 2 was committed with b and then with c, and \code{check} reports state machine safety broken. With the correct rule, S1 in \omterm{def:b3:replication-and-consensus:raft}{election term} 3 may not commit b, of \omterm{def:b3:replication-and-consensus:raft}{election term} 1, by counting; it has no entry of \omterm{def:b3:replication-and-consensus:raft}{election term} 3, so it commits nothing at index 2, and when S5 replaces b nothing committed is lost. Index 2 is first committed in \omterm{def:b3:replication-and-consensus:raft}{election term} 4, as c, together with d.
+\end{solution}
+
+\begin{solution}{exo:b3:replication-and-consensus:6}
+\code{exercises/ex6_compaction.py} keeps \code{base}, \code{base_term}, the state and the entries after \code{base}; index $i > $ \code{base} is \code{entries[i - base - 1]}. \code{term_at(base)} returns \code{base_term}, so the follower's check still works for an append that starts right after the snapshot. \code{matches(prev, prev_term)} accepts any \code{prev} below the snapshot, since those entries are committed and agree with every leader's log by leader completeness. \code{compact(upto)} applies the commands up to \code{upto} to the state and drops them. \code{install} keeps the follower's entries after the snapshot only if its log has an entry at \code{base} with \code{base_term}, by log matching then identical up to there; otherwise it discards its log. The test compares 200 random sequences of appends, new \omterm{def:b3:replication-and-consensus:raft}{election terms} and compactions with an uncompacted log: last index and \omterm{def:b3:replication-and-consensus:raft}{election term}, every \code{term_at}, every \code{matches}, and the state.
+\end{solution}
+
+\begin{solution}{exo:b3:replication-and-consensus:7}
+Facts used: votes are non-negative integers. If a \omterm{def:b3:replication-and-consensus:quorum}{read quorum} $A$ and a \omterm{def:b3:replication-and-consensus:quorum}{write quorum} $B$ were disjoint, their votes would add up to at least $r + w > V$, more than all the votes there are. In the same way two disjoint \omterm{def:b3:replication-and-consensus:quorum}{write quorums} would hold at least $2w > V$ votes. The converse fails: one replica with 3 votes, $V = 3$, $r = w = 1$; then $r + w \le V$, yet every \omterm{def:b3:replication-and-consensus:quorum}{quorum} contains the only replica. Weights: the fast replica 3 votes, the two others 1 each, $V = 5$, $r = w = 3$. The fast replica alone is a \omterm{def:b3:replication-and-consensus:quorum}{read quorum}, and $r + w = 6 > 5$, $2w > 5$. The price: the two slow replicas have only 2 votes together, so no write, and no read, can succeed without the fast one.
+\end{solution}
+
+\begin{solution}{exo:b3:replication-and-consensus:8}
+With $p = 0.01$: for $R = 2$, a read is unavailable only if 4 or 5 replicas are down, $5p^4(1 - p) + p^5 \approx 4.96 \times 10^{-8}$; for $W = 4$, a write is unavailable if 2 or more are down, $1 - (1 - p)^5 - 5p(1 - p)^4 \approx 9.80 \times 10^{-4}$. With $R = W = 3$ both are $\approx 9.85 \times 10^{-6}$. For a thousand reads per write, $R = 2, W = 4$ refuses on average $(1{,}000 \times 4.96 \times 10^{-8} + 9.80 \times 10^{-4})/1{,}001 \approx 1.0 \times 10^{-6}$ of the operations against $9.85 \times 10^{-6}$, and each read asks fewer replicas; but one write in about a thousand is refused and must be retried. For a catalogue, where a librarian can retry an addition, $R = 2, W = 4$ suits better. A test checks the probabilities.
+\end{solution}
+
+\begin{solution}{exo:b3:replication-and-consensus:9}
+Facts used: log matching (\cref{thm:b3:replication-and-consensus:log-matching}); election safety (exercise~\ref{exo:b3:replication-and-consensus:10}); two majorities meet. Let $M$ be the majority storing $e$, and $C$ a server lacking $e$ that asks for votes in \omterm{def:b3:replication-and-consensus:raft}{election term} $t + 1$. Its votes form a majority, which meets $M$ in some server $v$. Since $C$'s election is the first of \omterm{def:b3:replication-and-consensus:raft}{election term} $t + 1$ to succeed, no log holds an entry of \omterm{def:b3:replication-and-consensus:raft}{election term} $t + 1$, and $v$'s last entry has \omterm{def:b3:replication-and-consensus:raft}{election term} $t$, since $v$ stores $e$. If $C$'s last entry has an \omterm{def:b3:replication-and-consensus:raft}{election term} below $t$, $v$'s log is more up to date and $v$ refuses. If $C$'s last entry has \omterm{def:b3:replication-and-consensus:raft}{election term} $t$, it was created by $L$, the only leader of $t$, at some index $j$; by log matching $C$'s log equals $L$'s up to $j$, and since $C$ lacks $e$, $j < i$; $v$'s log has length at least $i > j$ with the same last \omterm{def:b3:replication-and-consensus:raft}{election term}, so it is more up to date and $v$ refuses. Either way $C$ cannot gather a majority. The proof uses $e$'s \omterm{def:b3:replication-and-consensus:raft}{election term} to know that $v$'s last entry has \omterm{def:b3:replication-and-consensus:raft}{election term} $t$, at least that of $C$'s: an entry of an older \omterm{def:b3:replication-and-consensus:raft}{election term} stored by a majority gives no such guarantee, which is exercise~\ref{exo:b3:replication-and-consensus:5}.
+\end{solution}
+
+\begin{solution}{exo:b3:replication-and-consensus:10}
+Facts used: two majorities of $N$ servers meet. A server becomes leader of \omterm{def:b3:replication-and-consensus:raft}{election term} $t$ only with the votes of a majority for $t$, its own included. Each server records, with its current \omterm{def:b3:replication-and-consensus:raft}{election term}, the candidate it voted for, and grants a vote for $t$ only if it has not voted for another candidate in $t$: it votes at most once per \omterm{def:b3:replication-and-consensus:raft}{election term}. If two servers became leaders of $t$, their majorities would share a server that voted for both in $t$, a contradiction. The current \omterm{def:b3:replication-and-consensus:raft}{election term} and the vote must survive a crash, written to disk before the vote is sent: a server that forgot its vote after restarting could vote again in the same \omterm{def:b3:replication-and-consensus:raft}{election term}. In \code{raft.py} they are the persistent fields that \code{reset} does not touch.
+\end{solution}
+
+\begin{solution}{exo:b3:replication-and-consensus:11}
+Facts used: a participant's decision depends only on what it has received. Consider two runs. In the first, the \omterm{def:b3:replication-and-consensus:2pc}{coordinator} logs commit and crashes before sending it. In the second, the \omterm{def:b3:replication-and-consensus:2pc}{coordinator} crashes before logging anything, and on restart, finding no decision, aborts, which it is allowed to do, since no participant has been told anything. Until the \omterm{def:b3:replication-and-consensus:2pc}{coordinator} restarts, every participant receives exactly the same messages in both runs: the prepare request, and whatever the other participants send, which by induction on the messages is the same in both runs, since they all voted yes and none heard a decision. So any rule that lets a participant decide gives the same decision in both runs, and it contradicts the \omterm{def:b3:replication-and-consensus:2pc}{coordinator}'s commit in the first or its abort in the second. The participants must wait: \omterm{def:b3:replication-and-consensus:2pc}{two-phase commit} blocks. Three-phase commit inserts a round in which the \omterm{def:b3:replication-and-consensus:2pc}{coordinator} tells everyone it is about to commit and collects acknowledgements, so that no participant commits while another could still abort; a participant that times out decides from what the others know. A timeout means ``the \omterm{def:b3:replication-and-consensus:2pc}{coordinator} has crashed'' only if message delays are bounded: in an asynchronous network a slow \omterm{def:b3:replication-and-consensus:2pc}{coordinator} is mistaken for a crashed one, and the two sides of a \omterm{def:b3:replication-and-consensus:cap}{network partition} can decide differently.
+\end{solution}
+
+\begin{solution}{exo:b3:replication-and-consensus:12}
+With the register, two replicas that increment between merges both write their old value plus 1; the merge keeps only the one with the later timestamp, and the other increment is lost. Each such pair loses one, and over the 300 steps 122 of the 207 increments are lost: all three replicas end at 85. \emph{Grow-only counter.} Facts used: $\max$ is commutative, associative and \omterm{def:b3:file-systems:consistency}{idempotent}. The merged state is the entrywise maximum, and an entrywise operation inherits these three properties from $\max$. Replica $r$'s own entry counts its increments, and every copy of that entry elsewhere is a value it held earlier, so at most its current value; increments never decrease it. After every replica has merged with every other, entry $r$ everywhere is the maximum of its copies, replica $r$'s own count, and the value, the sum of the entries, is the total number of increments. \code{exercises/ex12_crdt.py} prints 207 three times; a test checks 50 seeds and the three properties.
+\end{solution}
+
+\begin{solution}{pb:b3:replication-and-consensus:1}
+\textbf{1.} \omterm{def:b3:replication-and-consensus:consistency}{Eventual consistency}, or causal: a search that misses a book added a second ago does no harm, and the next search finds it.
+
+\textbf{2.} \omterm{def:b3:concurrency:linearisability}{Linearisability}: the check ``on the shelf?'' and the reservation must happen in one order that every replica agrees on, so that the second reader sees the first reservation. This needs consensus, for instance \omterm{def:b3:replication-and-consensus:raft}{Raft}.
+
+\textbf{3.} That a client reads its own writes; \omterm{def:b3:replication-and-consensus:consistency}{causal consistency} gives it, since the reservation precedes the reload in the reader's program order.
+
+\textbf{4.} \omterm{def:b3:replication-and-consensus:consistency}{Causal consistency}: the note's write follows the book's in the librarian's program order, so whoever sees the note sees the book.
+
+\textbf{5.} A count of reservations goes down when one is cancelled, so it would need a counter with decrements, a pair of grow-only counters. The reservation itself cannot: it is a choice between two readers that every replica must make alike, and a merge cannot undo a reservation already confirmed to a reader.
+
+\textbf{6.} Searching: available and eventually consistent, from the nearest replica. Reserving: \omterm{def:b3:concurrency:linearisability}{linearisable}, through a consensus protocol, and unavailable when no majority is reachable.
+
+\textbf{7.} Those with $R + W \ge 6$: $(1, 5)$, $(2, 4)$, $(3, 3)$, $(4, 2)$, $(5, 1)$, and any with larger values.
+
+\textbf{8.} No: a read that starts after the reservation's write succeeded reaches one of the three replicas that stored it, by \cref{thm:b3:replication-and-consensus:quorums}, and returns its higher version.
+
+\textbf{9.} Both readers can read ``on the shelf'' before either writes, then both write their reservations: the \omterm{def:b3:replication-and-consensus:quorum}{quorums} overlap, but nothing orders the two check-then-write sequences.
+
+\textbf{10.} Brenmoor's two replicas and one more, from another town: three replicas are needed, wherever they are, and any three meet any \omterm{def:b3:replication-and-consensus:quorum}{write quorum} of three.
+
+\textbf{11.} Searches read one replica, the nearest, and fail only if all five are down, $10^{-10}$. Every reservation must reach all five and fails about 4.9\,\% of the time, at every failure of any town.
+
+\textbf{12.} Searches with $R = 1$ and no ordering; reservations through \omterm{def:b3:replication-and-consensus:raft}{Raft}, which orders them, or \omterm{def:b3:replication-and-consensus:quorum}{quorums} with $R = W = 3$ at the least.
+
+\textbf{13.} $\sum_{d=3}^{5} \binom{5}{d} p^d (1 - p)^{5 - d} = 10p^3(1 - p)^2 + 5p^4(1 - p) + p^5$.
+
+\textbf{14.} $9.8506 \times 10^{-6}$ (\cref{out:b3:replication-and-consensus:quorum}), close to $10p^3 = 10^{-5}$: three replicas down dominates.
+
+\textbf{15.} $1 - 0.99^5 \approx 0.04901$, close to $5p = 0.05$: any one replica down dominates.
+
+\textbf{16.} The Brenmoor and Wenmouth side, with three replicas; Kelsford's two cannot form a \omterm{def:b3:replication-and-consensus:quorum}{write quorum}.
+
+\textbf{17.} The two Brenmoor replicas fail together: the failures are not independent, and the probability of losing two at once is that of the building's failure, far above $p^2$.
+
+\textbf{18.} At most two in any town, as now: 2, 2 and 1. The loss of any one town leaves at least three, a majority.
+
+\textbf{19.} Three of the five, a majority.
+
+\textbf{20.} They are appended but never committed, since the cut-off leader cannot reach a majority; after the cut heals they are replaced, and the readers, never told that their reservations were committed, retry.
+
+\textbf{21.} One order of all the reservations, the order of the log, in which each check sees every earlier reservation: two readers can no longer both get the last copy.
+
+\textbf{22.} For each reservation, the leader sends the entry to the four followers and waits for two of them to answer, a round trip, and the client waits for the commit; on top of that, heartbeats every 10 time units.
+
+\textbf{23.} Searches should stay available on both sides, from the local replicas; reservations should stop on the side without a majority. The CAP theorem (\cref{thm:b3:replication-and-consensus:cap}) forces the choice.
+
+\textbf{24.} With $W = 3$, a reservation finds too few replicas with probability $9.85 \times 10^{-6}$, about one in 100,000; with $W = 5$, $0.049$, about one in 20: three replicas out of five are five thousand times more available than five.
+\end{solution}

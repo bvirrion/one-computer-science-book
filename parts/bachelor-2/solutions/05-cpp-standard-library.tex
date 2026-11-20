@@ -1,0 +1,191 @@
+% Solutions of Book 4, chapter 5 (cpp-standard-library).
+\section*{Chapter \ref{ch:b2:cpp-standard-library} --- The Standard Library: Containers, Iterators and Algorithms}
+
+\begin{solution}{exo:b2:cpp-standard-library:1}
+\omoutput{code/bachelor-2/05-cpp-standard-library/outputs/exo_algorithms.txt}{The six lines.}
+a: three 4s. b: \code{max_element} returns the \emph{first} largest, at position 0. c: the type of the result is the
+type of the initial value: with \code{0}, an \code{int}, each partial sum $0 + 0.5$ is converted back to
+\code{int}, 0; with \code{0.0} the sum is 2. d: \code{unique} removes only \emph{consecutive} duplicates, leaving
+1 2 1 3 in the first four places. e: \code{remove} shifts the kept elements to the front and returns the end of
+them, 3, but the size is still 6: an algorithm cannot change a \omterm{def:b2:cpp-standard-library:container}{container}'s size, so the elements after the
+returned position remain, with unspecified values. f: after \code{erase} the size is 3 (1 2 3, in order), and
+\code{binary_search} finds 3. Line e answers the question.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-standard-library:2}
+After erasing at position $i$, the next element slides into position $i$, and \code{i++} skips it: 12 follows 8
+and 6 follows 6, so both survive, and 10, the last, after 7, is never reached as the size shrinks. Fix 1: increment
+\code{i} only when nothing was erased (\code{if (even) erase; else i++;}), still $O(n^2)$ moves. Fix 2, linear:
+\code{std::erase_if(v, is_even);}, with \code{is_even} a lambda testing the remainder modulo 2, which is \code{remove_if} followed by one \code{erase}.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-standard-library:3}
+\omcode{code/bachelor-2/05-cpp-standard-library/exercises/top_words.hpp}{9}{21}{The $k$ most frequent words}
+\code{partial_sort} makes about $m \log_2 k$ comparisons (it keeps a heap of the $k$ best), against $m \log_2 m$ for a
+full sort; for the 33 words of the town and $k = 3$, about 52 against 166. The comparator breaks ties by the word,
+so the result does not depend on the algorithm's internal order. \code{tests/word_count_test.cpp} checks that the
+first $k$ agree with \code{by_frequency} on the town's titles.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-standard-library:4}
+The map: the $i$-th insertion searches a tree of $i - 1$ keys, about $\log_2 i$ comparisons, so about
+$\sum_{i=1}^{n} \log_2 i = \log_2 n! \approx n \log_2 n - 1.44\,n$ comparisons, plus $n$ allocations and
+rebalancings of constant amortised cost. The hash table: one hash per insertion, $n$ in all, plus the rehashes. If
+the bucket count doubles each time the load factor passes 1, the rehashes move about
+$n/2 + n/4 + \dots < n$ elements; the libraries keep the hash in the node or recompute it, at most $n$ more hashes.
+Total: $O(n)$ on average, against $O(n \log n)$; the measured lookups of
+\cref{out:b2:cpp-standard-library:lookups} show the gap at large $n$.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-standard-library:5}
+\omoutput{code/bachelor-2/05-cpp-standard-library/outputs/exo_captures.txt}{The four lines.}
+Line 1: \code{by_value} copied \code{fine} when the lambda was created, 10; \code{by_ref} reads the variable, now
+25. Line 2: \code{copy} is a copy of the object \code{counter} taken while its \code{n} was 0; three calls of
+\code{counter} give 3, the first call of \code{copy} 1. Line 3: \code{[=]} copied \code{fine} (25) at creation, 50;
+\code{[&]} reads it after it was set to 0. Line 4: the lambda object stores its \omterm{def:b2:cpp-standard-library:lambda}{captures}: one \code{int}, 4 bytes,
+for \code{by_value}, and one reference, stored as an address, 8 bytes, for \code{all_ref}.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-standard-library:6}
+The lambda \omterm{def:b2:cpp-standard-library:lambda}{captures} \code{p}, a local variable of \code{starts_with_street}, by reference; the function returns,
+its frame is gone, and \code{p} with it. The call in \code{main} reads \code{p.size()} through the dangling reference.
+Fix: capture by value, \code{[p]}, or move it in, \code{[p = std::move(p)]}: the string then lives in the lambda
+object, which \code{std::function} owns. With the default options, the sanitizer does not watch a returned frame,
+whose stack memory is soon reused by the next call; the option makes it place frames in separately allocated
+memory that it marks as dead after the return. A freed heap block, as in \cref{out:b2:cpp-standard-library:invalidation},
+is always watched.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-standard-library:7}
+\omcode{code/bachelor-2/05-cpp-standard-library/exercises/by_month.hpp}{9}{25}{Member, then month}
+\code{month_of} inverts \code{day_number}. A \code{map} visits members and months in increasing order, which is
+how the table is read and printed; an \code{unordered_map} would need sorting first, and for 60 members and 12
+months the speed of lookups does not matter. \code{tests/loans_test.cpp} checks that each member's months add up
+to the member's loans, and that the whole adds up to 400.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-standard-library:8}
+(a) Let $k = \lfloor \log_2 n \rfloor$, so $2^k \leq n < 2^{k+1}$, hence $2^k < n + 1 \leq 2^{k+1}$ and
+$\lceil \log_2 (n + 1) \rceil = k + 1$. (b) The comparisons a search makes, each with two outcomes, form a binary
+decision tree whose leaves are the returned positions. Every one of the $n + 1$ positions (0 to $n$) is the right
+answer for some key, so the tree has at least $n + 1$ leaves; a binary tree of height $h$ has at most $2^h$ leaves,
+so $2^h \geq n + 1$ and $h \geq \lceil \log_2(n + 1) \rceil$: some key takes that many comparisons. By (a), it is
+the bound of \cref{prop:b2:cpp-standard-library:lower-bound}, which no comparison-based search can beat.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-standard-library:9}
+\omcodes{code/bachelor-2/05-cpp-standard-library/exercises/lru.hpp}{9-24,25-44}{An LRU cache}
+\code{splice} moves a node from one place of a list to another without copying it or invalidating any iterator,
+and erasing the back node \omterm{def:b2:cpp-standard-library:invalidation}{invalidates} only that node's iterators, which the map entry erased with it was the only
+one to hold. The iterators stored in the map therefore stay valid for as long as their entries exist. With a
+\code{vector} instead of the list, every move to the front would shift the others and invalidate their stored
+positions. \code{tests/lru_test.cpp} compares 15\,000 random operations with a vector kept in recency order.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-standard-library:10}
+\omcode{code/bachelor-2/05-cpp-standard-library/exercises/interval_map.hpp}{12}{48}{An interval map on
+\code{std::map}}
+\code{upper_bound(key)} is the first change after \code{key}, so the one before it, if any, is the last change at or
+before \code{key}. \code{assign} saves the value that must resume at \code{hi}, erases the changes inside
+$[lo, hi)$, writes the change at \code{lo} and the change back at \code{hi}, then removes either of them if it
+repeats the value before it. It costs $O(\log n)$ plus the number of erased changes, each of which was inserted
+once. The test checks every key from $-10$ to 49 and the number of stored changes after each of 3000 random
+assignments.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-standard-library:11}
+(a) The printed points are 1, 2, 3, 5, 9, \dots, 513: the capacity doubles, starting at 1. For $n \geq 1$
+\code{push_back}s there are $1 + \lceil \log_2 n \rceil$ reallocations (11 for $n = 1000$), and the moves add up to
+$1 + 2 + 4 + \dots + 2^{\lceil \log_2 n \rceil - 1} < 2n$. (b) Exactly when $i = 1$ or $i - 1$ is a power of two: the
+$i$-th call finds $i - 1$ elements in a full block. (c) \code{due.reserve(8);} before the loop: no
+\code{push_back} reallocates, and the end iterator held by the range-\code{for} still marks four elements, so the
+loop reads 3, 8, 12 and 20 and stops. It is fragile: one more renewal than reserved and the bug returns, silently.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-standard-library:12}
+\omcode{code/bachelor-2/05-cpp-standard-library/exercises/workload.hpp}{9}{40}{One workload, three queues}
+\omoutput{code/bachelor-2/05-cpp-standard-library/outputs/exo_workload.txt}{One run on the author's laptop
+(\code{exo_workload.cpp}).}
+By the guarantees, the heap and the multiset take $O(\log w)$ per operation and the sorted vector $O(w)$ per
+insertion (the smallest is at the back, so serving is $O(1)$). The measurement agrees for large $w$: at 100\,000
+waiting, the vector is about forty times slower than the heap. For a few hundred waiting, the sorted vector is the
+fastest, and the multiset is slower than the heap at every size (a node allocation per insertion). Choice: the heap,
+which is never far from the best; the sorted vector only if the list is known to stay short. The test in
+\code{tests/exercises_test.cpp} checks the order of service, not the times.
+\end{solution}
+
+\begin{solution}{pb:b2:cpp-standard-library:1}
+\textbf{1.} \code{sort_by_due} in \code{exercises/loan_desk.hpp}: compare \code{due}, then \code{id}.
+
+\textbf{2.} \code{lower_bound(d)} is the first loan due on or after $d$, \code{upper_bound(d)} the first due after
+$d$; between them, the loans due on $d$. \code{equal_range} returns both as a pair, in one call. The comparator must
+compare a loan with a day in both orders, as \code{DueBefore} does.
+
+\textbf{3.} At most $\lfloor \log_2 400 \rfloor + 1 = 9$ each.
+
+\textbf{4.} \code{due_between(sorted, d, d + 7)}: from \code{lower_bound(d)} to \code{lower_bound(d + 7)}. Consecutive
+weeks $[d, d + 7)$ and $[d + 7, d + 14)$ then share no loan and miss none. The test compares every such range with a
+count by hand.
+
+\textbf{5.} At \code{upper_bound} of its due date, found in 9 comparisons, but the insertion shifts every later loan:
+up to 400 moves.
+
+\textbf{6.} If the vector had spare capacity, the iterators before the insertion point; otherwise none.
+
+\textbf{7.} \code{operator[]} inserts the key with an empty vector when it is missing, which is what grouping needs.
+
+\textbf{8.} \code{operator[]} may insert, so it does not exist on a \code{const} map. \code{at} throws if the key is
+missing; \code{find} returns \code{end()}.
+
+\textbf{9.} The counts are the same; the ties of \code{stable_sort} come out in a different order, since the
+pairs are now built in the hash table's order instead of by increasing member number.
+
+\textbf{10.} \code{++borrowed[l.book_id]} for each loan, then \code{max_element} with a lambda comparing the counts:
+book 45, borrowed 10 times.
+
+\textbf{11.} Loop with \code{auto it = m.begin(); it != m.end();} and no increment in the header; in the
+body, \code{it = m.erase(it);} if the member has one loan, \code{++it;} otherwise. \code{erase} returns the iterator
+after the erased one, so the erased one is never incremented. Three members are removed. In C++20,
+\code{std::erase_if(m, pred)} does the same.
+
+\textbf{12.} Yes for the map: insertions never move nodes. Yes for the \code{unordered_map} too: a rehash
+\omterm{def:b2:cpp-standard-library:invalidation}{invalidates} iterators, but pointers and references to the elements survive.
+
+\textbf{13.} 109, as in \cref{ch:b2:cpp-polymorphism}.
+
+\textbf{14.} The late loans come first and \code{partition} returns the boundary; the order within each part is
+unspecified. \code{stable_partition} keeps it, at a higher cost.
+
+\textbf{15.} \code{std::erase_if(v, [](const Loan &l) { return l.returned >= 0; });} keeps the 22 loans still out.
+
+\textbf{16.} \code{loans | views::filter(late) | views::take(10)}, then \code{views::transform} with a lambda returning
+\code{l.id}, with \code{late} a lambda capturing the day.
+
+\textbf{17.} \code{fines_cents} in \code{loan_desk.hpp}: 52\,850 cents, 528.50. \code{accumulate} returns the type of
+its initial value: with \code{0}, each sum would be computed in \code{int}, which would suffice here but overflow
+for a large library, and amounts in \code{double} would be truncated.
+
+\textbf{18.} \code{tests/loans_test.cpp} counts with a plain loop and compares with \code{late_count}, and does the
+same for the fines.
+
+\textbf{19.} The vector: $O(n)$ moves per insertion, against $O(\log n)$ for the map.
+
+\textbf{20.} \omoutput{code/bachelor-2/05-cpp-standard-library/outputs/crossover.txt}{One run on the author's
+laptop.}
+
+\textbf{21.} At $n = 1000$, an insertion moves on average 500 integers, 2\,KB of contiguous memory, which the
+processor copies at many bytes per cycle; the binary search reads a 4\,KB array that stays in the fastest cache.
+The map allocates a node for each key and follows about ten pointers per search.
+
+\textbf{22.} Above about 10\,000 keys, the average shift exceeds 20\,KB per insertion and grows linearly with $n$:
+the cost per key doubles when $n$ doubles, as $O(n)$ per insertion predicts.
+
+\textbf{23.} Its $\log_2 n$ steps grow slowly, but its nodes no longer fit in the caches, and each step becomes a
+cache miss.
+
+\textbf{24.} \emph{The crossover size at which a sorted vector stops beating a map, on the laptop}: in the printed
+run, between 8000 and 16\,000 keys, about $10^4$; below it the vector is faster per key (by about 20\,\% at
+1000), above it the map is, by a factor that doubles with $n$. It lies where the linear cost of shifting,
+cheap per element because the memory is contiguous, overtakes the logarithmic cost of the map, high per step
+because each step follows a pointer.
+\end{solution}

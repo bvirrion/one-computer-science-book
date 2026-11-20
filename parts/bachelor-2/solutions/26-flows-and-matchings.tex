@@ -1,0 +1,215 @@
+% Solutions of chapter 26 -- Flows and matchings.
+\section*{Chapter \ref{ch:b2:flows-and-matchings} --- Flows and Matchings}
+
+\begin{solution}{exo:b2:flows-and-matchings:1}
+$f_1$ respects the capacities but not conservation at $c$: $5 + 5 = 10$ enter and $7$ leave. $f_2$ is balanced but puts
+$9$ on $c \to t$, whose capacity is $7$; its \omterm{def:b2:flows-and-matchings:flow}{value} $14$ would also exceed the \omterm{def:b2:flows-and-matchings:cut}{cut} of capacity $12$. $f_3$ is a \omterm{def:b2:flows-and-matchings:flow}{flow}: at
+$a$, $6 = 1 + 5$; at $b$, $6 = 6$; at $c$, $1 + 6 = 7$; at $d$, $5 = 5$; its \omterm{def:b2:flows-and-matchings:flow}{value} is $6 + 6 = 12$.
+
+\omoutput{code/bachelor-2/26-flows-and-matchings/outputs/exo_is_flow.txt}{The three candidates checked.}
+\end{solution}
+
+\begin{solution}{exo:b2:flows-and-matchings:2}
+\omoutput{code/bachelor-2/26-flows-and-matchings/outputs/exo_no_reverse.txt}{With and without the reverse residual
+edges.}
+
+Without reverse edges the search finds $s, a, c, t$ and $s, a, d, t$, then stops at $8$: every remaining path to $t$
+needs $c \to t$, which is full, or $a \to d$ entered from $a$, which $s \to a$ can no longer feed. The \omterm{def:b2:flows-and-matchings:flow}{flow} $12$ needs
+the path $s, b, c, a, d, t$, which sends $4$ units back against $a \to c$. The version misses the term $+ f(v, u)$ of
+the \omterm{def:b2:flows-and-matchings:residual}{residual capacity}, at the end of line 21 of \cref{lst:b2:flows-and-matchings:network}.
+\end{solution}
+
+\begin{solution}{exo:b2:flows-and-matchings:3}
+The shortest paths $s, x, z, t$ (bottleneck $4$, at $x \to z$) and $s, y, w, t$ (bottleneck $6$, at $y \to w$) give
+$10$. The vertices reachable from $s$ afterwards are $s$, $x$ and $y$: $x \to y$ still has room, but $x \to z$ and $y \to
+w$ are full. The \omterm{def:b2:flows-and-matchings:cut}{cut} $(\{s, x, y\}, \{z, w, t\})$ has capacity $4 + 6 = 10$; the edge $z \to y$ goes from $T$ to $S$ and
+does not count.
+
+\omoutput{code/bachelor-2/26-flows-and-matchings/outputs/exo_maxflow.txt}{The same \omterm{def:b2:flows-and-matchings:flow}{flow} and \omterm{def:b2:flows-and-matchings:cut}{cut} by program.}
+\end{solution}
+
+\begin{solution}{exo:b2:flows-and-matchings:4}
+After $s, a, b, t$ the middle edge is full and its residual is $1$ backwards; $s, b, a, t$ then uses it backwards,
+cancels the unit, and leaves the middle edge empty again. Each such pair raises the \omterm{def:b2:flows-and-matchings:flow}{flow} on each of the four outer
+edges by $1$, and each path has bottleneck $1$, so it takes $2C$ augmentations to reach $2C$, as long as no outer edge is
+full. Breadth-first search finds the two paths of two edges first, each of bottleneck $C$, and then $s$ has no residual
+edge left: $2$ augmentations.
+\end{solution}
+
+\begin{solution}{exo:b2:flows-and-matchings:5}
+\omoutput{code/bachelor-2/26-flows-and-matchings/outputs/exo_mincut.txt}{A few residual capacities of $f_3$, and the
+vertices reachable from $s$.}
+
+From $s$, only $s \to a$ has room ($2$); from $a$, the \omterm{def:b2:flows-and-matchings:flow}{flow} $1$ on $a \to c$ leaves $6$; from $c$, the $6$ units on $b
+\to c$ can be cancelled, which reaches $b$. The edges $a \to d$ and $c \to t$ are full, and $b \to c$ is full forwards.
+So $S = \{s, a, b, c\}$, and the \omterm{def:b2:flows-and-matchings:cut}{cut} $(S, \{d, t\})$ has capacity $5 + 7 = 12 = |f_3|$. By
+\cref{cor:b2:flows-and-matchings:weak-duality}, $f_3$ is maximum. It is not the \omterm{def:b2:flows-and-matchings:flow}{flow} of
+\cref{out:b2:flows-and-matchings:flow}: a maximum \omterm{def:b2:flows-and-matchings:flow}{flow} is not unique, its \omterm{def:b2:flows-and-matchings:flow}{value} is.
+\end{solution}
+
+\begin{solution}{exo:b2:flows-and-matchings:6}
+\omoutput{code/bachelor-2/26-flows-and-matchings/outputs/exo_match_bug.txt}{Shared marks against fresh marks.}
+
+Ada takes Monday, which is marked. Ben's only day is Monday: it is marked, so the search skips it, and Ben stays free,
+although Ben, Monday, Ada, Tuesday is an augmenting path. Cy takes Tuesday, Dee takes Wednesday, and Eve's days, Monday
+and Wednesday, are both marked. A mark means ``already tried in this search, without success''; it is valid only during
+one search, because each augmentation changes the \omterm{def:b2:flows-and-matchings:matching}{matching} and opens new \omterm{def:b2:flows-and-matchings:alternating}{alternating paths}.
+\end{solution}
+
+\begin{solution}{exo:b2:flows-and-matchings:7}
+In all three cases the program's \omterm{def:b2:flows-and-matchings:cut}{cut} is the three roads at one end: the Station's roads to places 9, 10 and 11, the
+depot's roads to places 4, 7 and 24, and the Lighthouse Caf\'e's roads to places 8, 12 and 25. Each of those places has
+exactly three roads, so three routes is also the obvious upper bound.
+
+\omoutput{code/bachelor-2/26-flows-and-matchings/outputs/exo_vertex_disjoint.txt}{Routes with no place in common.}
+
+In the split network, a route through a place uses its edge from entrance to exit, of capacity $1$, so routes of a
+\omterm{def:b2:flows-and-matchings:flow}{flow} share no place, and Menger's theorem becomes: the largest number of routes with no place in common equals the
+smallest number of places, other than the ends, whose removal separates them. From the Station to the Hospital the number falls to
+$2$: every route passes the Museum or the Fire Station, which is what the minimum \omterm{def:b2:flows-and-matchings:cut}{cut} of the split network names. From
+the Lighthouse Caf\'e to the Town Square the two places are the Museum and the Clinic. From the depot nothing changes.
+\end{solution}
+
+\begin{solution}{exo:b2:flows-and-matchings:8}
+Sum, over the vertices $w \in S$, the \omterm{def:b2:flows-and-matchings:flow}{flow} out of $w$ less the \omterm{def:b2:flows-and-matchings:flow}{flow} into $w$. For $w = s$ the term is $|f|$; for the
+others it is $0$ by conservation, as $t \notin S$. So the sum is $|f|$. Now group the sum by edges. An edge with both
+ends in $S$ counts once positively, at its tail, and once negatively, at its head: it cancels. An edge with no end in $S$
+does not appear. An edge from $S$ to $T$ appears once positively and an edge from $T$ to $S$ once negatively. What remains
+is $f(S, T)$.
+\end{solution}
+
+\begin{solution}{exo:b2:flows-and-matchings:9}
+\omterm{def:b2:flows-and-matchings:network}{Source} to each reader, capacity $1$ (one visit a week); reader to each of their slots, capacity $1$; slot to \omterm{def:b2:flows-and-matchings:network}{sink},
+capacity its number of seats. An integral maximum \omterm{def:b2:flows-and-matchings:flow}{flow} places as many readers as possible.
+
+\omoutput{code/bachelor-2/26-flows-and-matchings/outputs/exo_readers.txt}{The reading room with equal and unequal
+slots.}
+
+The readers $8, 16, 24, 32, 40$ have $k \equiv 0 \pmod 8$, so $k \bmod 8 = 3k \bmod 8 = 0$ and $(5k + 1) \bmod 8 = 1$:
+five readers can only come at slots $0$ and $1$, which have $2 + 2 = 4$ seats. Hall's condition, with seats counted,
+fails for this set; the total of 40 seats does not help, since the other slots are of no use to these readers.
+\end{solution}
+
+\begin{solution}{exo:b2:flows-and-matchings:10}
+The network has capacity $1$ on the edges from $s$ and to $t$, and $|L|$ on the edges from $L$ to $R$. Suppose the
+maximum \omterm{def:b2:flows-and-matchings:flow}{flow} is below $|L|$, and let $(S, T)$ be a minimum \omterm{def:b2:flows-and-matchings:cut}{cut}: its capacity is below $|L|$, so it contains no edge from
+$L$ to $R$. Let $A = L \cap S$. A neighbour of a vertex of $A$ is in $S$, else an edge of capacity $|L|$ would cross the
+\omterm{def:b2:flows-and-matchings:cut}{cut}: $N(A) \subseteq R \cap S$. The capacity counts the edges $s \to u$ for $u \in L \setminus A$ and $v \to t$ for $v \in
+R \cap S$, so
+\[
+|L| > c(S, T) = |L| - |A| + |R \cap S| \geq |L| - |A| + |N(A)|,
+\]
+that is $|N(A)| < |A|$. This is what \cref{lst:b2:flows-and-matchings:hall} prints: Ada, Ben and Fay, on the \omterm{def:b2:flows-and-matchings:network}{source} side,
+share Monday and Tuesday. Conversely, if the maximum \omterm{def:b2:flows-and-matchings:flow}{flow} is $|L|$, it is a \omterm{def:b2:flows-and-matchings:matching}{matching} of all of $L$, and the condition
+holds.
+\end{solution}
+
+\begin{solution}{exo:b2:flows-and-matchings:11}
+Let $f'$ follow $f$ by augmenting along a shortest path $p$ of $G_f$, and suppose some distance decreases. Among the
+vertices $v$ with $\delta_{f'}(v) < \delta_f(v)$, choose one with $\delta_{f'}(v)$ smallest; $v \neq s$. Let $u$ be the
+vertex before $v$ on a shortest path from $s$ to $v$ in $G_{f'}$: $\delta_{f'}(u) = \delta_{f'}(v) - 1$, and by the
+choice of $v$, $\delta_f(u) \leq \delta_{f'}(u)$.
+
+If $(u, v)$ is an edge of $G_f$, then $\delta_f(v) \leq \delta_f(u) + 1 \leq \delta_{f'}(u) + 1 = \delta_{f'}(v)$, a
+contradiction. So $(u, v)$ is in $G_{f'}$ but not in $G_f$: the augmentation created it, which means it pushed \omterm{def:b2:flows-and-matchings:flow}{flow} from
+$v$ to $u$, so $(v, u)$ is on $p$. Since $p$ is a shortest path in $G_f$, $\delta_f(u) = \delta_f(v) + 1$. Then
+\[
+\delta_f(v) = \delta_f(u) - 1 \leq \delta_{f'}(u) - 1 = \delta_{f'}(v) - 2,
+\]
+again a contradiction. No distance decreases.
+\end{solution}
+
+\begin{solution}{exo:b2:flows-and-matchings:12}
+Call $C = (L \setminus Z) \cup (R \cap Z)$.
+
+\emph{$C$ is a cover.} Let $u \in L$, $v \in R$ be joined by an edge. If $u \notin Z$, $u \in C$. If $u \in Z$ and $uv
+\notin M$, an \omterm{def:b2:flows-and-matchings:alternating}{alternating path} reaching $u$ (empty if $u$ is free, else ending with $u$'s \omterm{def:b2:flows-and-matchings:matching}{matching} edge) extends by $uv$,
+so $v \in Z$ and $v \in C$. If $u \in Z$ and $uv \in M$, then $u$ is matched, so it is not one of the starting vertices,
+and it was reached through its \omterm{def:b2:flows-and-matchings:matching}{matching} edge, from $v$: again $v \in Z$.
+
+\emph{$|C| = |M|$.} Every vertex of $L \setminus Z$ is matched, since the free vertices of $L$ are in $Z$. Every vertex of
+$R \cap Z$ is matched, otherwise the \omterm{def:b2:flows-and-matchings:alternating}{alternating path} reaching it would be augmenting, and $M$ would not be maximum
+(\cref{thm:b2:flows-and-matchings:berge}). No edge of $M$ has both ends in $C$: if $v \in R \cap Z$ is matched to $u$,
+then $u \in Z$. So $v \mapsto$ its \omterm{def:b2:flows-and-matchings:matching}{matching} edge is injective on $C$, $|C| \leq |M|$, and $|C| \geq |M|$ for any cover.
+
+\omcode{code/bachelor-2/26-flows-and-matchings/listings/exo_cover.py}{6}{23}{The cover read from a maximum \omterm{def:b2:flows-and-matchings:matching}{matching}}
+
+\omoutput{code/bachelor-2/26-flows-and-matchings/outputs/exo_cover.txt}{The six readers: a cover of size $5$, and no
+smaller one.}
+\end{solution}
+
+\begin{solution}{pb:b2:flows-and-matchings:1}
+\textbf{1.} A two-way road gives two edges, a one-way road one: $2 \times 52 + 1 = 105$, so one road is one-way (road 1,
+from the Town Square to the Library).
+
+\textbf{2.} $30$, $50$ and $70$ km/h give $20$, $40$ and $60$. Yes: the depot's road to the South Bridge carries $60$,
+and so do several roads on the third, fourth and fifth routes.
+
+\textbf{3.} The two directions of a road are separate lanes. With a shared capacity, $f(u, v) + f(v, u) \leq c$, the
+network would be undirected; by question 4 a maximum \omterm{def:b2:flows-and-matchings:flow}{flow} never needs both directions, so the shared and the separate
+models have the same maximum here.
+
+\textbf{4.} If $f(u, v) > 0$ and $f(v, u) > 0$, subtract their minimum from both: capacities still hold, every vertex
+stays balanced and the \omterm{def:b2:flows-and-matchings:flow}{value} does not change. The listing does it already, cancelling reverse \omterm{def:b2:flows-and-matchings:flow}{flow} before adding.
+
+\textbf{5.} Add a vertex for the car park with an edge of capacity $100$ from the ground, and make it the \omterm{def:b2:flows-and-matchings:network}{sink}. The \omterm{def:b2:flows-and-matchings:cut}{cut}
+that separates it alone has capacity $100$, and the \omterm{def:b2:flows-and-matchings:flow}{flow} of $120$ can be reduced to $100$, so the maximum is $100$.
+
+\textbf{6.} The number of buses an hour that leave the depot, which is the number arriving at the ground. At the Town
+Square, as many buses an hour arrive as leave.
+
+\textbf{7.} No road joins the depot to the ground, so the shortest routes have two roads, and breadth-first search
+finds a shortest augmenting path each time; 16-4-15 and 16-7-15 are the two of length 2.
+
+\textbf{8.} After the first two, $4 \to 15$ carries $20$ of $20$, $7 \to 15$ and $16 \to 7$ carry $40$ of $40$, and
+$16 \to 4$ has $20$ left. The path enters by $16 \to 4$ and cannot end with $4 \to 15$ or $7 \to 15$, which are full.
+
+\textbf{9.} $2, 2, 9, 10, 14$: by \cref{lem:b2:flows-and-matchings:monotone} the distance of the ground never decreases,
+and each path is a shortest path.
+
+\textbf{10.} $|V| \cdot |E| = 30 \times 105 = 3150$ against the capacity out of the depot, $40 + 40 + 60 = 140$; the
+second is much better here, the first does not depend on the capacities.
+
+\textbf{11.} Yes: any choice of augmenting paths ends with a maximum \omterm{def:b2:flows-and-matchings:flow}{flow} (\cref{thm:b2:flows-and-matchings:maxflow-mincut}),
+and with integer capacities each raises the \omterm{def:b2:flows-and-matchings:flow}{value} by at least $1$, so at most $120$ augmentations.
+
+\textbf{12.} $20$ on road 11 and $40$ on road 20, their capacities: the edges from $S$ to $T$ of the \omterm{def:b2:flows-and-matchings:cut}{cut} built from the
+\omterm{def:b2:flows-and-matchings:residual}{residual network} are saturated (proof of \cref{thm:b2:flows-and-matchings:maxflow-mincut}).
+
+\textbf{13.} $40 + 20 + 20 + 40 = 120$. A route starts in $S$ and ends in $T$, so at its first step from $S$ to $T$ it
+uses an edge from $S$ to $T$, one of the four.
+
+\textbf{14.} Road 16 lies in this minimum \omterm{def:b2:flows-and-matchings:cut}{cut} but not in the \omterm{def:b2:flows-and-matchings:cut}{cut} nearest the ground, whose capacity stays $120$; the
+\omterm{def:b2:flows-and-matchings:flow}{flow} is bounded by every \omterm{def:b2:flows-and-matchings:cut}{cut}, so it cannot pass $120$. Lying in one minimum \omterm{def:b2:flows-and-matchings:cut}{cut} does not make a road a bottleneck.
+
+\textbf{15.} It starts from the ground and adds every place from which some place already found can be reached in the
+\omterm{def:b2:flows-and-matchings:residual}{residual network}; the \omterm{def:b2:flows-and-matchings:cut}{cut} puts these places on the \omterm{def:b2:flows-and-matchings:network}{sink} side. Here only the ground itself is found, so the \omterm{def:b2:flows-and-matchings:cut}{cut} is the
+five roads into the ground: $20 + 40 + 20 + 20 + 20 = 120$.
+
+\textbf{16.} If a road $e$ is missing from some minimum \omterm{def:b2:flows-and-matchings:cut}{cut} $(S, T)$, widening $e$ does not change $c(S, T)$, which still
+bounds the \omterm{def:b2:flows-and-matchings:flow}{flow}: the maximum stays the same. Roads 11 and 20 are in both \omterm{def:b2:flows-and-matchings:cut}{cuts} printed, and widening them gives 140.
+
+\textbf{17.} Yes, with integer capacities and a widening of at least $1$: every minimum \omterm{def:b2:flows-and-matchings:cut}{cut} grows by the widening, and
+every other \omterm{def:b2:flows-and-matchings:cut}{cut} had capacity at least the minimum plus $1$, so the new minimum, hence the new maximum \omterm{def:b2:flows-and-matchings:flow}{flow}, is larger.
+
+\textbf{18.} The three roads out of the depot, roads 38, 12 and 21, with $60 + 40 + 40 = 140$, the bound of question 10.
+The result of the problem: max \omterm{def:b2:flows-and-matchings:flow}{flow} $=$ min \omterm{def:b2:flows-and-matchings:cut}{cut} $= 120$ buses an hour, and the roads in every minimum \omterm{def:b2:flows-and-matchings:cut}{cut}, 11 and 20,
+are the ones to widen, by $20$ at most before the depot's own roads limit the \omterm{def:b2:flows-and-matchings:flow}{flow}.
+
+\textbf{19.} Double-deck ($i \bmod 3 = 1$): $B_1, B_4, B_7$, drivers Bo, Dia, Fen, Hal. Electric ($2$): $B_2, B_5, B_8$,
+drivers Cal, Eli, Hal. Single-deck ($0$): $B_3, B_6, B_9$, drivers Ana, Bo, Eli, Gus, Ivo.
+
+\textbf{20.} Each printed pair has the right licence, and each driver and each bus appear once: a perfect \omterm{def:b2:flows-and-matchings:matching}{matching}.
+
+\textbf{21.} The electric buses $\{B_2, B_5, B_8\}$ have only Cal and Eli as neighbours: three buses, two drivers.
+
+\textbf{22.} Cal, Eli and the six buses $B_1, B_3, B_4, B_6, B_7, B_9$: the electric edges end at Cal or Eli, the others
+at a double-deck or single-deck bus. Its size $8$ equals the \omterm{def:b2:flows-and-matchings:matching}{matching}, which proves both optimal.
+
+\textbf{23.} A new driver with the electric licence: the \omterm{def:b2:flows-and-matchings:matching}{matching} becomes Cal, Eli and the new driver on the three
+electric buses. A driver with another licence only adds edges to buses already in the cover of question 22, which stays
+a cover of size 8, so the maximum stays 8: the electric licence is the only answer.
+
+\textbf{24.} \omterm{def:b2:flows-and-matchings:network}{Source} to each driver, capacity $2$; driver to each bus they may drive, capacity $2$; bus to \omterm{def:b2:flows-and-matchings:network}{sink}, capacity
+$3$. An integral maximum \omterm{def:b2:flows-and-matchings:flow}{flow} gives the number of trips of each driver on each bus.
+\end{solution}

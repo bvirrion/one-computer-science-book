@@ -1,0 +1,178 @@
+% Solutions of Book 4, chapter 19 (the transport layer).
+\section*{Chapter \ref{ch:b2:transport-layer} --- The Transport Layer: UDP and TCP}
+
+\begin{solution}{exo:b2:transport-layer:1}
+The sender sends 0, 1, 2, 3; the acks of 0 and 1 let it send 4 and 5. Packet 2 is lost, so the receiver discards 3,
+4 and 5 and acknowledges 1 each time. The timer of packet 2 expires: the sender goes back and sends 2, 3, 4, 5 again.
+All arrive; the acks of 2, 3 and 4 let it send 6, 7 and 8. The ack of 5 is lost, but the ack of 6 is \omterm{def:b2:transport-layer:seq}{cumulative} and
+covers 5, so 9 follows. In all: 0 1 2 3 4 5 2 3 4 5 6 7 8 9. The lost acknowledgement costs nothing.
+\end{solution}
+
+\begin{solution}{exo:b2:transport-layer:2}
+It delivers packets 0, 1, 2 and 3 correctly, then the stale copy of packet 0, which it had stored as packet 4. The
+fifth item delivered is wrong, and the real packet 4, when it comes, will be taken as a duplicate. With $k = 2$, a
+\omterm{def:b2:transport-layer:window}{window} of $2 = 2^{k-1}$ prevents it (\cref{thm:b2:transport-layer:sr-window}): the receiver's \omterm{def:b2:transport-layer:window}{window} after packets 0
+and 1 is $\{2, 3\}$, and a repeated 0 falls in the \omterm{def:b2:transport-layer:window}{window} before, which is only acknowledged again.
+\end{solution}
+
+\begin{solution}{exo:b2:transport-layer:3}
+\omcode{code/bachelor-2/19-transport-layer/listings/stop_and_wait.py}{27}{38}{The receiver of \omterm{def:b2:transport-layer:rdt}{stop-and-wait}}
+A duplicate arrives because the sender did not get the acknowledgement of the original, lost or late. If the receiver
+did not acknowledge it again, the sender would send it for ever.
+\end{solution}
+
+\begin{solution}{exo:b2:transport-layer:4}
+$L/R = 12\,000 / 10^9$~s $= 12$~µs, so $U = 0.012 / (30 + 0.012) \approx 0.0004$: 0.04~\% of the link. The \omterm{def:b2:transport-layer:window}{window} that
+fills it is $(\mathrm{RTT} + L/R)/(L/R) \approx 2\,501$ packets, about 3.75 MB in flight: the product of the rate and
+the round trip, which a long fast link needs in its \omterm{def:b2:transport-layer:window}{windows}.
+\end{solution}
+
+\begin{solution}{exo:b2:transport-layer:5}
+First sample: SRTT 800, RTTVAR 400, timeout $800 + 4 \times 400 = 2400$. Second: RTTVAR $= \frac34 400 + \frac14 0 =
+300$, SRTT 800, timeout 2000. Third: RTTVAR $= \frac34 300 + \frac14 |800 - 1600| = 425$, SRTT $= \frac78 800 +
+\frac18 1600 = 900$, timeout $900 + 1700 = 2600$. Fourth: RTTVAR $= \frac34 425 + \frac14 100 = 343.75$, SRTT $=
+887.5$, timeout 2262.5. These are the values \code{rto.py} prints for this series, none clamped since all exceed 1000:
+\omoutput[1-1,10-14]{code/bachelor-2/19-transport-layer/outputs/rto.txt}{The second series of samples.}
+The third timeout exceeds
+the 1600 just measured because the variation term grows at once with the surprise, so that the next sample of 1600
+would not cause a needless retransmission.
+\end{solution}
+
+\begin{solution}{exo:b2:transport-layer:6}
+When packet 7 is lost and packet 8 arrives, the receiver acknowledges 8. The sender reads acknowledgements as
+\omterm{def:b2:transport-layer:seq}{cumulative}, so it believes 7 arrived, slides past it and never sends it again. The receiver, still waiting for
+sequence number 7 (modulo 16), later accepts packet 23, which has that number, as if it were packet 7: the stream is
+corrupted, and from then on its expectations and the sender's no longer meet. Only 520 items are delivered, wrong
+ones among them. A \omterm{def:b2:transport-layer:window}{go-back-N} receiver must acknowledge the last packet it accepted in order.
+\end{solution}
+
+\begin{solution}{exo:b2:transport-layer:7}
+\omcode{code/bachelor-2/19-transport-layer/listings/selective_repeat.py}{5}{33}{The selective-repeat sender}
+Each packet sent schedules its own expiry; an expiry does nothing if the packet has been acknowledged or slid past
+in the meantime. An acknowledgement marks one packet, and the base slides past every marked packet at its front. The
+tests run it with $W = 2^{k-1}$ under loss and duplication, and with jitter when the sequence space is large.
+\end{solution}
+
+\begin{solution}{exo:b2:transport-layer:8}
+Number packets by their absolute index; packet $i$ carries $i \bmod 2^k$. Let the receiver expect packet $e$.
+
+\emph{Data.} The receiver accepted $e - 1$, sent at some time $t$; at $t$ the sender's \omterm{def:b2:transport-layer:window}{window} held $e - 1$, so its
+base was at least $e - W$, and the base never decreases. The channel keeps the order, so every packet arriving now was
+sent after $t$, and is at least $e - W$. It is at most $e + W - 1$, since the sender's base cannot pass $e$ (it moves
+only on acknowledgements of accepted packets). A packet $i$ with $i \equiv e$ and $|i - e| \le W < 2^k$ is $e$ itself,
+so the receiver accepts exactly the right packet.
+
+\emph{Acknowledgements.} They arrive in the order sent, and each acknowledges the last packet accepted, so an arriving
+acknowledgement $a$ satisfies $\text{base} - 1 \le a \le \text{next} - 1$, where next $-$ base $\le W$. Its offset $a -
+\text{base}$ ranges over $W + 1$ values from $-1$ to $W - 1$, which are distinct modulo $2^k$ exactly when $W + 1 \le
+2^k$; then the sender reads every acknowledgement correctly. So $W \le 2^k - 1$ suffices.
+
+\emph{Necessity.} With $W = 2^k$, let packets $0$ to $2^k - 1$ all arrive and all their acknowledgements be lost. The
+sender goes back and repeats packet 0; the receiver, expecting packet $2^k$, whose number is 0, accepts the old packet
+as new.
+\end{solution}
+
+\begin{solution}{exo:b2:transport-layer:9}
+\omcode{code/bachelor-2/19-transport-layer/listings/fast_retransmit.py}{6}{20}{Going back at the third duplicate
+acknowledgement}
+\omoutput{code/bachelor-2/19-transport-layer/outputs/fast_retransmit.txt}{5000 packets, 2~\% loss, timeout 300 ms.}
+An acknowledgement for the packet before the base is a duplicate: packets after a loss keep arriving and keep being
+answered with the same number. Three of them make the loss nearly certain, a round trip after it, instead of the
+300 ms of the timer. The packets sent are the same; the transfer takes 24.7 s instead of 54.0.
+\end{solution}
+
+\begin{solution}{exo:b2:transport-layer:10}
+In the steady state, a loss halves the \omterm{def:b2:transport-layer:window}{window} from $W$ to $W/2$, and it then grows by one per round trip until it
+reaches $W$ again and the next loss comes: a tooth lasts $W/2$ round trips. The packets sent in a tooth are $\frac W2
++ (\frac W2 + 1) + \dots + W \approx \frac W2 \cdot \frac{3W}{4} = \frac38 W^2$, the number of round trips times the
+average \omterm{def:b2:transport-layer:window}{window}. One packet in $1/p$ is lost, so $\frac38 W^2 = 1/p$ and $W = \sqrt{8/(3p)}$. The throughput is the
+packets of a tooth over its duration:
+\[
+\frac{1/p}{(W/2)\,\mathrm{RTT}} = \frac{2}{pW\,\mathrm{RTT}} = \frac{1}{\mathrm{RTT}} \cdot \frac{2}{p}
+\sqrt{\frac{3p}{8}} = \frac{1}{\mathrm{RTT}} \sqrt{\frac{3}{2p}}
+\]
+segments per second, and multiplying by the segment size MSS gives the law.
+\end{solution}
+
+\begin{solution}{exo:b2:transport-layer:11}
+\omoutput{code/bachelor-2/19-transport-layer/outputs/exo_rtt_unfair.txt}{Round trips of 1 and 2 time units, shared
+losses.}
+A flow's rate is its \omterm{def:b2:transport-layer:window}{window} divided by its round trip. Flow 1's rate grows by 1 per time unit; flow 2's \omterm{def:b2:transport-layer:window}{window} grows
+by 1 every 2 units, so its rate grows by $1/2$ per 2 units, $1/4$ per unit. Between two shared losses each rate climbs
+from half its peak, so the peaks, and the averages, stand in the ratio of the growth rates, $4 : 1$: shares $0.8$ and
+$0.2$, and $J = (0.8 + 0.2)^2 / (2 (0.64 + 0.04)) \approx 0.735$. Under AIMD with shared losses, a flow's share falls as
+the square of its round trip.
+\end{solution}
+
+\begin{solution}{exo:b2:transport-layer:12}
+Under MIMD every step multiplies $x_1$ and $x_2$ by the same factor, $c$ or $b$, so $x_1/x_2$ never changes: flows that
+start unequal stay unequal in the same ratio, for ever. Under additive increase and additive decrease, every step adds
+the same amount to both, so $x_1 - x_2$ never changes, and again the flows do not converge. AIMD works because one of
+its two moves, the decrease, shrinks the difference and the other keeps it.
+\end{solution}
+
+\begin{solution}{pb:b2:transport-layer:1}
+\textbf{1.} $8000$ bits at 8 Mbit/s: 1 ms. $U = 1/(100 + 1) \approx 1~\%$.
+
+\textbf{2.} $10\,000 \times 101$ ms $\approx 1010$ s, about 17 minutes.
+
+\textbf{3.} A cycle fails when the packet or its acknowledgement is lost, about 2~\% of the time, and then costs a
+timeout of 300 ms instead of 101 ms. That adds about $0.02 \times 300 = 6$ ms per packet on average: some 6~\%, a
+minute more.
+
+\textbf{4.} When an acknowledgement is lost the sender repeats the packet, and the receiver must tell the copy from the
+next packet. With one packet in flight and no reordering, the packet that arrives is either the one expected or the
+one just accepted: one bit tells which.
+
+\textbf{5.} A delayed old copy can arrive when the receiver expects the same bit again, two packets later, and be
+accepted as new.
+
+\textbf{6.} No acknowledgement can arrive before a round trip; a shorter timer would repeat every packet.
+
+\textbf{7.} $(\mathrm{RTT} + L/R)/(L/R) = 101$ packets.
+
+\textbf{8.} \omterm{def:b2:transport-layer:window}{Go-back-N}: $2^4 - 1 = 15$. \omterm{def:b2:transport-layer:window}{Selective repeat}: $2^3 = 8$. Both are far below 101, so the sequence numbers
+limit the utilisation to about 15~\% and 8~\%.
+
+\textbf{9.} \omterm{def:b2:transport-layer:window}{Go-back-N} resends the whole \omterm{def:b2:transport-layer:window}{window} behind a loss, up to 15 packets; \omterm{def:b2:transport-layer:window}{selective repeat} resends the lost
+packet only.
+
+\textbf{10.} For 5\,000 packets, \omterm{def:b2:transport-layer:window}{go-back-N} sent 13\,408 and took 76.3 s; \omterm{def:b2:transport-layer:window}{selective repeat} sent 5\,531 and took 36.7 s.
+
+\textbf{11.} A fast link with a long round trip needs millions of bytes in flight, and an old segment can survive for
+minutes; 32-bit numbers give 4 GiB of space, so that a number does not come round again while an old segment with it
+may still exist, at ordinary speeds.
+
+\textbf{12.} \omterm{def:b2:transport-layer:flow-control}{Flow control}: each acknowledgement advertises the free space in the receiver's buffer, and the sender
+keeps no more than that in flight.
+
+\textbf{13.} Doubling from 1, the \omterm{def:b2:transport-layer:window}{window} exceeds 101 after 7 round trips ($2^7 = 128$).
+
+\textbf{14.} $\sqrt{3/0.02} \approx 12.2$ segments per round trip, $12.2 \times 8000$ bits per 0.1 s: about 1 Mbit/s.
+
+\textbf{15.} By the losses: 1 Mbit/s against a link of 8.
+
+\textbf{16.} $\sqrt{3/(2p)} \ge 101$ gives $p \le 3/(2 \times 101^2) \approx 1.5 \times 10^{-4}$, one loss in about
+6800 packets.
+
+\textbf{17.} A queue that overflows must be drained quickly, which only a large cut does; and the multiplicative
+decrease is what makes the shares converge (\cref{thm:b2:transport-layer:aimd-fair},
+\cref{exo:b2:transport-layer:12}).
+
+\textbf{18.} 9.3~\% below: the \omterm{def:b2:transport-layer:window}{window} is only about 16 segments, so whole segments, and the round in which the loss
+falls, weigh in the average; the law assumes a continuous \omterm{def:b2:transport-layer:window}{window}.
+
+\textbf{19.} Equal shares, half the link each, on average.
+
+\textbf{20.} The index is 0.947 at round 25 and 0.995 at round 50: between the two.
+
+\textbf{21.} Both flows still add one per round and halve together at each loss: their sum oscillates, while their
+difference has vanished. The index measures equality, not stability.
+
+\textbf{22.} One fifth, by \cref{exo:b2:transport-layer:11}.
+
+\textbf{23.} \omterm{def:b2:transport-layer:fairness}{Fairness} holds per connection: ten connections against one other get about ten shares in eleven.
+
+\textbf{24.} The $\sqrt{3/(2p)}$ law, checked by simulation: within 3~\% for periodic losses once $p \le 0.001$
+(2.5~\% and 1.7~\% at $p = 0.001$ and $0.0003$), and a few per cent above it with random losses.
+\end{solution}

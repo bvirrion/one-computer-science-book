@@ -1,0 +1,156 @@
+% Solutions of 23-dynamic-programming.
+\section*{Chapter \ref{ch:b1:dynamic-programming} --- Dynamic Programming}
+
+\begin{solution}{exo:b1:dynamic-programming:1}
+Rows for the prefixes of \code{loan}, columns for those of \code{lane}:
+\begin{center}
+\begin{tabular}{c|ccccc}
+ & & l & a & n & e \\ \hline
+ & 0 & 1 & 2 & 3 & 4 \\
+l & 1 & 0 & 1 & 2 & 3 \\
+o & 2 & 1 & 1 & 2 & 3 \\
+a & 3 & 2 & 1 & 2 & 3 \\
+n & 4 & 3 & 2 & 1 & 2
+\end{tabular}
+\end{center}
+The distance is 2: \code{loan-} over \code{l-ane}, deleting \code{o} and inserting \code{e}.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-programming:2}
+\code{fib_naive(6)} makes $2F(7) - 1 = 25$ calls, \code{fib_memo(6)} makes $2 \cdot 6 - 1 = 11$: one call for each $n$
+from 6 down to 2 that computes, plus one call for each value read back or below 2.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-programming:3}
+From the last row $0, 8, 15, 25, 40, 50, 58, 65, 75$, the new entry for capacity $c$ is the larger of the old one and
+30 plus the old one at $c - 3$: $0, 8, 15, 30, 40, 50, 58, 70, 80$. The best value is 80, with the items of weights 5 and
+3 (values 50 and 30).
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-programming:4}
+Tops after each term: $3$; $1$; $1, 4$; $1, 4$; $1, 4, 5$; $1, 4, 5, 9$; $1, 2, 5, 9$; $1, 2, 5, 6$; $1, 2, 5, 6$; $1, 2,
+3, 6$; $1, 2, 3, 5$. Four piles: length 4, for instance $1, 4, 5, 9$ or $1, 2, 3, 5$.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-programming:5}
+Downwards, \code{best[c - w]} has not yet been updated for the current item: it is the best value without it, and each
+item is used at most once, which gives 65. Upwards, \code{best[c - w]} may already contain the current item, which is
+then taken again: 80 is twice the item $(4, 40)$. That is the right method for a knapsack with unlimited copies of each
+item, the wrong one here.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-programming:6}
+The recursion always passes the same list object, shortened, so \code{id(values)} is the same at every depth: the result
+for a prefix of three values is stored under the same key as the result for five, and read back in place of it. For
+the total 10 the confusion happens to give the right count; for 13 and 17 it does not. The subproblem is a prefix and a
+total, so the key should say which prefix: \code{(len(values), target)}, or \code{(tuple(values), target)}, which costs
+a copy.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-programming:7}
+\omcode{code/bachelor-1/23-dynamic-programming/exercises/weighted_intervals.py}{6}{14}{Weighted
+interval scheduling}
+Sort the talks by finishing time; let $B(i)$ be the best weight using the first $i$, and $p(i)$ the number of talks among
+the first $i - 1$ that finish by the start of talk $i$. An optimal set either leaves talk $i$ out, or takes it together
+with an optimal set of the $p(i)$ talks compatible with it: $B(i) = \max(B(i - 1), B(p(i)) + w_i)$. Sorting and the
+binary searches cost $O(n \log n)$. A heavy talk overlapping two light compatible ones defeats the earliest-finish rule.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-programming:8}
+\omcode{code/bachelor-1/23-dynamic-programming/exercises/stairs.py}{4}{8}{Ways to climb}
+The last step of a climb to $k$ has some size $s$, and before it comes any climb to $k - s$: $W(k) = \sum_{s \leq k}
+W(k - s)$ with $W(0) = 1$, in $O(n \cdot |S|)$. With steps 1 and 2, $W(n)$ is the Fibonacci number $F(n + 1)$: 89 for
+$n = 10$.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-programming:9}
+An \omterm{def:b1:dynamic-programming:edit}{alignment} of cost $c$ is read as $c$ edits, column by column, so $d(a, b)$ is at most the smallest cost. Conversely,
+take $d$ edits turning $a$ into $b$. Edits never reorder letters: the letters of $a$ that survive, perhaps changed, end
+at positions of $b$ in the same order. Write each over its final letter, the deleted letters of $a$ over gaps and the
+other letters of $b$ under gaps. A column of two different letters needs at least one substitution of that letter, a
+column with a gap at least one deletion or insertion, all different edits: the \omterm{def:b1:dynamic-programming:edit}{alignment} costs at most $d$.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-programming:10}
+A key goes on a pile only if its top is not smaller, so each pile decreases from bottom to top; the keys of one pile came
+in that order, so an increasing subsequence takes at most one key from each pile, and its length is at most the number
+of piles. When a key $x$ goes on pile $k > 0$, the top $y$ of pile $k - 1$ is less than $x$ and came before it; remember
+$y$. From any key on the last pile, following these remembered keys back to pile 0 gives keys that increase and come in
+order, one per pile: an increasing subsequence as long as the number of piles.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-programming:11}
+\omcode{code/bachelor-1/23-dynamic-programming/exercises/palindrome.py}{4}{16}{The longest palindromic subsequence}
+For $s[i..j]$: if the end letters are equal, a best palindrome may use both around a best one of $s[i + 1..j - 1]$;
+otherwise it does without one of them. Cells are filled for $i$ decreasing and $j$ increasing, so each reads cells
+already computed: $\Theta(n^2)$. The test compares with all subsequences of random words of up to 10 letters.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-programming:12}
+Without substitutions, every column of an \omterm{def:b1:dynamic-programming:edit}{alignment} of finite cost holds two equal letters, or a letter and a gap. The
+columns of equal letters spell a common subsequence of some length $M$; the other $m - M$ letters of $a$ and $n - M$
+of $b$ face gaps. So the cost is $m + n - 2M$, smallest when $M$ is the length $L$ of a \omterm{def:b1:dynamic-programming:lcs}{longest common subsequence}, and
+by \cref{exo:b1:dynamic-programming:9} the distance is $m + n - 2L$.
+\end{solution}
+
+\begin{solution}{pb:b1:dynamic-programming:1}
+\textbf{1.} One substitution, \code{i} into \code{e}, turns one into the other, and the words differ, so the distance is
+not 0.
+
+\textbf{2.} $20 \times 22 = 440$.
+
+\textbf{3.} Row by row, each from left to right: a cell reads its left, upper and upper-left neighbours, all filled
+before it.
+
+\textbf{4.} $\Theta(mn)$, a constant amount of work per cell.
+
+\textbf{5.} 80, one per title.
+
+\textbf{6.} Turning $i$ letters into none takes $i$ deletions, and no operation removes more than one letter.
+
+\textbf{7.} \code{the clo-kwork harbo-r} over \code{the clockwork harbour}: two insertions.
+
+\textbf{8.} \code{catlaogue} over \code{catalogue} (two substitutions), and \code{cat-laogue} over \code{catal-ogue} (an
+insertion and a deletion).
+
+\textbf{9.} A cell's value is the smallest of three expressions, so it equals at least one of them.
+
+\textbf{10.} $O(m + n)$: each step lowers $i + j$ by at least 1.
+
+\textbf{11.} The walk back reads cells of every row, and only the last two rows are kept.
+
+\textbf{12.} Compute the middle row from the top and the same row from the bottom, on the reversed words, each with two
+rows; the column where their sum is smallest is where an optimal \omterm{def:b1:dynamic-programming:edit}{alignment} crosses the middle; recurse on the two
+halves (Hirschberg's method).
+
+\textbf{13.} 1258 cells against 68.
+
+\textbf{14.} $1001^2 = 1\,002\,001$ against $2 \times 1001 = 2002$.
+
+\textbf{15.} No: both versions compute every cell once, $\Theta(mn)$.
+
+\textbf{16.} $4 \times 80 = 320$.
+
+\textbf{17.} 45 against 640.
+
+\textbf{18.} A query saves about $80 - 45/8 \approx 74$ distances, so the 320 pay off from the fifth query on.
+
+\textbf{19.} No edit is needed exactly when the words are equal.
+
+\textbf{20.} Each edit can be undone by one edit, an insertion by a deletion and a substitution by a substitution: the
+reversed sequence turns $b$ into $a$ in as many steps.
+
+\textbf{21.} Following $d(a, b)$ edits from $a$ to $b$, then $d(b, c)$ edits from $b$ to $c$, turns $a$ into $c$; the
+smallest number of edits is at most that.
+
+\textbf{22.} $d(q, p) \leq d(q, t) + d(t, p)$ gives $d(q, p) - d(p, t) \leq d(q, t)$, and $d(p, t) \leq d(p, q) + d(q, t)$
+gives $d(p, t) - d(q, p) \leq d(q, t)$; for several pivots, the largest of these bounds.
+
+\textbf{23.} The titles come by increasing bound, and each bound is at most the true distance: once a bound reaches the
+best distance found, every remaining title is at least that far. (A title at an equal distance may be skipped: the
+program returns one nearest title.)
+
+\textbf{24.} \emph{\omterm{def:b1:dynamic-programming:edit}{Edit distance} is a metric}: it is zero exactly on equal words, symmetric, and satisfies the triangle
+inequality (questions 19--21). On the catalogue, the bound it gives lets the eight queries compute 45 distances instead
+of 640, after 320 computed once for the pivots.
+\end{solution}

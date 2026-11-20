@@ -1,0 +1,278 @@
+\section*{Chapter \ref{ch:g12:dynamic-programming} --- Dynamic Programming}
+
+\begin{solution}{exo:g12:dynamic-programming:1}
+$11 = 2 \times 6 - 1$: one computing call for each of $6, 5, \dots, 0$, and a lookup for each of $4, 3, 2, 1$ (the
+second call made by $6, 5, 4, 3$). The naive version makes $25$: $15$ for \code{fib(5)}, $9$ for \code{fib(4)}, and
+the call on $6$ itself.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:2}
+\code{best} for $0$ to $7$: $0, 1, 2, 1, 1, 2, 2, 2$. For $7$: $1 + \mathrm{best}(6) = 3$, $1 + \mathrm{best}(4) = 2$,
+$1 + \mathrm{best}(3) = 2$; the coin $3$ is recorded first, and $7 = 3 + 4$.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:3}
+The subsequence \code{ATION}, of $5$ letters: it comes after \code{ST} in \code{STATION}, and after \code{N} in
+\code{NATIONS}. The last cell of the table of the two words is $5$, so none is longer.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:4}
+From $k[1][10] = 30$ (B left) and $k[1][5] + 20 = 0 + 20$ (B taken, leaving $5$~kg for A alone, which does not fit).
+The larger is $30$.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:5}
+\smallskip\noindent\hspace*{2em}\code{def binomial(n, k, memo=None):}
+
+\noindent\hspace*{4em}\code{if memo is None:}
+
+\noindent\hspace*{6em}\code{memo = {}}
+
+\noindent\hspace*{4em}\code{if k == 0 or k == n:}
+
+\noindent\hspace*{6em}\code{return 1}
+
+\noindent\hspace*{4em}\code{if (n, k) not in memo:}
+
+\noindent\hspace*{6em}\code{memo[(n, k)] = binomial(n - 1, k - 1, memo) + binomial(n - 1, k, memo)}
+
+\noindent\hspace*{4em}\code{return memo[(n, k)]}
+
+\smallskip\noindent The key is the pair of arguments. The tests compare it with \code{math.comb} for all
+$k \le n \le 11$.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:6}
+The result depends on both $n$ and $k$, but the key records only $n$. The first call on a row, say $n = 7$, stores
+its value in \code{memo[7]}; every later call on row $7$, whatever its $k$, returns that same value. The wrong values
+of the lower rows are added up the rows, and give $96$ instead of $252$. A memo key must hold every argument the
+result depends on.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:7}
+\smallskip\noindent\hspace*{2em}\code{def min_coins(amount, coins, memo=None):}
+
+\noindent\hspace*{4em}\code{if memo is None:}
+
+\noindent\hspace*{6em}\code{memo = {}}
+
+\noindent\hspace*{4em}\code{if amount == 0:}
+
+\noindent\hspace*{6em}\code{return 0}
+
+\noindent\hspace*{4em}\code{if amount not in memo:}
+
+\noindent\hspace*{6em}\code{options = [min_coins(amount - c, coins, memo)}
+
+\noindent\hspace*{10em}\code{for c in coins if c <= amount]}
+
+\noindent\hspace*{6em}\code{options = [x for x in options if x is not None]}
+
+\noindent\hspace*{6em}\code{memo[amount] = min(options) + 1 if options else None}
+
+\noindent\hspace*{4em}\code{return memo[amount]}
+
+\smallskip\noindent The tests compare it with the table and with trying every combination, for four coin systems.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:8}
+Filling from the bottom right, the cell $t[i][j]$ is computed before the cells $t[i - 1][j - 1]$, $t[i - 1][j]$ and
+$t[i][j - 1]$ it reads, which still hold their starting $0$. Each cell sees only zeros, so it is $1$ if the letters are
+equal and $0$ otherwise; the last cell, \code{Y} with \code{Y}, gives $1$. The recurrence was right; the order of
+filling was not.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:9}
+Let $p[r][c]$ be the number of paths to the crossing $r$ lines down and $c$ across. The first row and column hold
+$1$; a path to any other crossing arrives from above or from the left, so $p[r][c] = p[r - 1][c] + p[r][c - 1]$. The
+rows are Pascal's triangle read diagonally, and $p[5][5] = 252$, the number of ways to choose which $5$ of the $10$
+moves go right.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:10}
+\smallskip\noindent\hspace*{2em}\code{def diff_lines(old, new):}
+
+\noindent\hspace*{4em}\code{t = lcs_table(old, new)}
+
+\noindent\hspace*{4em}\code{i, j, out = len(old), len(new), []}
+
+\noindent\hspace*{4em}\code{while i > 0 or j > 0:}
+
+\noindent\hspace*{6em}\code{if i > 0 and j > 0 and old[i - 1] == new[j - 1]:}
+
+\noindent\hspace*{8em}\code{out.append("  " + old[i - 1])}
+
+\noindent\hspace*{8em}\code{i, j = i - 1, j - 1}
+
+\noindent\hspace*{6em}\code{elif j > 0 and (i == 0 or t[i][j - 1] >= t[i - 1][j]):}
+
+\noindent\hspace*{8em}\code{out.append("+ " + new[j - 1])}
+
+\noindent\hspace*{8em}\code{j -= 1}
+
+\noindent\hspace*{6em}\code{else:}
+
+\noindent\hspace*{8em}\code{out.append("- " + old[i - 1])}
+
+\noindent\hspace*{8em}\code{i -= 1}
+
+\noindent\hspace*{4em}\code{return out[::-1]}
+
+\smallskip\noindent \code{lcs_table} works on lists of lines as well as on strings. The lines kept form a \omterm{def:g12:dynamic-programming:lcs}{longest
+common subsequence}, so the number of lines marked is as small as possible. The tests check that the kept and deleted
+lines give back \code{old}, and the kept and added ones \code{new}.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:11}
+\smallskip\noindent\hspace*{2em}\code{kitten-}
+
+\noindent\hspace*{2em}\code{*|||*|}
+
+\noindent\hspace*{2em}\code{sitting}
+
+\smallskip\noindent The distance is $3$: \code{k} replaced by \code{s}, \code{e} by \code{i}, and \code{g} inserted.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:12}
+Write $\mathrm{opt}(a)$ for the fewest coins that pay $a$. For $a = 0$, \code{best[0]} $= 0$. Let $a \ge 1$ be
+payable, and assume \code{best} is right for all smaller amounts. Every value \code{best[a - c] + 1} the loop
+considers is the number of coins of a real way to pay $a$: a best way for $a - c$, plus $c$. So
+\code{best[a]} $\ge \mathrm{opt}(a)$. Take a best way to pay $a$ and one of its coins $c$: the others pay $a - c$, with
+$\mathrm{opt}(a) - 1$ coins, so $\mathrm{opt}(a - c) \le \mathrm{opt}(a) - 1$. The loop considers $c$ and finds
+\code{best[a - c] + 1} $\le \mathrm{opt}(a)$. Hence \code{best[a]} $= \mathrm{opt}(a)$. An amount that cannot be paid
+keeps \code{None}, since no \code{best[a - c]} is a number.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:13}
+\smallskip\noindent\hspace*{2em}\code{def edit_operations(a, b):}
+
+\noindent\hspace*{4em}\code{ops = []}
+
+\noindent\hspace*{4em}\code{for x, y in alignment(a, b, distance_table(a, b)):}
+
+\noindent\hspace*{6em}\code{if x is None:}
+
+\noindent\hspace*{8em}\code{ops.append(f"insert {y}")}
+
+\noindent\hspace*{6em}\code{elif y is None:}
+
+\noindent\hspace*{8em}\code{ops.append(f"delete {x}")}
+
+\noindent\hspace*{6em}\code{elif x != y:}
+
+\noindent\hspace*{8em}\code{ops.append(f"replace {x} by {y}")}
+
+\noindent\hspace*{4em}\code{return ops}
+
+\smallskip\noindent Each column that is not a kept element is one operation, and the costs of the columns add up to
+the distance (question 13 of the problem). \code{kitten}, \code{sitting} gives \code{replace k by s},
+\code{replace e by i}, \code{insert g}. The tests compare the number of operations with the distance on $150$ random
+pairs.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:14}
+$(n + 1)(W + 1)$ cells, each a comparison and an addition or two: the time and the memory grow like $n \times W$.
+In kilograms: $41 \times 3001 = 123\,041$ cells, nothing for a computer. In grams: $41 \times 3\,000\,001 =
+123\,000\,041$, about a gigabyte at $8$ bytes per cell. The answer can be the same, yet the work is a thousand times
+larger: the cost depends on the size of the number $W$, not on how many digits it takes to write it. Adding three
+digits to $W$ multiplies the cost by a thousand.
+\end{solution}
+
+\begin{solution}{exo:g12:dynamic-programming:15}
+\smallskip\noindent\hspace*{2em}\code{def longest_increasing(t):}
+
+\noindent\hspace*{4em}\code{if not t:}
+
+\noindent\hspace*{6em}\code{return []}
+
+\noindent\hspace*{4em}\code{best, before = [1] * len(t), [None] * len(t)}
+
+\noindent\hspace*{4em}\code{for i in range(len(t)):}
+
+\noindent\hspace*{6em}\code{for j in range(i):}
+
+\noindent\hspace*{8em}\code{if t[j] < t[i] and best[j] + 1 > best[i]:}
+
+\noindent\hspace*{10em}\code{best[i], before[i] = best[j] + 1, j}
+
+\noindent\hspace*{4em}\code{i = max(range(len(t)), key=lambda k: best[k])}
+
+\noindent\hspace*{4em}\code{out = []}
+
+\noindent\hspace*{4em}\code{while i is not None:}
+
+\noindent\hspace*{6em}\code{out.append(t[i])}
+
+\noindent\hspace*{6em}\code{i = before[i]}
+
+\noindent\hspace*{4em}\code{return out[::-1]}
+
+\smallskip\noindent \code{best[i]} is the length of a longest increasing subsequence ending at \code{t[i]}: it extends
+the best one ending at a smaller earlier element. \code{before} records which, for the rebuild. The two loops make
+$n(n - 1)/2$ comparisons. For $[5, 2, 8, 6, 3, 6, 9, 7]$: $[2, 3, 6, 9]$.
+\end{solution}
+
+\begin{solution}{pb:g12:dynamic-programming:1}
+\textbf{1.} The library opens at eight instead of nine, and is closed on Mondays as well as Sundays; children may
+borrow six books instead of four; late books cost nothing; the reading room is on the second floor and closes at
+seven; the archive opens on Tuesday afternoons only, and the word ``only'' after ``appointment'' has gone.
+
+\textbf{2.} A word is a unit a reader notices; letter by letter, the \omterm{def:g12:dynamic-programming:edit-distance}{alignment} would match letters of unrelated words,
+such as the \code{e} of \code{seven} and of \code{eight}, and the table would have about $25$ times more cells.
+
+\textbf{3.} The words are compared as strings, and the full stop is a character of the second. Removing the
+punctuation first, the program finds $13$: \code{Sunday} is kept, \code{and} and \code{Monday} are inserted, and
+\code{appointment} is kept with \code{only} deleted.
+
+\textbf{4.} The largest number of words that both versions contain in the same order: $40$.
+
+\textbf{5.} $53 - 40 = 13$ of the old version, $49 - 40 = 9$ of the new one.
+
+\textbf{6.} The kept columns of any \omterm{def:g12:dynamic-programming:edit-distance}{alignment} form a common subsequence, of at most $40$ words: at least $13$ old words
+are deleted or replaced, one operation each, so at least $13$ operations. Deleting the $13$ and inserting the $9$
+always works: at most $22$.
+
+\textbf{7.} Replacements: \code{nine}, \code{Sunday.}, \code{four}, \code{ten}, \code{first}, \code{six,},
+\code{appointment}: $7$. Deletions: \code{cents}, \code{a}, \code{day.}, \code{and}, \code{Thursday}, \code{only.}:
+$6$. Insertions: \code{and}, \code{Monday.}: $2$. Total $15$, the printed distance.
+
+\textbf{8.} Delete \code{ten}, \code{cents} and \code{a}, and replace \code{day.} by \code{nothing.}: still four
+operations.
+
+\textbf{9.} \code{appointment.} has a full stop, so the two strings differ: the column pairs two different words.
+
+\textbf{10.} \code{Tuesday} over \code{Tuesday}; \code{and} over a gap; \code{Thursday} over a gap;
+\code{afternoons} over \code{afternoons}.
+
+\textbf{11.} $d[i - 1][j - 1]$ and $d[i - 1][j]$, in the row above, filled during the previous pass; and $d[i][j - 1]$,
+just to the left, filled earlier in the same pass. The first row and column are filled before the loops.
+
+\textbf{12.} Each step lowers $i$, $j$ or both by $1$. A step that lowers $j$ is taken only with $j > 0$; when $i = 0$
+the insertion test holds, since $d[0][j] = d[0][j - 1] + 1$, and when $j = 0$ the deletion test holds. So neither goes
+below $0$, and the loop stops when both are $0$, after at most $n + m$ steps.
+
+\textbf{13.} A kept column moves to a cell of equal value; a deletion or an insertion to a cell of value one less. The
+last branch is taken only when the three tests failed, so by the recurrence $d[i][j] = d[i - 1][j - 1] + 1$ with two
+different words: one change. Along the path from $d[n][m]$ to $d[0][0] = 0$, the value drops by the cost of each
+column, and the costs add up to $d[n][m]$.
+
+\textbf{14.} $54 \times 50 = 2700$ cells, $21\,600$ bytes.
+
+\textbf{15.} At the start of pass $i$, \code{previous} is row $i - 1$: the distances from the first $i - 1$ words of
+\code{a} to each beginning of \code{b}. The pass builds row $i$ in \code{current}, which becomes \code{previous}.
+
+\textbf{16.} The rebuild walks back from the last cell through every row, and the earlier rows are gone.
+
+\textbf{17.} $100\,001^2 \approx 10^{10}$ cells, about $80$ gigabytes; two rows of $100\,001$ cells, about $1.6$
+megabytes.
+
+\textbf{18.} Both compute the same $53 \times 49 = 2597$ cells; the saving costs no extra time.
+
+\textbf{19.} The two programs are written differently, and they agree on $150$ pairs of all shapes, empty sequences
+included; the full table is itself checked against the \omterm{def:g12:dynamic-programming:edit-distance}{alignment} it produces and, for the common subsequences,
+against trying every subsequence.
+
+\textbf{20.} \textbf{The two notices, of $53$ and $49$ words, share $40$ words in order and are $15$ word changes
+apart: $7$ replacements, $6$ deletions and $2$ insertions. The full table has $2700$ cells; keeping two rows, $100$
+cells give the same distance.}
+\end{solution}

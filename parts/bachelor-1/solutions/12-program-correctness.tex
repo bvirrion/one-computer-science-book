@@ -1,0 +1,180 @@
+% Solutions of 12-program-correctness.
+\section*{Chapter \ref{ch:b1:program-correctness} --- Program Correctness}
+
+\begin{solution}{exo:b1:program-correctness:1}
+In Python, for $b > 0$ the remainder \texttt{a \% b} lies in $[0, b)$, so $a - (a \bmod b)$ is the largest multiple of
+$b$ that is at most $a$. (a) Met. (b) Met, since $0 \leq a \bmod b < b$. (c) Not met: for $b < 0$ the remainder lies in
+$(b, 0]$, and \code{f(5, -3)} returns 6, above $a$. (d) Met, for negative $a$ too: Python's remainder takes the sign of
+$b$.
+\end{solution}
+
+\begin{solution}{exo:b1:program-correctness:2}
+At the five tests, $(i, m)$ is $(1, 3)$, $(2, 9)$, $(3, 9)$, $(4, 9)$ and $(5, 9)$, and the loop exits at the last. Each
+time $m$ is the maximum of $xs[0{:}i]$: of $[3]$, $[3, 9]$, $[3, 9, 2]$, $[3, 9, 2, 9]$ and the whole list.
+\end{solution}
+
+\begin{solution}{exo:b1:program-correctness:3}
+(a) Stops for even $n$, with variant $n$; for odd $n$ it passes 1, then $-1, -3, \dots$ and never stops. (b) Stops:
+$n$ is a variant, halved while $n > 1$. (c) Stops only for $n = 0$ (no iteration) and $n = 1$; from $n = 2$ the values
+are $3, 2, 3, 2, \dots$, and from any $n \geq 2$ the loop alternates between an even and an odd number for ever.
+(d) Stops: since 3 and 7 are coprime, $n, n + 3, \dots, n + 18$ meet every remainder modulo 7; the variant is the
+least $k \geq 0$ with $7 \mid n + 3k$, at most 6, which drops by one at each iteration.
+\end{solution}
+
+\begin{solution}{exo:b1:program-correctness:4}
+\omoutput[2-3]{code/bachelor-1/12-program-correctness/outputs/exo_dups.txt}{The leftmost positions.}
+In $[1, 1, 1]$: the first 1 is at 0; 2 would go at the end (3); 0 at the start (0). In $[1, 2, 2, 2, 3]$: the first 2
+is at 1, the 3 at 4; in $[4]$, 4 is at 0.
+\end{solution}
+
+\begin{solution}{exo:b1:program-correctness:5}
+On a closed interval the variant is the number of candidates, $hi - lo + 1$. When $lo < hi$, $mid < hi$ and
+\code{hi = mid} decreases it; but when $lo = hi = mid$ and $a[mid] > x$, \code{hi = mid} changes nothing, and the loop
+repeats the same state. This happens whenever $x$ is absent and the search ends next to a larger element: in
+$[2, 5, 8]$, for $x = 1$ ($lo = hi = 0$), and also for $x = 3$ or $x = 6$. The fix is \code{hi = mid - 1}, with the
+invariant ``every element of $a[{:}lo]$ is $< x$ and every element of $a[hi + 1{:}]$ is $> x$'': $a[mid] > x$ and the
+list is sorted, so $a[mid{:}]$ is $> x$; and the variant $hi - lo + 1$ now decreases in all three branches. The
+half-open version of \cref{lst:b1:program-correctness:bsearch} avoids mixing the two conventions.
+\end{solution}
+
+\begin{solution}{exo:b1:program-correctness:6}
+Preservation fails. With \code{a[k] = a[j]} the element at $k$, which belongs to the region $\geq p$, is overwritten and
+lost, and the small $a[j]$ stays where it was, inside the region $a[k{:}j]$, which is no longer $\geq p$. The result is
+not a permutation (7 and 9 are lost, 1 and 4 appear twice), and it is not even partitioned: 1 and 4 come after the
+pivot 5. The test of \cref{prop:b1:program-correctness:partition}'s two conclusions catches both at once.
+\end{solution}
+
+\begin{solution}{exo:b1:program-correctness:7}
+\omcode{code/bachelor-1/12-program-correctness/exercises/rightmost.py}{4}{14}{One past the last occurrence}
+The proof is that of \cref{prop:b1:program-correctness:bsearch}, with $\leq$ in place of $<$: if $a[mid] \leq x$, all
+of $a[{:}mid + 1]$ is $\leq x$; otherwise all of $a[mid{:}]$ is $> x$. The occurrences of $x$ are exactly
+$a[\mathit{leftmost}{:}\mathit{rightmost}]$, so their number is the difference, as the output of
+\cref{lst:b1:program-correctness:bsearch} showed for $x = 3$. The test compares both functions with \code{bisect_left}
+and \code{bisect_right} on random sorted lists with many duplicates.
+\end{solution}
+
+\begin{solution}{exo:b1:program-correctness:8}
+Let $n = \text{len}(xs) \geq 1$. Invariant: $1 \leq i \leq n$, $m \in xs[0{:}i]$ and $m \geq x$ for every $x$ of
+$xs[0{:}i]$. Initialisation: $i = 1$, $m = xs[0]$, the maximum of $[xs[0]]$. Preservation: with $i < n$, if $xs[i] > m$
+the new $m$ is $xs[i]$, larger than every element of $xs[0{:}i]$; otherwise $m \geq xs[i]$ already; either way $m$ is
+the maximum of $xs[0{:}i + 1]$, and $i + 1 \leq n$. Conclusion: at the exit $i \geq n$ and $i \leq n$, so $i = n$ and
+$m$ is the maximum of the whole list. Termination: $n - i$ is a natural number that decreases by one.
+\end{solution}
+
+\begin{solution}{exo:b1:program-correctness:9}
+Let $L = hi - lo \geq 1$ and $mid = lo + \lfloor L/2 \rfloor$. After \code{hi = mid} the length is $\lfloor L/2 \rfloor$;
+after \code{lo = mid + 1} it is $L - \lfloor L/2 \rfloor - 1 = \lceil L/2 \rceil - 1 \leq \lfloor L/2 \rfloor$. So after
+$k$ iterations the length is at most $\lfloor n/2^k \rfloor$, which is 0 for $k = \lfloor \log_2 n \rfloor + 1$, since
+then $2^k > n$: the loop has stopped. The bound is reached when $x$ is below every element: every step takes
+\code{hi = mid}, and the length goes $n, \lfloor n/2 \rfloor, \lfloor n/4 \rfloor, \dots$, which stays positive for
+$\lfloor \log_2 n \rfloor + 1$ values. The test checks the worst case for every $n < 300$.
+\end{solution}
+
+\begin{solution}{exo:b1:program-correctness:10}
+On $[2, 2, 0]$ the flag makes 3 swaps (two of them swap an element with itself), where one swap of the first and
+last elements sorts the list; on the list of \cref{out:b1:program-correctness:flag}, 6 swaps where 3 suffice.
+\omcode{code/bachelor-1/12-program-correctness/exercises/min_swaps.py}{4}{15}{The fewest swaps}
+Count $c[i][j]$, the elements of value $i$ in the region where $j$ belongs. A swap moves at most two elements to their
+place, and does so only for a pair $i \leftrightarrow j$ with $c[i][j] > 0$ and $c[j][i] > 0$; take as many such
+swaps as possible. The misplaced elements left form cycles $0 \to 1 \to 2 \to 0$ (or the reverse), in equal numbers
+$t$ in each of the three counts, and a cycle of three needs two swaps, each placing at most one element beyond the
+pairs. The minimum is $\text{pairs} + 2t$, with $3t$ the elements left. The test compares it with a breadth-first search
+over all orders reached by swaps, for every list of 0, 1 and 2 of length at most 6, and checks that the flag never does
+better.
+\end{solution}
+
+\begin{solution}{exo:b1:program-correctness:11}
+\omoutput[2-2]{code/bachelor-1/12-program-correctness/outputs/exo_mystery.txt}{Three values.}
+It computes $x^n$: $3^{13} = 1\,594\,323$, $2^{10} = 1024$, $7^0 = 1$. \omterm{def:b1:program-correctness:specification}{Specification}: pre $n \geq 0$, post the result
+is $x^n$. Invariant: $\mathit{acc} \cdot \mathit{base}^e = x^n$ and $e \geq 0$. Initially $1 \cdot x^n$. If $e$ is
+odd, $\mathit{acc} \cdot \mathit{base} \cdot (\mathit{base}^2)^{(e - 1)/2} = \mathit{acc} \cdot \mathit{base}^e$; if
+$e$ is even, $\mathit{acc} \cdot (\mathit{base}^2)^{e/2} = \mathit{acc} \cdot \mathit{base}^e$. At the exit $e = 0$ and
+$\mathit{acc} = x^n$. Variant: $e$, halved at each step. The number of iterations is the number of binary digits of $n$,
+$\lfloor \log_2 n \rfloor + 1$ for $n \geq 1$, and 0 for $n = 0$: 4 for $n = 13$. The test compares with \code{x ** n}.
+\end{solution}
+
+\begin{solution}{exo:b1:program-correctness:12}
+The first proof is right, for $n \geq 0$: $s + i + 1 = (i + 1)(i + 2)/2$ preserves the first part, $i < n$ before the
+step gives $i + 1 \leq n$ after it, and the exit gives $i = n$. The second is a correct proof of \emph{partial}
+correctness only: at the exit $i = n$ by the loop condition alone, and the invariant ``$i$ is even'' plays no part. What
+is missing is termination, and it is false for odd $n$ (and negative $n$), where $i$ jumps over $n$ for ever. The
+invariant should be ``$i$ is even and $i \leq n$'', which needs the \omterm{def:b1:program-correctness:specification}{precondition} ``$n$ even and $n \geq 0$''; then
+$n - i$ is a variant.
+\end{solution}
+
+\begin{solution}{pb:b1:program-correctness:1}
+\textbf{1.} Existence: $\{r \in \mathbb{N} : r^2 \leq n\}$ contains 0 and is bounded by $n + 1$; its largest element
+$r$ has $(r + 1)^2 > n$. Uniqueness: if $r < r'$ both satisfied it, then $r + 1 \leq r'$ and $(r + 1)^2 \leq r'^2 \leq
+n$, a contradiction.
+
+\textbf{2.} Compute $r \cdot r$ and $(r + 1) \cdot (r + 1)$ and compare them with $n$.
+
+\textbf{3.} A \code{float} has a 53-bit significand: above $2^{53} \approx 9 \times 10^{15}$ not every integer is
+representable, and $n$ is rounded before the root is taken. For $n = 2^{64} - 1$, \code{math.floor(math.sqrt(n))}
+gives 4\,294\,967\,296, one too many.
+
+\textbf{4.} \omterm{def:b1:program-correctness:specification}{Precondition}: $n$ is an integer, $n \geq 0$. \omterm{def:b1:program-correctness:specification}{Postcondition}: the result is $(r, k)$ with $r^2 \leq n < (r +
+1)^2$ and $k$ the number of iterations made.
+
+\textbf{5.} \code{assert r * r <= n < (r + 1) * (r + 1)}, which needs neither program nor library.
+
+\textbf{6.} To compare the methods in Part IV; the test bounds them as well.
+
+\textbf{7.} $0^2 = 0 \leq n$ and $n < (n + 1)^2$.
+
+\textbf{8.} In an iteration $hi \geq lo + 2$, so $lo + 1 \leq mid \leq hi - 1$. If $mid^2 \leq n$, \code{lo = mid}
+keeps $lo^2 \leq n$; otherwise $n < mid^2$ and \code{hi = mid} keeps $n < hi^2$.
+
+\textbf{9.} $hi - lo$ is a natural number ($lo^2 \leq n < hi^2$ gives $lo < hi$) and decreases strictly, since $mid$
+lies strictly between $lo$ and $hi$; the loop runs only while it exceeds 1.
+
+\textbf{10.} At the exit $lo < hi \leq lo + 1$, so $hi = lo + 1$, and the invariant reads $lo^2 \leq n < (lo + 1)^2$.
+
+\textbf{11.} A step leaves $mid - lo = \lfloor L/2 \rfloor$ or $hi - mid = \lceil L/2 \rceil$, so after $k$ steps the
+length is at most $\lceil (n + 1)/2^k \rceil$, which is 1 once $2^k \geq n + 1$: at most $\lceil \log_2(n + 1) \rceil$
+steps. The table reaches the bound except for 16, 17, 99 and $2^{32}$, one below.
+
+\textbf{12.} $n + 1$ is 0 for $n = 2^{64} - 1$; $lo + hi$ can exceed $2^{64}$; and $mid \cdot mid$ overflows once $mid
+\geq 2^{32}$. Start with $hi = 2^{32}$ (the root of a 64-bit number is below it, so $n < hi^2$ holds), compute $mid = lo
++ (hi - lo)/2$, and test $mid \leq n / mid$ (for $mid \geq 1$) instead of $mid^2 \leq n$.
+
+\textbf{13.} Write $n/r = q + f$ with $q = \lfloor n/r \rfloor$ and $0 \leq f < 1$, and $m = r + q$. If $m$ is even,
+$\lfloor (m + f)/2 \rfloor = m/2$; if $m$ is odd, $(m + f)/2 = (m - 1)/2 + (1 + f)/2$ with $(1 + f)/2 < 1$, so the floor is
+$(m - 1)/2$. Either way it is $\lfloor m/2 \rfloor$.
+
+\textbf{14.} $(r + n/r)/2 - \sqrt{n} = (\sqrt{r} - \sqrt{n/r})^2/2 \geq 0$. Taking floors, the new $r$ is at least
+$\lfloor \sqrt{n} \rfloor = s$. Initially $r = n \geq s$, since $s \leq s^2 \leq n$ for $s \geq 1$.
+
+\textbf{15.} $r^2 > n$ gives $n/r < r$, so $(r + n/r)/2 < r$, and its floor is below $r$.
+
+\textbf{16.} $r$ is a natural number that decreases strictly at each iteration: the loop stops. At the exit $r^2 \leq
+n$, so $r \leq s$, the largest number whose square is at most $n$; with the invariant $r \geq s$, $r = s$.
+
+\textbf{17.} The first step computes \code{n // r} with $r = n = 0$: a division by zero.
+
+\textbf{18.} The values can oscillate between $s$ and $s + 1$: for $n = 15$, $r = 4$ gives 3, and $r = 3$ gives 4, and
+so on. The test $r^2 > n$ stops at 3.
+
+\textbf{19.} The bound is reached for 0, 1, 2, 15, $10^6$, $2^{32} - 1$, $10^{18}$ and $2^{64} - 1$; bisection stays
+one below for 16, 17, 99 and $2^{32}$, where the intervals happen to shrink a little faster than half.
+
+\textbf{20.} While $r$ is far above $\sqrt{n}$, $n/r$ is small beside $r$, and the new $r$ is about $r/2$: from $2^{64}$
+to near $2^{32}$ takes about 32 steps. Near $\sqrt{n}$ the error is roughly squared at each step (it becomes about
+$e^2/(2r)$), so a handful of steps finish: $32 + 5 = 37$.
+
+\textbf{21.} Start at $2^{\lceil b/2 \rceil}$ with $b$ the number of binary digits of $n$: since $n < 2^b$, $\sqrt{n} <
+2^{b/2}$, so it is at least $s$. Only the initialisation of the invariant must be proved again; preservation,
+conclusion and termination do not depend on the start.
+
+\textbf{22.} Random 64-bit values almost never land on perfect squares, their neighbours or tiny values, where the
+boundary errors live; the exhaustive check below 2000 covers them all.
+
+\textbf{23.} For $n = 16$: $r$ goes $16, 8, 5, 4$, then $4 \cdot 4 \geq 16$ still holds and $r$ stays 4 for ever. The
+variant fails when $r^2 = n$: the new $r$ equals $r$. The test would never finish: the
+exhaustive loop hangs at $n = 1$, where $r = 1$ stays 1.
+
+\textbf{24.} \emph{Newton's integer square root is \omterm{def:b1:program-correctness:correctness}{totally correct}}: for every $n \geq 0$, \code{isqrt_newton(n)}
+terminates and returns the $r$ with $r^2 \leq n < (r + 1)^2$ (questions 13--16). On the table it needs 0, 0, 1, 3, 3,
+3, 5, 12, 20, 19, 34 and 37 iterations, against bisection's 0, 1, 2, 4, 4, 4, 6, 20, 32, 32, 60 and 64, which never
+exceed $\lceil \log_2(n + 1) \rceil$.
+\end{solution}

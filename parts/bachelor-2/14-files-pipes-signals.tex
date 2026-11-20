@@ -1,0 +1,505 @@
+% Book 4, Year 2, chapter 14 -- Files, pipes and signals.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 14.
+\chapter{Files, Pipes and Signals}\label{ch:b2:files-pipes-signals}
+
+Which words does the library's notice board use most? One line of shell answers:
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/hook.txt}{Six programs, five \omterm{def:b2:files-pipes-signals:pipe}{pipes}: the six most frequent
+words of a short text.}\label{out:b2:files-pipes-signals:hook}
+
+The first \code{tr} turns every run of non-letters into a newline, the second lowers the case, \code{sort} brings
+equal words together, \code{uniq -c} counts each run, \code{sort -rn} puts the largest counts first, and \code{head}
+keeps six lines. Six processes run at once, each reading what the one before it writes. None of the six programs
+contains a word about \omterm{def:b2:files-pipes-signals:pipe}{pipes}: each reads its standard input and writes its standard output, and the shell arranged,
+before running them, that these be the ends of \omterm{def:b2:files-pipes-signals:pipe}{pipes}. This chapter opens the files, descriptors and \omterm{def:b2:files-pipes-signals:pipe}{pipes} underneath,
+builds the same pipeline in C, and ends with \omterm{def:b2:files-pipes-signals:signal}{signals}, the kernel's way of interrupting a \omterm{def:b2:processes-and-system-calls:process}{process}.
+
+\begin{recall}
+Book 1: a file has a name and lives in a folder; a path names a file through its folders. Book 3, ch.~6: C reads and
+writes files through \code{FILE *} streams, with \code{stdin}, \code{stdout} and \code{stderr} open from the start.
+Book 3, ch.~8: the shell's redirections \code{<} and \code{>}, its pipelines \code{|}, the permission bits of
+\code{ls -l}, hard links and symbolic links. \cref{ch:b2:processes-and-system-calls}: \code{fork}, \code{exec},
+\code{waitpid}, the \omterm{def:b2:processes-and-system-calls:syscall}{system call} and its cost.
+\end{recall}
+
+\section{File descriptors}\label{sec:b2:files-pipes-signals:descriptors}
+
+\begin{definition}[File descriptor, open file description, offset]\label{def:b2:files-pipes-signals:descriptor}
+A \emph{file descriptor}\index{file descriptor} is a small non-negative integer that a \omterm{def:b2:processes-and-system-calls:process}{process} uses to name a file it
+has opened; it indexes the \omterm{def:b2:processes-and-system-calls:process}{process}'s \emph{descriptor table}\index{descriptor table}, kept by the kernel. Each entry
+points to an \emph{open file description}\index{open file description}, a kernel object created by each successful
+\code{open}, which records the file, the access mode, and the \emph{file offset}\index{file offset}: the position
+where the next \code{read} or \code{write} starts. By convention descriptors 0, 1 and 2 are the standard input,
+output and error.
+\end{definition}
+
+Four \omterm{def:b2:processes-and-system-calls:syscall}{system calls} do most of the work: \code{open(path, flags, mode)} returns the lowest free descriptor;
+\code{read(fd, buf, n)} copies at most $n$ bytes from the file to \code{buf}, advances the offset, and returns the
+number copied, 0 at end of file; \code{write(fd, buf, n)} does the reverse; \code{close(fd)} frees the descriptor.
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/fd_basics.c}{7}{24}{Writing a file, then reading it 8 bytes
+at a time}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/fd_basics.txt}{The descriptor is 3 both times; the reads
+return 8, 8, 1, then 0.}\label{out:b2:files-pipes-signals:fd}
+
+A \code{read} may return fewer bytes than asked: here the last one finds a single byte left. Every program that reads
+must loop until \code{read} returns 0, and must use the count it returns, never the size it asked for.
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/offsets.c}{14}{28}{Two opens, and one
+\code{dup}}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/offsets.txt}{Who shares an offset with
+whom.}\label{out:b2:files-pipes-signals:offsets}
+
+\code{a} and \code{b} come from two \code{open}s: two descriptions, two offsets, so \code{b} starts again at
+\code{a}. \code{c = dup(a)} is a second descriptor for \code{a}'s description: reading through \code{c} moves
+\code{a}'s offset, and the last read through \code{a} gets \code{d}. A \code{fork} copies the \omterm{def:b2:files-pipes-signals:descriptor}{descriptor table}, not
+the descriptions, so parent and child share offsets too:
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/shared_offset.txt}{The parent writes after the child's line,
+not over it.}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, c/.style={draw, minimum width=8mm, minimum height=5mm, inner sep=1pt},
+  od/.style={draw, rounded corners=2pt, fill=omDef!10, align=left, inner sep=3pt, font=\scriptsize},
+  w/.style={-{Stealth[length=2mm]}}]
+\node[font=\scriptsize\bfseries] at (0,2.3) {descriptor table};
+\foreach \i/\y in {0/1.8, 1/1.3, 2/0.8, 3/0.3, 4/-0.2, 5/-0.7} \node[c] (d\i) at (0,\y) {\i};
+\node[font=\scriptsize\bfseries] at (4.0,2.3) {open file descriptions};
+\node[od] (oa) at (4.0,0.9) {\code{abc.txt}, read only\\ offset 4};
+\node[od] (ob) at (4.0,-0.6) {\code{abc.txt}, read only\\ offset 1};
+\node[font=\scriptsize\bfseries] at (8.0,2.3) {the file};
+\node[draw, fill=omThm!10, align=center, font=\scriptsize, inner sep=4pt] (in) at (8.0,0.15) {inode:\\ size 6,
+mode, owner,\\ where the bytes are};
+\node[font=\scriptsize, anchor=east] at (-0.6,0.3) {\code{a}}; \node[font=\scriptsize, anchor=east] at (-0.6,-0.2)
+{\code{b}}; \node[font=\scriptsize, anchor=east] at (-0.6,-0.7) {\code{c}};
+\draw[w] (d3.east) -- (oa.west); \draw[w] (d5.east) -- (oa.south west); \draw[w] (d4.east) -- (ob.west);
+\draw[w] (oa.east) -- (in.west); \draw[w] (ob.east) -- (in.west);
+\node[font=\scriptsize, align=center] at (0,-1.25) {0, 1, 2: the standard streams};
+\end{tikzpicture}
+\par\smallskip{\small The three levels after \code{offsets.c}: descriptors 3 and 5 share one description, and so
+one offset; descriptor 4 has its own. Both descriptions lead to the same file.}
+\end{omfigure}
+
+\section{Buffering}\label{sec:b2:files-pipes-signals:buffering}
+
+Every \code{read} and \code{write} is a \omterm{def:b2:processes-and-system-calls:syscall}{system call}, with the cost measured in
+\cref{ch:b2:processes-and-system-calls}. Copying a file one byte at a time makes two \omterm{def:b2:processes-and-system-calls:syscall}{system calls} per byte.
+
+\begin{definition}[Buffered input and output, flush]\label{def:b2:files-pipes-signals:buffering}
+\emph{Buffered input and output}\index{buffered input and output} gathers many small reads or writes of a program into
+few \omterm{def:b2:processes-and-system-calls:syscall}{system calls}, through a block of memory, the buffer, kept in the \omterm{def:b2:processes-and-system-calls:process}{process}: the C library's \code{FILE} streams do
+this. To \emph{flush}\index{flush} a buffer is to write its contents with a \omterm{def:b2:processes-and-system-calls:syscall}{system call}. An output stream is
+\emph{fully buffered} (flushed when full, or at exit), \emph{line buffered} (also at each newline; the default for a
+terminal) or unbuffered (\code{stderr}).
+\end{definition}
+
+\code{copy.c} copies a file with \code{read} and \code{write} and a buffer of $b$ bytes given on its command line.
+\code{strace -P} traces only the calls that touch a given file, so it counts the reads of the input exactly:
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/copy.c}{21}{28}{The copying loop}
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/reads.sh}{2}{5}{Counting the reads for seven buffer
+sizes}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/count_calls.txt}{A file of 100\,000 bytes, copied with
+seven buffer sizes.}\label{out:b2:files-pipes-signals:counts}
+
+\begin{proposition}[Reads of a copy]\label{prop:b2:files-pipes-signals:calls}
+Copying a file of $n$ bytes with a buffer of $b$ bytes, by a loop that reads until \code{read} returns 0, makes
+$\lceil n / b \rceil + 1$ reads, provided each read returns $\min(b, r)$ bytes when $r$ bytes remain, as reads of a
+regular file do.
+\end{proposition}
+
+\begin{proof}
+Write $n = qb + r$ with $0 \le r < b$. The first $q$ reads return $b$ bytes each. If $r > 0$, one more read returns
+the last $r$ bytes. Then one read returns 0, and the loop stops. That is $q + 1 + 1$ reads if $r > 0$ and $q + 1$ if
+$r = 0$, which is $\lceil n/b \rceil + 1$ in both cases.
+\end{proof}
+
+With $n = 100\,000$: $100\,001$ reads for $b = 1$, $\lceil 100\,000 / 4096 \rceil + 1 = 26$ for $b = 4096$, and
+$2 + 1 = 3$ for $b = 65\,536$, as counted. Time follows the count. Copying 4 MiB with buffers from 1 byte to 64 KiB:
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/buffered_vs_raw.c}{29}{48}{The timed loop, and the same copy
+by \code{putc}}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/buffered_vs_raw.txt}{One run on the author's laptop: 4 MiB
+copied with nine buffer sizes, then written by \code{putc}.}\label{out:b2:files-pipes-signals:times}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=0.85\linewidth, height=5.6cm, xmode=log, ymode=log, log basis x=2,
+    xlabel={buffer size $b$ (bytes)}, ylabel={time to copy 4 MiB (ms)},
+    xtick={1,16,256,4096,65536}, xticklabels={1,16,256,4\,096,65\,536},
+    ytick={1,10,100,1000}, yticklabels={1,10,100,1\,000}]
+  \addplot[omDef, thick, mark=*, mark size=1.3pt] table[x=b, y=ms]
+    {code/bachelor-2/14-files-pipes-signals/figures/copy_times.dat};
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The times of \cref{out:b2:files-pipes-signals:times}. Up to about 1 KiB the line falls with
+slope $-1$: the time is the number of \omterm{def:b2:processes-and-system-calls:syscall}{system calls}. Beyond, the cost of moving the bytes themselves dominates, and a
+larger buffer gains little.}
+\end{omfigure}
+
+Each quadrupling of $b$ divides the time by about four, as long as \omterm{def:b2:processes-and-system-calls:syscall}{system calls} dominate; past a few KiB the curve
+flattens. \code{putc} writes one byte at a time too, but into the library's buffer, which reaches the kernel in
+blocks of 4096 bytes: some two hundred times faster than one \code{write} per byte. It is still slower than
+\code{write} with $b = 4096$, by the cost of four million calls to \code{putc} itself.
+
+The buffer lives in the \omterm{def:b2:processes-and-system-calls:process}{process}, and \code{fork} copies the \omterm{def:b2:processes-and-system-calls:process}{process}. A line that waits in a buffer at the moment of a
+fork is then in two buffers, and both are flushed:
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/fork_buffer.c}{6}{13}{A line printed
+once}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/fork_buffer.txt}{It appears twice, because the output is not
+a terminal.}\label{out:b2:files-pipes-signals:twice}
+
+On a terminal the line would be flushed at its newline, before the fork, and appear once. The cure is a
+\code{fflush(stdout)} before every \code{fork}, as \code{minish} did.
+
+\section{Names, inodes and links}\label{sec:b2:files-pipes-signals:inodes}
+
+\begin{definition}[Inode, link count]\label{def:b2:files-pipes-signals:inode}
+An \emph{inode}\index{inode} is the record a file system keeps for one file: its type, size, \omterm{def:b2:rust-ownership:ownership}{owner}, permission bits,
+times, and where its bytes are stored, but not its name. Its \emph{link count}\index{link count} is the number of
+\omterm{def:b2:files-pipes-signals:dirent}{directory entries} that name it. \code{stat(path, &st)} copies an inode's fields into a \code{struct stat}.
+\end{definition}
+
+\begin{definition}[Directory entry]\label{def:b2:files-pipes-signals:dirent}
+A directory is a file whose contents is a table of \emph{directory entries}\index{directory entry}, each a pair of a
+name and an \omterm{def:b2:files-pipes-signals:inode}{inode} number. A hard link is a second entry for an existing \omterm{def:b2:files-pipes-signals:inode}{inode}; a symbolic link is a small file whose
+contents is a path.
+\end{definition}
+
+So a file has no name of its own: names belong to directories. Removing a name (\code{unlink}, which \code{rm} calls)
+removes one entry and lowers the \omterm{def:b2:files-pipes-signals:inode}{link count}; the file disappears when the count reaches 0 and no \omterm{def:b2:processes-and-system-calls:process}{process} has it
+open.
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/links.txt}{Two names for one file, and a symbolic link that
+breaks.}\label{out:b2:files-pipes-signals:links}
+
+The second column of \code{ls -l} is the \omterm{def:b2:files-pipes-signals:inode}{link count}: 2 for \code{hours.txt} and \code{opening.txt}, one \omterm{def:b2:files-pipes-signals:inode}{inode} under
+two names. After \code{rm hours.txt}, \code{opening.txt} still reads the text, while \code{shortcut.txt}, which
+stores the path \code{hours.txt}, leads nowhere. The same in C, with \code{stat} comparing \omterm{def:b2:files-pipes-signals:inode}{inode} numbers (which the
+program never prints):
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/same_inode.c}{12}{24}{Two names, one \omterm{def:b2:files-pipes-signals:inode}{inode}}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/same_inode.txt}{The \omterm{def:b2:files-pipes-signals:inode}{link count} goes from 2 to 1.}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, c/.style={draw, minimum height=5.5mm, inner sep=2pt},
+  w/.style={-{Stealth[length=2mm]}}]
+\node[font=\scriptsize\bfseries] at (1.4,1.55) {directory};
+\node[c, minimum width=2.6cm, anchor=west] (n1) at (0,1.0) {\code{hours.txt}};
+\node[c, minimum width=2.6cm, anchor=west] (n2) at (0,0.45) {\code{opening.txt}};
+\node[c, minimum width=2.6cm, anchor=west] (n3) at (0,-0.1) {\code{shortcut.txt}};
+\node[draw, fill=omThm!10, align=center, font=\scriptsize, inner sep=4pt] (i1) at (5.2,0.75) {inode A: regular
+file\\ link count 2, size 14};
+\node[draw, fill=omThm!10, align=center, font=\scriptsize, inner sep=4pt] (i2) at (5.2,-0.45) {inode B: symbolic
+link\\ contents: \code{hours.txt}};
+\node[draw, fill=omDef!8, font=\scriptsize, inner sep=3pt] (b1) at (9.0,0.75) {\code{opens at nine}};
+\draw[w] (n1.east) -- (i1.west); \draw[w] (n2.east) -- (i1.west); \draw[w] (n3.east) -- (i2.west);
+\draw[w] (i1.east) -- (b1.west);
+\end{tikzpicture}
+\par\smallskip{\small A directory as a table of names. Two entries lead to \omterm{def:b2:files-pipes-signals:inode}{inode} A; the symbolic link's \omterm{def:b2:files-pipes-signals:inode}{inode} B
+holds the path \code{hours.txt}, looked up by name each time it is used, so removing the name \code{hours.txt} breaks it but not
+\code{opening.txt}.}
+\end{omfigure}
+
+\section{Redirections and pipes}\label{sec:b2:files-pipes-signals:pipes}
+
+\begin{definition}[Descriptor duplication]\label{def:b2:files-pipes-signals:dup}
+\emph{Duplicating a descriptor}\index{descriptor duplication} makes a second descriptor point to the same \omterm{def:b2:files-pipes-signals:descriptor}{open file
+description}: \code{dup(fd)} uses the lowest free number, and \code{dup2(fd, target)} uses \code{target}, closing
+first whatever it pointed to.
+\end{definition}
+
+That is the whole of a redirection. For \code{echo hello > out.txt}, the shell forks; the child opens
+\code{out.txt}, makes descriptor 1 point to it with \code{dup2}, closes the extra descriptor and \omterm{def:b2:processes-and-system-calls:exec}{execs} \code{echo},
+which writes to descriptor 1 as always. Since an \omterm{def:b2:processes-and-system-calls:exec}{exec} keeps the \omterm{def:b2:files-pipes-signals:descriptor}{descriptor table}, \code{echo} never knows.
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/redirect.c}{10}{17}{The child's side of
+\code{> out.txt}}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/redirect.txt}{What \code{echo} wrote.}
+
+% ledger: b2:pipe-capacity, b2:pipe-buf, b2:pipe-eof-sigpipe
+\begin{definition}[Pipe]\label{def:b2:files-pipes-signals:pipe}
+A \emph{pipe}\index{pipe} is a kernel buffer with two ends, created by \code{pipe(fd)}: bytes written to the write
+end \code{fd[1]} are read, in the same order, from the read end \code{fd[0]}. A read on an empty pipe waits; a write
+to a full pipe waits; on Linux a pipe holds 65\,536 bytes, and a write of at most 4096 bytes is never mixed with
+another writer's. A read returns 0, end of file, when the pipe is empty and no write end is open anywhere.
+\end{definition}
+
+\begin{proposition}[End of file on a pipe]\label{prop:b2:files-pipes-signals:eof}
+A \omterm{def:b2:processes-and-system-calls:process}{process} reading an empty \omterm{def:b2:files-pipes-signals:pipe}{pipe} sees end of file exactly when every descriptor referring to the \omterm{def:b2:files-pipes-signals:pipe}{pipe}'s write end, in
+every \omterm{def:b2:processes-and-system-calls:process}{process}, has been closed. While one remains open, even in the reader itself, the read waits.
+\end{proposition}
+
+The proof is \cref{exo:b2:files-pipes-signals:8}. The consequence is a rule: after a fork, every \omterm{def:b2:processes-and-system-calls:process}{process} must close
+every \omterm{def:b2:files-pipes-signals:pipe}{pipe} end it does not use. A parent that forgets its copy of the write end leaves the reader waiting forever:
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/forgot_close.c}{18}{25}{The parent keeps the write
+end}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/forgot_close.txt}{\code{wc} never prints; the capture tool
+stopped the program after 3 seconds.}
+
+\begin{method}[Building a pipeline]\label{met:b2:files-pipes-signals:pipeline}
+To run $k$ commands connected by $k - 1$ \omterm{def:b2:files-pipes-signals:pipe}{pipes}, for $i = 1, \dots, k$ in order:
+\begin{enumerate}
+\item if $i < k$, create \omterm{def:b2:files-pipes-signals:pipe}{pipe} $i$;
+\item fork; in the child, if $i > 1$, \code{dup2} the read end of \omterm{def:b2:files-pipes-signals:pipe}{pipe} $i - 1$ onto 0; if $i < k$, \code{dup2} the write
+end of \omterm{def:b2:files-pipes-signals:pipe}{pipe} $i$ onto 1; close every \omterm{def:b2:files-pipes-signals:pipe}{pipe} descriptor it still holds; \omterm{def:b2:processes-and-system-calls:exec}{exec} command $i$;
+\item in the parent, close the read end of \omterm{def:b2:files-pipes-signals:pipe}{pipe} $i - 1$ and the write end of \omterm{def:b2:files-pipes-signals:pipe}{pipe} $i$, keeping only the read end of
+\omterm{def:b2:files-pipes-signals:pipe}{pipe} $i$ for the next child.
+\end{enumerate}
+Then wait for the $k$ children; the pipeline's status is the last command's.
+\end{method}
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/pipeline_lib.c}{8}{44}{The method in C: the parent holds at
+most one \omterm{def:b2:files-pipes-signals:pipe}{pipe} end between forks}\label{lst:b2:files-pipes-signals:pipeline}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/pipeline.txt}{The hook's six stages, connected by
+\code{pipeline.c}.}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, p/.style={draw, rounded corners=2pt, fill=omDef!10, minimum width=2.2cm,
+  minimum height=12mm, align=center}, w/.style={-{Stealth[length=2mm]}}]
+\node[font=\scriptsize\bfseries] at (2.6,2.0) {after \code{pipe} and \code{fork}};
+\node[p] (a) at (0,0.6) {parent};
+\node[p] (b) at (5.2,0.6) {child};
+\node[draw, fill=omThm!12, minimum width=1.6cm, minimum height=5mm] (pp) at (2.6,-0.7) {pipe};
+\draw[w] (a.south) -- node[fill=white, inner sep=1pt, font=\scriptsize] {\code{fd[1]}} (pp.west);
+\draw[w] (pp.west) -- ++(-1.4,-0.5) -| node[pos=0.25, below=1pt, font=\scriptsize] {\code{fd[0]}} (a.south west);
+\draw[w] (b.south) -- node[fill=white, inner sep=1pt, font=\scriptsize] {\code{fd[1]}} (pp.east);
+\draw[w] (pp.east) -- ++(1.4,-0.5) -| node[pos=0.25, below=1pt, font=\scriptsize] {\code{fd[0]}} (b.south east);
+\begin{scope}[xshift=8.4cm]
+\node[font=\scriptsize\bfseries] at (2.6,2.0) {after \code{dup2} and \code{close}};
+\node[p] (a2) at (0,0.6) {\code{tr}\\ \scriptsize writes to 1};
+\node[p] (b2) at (5.2,0.6) {\code{sort}\\ \scriptsize reads from 0};
+\node[draw, fill=omThm!12, minimum width=1.6cm, minimum height=5mm] (pp2) at (2.6,-0.7) {pipe};
+\draw[w] (a2.south) |- node[pos=0.25, left, font=\scriptsize] {1} (pp2.west);
+\draw[w] (pp2.east) -| node[pos=0.75, right, font=\scriptsize] {0} (b2.south);
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b2:files-pipes-signals:pipe}{pipe} before and after the wiring. Right after the fork, both processes hold both ends. Each
+then keeps one: the writer's descriptor 1 and the reader's descriptor 0 become the ends, and every other copy is
+closed, so that the reader sees end of file when the writer is done.}
+\end{omfigure}
+
+\section{Signals}\label{sec:b2:files-pipes-signals:signals}
+
+% ledger: b2:signal-numbers, b2:sigkill-sigstop
+\begin{definition}[Signal, handler, disposition]\label{def:b2:files-pipes-signals:signal}
+A \emph{signal}\index{signal} is a small numbered notification that the kernel delivers to a \omterm{def:b2:processes-and-system-calls:process}{process}, interrupting
+whatever it was doing: on a key (\code{SIGINT}, 2, for Ctrl-C), on an event (\code{SIGCHLD}, 17, a child ended;
+\code{SIGPIPE}, 13, a write to a \omterm{def:b2:files-pipes-signals:pipe}{pipe} with no reader), or because another \omterm{def:b2:processes-and-system-calls:process}{process} called \code{kill(pid, sig)}
+(\code{SIGTERM}, 15, ``please end''; \code{SIGKILL}, 9, ``end now''). The \emph{disposition}\index{signal
+disposition} of a signal in a \omterm{def:b2:processes-and-system-calls:process}{process} says what delivery does: the default action (for most signals, end the
+\omterm{def:b2:processes-and-system-calls:process}{process}; for \code{SIGCHLD}, nothing), ignore it, or call a function of the \omterm{def:b2:processes-and-system-calls:process}{process}, a \emph{signal
+handler}\index{signal handler}, installed with \code{sigaction}. \code{SIGKILL} and \code{SIGSTOP} cannot be caught
+or ignored. The numbers are those of Linux on x86-64.
+\end{definition}
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/sigint_self.c}{10}{14}{A handler sets a flag, and nothing
+more}
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/sigint_self.c}{28}{33}{Installing it}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/sigint_self.txt}{The default action, then the
+handler.}
+
+A handler runs in the middle of the program, between two instructions of whatever \code{main} was doing, perhaps
+inside \code{printf} with the buffer half updated. If the handler called \code{printf} too, the two uses of the same
+buffer would mix.
+
+% ledger: b2:async-signal-safe
+\begin{definition}[Async-signal-safe function]\label{def:b2:files-pipes-signals:async-safe}
+A function is \emph{async-signal-safe}\index{async-signal-safe function} when it can be called safely from within a
+\omterm{def:b2:files-pipes-signals:signal}{signal handler}. POSIX lists them: \code{write}, \code{_exit}, \code{waitpid} and most plain \omterm{def:b2:processes-and-system-calls:syscall}{system calls} are;
+\code{printf}, \code{malloc} and anything that takes a lock or touches a shared buffer are not.
+\end{definition}
+
+The safe pattern is the one above: the handler sets a variable of type \code{volatile sig_atomic_t}, and the main
+program looks at it. The commonest real handler reaps children, so that a program that starts many does not collect
+\omterm{def:b2:processes-and-system-calls:zombie}{zombies}:
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/sigchld_reap.c}{11}{18}{Reaping in the handler: every ended
+child, without waiting}
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/sigchld_reap.c}{28}{37}{Waiting for the \omterm{def:b2:files-pipes-signals:signal}{signals} without
+missing one}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/sigchld_reap.txt}{Five children, five reaped.}
+
+Two details matter. \omterm{def:b2:files-pipes-signals:signal}{Signals} of one kind do not queue: five children ending at once may produce a single
+\code{SIGCHLD}, so the handler loops on \code{waitpid(-1, NULL, WNOHANG)}, which reaps one ended child per call and
+returns 0 when none is left. And between the test \code{reaped < 5} and going to sleep, the last \omterm{def:b2:files-pipes-signals:signal}{signal} could arrive
+and be missed: blocking \code{SIGCHLD} and sleeping with \code{sigsuspend}, which unblocks and sleeps in one step,
+closes that window.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, w/.style={-{Stealth[length=2mm]}}]
+\draw[w] (0,0) -- (11.6,0) node[right] {time};
+\fill[omDef!30] (0,0.15) rectangle (3.0,0.55); \node at (1.5,0.35) {\code{main} runs};
+\fill[omThm!35] (4.2,0.15) rectangle (6.4,0.55); \node at (5.3,0.35) {handler runs};
+\fill[omDef!30] (6.4,0.15) rectangle (11.2,0.55); \node at (8.8,0.35) {\code{main} resumes where it was};
+\fill[omProp!25] (3.0,0.15) rectangle (4.2,0.55); \node at (3.6,0.35) {pending};
+\draw[w, omThm] (3.0,1.2) node[above left=-1pt, align=right] {\code{kill} or an event:\\ the signal is sent} -- (3.0,0.6);
+\draw[w] (4.2,1.2) node[above right=-1pt, align=left] {delivered at the next\\ return to user mode} -- (4.2,0.6);
+\draw[w] (6.4,-0.6) node[below] {the handler returns} -- (6.4,0.1);
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b2:files-pipes-signals:signal}{signal}'s delivery. Sent, it is \emph{pending} until the kernel next returns to the \omterm{def:b2:processes-and-system-calls:process}{process} in
+\omterm{def:b2:processes-and-system-calls:modes}{user mode}; the handler then runs on the \omterm{def:b2:processes-and-system-calls:process}{process}'s stack, and when it returns the program goes on as if nothing had
+happened, except what the handler changed.}
+\end{omfigure}
+
+The last \omterm{def:b2:files-pipes-signals:signal}{signal} of the chapter ends pipelines early. When \code{head} has printed its lines and exits, the stages
+before it are still writing into a \omterm{def:b2:files-pipes-signals:pipe}{pipe} that nobody reads:
+
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/sigpipe.c}{10}{21}{Writing into a \omterm{def:b2:files-pipes-signals:pipe}{pipe} whose read end is
+closed}
+
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/sigpipe.txt}{By default \code{SIGPIPE} kills the writer;
+ignored, it turns into an error.}\label{out:b2:files-pipes-signals:sigpipe}
+
+That is why \code{yes | head -3} ends: \code{yes} would write forever, but its first write after \code{head} has
+exited kills it with \code{SIGPIPE}, silently.
+
+\begin{inpractice}[Descriptors in servers]
+Every long-running program has the bugs of this chapter in waiting. A server that forgets to close descriptors runs
+out of them after some thousands of connections (a \omterm{def:b2:processes-and-system-calls:process}{process} may hold a limited number); one that forks without
+reaping fills the \omterm{def:b2:processes-and-system-calls:process}{process} table with \omterm{def:b2:processes-and-system-calls:zombie}{zombies}; one that writes to a client who has gone away dies of \code{SIGPIPE}
+unless it ignores the \omterm{def:b2:files-pipes-signals:signal}{signal} and checks every \code{write}. The usual practice: ignore \code{SIGPIPE} in servers,
+check the result of every call, close every descriptor on every path, and reap every child.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b2:files-pipes-signals:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:files-pipes-signals:1}
+A file holds the 26 letters \code{a} to \code{z}. A program reads it with \code{read(fd, buf, 10)} until end of file.
+What does each call return, and what is in \code{buf} after the last call that returned bytes? What changes if the
+program calls \code{lseek(fd, 20, SEEK_SET)} first?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:files-pipes-signals:2}
+In \code{forgot_close.c}, the parent never closes \code{fd[1]}. Say which processes hold a descriptor of the write
+end when \code{wc} reads, and where to add the missing \code{close}. Would closing it after \code{waitpid} work?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:files-pipes-signals:3}
+Write \code{mycp src dst [b]}, which copies with a buffer of $b$ bytes (4096 by default), gives the copy the same
+permission bits as the source, never overwrites an existing file, and handles a \code{write} that writes fewer bytes
+than asked.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:files-pipes-signals:4}
+How many \code{write} calls does \code{copy.c} make for $n$ bytes and a buffer of $b$? How many \omterm{def:b2:processes-and-system-calls:syscall}{system calls} in all,
+counting the \code{open}s and \code{close}s? For $n = 10^6$, which $b$ brings the total under 300?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:files-pipes-signals:5}
+What does this program print when its output is a file? When it is a terminal? Explain.
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/exo_nonewline.c}{6}{14}{A \code{printf} without
+newline}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:files-pipes-signals:6}
+This redirection swaps the arguments of \code{dup2}. Explain the output, and what \code{dup2(1, fd)} did.
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/exo_swapped.c}{11}{15}{The child's side}
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/exo_swapped.txt}{The text went to the wrong place.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:files-pipes-signals:7}
+Write \code{tee [-a] file...}, which copies its standard input to its standard output and to every file named,
+truncating them, or appending with \code{-a}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:files-pipes-signals:8}
+Prove \cref{prop:b2:files-pipes-signals:eof} from the definition of a \omterm{def:b2:files-pipes-signals:pipe}{pipe}. Deduce that in
+\cref{met:b2:files-pipes-signals:pipeline}, if every command reads its input to the end before it exits, the last
+command sees end of file only after all the others have ended.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:files-pipes-signals:9}
+Write \code{capture(argv, input, &status)}, which runs a command with the string \code{input} as its standard input
+and returns, as a new string, everything it printed. Why does a version that first writes all the input and then
+reads the output hang when the input is 300\,000 bytes and the command is \code{cat}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:files-pipes-signals:10}
+Add \code{<}, \code{>} and \code{|} to the shell of \cref{ch:b2:processes-and-system-calls}, as separate words:
+\code{sort < in.txt > out.txt}, \code{echo 3 1 2 | wc -w}. In which order must the child apply the \omterm{def:b2:files-pipes-signals:pipe}{pipes} and the
+redirections, so that \code{a > f | b} sends \code{a}'s output to \code{f}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:files-pipes-signals:11}
+Fit the model $t = a \lceil n/b \rceil + c\,n$ to the measurements of \cref{out:b2:files-pipes-signals:times},
+where $a$ is the cost of one read and its write and $c$ the cost of moving one byte. Compare $a$ with the cost of a
+\omterm{def:b2:processes-and-system-calls:syscall}{system call} measured in \cref{ch:b2:processes-and-system-calls}, and find the $b$ beyond which the \omterm{def:b2:processes-and-system-calls:syscall}{system calls} cost
+less than the bytes.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:files-pipes-signals:12}
+Add background jobs to the shell of \cref{exo:b2:files-pipes-signals:10}: a line ending with the word \code{&} is
+not waited for, a \code{SIGCHLD} handler reaps the processes that end, and the next prompt reports how many ended.
+How do you keep the handler from reaping a foreground \omterm{def:b2:processes-and-system-calls:process}{process} before the shell's \code{waitpid}?
+\end{exercise}
+
+\section{Problem: The word-frequency pipeline in C}\label{sec:b2:files-pipes-signals:problem}
+
+\begin{problem}[{Weekend problem --- The word-frequency pipeline in C}]\label{pb:b2:files-pipes-signals:1}
+The problem follows the hook's pipeline through the kernel: its descriptors, its processes and \omterm{def:b2:files-pipes-signals:pipe}{pipes}, its
+buffers, and its end.
+
+\medskip\noindent\textbf{Part I --- Descriptors.}\par\nopagebreak
+\begin{enumerate}
+\item In \code{pipeline.c}, which descriptor does \code{open("words.txt", ...)} return, and why that one?
+\item After \code{dup2(in, 0)} and \code{close(in)}, what does descriptor 0 refer to? Which \omterm{def:b2:processes-and-system-calls:process}{process} will read it?
+\item In \cref{out:b2:files-pipes-signals:fd}, why does the second \code{open} return 3 again?
+\item Using \cref{out:b2:files-pipes-signals:offsets}, explain why the parent's line lands after the child's in
+\code{shared_offset.c}.
+\item What would \code{shared_offset.c} produce if the child opened \code{log.txt} itself, after the fork?
+\item Which \omterm{def:b2:files-pipes-signals:inode}{inode} fields does \code{ls -l} show in \cref{out:b2:files-pipes-signals:links}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Six processes and five pipes.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item List, for each of the six children of \code{pipeline.c}, its descriptors 0 and 1 just before its \omterm{def:b2:processes-and-system-calls:exec}{exec}.
+\item How many \omterm{def:b2:files-pipes-signals:pipe}{pipe} descriptors does the parent hold, at most, at any moment? Prove it from the code.
+\item Which child sees end of file first, and when? Use \cref{prop:b2:files-pipes-signals:eof}.
+\item Why can \code{sort} print nothing before it has read all its input, while \code{tr} prints as it reads?
+\item Suppose the parent kept every read end until the end. Which stage would then never finish, if any?
+\item The pipeline's status is \code{head}'s. Give a pipeline whose status hides a failure, and say how a shell could
+report it.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Buffering measured.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item State \cref{prop:b2:files-pipes-signals:calls} and check it on every line of
+\cref{out:b2:files-pipes-signals:counts}.
+\item How many reads would $b = 3$ and $b = 99\,999$ give? $b = 100\,000$? $b = 100\,001$?
+\item In \cref{out:b2:files-pipes-signals:times}, compare the ratio of the times for $b = 1$ and $b = 4$ with the
+ratio of the read counts.
+\item Why does the time stop falling beyond a few KiB?
+\item \code{tr} reads its input with a buffer of the library. Estimate its number of reads on \code{words.txt}, 440
+bytes, if the buffer is 4096 bytes.
+\item Why is \code{putc}, one byte at a time, so much faster than \code{write} with $b = 1$? Why is it still slower
+than $b = 4096$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- An early end.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item \code{head -6} exits after six lines. What happens to \code{sort -rn}'s next write if it has more to write?
+\item Use \cref{out:b2:files-pipes-signals:sigpipe} to say how \code{sort} ends in that case, and what status it has.
+\item Why does the shell not print an error message for that death?
+\item A program ignores \code{SIGPIPE} and does not check what \code{write} returns. What does it do after
+\code{head} has exited?
+\item Here, with a 440-byte text, does \code{sort -rn} actually receive \code{SIGPIPE}? Use the \omterm{def:b2:files-pipes-signals:pipe}{pipe}'s capacity.
+\item State the buffer-size law, with the counts it predicts from $b = 1$ to $b = 65\,536$.
+\end{enumerate}
+\end{problem}

@@ -1,0 +1,369 @@
+% Book 3, Year 1, chapter 14 -- dynamic arrays and amortised analysis.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 14.
+% ledger: b1:cpp-vector-amortised
+\chapter{Dynamic Arrays and Amortised Analysis}\label{ch:b1:dynamic-arrays}
+
+A Python list grows by one element at a time, millions of times, and each \code{append} takes about the same short
+time however long the list already is. Yet a list lives in one block of memory, and a block cannot grow in place: when
+it is full, a larger block must be reserved and every element copied into it, which costs time proportional to the
+length. Both statements are true. The way out is to make the copies rare, and to count the cost of a long sequence of
+operations rather than of one: this is amortised analysis, and this chapter builds the growing \omterm{def:b1:pointers-and-arrays:array}{array} on which it
+works, in C, behind an interface that hides how it is made.
+
+\begin{recall}
+A C module is a header, which declares what its users may call, and a \omterm{def:b1:compilation-pipeline:source-file}{source file}, which defines it; the users include
+the header only (\cref{ch:b1:c-modules-make-tests}). \code{malloc} reserves a block on the heap and \code{free} returns
+it (\cref{ch:b1:pointers-and-arrays}). A cost in $\Theta(1)$ is bounded by a constant independent of the \omterm{def:b1:asymptotic-analysis:cost}{input
+size} (\cref{ch:b1:asymptotic-analysis}).
+\end{recall}
+
+\section{Abstract types and implementations}\label{sec:b1:dynamic-arrays:adt}
+
+\begin{definition}[Abstract data type]\label{def:b1:dynamic-arrays:adt}
+An \emph{abstract data type}\index{abstract data type} is a type given by a set of operations and their specification,
+without saying how its values are represented. Its \emph{interface} is the list of the operations with their
+signatures; an \emph{implementation} chooses a representation and writes the operations. Code that uses only the
+interface works unchanged with any implementation that meets the specification.
+\end{definition}
+
+\begin{definition}[Constructor, accessor, transformer]\label{def:b1:dynamic-arrays:operations}
+The operations of an abstract type are of three kinds: a \emph{constructor}\index{constructor (of an abstract type)}
+creates a value of the type, an \emph{accessor}\index{accessor} returns information about a value without changing it,
+and a \emph{transformer}\index{transformer} changes it.
+\end{definition}
+
+\omcode{code/bachelor-1/14-dynamic-arrays/listings/vec.h}{1}{17}{The interface of the \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic
+array}}\label{lst:b1:dynamic-arrays:vec-h}
+
+The declaration \code{typedef struct vec vec;} names a structure without giving its fields: a user can hold a
+\code{vec *} and pass it to the functions, but cannot read or change the fields, which are defined only in the
+implementation. The \omterm{def:b1:compilation-pipeline:compiler}{compiler} enforces the interface. Two files implement it: \code{vec.c}, the growing \omterm{def:b1:pointers-and-arrays:array}{array} of this
+chapter, and \code{fixed.c}, an \omterm{def:b1:pointers-and-arrays:array}{array} of 16 cells that refuses a seventeenth element.
+
+\begin{omfigure}
+\begin{tikzpicture}[b/.style={draw, rounded corners, align=center, font=\small, minimum height=9mm}]
+\node[b, fill=omCode!8, minimum width=3.6cm] (user) at (0,1.8) {\code{vec_demo.c}\\ \scriptsize includes \code{vec.h}
+only};
+\node[b, fill=omDef!15, minimum width=10.6cm, font=\scriptsize] (h) at (0,0.3) {\code{vec.h}: \code{vec_new}, \code{vec_size},
+\code{vec_get}, \code{vec_set}, \code{vec_push}, \code{vec_pop}};
+\node[b, fill=black!4, minimum width=4cm] (v) at (-2.6,-1.4) {\code{vec.c}\\ \scriptsize grows by doubling};
+\node[b, fill=black!4, minimum width=4cm] (f) at (2.6,-1.4) {\code{fixed.c}\\ \scriptsize 16 cells, then an error};
+\draw[-{Stealth}] (user) -- (h); \draw[-{Stealth}] (v) -- (h.south -| v); \draw[-{Stealth}] (f) -- (h.south -| f);
+\node[font=\scriptsize, anchor=west] at (5.6,1.8) {the user};
+\node[font=\scriptsize, anchor=west] at (5.6,0.3) {the interface};
+\node[font=\scriptsize, anchor=west] at (5.6,-1.4) {two implementations};
+\end{tikzpicture}
+\par\smallskip{\small An abstract type: the user depends on the interface only, and either implementation can be
+linked behind it. The fields of \code{struct vec} differ between the two files.}
+\end{omfigure}
+
+\omoutput{code/bachelor-1/14-dynamic-arrays/outputs/swap_impl.txt}{The same demonstration linked with each
+implementation: the fixed one stops at its \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity}.}\label{out:b1:dynamic-arrays:swap}
+
+\section{The doubling array}\label{sec:b1:dynamic-arrays:doubling}
+
+\begin{definition}[Dynamic array, size and capacity]\label{def:b1:dynamic-arrays:dynamic-array}
+A \emph{dynamic array}\index{dynamic array} stores a sequence in a block of memory larger than needed. Its
+\emph{size}\index{size (of a dynamic array)} is the number of elements, its \emph{capacity}\index{capacity (of a dynamic
+array)} the number of cells in the block. Adding an element to a full \omterm{def:b1:pointers-and-arrays:array}{array} first moves the elements to a larger block,
+whose capacity is a constant factor larger.
+\end{definition}
+
+\begin{definition}[Representation invariant]\label{def:b1:dynamic-arrays:rep-invariant}
+A \emph{representation invariant}\index{representation invariant} is a condition on the fields of an implementation
+that every operation may assume on entry and must restore before returning. It says which values of the fields
+represent a value of the abstract type.
+\end{definition}
+
+\omcodes{code/bachelor-1/14-dynamic-arrays/listings/vec.c}{6-25,49-58}{The doubling \omterm{def:b1:pointers-and-arrays:array}{array}: the representation, the
+resize, and the two operations that change the \omterm{def:b1:dynamic-arrays:dynamic-array}{size}}\label{lst:b1:dynamic-arrays:vec}
+
+The \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity} doubles when a push finds the \omterm{def:b1:pointers-and-arrays:array}{array} full, and halves when a pop leaves it a quarter full. Shrinking at a
+half would be a mistake (\cref{sec:b1:dynamic-arrays:shrinking}). The function \code{resize} copies every element and
+counts the copies, so that the experiments can report them.
+
+\omoutput[1-5,8-10,16-24]{code/bachelor-1/14-dynamic-arrays/outputs/vec_demo.txt}{Seventeen pushes, then the pops
+that shrink the \omterm{def:b1:pointers-and-arrays:array}{array}.}\label{out:b1:dynamic-arrays:demo}
+
+\section{Amortised cost}\label{sec:b1:dynamic-arrays:amortised}
+
+A push usually costs one write; the push that finds the \omterm{def:b1:pointers-and-arrays:array}{array} full costs one write plus as many copies as there are
+elements. The worst case of one push is therefore $\Theta(n)$, which is true and misleading: such pushes are rare.
+
+\begin{definition}[Amortised cost]\label{def:b1:dynamic-arrays:amortised}
+Operations on a data structure have \emph{amortised cost}\index{amortised cost} $a$ if every sequence of $m$
+operations, starting from the empty structure, costs at most $a \cdot m$ in total. The bound concerns the worst sequence,
+not an average over inputs: no probability is involved.
+\end{definition}
+
+\begin{definition}[Aggregate, accounting and potential methods]\label{def:b1:dynamic-arrays:methods}
+Three methods prove amortised bounds. The \emph{aggregate method}\index{aggregate method} bounds the total cost of any
+sequence directly. The \emph{accounting method}\index{accounting method} charges each operation a fixed number of
+credits, spends one credit per unit of actual cost, and shows that the credits stored never become negative. The
+\emph{potential method} chooses a \emph{potential function}\index{potential function} $\Phi$ from the states of the
+structure to the reals, and calls $c_i + \Phi_i - \Phi_{i-1}$ the \omterm{def:b1:dynamic-arrays:amortised}{amortised cost} of the $i$-th operation, of actual
+cost $c_i$; if $\Phi_m \geq \Phi_0$ after every sequence, the total actual cost is at most the total \omterm{def:b1:dynamic-arrays:amortised}{amortised cost}.
+\end{definition}
+
+The last claim is a telescoping sum: $\sum_i (c_i + \Phi_i - \Phi_{i-1}) = \sum_i c_i + \Phi_m - \Phi_0 \geq \sum_i
+c_i$.
+
+\begin{proposition}[Pushes on the doubling array]\label{prop:b1:dynamic-arrays:pushes}
+Starting from an empty \omterm{def:b1:pointers-and-arrays:array}{array} of \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity} 1, $n$ pushes make fewer than $2n$ copies, and cost fewer than $3n$ writes and
+copies in all: a push has \omterm{def:b1:dynamic-arrays:amortised}{amortised cost} 3.
+\end{proposition}
+
+\begin{proof}
+\emph{Aggregate}: the copies happen when the \omterm{def:b1:dynamic-arrays:dynamic-array}{size} reaches $1, 2, 4, \dots, 2^j$ with $2^j < n$, and copy that many
+elements: $1 + 2 + \dots + 2^j = 2^{j+1} - 1 < 2n$. With the $n$ writes, the total is below $3n$.
+
+\emph{Accounting}: charge 3 credits per push. One pays its write; two are stored with the new element. When an \omterm{def:b1:pointers-and-arrays:array}{array}
+of \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity} $c$ fills up, the $c/2$ elements pushed since the last resize have stored $c$ credits, which pay for the $c$
+copies. The store never goes negative.
+
+\emph{Potential}: let $\Phi = 2 \cdot \text{size} - \text{capacity}$, which is $-1$ for the empty \omterm{def:b1:pointers-and-arrays:array}{array} and at least 0
+after any push. A push without resize costs 1 and raises $\Phi$ by 2: amortised 3. A push on a full \omterm{def:b1:pointers-and-arrays:array}{array} of \omterm{def:b1:dynamic-arrays:dynamic-array}{size} $s$
+costs $1 + s$, and $\Phi$ goes from $2s - s = s$ to $2(s + 1) - 2s = 2$: amortised $1 + s + 2 - s = 3$.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=10cm, height=5.6cm, xmin=0.3, xmax=17.7, ymin=0, ymax=34, xtick={1,2,3,5,9,17},
+  xlabel={push number}, legend pos=outer north east, legend style={font=\small}, tick label style={font=\small}]
+\addplot[const plot, thick, omDef] table[x=i, y=capacity]
+  {code/bachelor-1/14-dynamic-arrays/figures/copies.dat}; \addlegendentry{capacity}
+\addplot[thick, omCode, mark=*, mark size=1.2pt] table[x=i, y=size]
+  {code/bachelor-1/14-dynamic-arrays/figures/copies.dat}; \addlegendentry{size}
+\addplot[ycomb, very thick, omThm] table[x=i, y=cost]
+  {code/bachelor-1/14-dynamic-arrays/figures/copies.dat}; \addlegendentry{actual cost of the push}
+\addplot[thick, dashed] table[x=i, y=amortised]
+  {code/bachelor-1/14-dynamic-arrays/figures/copies.dat}; \addlegendentry{amortised cost: 3}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Seventeen pushes on the doubling \omterm{def:b1:pointers-and-arrays:array}{array}, from \cref{out:b1:dynamic-arrays:demo}. The \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity}
+doubles at pushes 2, 3, 5, 9 and 17, where a push costs one write and as many copies as there are elements; every other
+push costs 1. The spikes double, but so does the gap between them.}
+\end{omfigure}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=12cm, height=4.6cm, xmin=0.3, xmax=17.7, ymin=-2, ymax=18, xtick={1,2,3,5,9,17},
+  xlabel={push number}, ylabel={$\Phi$}, tick label style={font=\small}]
+\addplot[thick, omDef, mark=*, mark size=1.2pt] table[x=i, y=phi]
+  {code/bachelor-1/14-dynamic-arrays/figures/copies.dat};
+\addplot[only marks, mark=*, mark size=1.2pt, omDef] coordinates {(0.5,-1)};
+\node[font=\scriptsize, align=left, anchor=north west] at (axis cs:1,17.5) {a cheap push: actual 1, $\Delta\Phi = +2$\\a
+resize at size $s$: actual $1 + s$,\\$\Delta\Phi = 2 - s$; both sum to 3};
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The potential $\Phi = 2 \cdot \text{size} - \text{capacity}$ along the same pushes: it rises by 2
+at each cheap push, storing credit, and falls to 2 at each resize, spending it on the copies. The first dot is the empty \omterm{def:b1:pointers-and-arrays:array}{array}, $\Phi = -1$.}
+\end{omfigure}
+
+The same analysis applies to any \omterm{def:b1:dynamic-memory:growth}{growth factor} $r > 1$, with $r/(r - 1)$ copies per push in place of 2
+(\cref{exo:b1:dynamic-arrays:10}); but not to a growth by a constant number of cells, which makes the copies quadratic.
+C++'s \code{std::vector} specifies \code{push_back} as amortised constant time, which rules out a constant
+increment.
+
+\omoutput{code/bachelor-1/14-dynamic-arrays/outputs/copies.txt}{Element copies for $n$ pushes, and per push, for
+growth by 1.5, by 2 and by 16 cells.}\label{out:b1:dynamic-arrays:copies}
+
+\omoutput{code/bachelor-1/14-dynamic-arrays/outputs/timing.txt}{The same three policies timed on the author's laptop
+(best of three, nanoseconds per push).}\label{out:b1:dynamic-arrays:timing}
+
+Copies per push oscillate with $n$ (they depend on where $n$ falls between two resizes) but stay below 2 for doubling and
+below 3 for the factor 1.5, as the bound says; with 16 more cells each time, they grow like $n/32$. The times agree: the
+growing policies cost a fraction of a nanosecond per push, the increment ten times more at each fourfold increase of $n$.
+
+The binary counter is the second classic example. A counter of $K$ bits is incremented by turning its trailing 1s into
+0s and the next 0 into a 1. An increment can flip all $K$ bits, but bit 0 flips at every increment, bit 1 at every
+second, bit $j$ at every $2^j$-th: $n$ increments make fewer than $n(1 + \frac12 + \frac14 + \cdots) = 2n$ flips
+(\cref{exo:b1:dynamic-arrays:8,exo:b1:dynamic-arrays:9}).
+
+\omcode{code/bachelor-1/14-dynamic-arrays/listings/counter.c}{6}{11}{An increment, counting the flipped
+bits}\label{lst:b1:dynamic-arrays:counter}
+
+\omoutput[1-7]{code/bachelor-1/14-dynamic-arrays/outputs/counter.txt}{Total flips for $n$ increments from
+zero.}\label{out:b1:dynamic-arrays:counter}
+
+\subsection*{Shrinking}\label{sec:b1:dynamic-arrays:shrinking}
+
+An \omterm{def:b1:pointers-and-arrays:array}{array} that only grows wastes memory after many pops. Halving the \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity} when the \omterm{def:b1:pointers-and-arrays:array}{array} is half full looks
+symmetric with doubling, and is a trap: at a \omterm{def:b1:dynamic-arrays:dynamic-array}{size} just above a power of 2, a push doubles the \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity}, a pop halves it,
+and each copies every element. Shrinking at a quarter leaves room in both directions after each resize.
+
+\omoutput{code/bachelor-1/14-dynamic-arrays/outputs/thrash.txt}{After filling to 1024 elements, 1000 alternating pushes
+and pops under each shrinking policy.}\label{out:b1:dynamic-arrays:thrash}
+
+\section{The circular buffer}\label{sec:b1:dynamic-arrays:ring}
+
+A queue takes elements at the front and adds them at the back. In an \omterm{def:b1:pointers-and-arrays:array}{array}, taking the front would shift every element,
+or leave the used part drifting to the right; a \omterm{def:b1:dynamic-arrays:ring}{circular buffer} lets it wrap around.
+
+\begin{definition}[Circular buffer]\label{def:b1:dynamic-arrays:ring}
+A \emph{circular buffer}\index{circular buffer} stores a queue in an \omterm{def:b1:pointers-and-arrays:array}{array} of \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity} $c$ with a head index $h$ and a
+count $k$: the queue is $a[h], a[(h + 1) \bmod c], \dots, a[(h + k - 1) \bmod c]$. Taking the front advances $h$ modulo
+$c$; adding at the back writes $a[(h + k) \bmod c]$.
+\end{definition}
+
+\omcode{code/bachelor-1/14-dynamic-arrays/listings/ring.c}{34}{51}{Adding and taking, with growth when
+full}\label{lst:b1:dynamic-arrays:ring}
+
+\omoutput{code/bachelor-1/14-dynamic-arrays/outputs/ring_demo.txt}{A queue in five cells: the front, in brackets, moves
+right, the back wraps to the start, and the eighth element makes it grow.}\label{out:b1:dynamic-arrays:ring}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=8mm, y=8mm]
+\foreach \v/\i in {6/0, ./1, 3/2, 4/3, 5/4} {
+  \draw (\i,0) rectangle (\i+1,1); \node[font=\small] at (\i+0.5,0.5) {\v};}
+\fill[omDef!25] (2,0) rectangle (3,1); \node[font=\small] at (2.5,0.5) {3};
+\draw[-{Stealth}, thick, omThm] (2.5,1.7) -- (2.5,1.05); \node[font=\scriptsize, above] at (2.5,1.7) {head $h = 2$};
+\draw[-{Stealth}, thick, omCode] (1.1,1.7) -- (1.5,1.05); \node[font=\scriptsize, anchor=south east] at (1.3,1.7)
+{next write $(h + k) \bmod 5 = 1$};
+\draw[-{Stealth}, dashed] (5.05,0.5) .. controls (6.2,0.5) and (6.2,-1.6) .. (2.5,-1.6) .. controls (-1.2,-1.6) and
+(-1.2,0.5) .. (-0.05,0.5);
+\node[font=\scriptsize] at (2.5,-2.0) {$k = 4$: the queue is 3, 4, 5, 6};
+\begin{scope}[xshift=7.2cm]
+\foreach \v/\i in {3/0, 4/1, 5/2, 6/3, 7/4, 8/5, ./6, ./7, ./8, ./9} {
+  \draw (\i*0.7,0) rectangle (\i*0.7+0.7,1); \node[font=\small] at (\i*0.7+0.35,0.5) {\v};}
+\fill[omDef!25] (0,0) rectangle (0.7,1); \node[font=\small] at (0.35,0.5) {3};
+\node[font=\scriptsize, above] at (3.5,1.1) {after growing: copied in queue order, $h = 0$};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b1:dynamic-arrays:ring}{circular buffer} before and after it grows. On the left, the queue 3, 4, 5, 6 has wrapped: it
+starts at index 2 and continues at index 0. Growing copies the queue in order to the start of a larger \omterm{def:b1:pointers-and-arrays:array}{array}.}
+\end{omfigure}
+
+Keeping the count rather than a second index matters: with a head and a tail index only, the full and the empty
+buffer both have $h = t$ (\cref{exo:b1:dynamic-arrays:5}). Growth copies the elements in queue order, from the head,
+not in the order of the cells: copying the cells as they are would break the wrap-around.
+
+\begin{inpractice}
+Python's \code{list} and C++'s \code{std::vector} are \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic arrays}; Python's \code{collections.deque} and the
+buffers between a producer and a consumer, from keyboard input to network cards, are queues in fixed blocks with
+wrapping indices. A program that knows how many elements it will push can reserve the \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity} once and avoid every
+copy.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b1:dynamic-arrays:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:dynamic-arrays:1}
+Predict the three lines this program prints, with the doubling \omterm{def:b1:pointers-and-arrays:array}{array} of \cref{lst:b1:dynamic-arrays:vec}.
+\omcode{code/bachelor-1/14-dynamic-arrays/listings/exo_ops.c}{6}{18}{Pushes and pops}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:dynamic-arrays:2}
+How many element copies do 10 pushes make on the doubling \omterm{def:b1:pointers-and-arrays:array}{array}, starting from \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity} 1? And 10 pushes when each
+resize adds 2 cells?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:dynamic-arrays:3}
+A \omterm{def:b1:dynamic-arrays:ring}{circular buffer} of \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity} 4 starts empty. Draw its cells, head and count after: put 1, put 2, put 3, take, take,
+put 4, put 5, put 6, take.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:dynamic-arrays:4}
+How many bits do 8 increments flip, starting from 0? List the flips of each increment.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:dynamic-arrays:5}
+This buffer keeps a head and a tail index. Explain the output, and give two ways to repair it.
+\omcode{code/bachelor-1/14-dynamic-arrays/listings/exo_ring_bug.c}{4}{19}{Head and tail only}
+\omoutput[2-3]{code/bachelor-1/14-dynamic-arrays/outputs/exo_ring_bug.txt}{Four puts, and nothing to take.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:dynamic-arrays:6}
+In \cref{out:b1:dynamic-arrays:thrash}, explain the 1024 copies per operation of the half policy, and the one copy per
+operation of the quarter policy. Give a sequence of $m$ operations that costs $\Theta(m^2)$ copies under the half
+policy.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:dynamic-arrays:7}
+Write an abstract type ``stack of int'' (\code{stack.h}, \code{stack.c}) on top of \code{vec.h}, with a \omterm{def:b1:dynamic-arrays:operations}{constructor}, two
+\omterm{def:b1:dynamic-arrays:operations}{accessors} (\code{stack_empty}, \code{stack_top}) and two \omterm{def:b1:dynamic-arrays:operations}{transformers}, and test it, including on a bracket checker.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:dynamic-arrays:8}
+By the \omterm{def:b1:dynamic-arrays:methods}{aggregate method}, prove that $n$ increments of a binary counter, from 0, flip fewer than $2n$ bits.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:dynamic-arrays:9}
+Prove the same bound by the \omterm{def:b1:dynamic-arrays:methods}{accounting method}: how many credits per increment, and where are they stored?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:dynamic-arrays:10}
+The \omterm{def:b1:pointers-and-arrays:array}{array} grows by a factor $r > 1$ when full (\omterm{def:b1:dynamic-arrays:dynamic-array}{capacity} $c$ becomes $\lceil rc \rceil$). Prove with a potential that $n$
+pushes make at most about $\frac{r}{r - 1} n$ copies, and compare with \cref{out:b1:dynamic-arrays:copies}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:dynamic-arrays:11}
+With growth $\times 2$ and shrinking to half when a quarter full, prove that any sequence of $m$ pushes and pops from the
+empty \omterm{def:b1:pointers-and-arrays:array}{array} makes at most $2m$ copies. Use $\Phi = 2s - c$ when $s \geq c/2$ and $\Phi = c/2 - s$ when $s < c/2$, for \omterm{def:b1:dynamic-arrays:dynamic-array}{size}
+$s$ and \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity} $c$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:dynamic-arrays:12}
+Write a \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic array} of elements of any type: the \omterm{def:b1:dynamic-arrays:operations}{constructor} takes the \omterm{def:b1:dynamic-arrays:dynamic-array}{size} of an element in bytes, push copies an
+element from an address, and \code{gvec_at} returns the address of an element. Test it with \code{double} and with a
+structure.
+\end{exercise}
+
+\section{Problem: The binary counter and the elastic array}\label{sec:b1:dynamic-arrays:problem}
+
+\begin{problem}[{Weekend problem --- The binary counter and the elastic array}]\label{pb:b1:dynamic-arrays:1}
+A program tries every sequence of $m$ pushes and pops on the policy of \code{vec.c} (double when full, halve when a
+quarter full), for even $m$ up to 26, and prints the largest number of copies with one sequence that makes them.
+\omcode{code/bachelor-1/14-dynamic-arrays/listings/elastic.c}{5}{24}{Copies of one sequence of
+operations}\label{lst:b1:dynamic-arrays:elastic}
+\omoutput{code/bachelor-1/14-dynamic-arrays/outputs/elastic.txt}{The worst sequences found.}\label{out:b1:dynamic-arrays:elastic}
+\omoutput[8-8]{code/bachelor-1/14-dynamic-arrays/outputs/counter.txt}{The counter of \cref{lst:b1:dynamic-arrays:counter},
+with a decrement, alternating around $2^{15}$.}\label{out:b1:dynamic-arrays:counter-dec}
+
+\medskip\noindent\textbf{Part I --- The counter.}
+\begin{enumerate}
+\item Show that an increment from $x$ flips $t + 1$ bits, where $t$ is the number of trailing 1s of $x$ (when $t < K$).
+\item How many of the integers $0 \leq x < 2^K$ have exactly $t$ trailing 1s?
+\item Show that bit $j$ flips exactly $\lfloor n/2^j \rfloor$ times in $n$ increments from 0.
+\item Deduce that the total is $\sum_j \lfloor n/2^j \rfloor < 2n$, and that it equals $2n - 1$ when $n$ is a power of 2.
+\item Check the table of \cref{out:b1:dynamic-arrays:counter}.
+\item What is the worst case of a single increment, and why does it not contradict the amortised bound?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The doubling array, three ways.}
+\begin{enumerate}[resume]
+\item Count exactly the copies made by $n$ pushes from \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity} 1, as a function of $n$.
+\item Write the accounting argument for pushes with 3 credits each, and say why 2 credits would not do.
+\item Check that $\Phi = 2 \cdot \text{size} - \text{capacity}$ is at least 0 after every push.
+\item Give the \omterm{def:b1:dynamic-arrays:amortised}{amortised cost} of each push of \cref{out:b1:dynamic-arrays:demo} with this $\Phi$.
+\item With $n$ pushes, what is the largest \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity}, and so the largest unused memory, as a fraction of the \omterm{def:b1:dynamic-arrays:dynamic-array}{size}?
+\item Which of the three methods would you use to explain the result to a colleague, and why?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Shrinking.}
+\begin{enumerate}[resume]
+\item With shrinking at a half, describe the state after filling to $2^k$ elements, then one push, then one pop.
+\item Deduce that $m$ alternating operations after the fill cost $\Theta(m \cdot 2^k)$ copies.
+\item With shrinking at a quarter, show that after any resize the \omterm{def:b1:dynamic-arrays:dynamic-array}{size} is exactly half the new \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity}.
+\item Deduce that between two resizes at least a quarter of the \omterm{def:b1:dynamic-arrays:dynamic-array}{capacity}'s worth of operations happen.
+\item Read the table of \cref{out:b1:dynamic-arrays:elastic}: which sequences are the worst, and what is the largest
+ratio of copies to operations?
+\item Show that $2^k + 1$ pushes make $2^{k+1} - 1$ copies, so that the ratio approaches 2.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- A decrement breaks the bound.}
+\begin{enumerate}[resume]
+\item Write the decrement of the counter, and give the flips of a decrement from $2^j$.
+\item From $2^{15} - 1$, alternate increment and decrement: how many flips per operation? Check with
+\cref{out:b1:dynamic-arrays:counter-dec}.
+\item Deduce that $n$ operations among increments and decrements can cost $\Theta(n \log n)$ flips when the counter has
+$\log_2 n$ bits.
+\item With digits $-1$, 0 and 1 in base 2 (each number then has several representations), an increment and a decrement
+can each be made to change a bounded number of digits in the amortised sense. Why does this not contradict the previous
+question?
+\item Is the amortised bound of the \omterm{def:b1:pointers-and-arrays:array}{array}, $2m$ copies, still valid for any mix of pushes and pops? Why do pops not break
+it as decrements break the counter's?
+\item State the named result of the problem, \emph{the elastic \omterm{def:b1:pointers-and-arrays:array}{array} theorem}: the constant $c$ with at most $c \cdot m$
+copies for any $m$ operations, why it is the smallest, and the worst ratios found by the program.
+\end{enumerate}
+\end{problem}
+

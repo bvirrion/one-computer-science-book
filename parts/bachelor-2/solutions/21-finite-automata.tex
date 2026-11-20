@@ -1,0 +1,173 @@
+% Solutions of Book 4, chapter 21 (finite automata).
+\section*{Chapter \ref{ch:b2:finite-automata} --- Finite Automata}
+
+\begin{solution}{exo:b2:finite-automata:1}
+\omoutput{code/bachelor-2/21-finite-automata/outputs/exo_runs.txt}{The five runs.}
+\code{0.0} and \code{1E+10} are accepted. \code{-.5} stops in state 1: after a sign, only a digit may come.
+\code{7e3.5} stops in state 7: the exponent has no point. \code{+} ends in state 1, which is not accepting.
+\end{solution}
+
+\begin{solution}{exo:b2:finite-automata:2}
+\omoutput{code/bachelor-2/21-finite-automata/outputs/exo_complement.txt}{The automaton, its swapped version and the
+true complement.}
+The swapped automaton accepts only $\varepsilon$: every other \omterm{def:b2:finite-automata:word}{word} either ends in state 1, now rejecting, or has no
+run. The \omterm{def:b2:finite-automata:word}{words} without a run in $ab^*$'s automaton, such as $b$, $ba$ or $aab$, are rejected by both, though the
+complement must accept them. Completing first with a sink state, then swapping, gives the complement
+(\cref{prop:b2:finite-automata:closure}).
+\end{solution}
+
+\begin{solution}{exo:b2:finite-automata:3}
+\omoutput{code/bachelor-2/21-finite-automata/outputs/exo_mult3.txt}{The three states, and a check.}
+The state is the value read so far, modulo 3: reading a bit $c$ after a \omterm{def:b2:finite-automata:factor}{prefix} of value $x$ gives the value $2x + c$,
+so state $r$ goes to $(2r + c) \bmod 3$. By induction on the length, $\delta^*(0, w) = \mathrm{val}(w) \bmod 3$: true
+for $\varepsilon$, of value 0, and kept by each step since $(2x + c) \bmod 3 = (2(x \bmod 3) + c) \bmod 3$. So $w$ is
+accepted, ending in state 0, exactly when its value is a multiple of 3.
+\end{solution}
+
+\begin{solution}{exo:b2:finite-automata:4}
+\omoutput{code/bachelor-2/21-finite-automata/outputs/exo_count.txt}{$c_0$ to $c_{15}$, computed from the automaton.}
+States: 0, the last letter is not $b$ (or no letter yet); 1, the last letter is $b$; 2, $bb$ has been seen, a sink.
+States 0 and 1 accept. Let $x_n$ and $y_n$ count the \omterm{def:b2:finite-automata:word}{words} of length $n$ ending in states 0 and 1. Then $x_{n+1} =
+x_n + y_n$ (an $a$ from either) and $y_{n+1} = x_n$ (a $b$ from state 0 only), so $c_n = x_n + y_n$ satisfies $c_{n+1}
+= x_{n+1} + y_{n+1} = c_n + x_n = c_n + c_{n-1}$, with $c_0 = 1$ and $c_1 = 2$: the Fibonacci numbers.
+\end{solution}
+
+\begin{solution}{exo:b2:finite-automata:5}
+\omoutput{code/bachelor-2/21-finite-automata/outputs/exo_subset.txt}{The three reachable sets.}
+From $\{0\}$, $a$ leads to $\{0, 1\}$ and $b$ back to $\{0\}$; from $\{0, 1\}$, $a$ stays and $b$ leads to $\{0,
+2\}$, accepting; from $\{0, 2\}$, $a$ leads to $\{0, 1\}$ and $b$ to $\{0\}$. Only 3 of the 8 subsets are reachable.
+The \omterm{def:b2:finite-automata:language}{language} is the \omterm{def:b2:finite-automata:word}{words} that end with $ab$.
+\end{solution}
+
+\begin{solution}{exo:b2:finite-automata:6}
+\omoutput{code/bachelor-2/21-finite-automata/outputs/exo_closure_bug.txt}{One spontaneous step against the
+closure.}
+From $\{0\}$, one step adds 1 but not 2, which is two spontaneous steps away. So $\varepsilon$, $a$ and $c$ are
+wrongly rejected: each needs a run that passes from 0 to 2 without reading anything. \omterm{def:b2:finite-automata:word}{Words} that read a $b$ pass
+through state 1, from which one step reaches 2, and come out right. The closure is reachability in a graph, and must
+loop until no new state appears, as \cref{lst:b2:finite-automata:closure} does.
+\end{solution}
+
+\begin{solution}{exo:b2:finite-automata:7}
+\omcode{code/bachelor-2/21-finite-automata/exercises/factor_aba.rs}{1}{17}{Searching for $aba$}
+State $i \le 2$ means that the longest \omterm{def:b2:finite-automata:factor}{suffix} of what has been read that is a \omterm{def:b2:finite-automata:factor}{prefix} of $aba$ has length $i$; state 3
+means $aba$ has appeared. From state 2 ($ab$), a $b$ gives $abb$, whose \omterm{def:b2:finite-automata:factor}{suffixes} $bb$, $b$, $\varepsilon$ are not
+\omterm{def:b2:finite-automata:factor}{prefixes} of $aba$ except $\varepsilon$: back to 0. From state 1 ($a$), an $a$ gives $aa$, whose longest such \omterm{def:b2:finite-automata:factor}{suffix} is
+$a$: state 1. The test compares it with \code{contains("aba")} on every \omterm{def:b2:finite-automata:word}{word} up to length 10. The same idea, for any
+pattern, is the automaton of the text-search algorithms of \cref{ch:b2:text-algorithms}.
+\end{solution}
+
+\begin{solution}{exo:b2:finite-automata:8}
+Take a DFA for $L$ and reverse every transition: $(p, a, q)$ becomes $(q, a, p)$. Make the \omterm{def:b2:finite-automata:dfa}{accepting states} the start
+states, and the old start state the only \omterm{def:b2:finite-automata:dfa}{accepting state}. This is an NFA; a run of it on $a_n \cdots a_1$ from some
+$q_n \in F$ to $q_0$ is exactly a run of the DFA on $a_1 \cdots a_n$ read backwards. So the NFA recognises the
+reverses of the \omterm{def:b2:finite-automata:word}{words} of $L$, and by \cref{thm:b2:finite-automata:subset-correct} so does a DFA.
+\end{solution}
+
+\begin{solution}{exo:b2:finite-automata:9}
+\omcode{code/bachelor-2/21-finite-automata/exercises/multiples.rs}{1}{12}{The multiples of $n$ in base $b$}
+As in \cref{exo:b2:finite-automata:3}: reading a digit $d$ after a value $x$ gives $bx + d$, so the state $x \bmod n$
+goes to $(b\,(x \bmod n) + d) \bmod n$; the start and the only \omterm{def:b2:finite-automata:dfa}{accepting state} are 0. The test checks five pairs
+$(n, b)$, $n = 1$ included, on every number below 2000.
+\end{solution}
+
+\begin{solution}{exo:b2:finite-automata:10}
+Let $u \ne v$ in $S$, and suppose a DFA $A$ for $L$ has $\delta^*(q_0, u) = \delta^*(q_0, v)$, both defined. For the
+\omterm{def:b2:finite-automata:word}{word} $z$ that tells them apart, \cref{prop:b2:finite-automata:extended} gives $\delta^*(q_0, uz) = \delta^*(q_0,
+vz)$, so $uz$ and $vz$ are both accepted or both rejected: a contradiction. If one of the two runs is undefined, $u$ or
+$v$ has no extension in $L$, and at most one \omterm{def:b2:finite-automata:word}{word} of $S$ can be like that (two such \omterm{def:b2:finite-automata:word}{words} could not be told apart). So
+the \omterm{def:b2:finite-automata:word}{words} of $S$ lead to $|S|$ different states, or $|S| - 1$ states and one undefined run; the completed automaton has
+at least $|S|$ states, and the bound holds for every \omterm{def:b2:finite-automata:complete}{complete} DFA. For the multiples of 3, $S = \{\varepsilon, 1, 10\}$,
+of values 0, 1 and 2: appending $\varepsilon$ separates $\varepsilon$ from the others, and appending $1$ separates $1$
+(value 3, a multiple) from $10$ (value 5).
+\end{solution}
+
+\begin{solution}{exo:b2:finite-automata:11}
+\omcode{code/bachelor-2/21-finite-automata/listings/simulate_vs_determinise.rs}{7}{27}{Simulation with the set of
+states as bits}
+For each state and letter, the set of successors is precomputed as a mask. A step ORs the masks of the states in the
+current set, found by \code{trailing_zeros} and cleared one by one. \cref{out:b2:finite-automata:measured} gives about
+5 to 8 ns per letter, against 100 to 180 with ordered sets, and against a DFA that wins for small $k$ but whose 65\,536
+states at $k = 16$ make each lookup a cache miss.
+\end{solution}
+
+\begin{solution}{exo:b2:finite-automata:12}
+Take a \omterm{def:b2:finite-automata:trim}{trim} DFA for $L$ (\cref{prop:b2:finite-automata:trim}), and make every state accepting. If $u$ is a \omterm{def:b2:finite-automata:factor}{prefix} of
+a \omterm{def:b2:finite-automata:word}{word} $uv \in L$, the run on $uv$ exists, so the run on $u$ exists and ends in a state of the \omterm{def:b2:finite-automata:trim}{trim automaton}:
+accepted. Conversely, if the run on $u$ ends in a state $q$, then $q$ is \omterm{def:b2:finite-automata:trim}{co-accessible}, so some $v$ leads from $q$ to
+an \omterm{def:b2:finite-automata:dfa}{accepting state}, and $uv \in L$. If $L$ is empty, the \omterm{def:b2:finite-automata:trim}{trim automaton} has no state, and the \omterm{def:b2:finite-automata:language}{language} of \omterm{def:b2:finite-automata:factor}{prefixes} is
+empty too.
+\end{solution}
+
+\begin{solution}{pb:b2:finite-automata:1}
+\textbf{1.} $2^{10} = 1024$; $2^{11} - 1 = 2047$ of length at most 10.
+
+\textbf{2.} \omterm{def:b2:finite-automata:factor}{Prefix} $sl$, \omterm{def:b2:finite-automata:factor}{suffix} $sl$; \omterm{def:b2:finite-automata:factor}{factors} of length 2: $sl$, $ll$, $ls$.
+
+\textbf{3.} $ss$ is a \omterm{def:b2:finite-automata:factor}{subword} (delete both $l$'s) but not a \omterm{def:b2:finite-automata:factor}{factor}.
+
+\textbf{4.} The messages that contain at least one long flash; the messages in which short flashes come in pairs
+(every maximal block of $s$ has even length).
+
+\textbf{5.} $L^* \subseteq L^* L^*$ since $\varepsilon \in L^*$; and a concatenation of $i$ \omterm{def:b2:finite-automata:word}{words} of $L$ followed by
+$j$ \omterm{def:b2:finite-automata:word}{words} of $L$ is a concatenation of $i + j$ of them.
+
+\textbf{6.} No: $ls$ is in $\{s, l\}^*$ but not in $s^* l^*$.
+
+\textbf{7.} States $E$ (even, start, accepting) and $O$; $l$ swaps them, $s$ keeps them.
+
+\textbf{8.} States 0, 1, 2 (the number of trailing $s$, all accepting) and a sink 3: $s$ moves $i$ to $i + 1$ (2 to
+3), $l$ moves 0, 1, 2 to 0.
+
+\textbf{9.} 8 states; accepting: $(E, 0)$, $(E, 1)$, $(E, 2)$.
+
+\textbf{10.} $(E, 3)$ and $(O, 3)$, the sink pairs, cannot reach acceptance; all states are \omterm{def:b2:finite-automata:trim}{accessible} (from the
+start, $sss$ and $lsss$ reach the two sink pairs). The \omterm{def:b2:finite-automata:trim}{trim automaton} keeps 6 states.
+
+\textbf{11.} $slslss$: $(E,0) \to (E,1) \to (O,0) \to (O,1) \to (E,0) \to (E,1) \to (E,2)$, accepted. $lssslsl$:
+after $lsss$ the run is in $(O, 3)$, rejected.
+
+\textbf{12.} Writing $e_i(n)$ and $o_i(n)$ for the \omterm{def:b2:finite-automata:word}{words} of length $n$ ending in $(E, i)$ and $(O, i)$:
+$e_0(n+1) = o_0(n) + o_1(n) + o_2(n)$ and $o_0(n+1) = e_0(n) + e_1(n) + e_2(n)$ (an $l$ switches the parity), and
+$e_{i+1}(n+1) = e_i(n)$, $o_{i+1}(n+1) = o_i(n)$ for $i = 0, 1$. The valid messages of lengths 0 to 6 are 1, 1, 2, 3,
+7, 12, 22.
+
+\textbf{13.} States 0 to 4: 0 loops on $s$ and $l$, $0 \xrightarrow{l} 1$, then $i \xrightarrow{s, l} i + 1$ up to 4,
+accepting.
+
+\textbf{14.} Which of the last four flashes were long: the set $\{0\} \cup T$, where $T$ holds the positions, among
+the last four, of the long ones.
+
+\textbf{15.} $2^4 = 16$ states; the start state is $\{0\}$.
+
+\textbf{16.} $lsss$ and $ssss$: the \omterm{def:b2:finite-automata:factor}{suffix} $\varepsilon$ tells them apart, since the first has a long flash fourth
+from the end.
+
+\textbf{17.} For $k = 4$, the DFA has 16 states and its table fits in the caches: in
+\cref{out:b2:finite-automata:measured} it runs at about 4 ns a flash, a little faster than the simulation by bits.
+The simulation wins only for large $k$.
+
+\textbf{18.} The flashes arrive one at a time and the harbour must react as they come; a backward automaton would
+need the whole message first. (Read backwards, the condition concerns the fourth flash from the start, which a
+5-state DFA checks.)
+
+\textbf{19.} $k + 1$ for the NFA, $2^k$ for the DFA (\cref{thm:b2:finite-automata:blowup}).
+
+\textbf{20.} The $2^k$ messages of length $k$: any two differ first at some position $i$, and the \omterm{def:b2:finite-automata:factor}{suffix} $s^i$ puts
+that flash $k$-th from the end, so one message becomes accepted and the other not; by
+\cref{exo:b2:finite-automata:10}, every DFA has at least $2^k$ states.
+
+\textbf{21.} No. Take the pairs $x_i = l^i$, $y_i = l^{k-i}$ for $i = 0, \dots, k$: $x_i y_i = l^k$ is accepted, so an
+accepting run passes, after $x_i$, through some state $q_i$. If $q_i = q_j$ with $i < j$, the run on $x_i$ followed by
+the rest of the run on $y_j$ accepts $l^{i + k - j}$, which has fewer than $k$ letters and is not in the \omterm{def:b2:finite-automata:language}{language}. So
+the $k + 1$ states $q_i$ are distinct.
+
+\textbf{22.} At most $16 \times 6 = 96$ pairs, of which only the \omterm{def:b2:finite-automata:trim}{accessible} ones need to be built.
+
+\textbf{23.} It counts the states reached by the $2^k$ \omterm{def:b2:finite-automata:word}{words} of length $k$, and checks, for each of the pairs, that
+the \omterm{def:b2:finite-automata:factor}{suffix} of the proof makes exactly one of the two \omterm{def:b2:finite-automata:word}{words} accepted: 8\,386\,560 pairs for $k = 12$.
+
+\textbf{24.} The $2^k$ law: for ``the $k$-th letter from the end'', an NFA has $k + 1$ states, and every DFA has at
+least $2^k$, which the \omterm{met:b2:finite-automata:subset}{subset construction} reaches exactly; none of its states can be removed or merged, since the
+\omterm{def:b2:finite-automata:word}{words} of length $k$ lead to pairwise distinguishable states.
+\end{solution}

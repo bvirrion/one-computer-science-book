@@ -1,0 +1,360 @@
+% Book 3, Year 1, chapter 18 -- heaps and priority queues.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 18.
+\chapter{Heaps and Priority Queues}\label{ch:b1:heaps}
+
+In the waiting room of a hospital's emergency department, the next patient to be seen is not the one who came first,
+but the one in the most urgent state. Patients arrive all the time, and a patient's state can worsen while waiting. A
+queue serves in order of arrival; this room needs a structure that serves in order of priority, accepts new entries,
+and changes a priority, each in a few steps however many people wait. The \omterm{def:b1:heaps:binary-heap}{binary heap} does this inside a plain \omterm{def:b1:pointers-and-arrays:array}{array},
+with no \omterm{def:b1:pointers-and-arrays:pointer}{pointer} at all, and it also sorts in place and merges sorted lists.
+
+\begin{recall}
+The depth of a node is its distance from the root, the height of a tree the largest depth
+(\cref{def:b1:induction-and-termination:height}). A
+\omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic array} grows by doubling, at amortised constant cost (\cref{ch:b1:dynamic-arrays}). A queue serves its elements
+in order of arrival (\cref{ch:b1:linked-structures}).
+\end{recall}
+
+\section{The priority-queue type}\label{sec:b1:heaps:pq}
+
+\begin{definition}[Priority queue]\label{def:b1:heaps:pq}
+A \emph{priority queue}\index{priority queue} is an abstract type holding elements with keys, called priorities, with
+the operations insert, find-min (the element of smallest key), extract-min (find it and remove it), and often
+\omterm{def:b1:heaps:decrease-key}{decrease-key}.
+\end{definition}
+
+A max-priority queue serves the largest key first; exchanging $<$ and $>$ turns one into the other. Two simple
+implementations put the cost on one side. An unsorted \omterm{def:b1:pointers-and-arrays:array}{array} inserts at its end in $O(1)$, but finding the minimum scans
+all the elements. An \omterm{def:b1:pointers-and-arrays:array}{array} kept sorted, in decreasing order, extracts its last element in $O(1)$, but an insertion
+shifts elements to make room. For $n$ insertions followed by $n$ extractions, both cost $\Theta(n^2)$:
+
+\omoutput{code/bachelor-1/18-heaps/outputs/pq_naive.txt}{Comparisons for $n$ random insertions then $n$ extractions:
+quadratic for the \omterm{def:b1:pointers-and-arrays:array}{arrays}, $n \log n$ for the heap of this chapter.}\label{out:b1:heaps:naive}
+
+\section{The binary heap in an array}\label{sec:b1:heaps:array}
+
+\begin{definition}[Complete binary tree]\label{def:b1:heaps:complete}
+A \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} of height $h$ is \emph{complete}\index{complete binary tree} when its depths $0, \dots, h - 1$ are full
+(depth $d$ holds $2^d$ nodes) and the nodes at depth $h$ are as far left as possible.
+\end{definition}
+
+Numbered level by level, from left to right, starting at 0, the nodes of a \omterm{def:b1:heaps:complete}{complete} tree fill the indices $0, 1,
+\dots, n - 1$ with no gap: the tree can live in an \omterm{def:b1:pointers-and-arrays:array}{array}, and the links are computed instead of stored.
+
+\begin{proposition}[Index arithmetic]\label{prop:b1:heaps:index}
+In a \omterm{def:b1:heaps:complete}{complete binary tree} numbered from 0, the children of node $i$ are $2i + 1$ and $2i + 2$ (when they are below $n$),
+and the parent of node $i > 0$ is $\lfloor (i - 1)/2 \rfloor$. A \omterm{def:b1:heaps:complete}{complete} tree of $n \geq 1$ nodes has height
+$\lfloor \log_2 n \rfloor$.
+\end{proposition}
+
+\begin{proof}
+Depth $d$ holds the indices $2^d - 1$ to $2^{d+1} - 2$. Let $i = 2^d - 1 + j$ be the $j$-th node of depth $d$ ($0 \leq j <
+2^d$). Its children are the nodes $2j$ and $2j + 1$ of depth $d + 1$, with indices $2^{d+1} - 1 + 2j = 2i + 1$ and $2i +
+2$. Conversely, both $2i + 1$ and $2i + 2$ give $\lfloor (k - 1)/2 \rfloor = i$. For the height, see
+\cref{exo:b1:heaps:9}.
+\end{proof}
+
+\begin{definition}[Binary heap, heap property]\label{def:b1:heaps:binary-heap}
+A \emph{binary heap}\index{binary heap} is a \omterm{def:b1:heaps:complete}{complete binary tree} stored in an \omterm{def:b1:pointers-and-arrays:array}{array}, with the \emph{heap
+property}\index{heap property}: the key of every node is at most the keys of its children (a min-heap), or at least
+them (a max-heap).
+\end{definition}
+
+By transitivity, the key of a node is at most every key of its \omterm{def:b1:induction-and-termination:rooted-tree}{subtree}, and the root holds the minimum: find-min costs
+$O(1)$. A heap is much less ordered than a search tree: siblings are in no particular order, and the \omterm{def:b1:pointers-and-arrays:array}{array} is not
+sorted. That is what makes it cheap to maintain.
+
+\begin{omfigure}
+\begin{tikzpicture}[level distance=9mm, n/.style={draw, circle, minimum size=6.5mm, font=\small, inner sep=1pt},
+  level 1/.style={sibling distance=26mm}, level 2/.style={sibling distance=13mm}, >={Stealth[length=1.6mm]}]
+\node[n] {1}
+  child {node[n] {4} child {node[n] {7}} child {node[n] {8}}}
+  child {node[n] {2} child {node[n] {9}} child {node[n] {3}}};
+\node[font=\tiny] at (0.45,0.3) {0};
+\begin{scope}[xshift=4.3cm, yshift=-1.2cm, c/.style={draw, minimum width=7mm, minimum height=6mm, font=\small}]
+\foreach \v/\i in {1/0, 4/1, 2/2, 7/3, 8/4, 9/5, 3/6} {\node[c] (a\i) at (\i*0.7,0) {\v};
+  \node[font=\tiny] at (\i*0.7,-0.5) {\i};}
+\draw[->, omCode, thick] (a1.north) to[bend left=50] (a3.north);
+\draw[->, omCode, thick] (a1.north) to[bend left=60] (a4.north);
+\draw[->, omThm, thick] (4.2,-0.7) to[bend left=30] (1.4,-0.7);
+\node[font=\scriptsize, text=omCode, anchor=west] at (3.6,0.9) {children of 1: 3 and 4};
+\node[font=\scriptsize, text=omThm, anchor=west] at (4.6,-0.9) {parent of 6: $\lfloor 5/2 \rfloor = 2$};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small The min-heap built by \cref{out:b1:heaps:demo}, as a tree and as the \omterm{def:b1:pointers-and-arrays:array}{array} that stores it. Every
+key is at most its children's keys; the arrows are computed from the indices, not stored.}
+\end{omfigure}
+
+\section{Sifting up and down}\label{sec:b1:heaps:sift}
+
+\begin{definition}[Sift up, sift down, heapify]\label{def:b1:heaps:sift}
+To \emph{sift up}\index{sift up} a node is to exchange it with its parent as long as its key is smaller. To \emph{sift
+down}\index{sift down} a node is to exchange it with its smaller child as long as that child's key is smaller. To
+\emph{heapify}\index{heapify} an \omterm{def:b1:pointers-and-arrays:array}{array} is to make it a heap by sifting down every node that has a child, from the last
+one back to the root.
+\end{definition}
+
+\omcode{code/bachelor-1/18-heaps/listings/heap.c}{13}{33}{Sifting up and down, with counters}\label{lst:b1:heaps:sift}
+
+Each loop keeps an invariant. For sift-up: \emph{the \omterm{def:b1:pointers-and-arrays:array}{array} is a heap except that node $i$ may be smaller than its
+parent}. If it is not, the \omterm{def:b1:pointers-and-arrays:array}{array} is a heap. If it is, the exchange puts the smaller key above both former children of the
+parent, which were at least the old parent's key, and only the parent's position may now be wrong. For sift-down:
+\emph{the \omterm{def:b1:pointers-and-arrays:array}{array} is a heap except that node $i$ may be larger than one of its children}; exchanging it with the smaller
+child puts above the other child a key at most that child's key. Each step moves one level, so both cost $O(\log n)$.
+
+Insertion places the new key as a \omterm{def:b1:induction-and-termination:rooted-tree}{leaf} at the end of the \omterm{def:b1:pointers-and-arrays:array}{array}, which keeps the tree \omterm{def:b1:heaps:complete}{complete}, and sifts it up.
+Extraction saves the root, moves the last \omterm{def:b1:induction-and-termination:rooted-tree}{leaf} to the root, and sifts it down.
+
+\omcodes{code/bachelor-1/18-heaps/listings/heap.c}{41-58}{Insertion and extraction}\label{lst:b1:heaps:push-pop}
+
+\omoutput{code/bachelor-1/18-heaps/outputs/heap_demo.txt}{The \omterm{def:b1:pointers-and-arrays:array}{array} after each insertion and
+extraction.}\label{out:b1:heaps:demo}
+
+\begin{omfigure}
+\begin{tikzpicture}[level distance=8mm, n/.style={draw, circle, minimum size=6mm, font=\small, inner sep=1pt},
+  m/.style={n, fill=omThm!25}, level 1/.style={sibling distance=20mm}, level 2/.style={sibling distance=10mm},
+  level 3/.style={sibling distance=8mm}, >={Stealth[length=1.6mm]}]
+\node[m] {10}
+  child {node[n] {3} child {node[n] {6} child {node[n] {8}} child {node[n] {9}}} child {node[n] {4}}}
+  child {node[n] {2} child {node[n] {5}} child {node[n] {7}}};
+\draw[->, thick] (2.1,-1.3) -- (2.9,-1.3);
+\begin{scope}[xshift=5cm]
+\node[n] {2}
+  child {node[n] {3} child {node[n] {6} child {node[n] {8}} child {node[n] {9}}} child {node[n] {4}}}
+  child {node[m] {10} child {node[n] {5}} child {node[n] {7}}};
+\draw[->, thick] (2.1,-1.3) -- (2.9,-1.3);
+\end{scope}
+\begin{scope}[xshift=10cm]
+\node[n] {2}
+  child {node[n] {3} child {node[n] {6} child {node[n] {8}} child {node[n] {9}}} child {node[n] {4}}}
+  child {node[n] {5} child {node[m] {10}} child {node[n] {7}}};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Extract-min on the heap $[1, 3, 2, 6, 4, 5, 7, 8, 9, 10]$: the last \omterm{def:b1:induction-and-termination:rooted-tree}{leaf}, 10, replaces the root 1
+(left); it is exchanged with its smaller child 2 (middle), then with 5 (right), where both its \omterm{def:b1:induction-and-termination:rooted-tree}{subtrees} are empty. Two
+exchanges, four comparisons.}
+\end{omfigure}
+
+\section{Building a heap in linear time}\label{sec:b1:heaps:build}
+
+A heap of $n$ given keys can be built by $n$ insertions, at cost $O(n \log n)$; on decreasing keys, each new key climbs
+to the root, and the cost is $\Theta(n \log n)$. \omterm{def:b1:heaps:sift}{Heapify} does better: it sifts down the nodes from the last parent,
+$\lfloor n/2 \rfloor - 1$, back to the root; when node $i$ is sifted down, both its \omterm{def:b1:induction-and-termination:rooted-tree}{subtrees} are already heaps (they were
+treated before it), so it alone may be out of place.
+
+\begin{proposition}[Heapify is linear]\label{prop:b1:heaps:build}
+\omterm{def:b1:heaps:sift}{Heapify} makes at most $\sum_i h_i < n$ exchanges, where $h_i$ is the height of node $i$.
+\end{proposition}
+
+\begin{proof}
+Sifting node $i$ down makes at most $h_i$ exchanges. A node of height at least $h$ has a descendant $h$ levels below it,
+on its leftmost path, which is node $(i + 1)2^h - 1$; so the nodes of height at least $h$ are those with $i + 1 \leq
+n/2^h$, and there are $\lfloor n/2^h \rfloor$ of them. Each node of height $h_i$ is counted once for each $h = 1, \dots,
+h_i$: $\sum_i h_i = \sum_{h \geq 1} \lfloor n/2^h \rfloor < n(\frac12 + \frac14 + \cdots) = n$.
+\end{proof}
+
+The problem shows that the sum is exactly $n - \nu(n)$, where $\nu(n)$ is the number of ones in the binary writing of
+$n$. On decreasing keys every node goes down to a \omterm{def:b1:induction-and-termination:rooted-tree}{leaf}, and the count is reached exactly:
+
+\omoutput{code/bachelor-1/18-heaps/outputs/build.txt}{Exchanges to build a heap of decreasing keys: bottom-up below $n$,
+top-down growing like $n \log_2 n$.}\label{out:b1:heaps:build}
+
+\begin{center}\small
+\begin{tabular}{lcccc}
+\hline
+depth of the nodes (tree of 15 nodes) & 0 & 1 & 2 & 3 \\
+\hline
+number of nodes & 1 & 2 & 4 & 8 \\
+longest sift-down (their height) & 3 & 2 & 1 & 0 \\
+exchanges at most & 3 & 4 & 4 & 0 \\
+\hline
+\end{tabular}
+\end{center}
+
+\noindent Most nodes are near the bottom and move little; the few that may move far are near the top. In total $3 + 4 +
+4 = 11 = 15 - \nu(15)$ exchanges at most. Insertion one by one has it the other way round: the many leaves may each climb
+the whole height.
+
+\section{Heapsort and other uses}\label{sec:b1:heaps:uses}
+
+\begin{method}[Heapsort]\label{met:b1:heaps:heapsort}
+\emph{Heapsort}\index{heapsort} sorts an \omterm{def:b1:pointers-and-arrays:array}{array} in increasing order in place: \omterm{def:b1:heaps:sift}{heapify} it as a max-heap; then, for $end =
+n - 1$ down to 1, exchange the root (the maximum of $a[0..end]$) with $a[end]$, and sift the new root down in
+$a[0..end)$. The invariant: $a[0..end]$ is a max-heap, and $a[end + 1..n)$ holds the largest keys, sorted, all at least
+those of the heap.
+\end{method}
+
+\omcode{code/bachelor-1/18-heaps/listings/heapsort.c}{17}{24}{\omterm{met:b1:heaps:heapsort}{Heapsort}}\label{lst:b1:heaps:heapsort}
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum width=7mm, minimum height=6mm, font=\small}]
+\foreach \row/\vals/\k/\lab in {0/{9,5,8,4,2,3,7,1}/0/{max-heap},
+  1/{8,5,7,4,2,3,1,9}/1/{1 extraction}, 2/{7,5,3,4,2,1,8,9}/2/{2 extractions},
+  3/{5,4,3,1,2,7,8,9}/3/{3 extractions}} {
+  \node[font=\small, anchor=east] at (-0.6,-\row*0.75) {\lab};
+  \foreach \v [count=\j from 0] in \vals {
+    \pgfmathtruncatemacro{\sorted}{\j >= 8 - \k ? 1 : 0}
+    \ifnum\sorted=1 \node[c, fill=omDef!20] at (\j*0.7,-\row*0.75) {\v};
+    \else \node[c] at (\j*0.7,-\row*0.75) {\v}; \fi}}
+\node[font=\scriptsize, anchor=west] at (5.8,-2.25) {heap part, then the sorted part (shaded)};
+\end{tikzpicture}
+\par\smallskip{\small \omterm{met:b1:heaps:heapsort}{Heapsort} of $[5, 2, 8, 1, 9, 3, 7, 4]$: the \omterm{def:b1:pointers-and-arrays:array}{array} after \omterm{def:b1:heaps:sift}{heapify} and after each of the first three
+extractions. The sorted part grows from the right; the heap part shrinks.}
+\end{omfigure}
+
+\omoutput{code/bachelor-1/18-heaps/outputs/heapsort.txt}{\omterm{met:b1:heaps:heapsort}{Heapsort} of random \omterm{def:b1:pointers-and-arrays:array}{arrays}: comparisons below $2 n \log_2
+n$.}\label{out:b1:heaps:heapsort}
+
+\omterm{met:b1:heaps:heapsort}{Heapsort} runs in $\Theta(n \log n)$ in the worst case and uses $O(1)$ extra memory, which no sort of the previous
+chapters achieves together; merge sort, of \cref{ch:b1:sorting}, needs a second \omterm{def:b1:pointers-and-arrays:array}{array}. It is not
+\emph{stable}: elements with equal keys can come out in another order than they came in, since the exchanges move
+elements across long distances.
+
+\omoutput{code/bachelor-1/18-heaps/outputs/stability.txt}{Heapsorting patients by urgency: Ben arrived before Finn, but
+leaves after him.}\label{out:b1:heaps:stability}
+
+A heap of size $k$ selects the $k$ largest of $n$ values in one pass, in $O(n \log k)$ time and $O(k)$ memory: its root
+is the smallest of the $k$ kept, the one a new value must beat.
+
+\omcode{code/bachelor-1/18-heaps/listings/topk.c}{6}{26}{The $k$ longest loans of the town library, with a heap of
+size $k$}\label{lst:b1:heaps:topk}
+
+\omoutput{code/bachelor-1/18-heaps/outputs/topk.txt}{The eight longest returned loans.}\label{out:b1:heaps:topk}
+
+\begin{definition}[Decrease-key]\label{def:b1:heaps:decrease-key}
+The operation \emph{decrease-key}\index{decrease-key} lowers the key of an element already in a \omterm{def:b1:heaps:pq}{priority queue}.
+\end{definition}
+
+In a heap, a smaller key can only move up, by a sift-up from the element's position, in $O(\log n)$. The difficulty is to
+find that position: the heap is not a search structure. An \emph{indexed heap} stores the items $0, \dots, m - 1$ and an
+\omterm{def:b1:pointers-and-arrays:array}{array} \code{pos} that every move updates, so that the position of an item is read in $O(1)$. Shortest-path algorithms,
+in \cref{ch:b1:shortest-paths}, use it. The alternative, \emph{lazy deletion}, inserts the element again with its new
+key and leaves the old entry in the heap, to be skipped when it reaches the root: simpler, at the price of a larger heap.
+
+\omcodes{code/bachelor-1/18-heaps/listings/iheap.c}{10-17,44-47}{Sift-up in an indexed heap, and
+\omterm{def:b1:heaps:decrease-key}{decrease-key}}\label{lst:b1:heaps:iheap}
+
+\omoutput{code/bachelor-1/18-heaps/outputs/er_demo.txt}{An emergency room with \omterm{def:b1:heaps:decrease-key}{decrease-key}; urgency 1 is the
+highest.}\label{out:b1:heaps:er}
+
+\omimg{book3/ai/b1-heaps-emergency-room.jpg}{0.55\linewidth}{At the triage desk of an emergency department,
+patients are seen by urgency, not by order of arrival, and an urgency can rise while a patient waits: a \omterm{def:b1:heaps:pq}{priority
+queue} with \omterm{def:b1:heaps:decrease-key}{decrease-key}.}
+
+\section{Exercises}\label{sec:b1:heaps:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:heaps:1}
+Give the \omterm{def:b1:pointers-and-arrays:array}{array} of a min-heap after inserting 5, 3, 8, 1, 4, 2 in this order into an empty heap.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:heaps:2}
+Give the \omterm{def:b1:pointers-and-arrays:array}{array} after one extract-min on the heap $[1, 3, 2, 5, 4, 8]$.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:heaps:3}
+In a heap numbered from 0, give the parent, the children and the depth of node 13.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:heaps:4}
+Which of the \omterm{def:b1:pointers-and-arrays:array}{arrays} $[2, 5, 3, 9, 6, 4, 8, 10, 7]$ and $[1, 4, 2, 6, 5, 3]$ are min-heaps?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:heaps:5}
+This sift-down compares the node with its left child only. Explain the output, and give the smallest heap on which one
+extraction already goes wrong.
+\omcode{code/bachelor-1/18-heaps/listings/exo_sift_bug.c}{4}{9}{Sift-down with one comparison}
+\omoutput[2-2]{code/bachelor-1/18-heaps/outputs/exo_sift_bug.txt}{Seven extractions from the heap $[1, 5, 2, 6, 7, 3,
+4]$.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:heaps:6}
+These formulas come from a text that numbers the \omterm{def:b1:pointers-and-arrays:array}{array} from 1. Explain each wrong line of the output, and correct the
+formulas.
+\omcode{code/bachelor-1/18-heaps/listings/exo_index_bug.c}{4}{5}{Parent and left child}
+\omoutput[2-6]{code/bachelor-1/18-heaps/outputs/exo_index_bug.txt}{On the heap $[1, 3, 2, 7, 4]$.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:heaps:7}
+Write a max-heap whose elements are of any type, given by their size in bytes and a comparison function as for
+\code{qsort}, and test it on numbers and on structures.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:heaps:8}
+Write \code{kth_smallest(xs, n, k)} in time $O(n \log k)$ with a heap of size $k$, and test it against sorting.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:heaps:9}
+Prove that a \omterm{def:b1:heaps:complete}{complete binary tree} with $n \geq 1$ nodes has height $\lfloor \log_2 n \rfloor$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:heaps:10}
+Prove by induction on $k$ that in a perfect \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} of height $k - 1$, with $n = 2^k - 1$ nodes, the heights of the
+nodes add up to $n - k$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:heaps:11}
+Maintain the median of a stream of numbers with two heaps, a max-heap of the lower half and a min-heap of the upper
+half, so that each new number costs $O(\log n)$. Test it against sorting.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:heaps:12}
+Prove that heapsort makes at most $2n \log_2 n$ key comparisons for $n \geq 2$, and compare with
+\cref{out:b1:heaps:heapsort}.
+\end{exercise}
+
+\section{Problem: Merging the branch libraries' lists}\label{sec:b1:heaps:problem}
+
+\begin{problem}[{Weekend problem --- Merging the branch libraries' lists}]\label{pb:b1:heaps:1}
+The town library has $k$ branches; each keeps the list of the loans returned to it, sorted by day of return, and the
+town wants one sorted list of all $n = 378$ returns. A program assigns the returned loans to $k$ branches (by book number
+modulo $k$), then merges the $k$ sorted lists in two ways: by comparing the heads of all the lists at each step, and
+with a min-heap that holds the head of each list. It counts the comparisons and checks the merged list.
+\omoutput{code/bachelor-1/18-heaps/outputs/kmerge.txt}{Merging $k$ sorted lists of return days.}\label{out:b1:heaps:kmerge}
+\omoutput{code/bachelor-1/18-heaps/outputs/heights_sum.txt}{Sums of heights in heaps of $n$
+nodes.}\label{out:b1:heaps:heights}
+
+\medskip\noindent\textbf{Part I --- Merging by scanning.}
+\begin{enumerate}
+\item Show that the scanning merge makes at most $(k - 1)n$ comparisons.
+\item Compare with the table for $k = 32$. Why is the count smaller than the bound?
+\item Why do both methods make the same number of comparisons for $k = 2$?
+\item Another method merges the lists two by two, then the results two by two, and so on. What does it cost, for $k$ a
+power of 2?
+\item Why does the merge need only one value from each list at a time, and why does that matter for long lists stored in
+files?
+\item Prove that the merged list is sorted, whatever method chooses the smallest head.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- A heap of the heads.}
+\begin{enumerate}[resume]
+\item State the invariant of the heap during the merge.
+\item Prove that the root is the smallest value not yet output.
+\item Why is replacing the root and sifting it down better than an extract-min followed by an insertion?
+\item Show that each output costs at most $2 \lfloor \log_2 k \rfloor$ comparisons, and bound the total.
+\item Compare the bound with the table for $k = 32$.
+\item The program stores $\textit{day} \times 64 + \textit{branch}$ in the heap. Why, and what does it assume about $k$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Building the heap.}
+\begin{enumerate}[resume]
+\item The merge builds its heap of $k$ heads by $k$ insertions. Would \omterm{def:b1:heaps:sift}{heapify} change the total cost noticeably?
+\item From \cref{out:b1:heaps:build}, give the exchanges per key of the top-down build on decreasing keys, and relate
+them to $\log_2 n$.
+\item Why do decreasing keys make every node of the bottom-up build sink to a \omterm{def:b1:induction-and-termination:rooted-tree}{leaf}?
+\item Check the bottom-up column against $n - \nu(n)$ for $n = 1023$ and $n = 1\,048\,575$.
+\item Why does each sift-down of \omterm{def:b1:heaps:sift}{heapify} make at most two comparisons per exchange, plus two? Bound the comparisons of
+\omterm{def:b1:heaps:sift}{heapify}.
+\item \omterm{met:b1:heaps:heapsort}{Heapsort} begins with \omterm{def:b1:heaps:sift}{heapify}. Which part of heapsort dominates its cost?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The sum of heights.}
+\begin{enumerate}[resume]
+\item Show that node $i$ of a heap of $n$ nodes has height $\lfloor \log_2 (n/(i + 1)) \rfloor$.
+\item Deduce that the sum of the heights is $S(n) = \sum_{h \geq 1} \lfloor n/2^h \rfloor$.
+\item Prove that $\sum_{h \geq 1} \lfloor 2^j/2^h \rfloor = 2^j - 1$, and that $\lfloor n/2^h \rfloor$ is the sum of these
+quantities over the bits $2^j$ of $n$.
+\item Deduce $S(n) = n - \nu(n)$, and check it on $n = 1000$ in \cref{out:b1:heaps:heights}.
+\item How far is $n - \nu(n)$ from the bound $n$ of \cref{prop:b1:heaps:build}?
+\item State the named result of the problem, \emph{the heap identity}, with what it gives for \omterm{def:b1:heaps:sift}{heapify}.
+\end{enumerate}
+\end{problem}

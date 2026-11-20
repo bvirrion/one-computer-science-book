@@ -1,0 +1,574 @@
+% Book 4, Year 2, chapter 2 -- Copying, moving and smart pointers.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 2.
+\chapter{Copying, Moving and Smart Pointers}\label{ch:b2:cpp-copy-move}
+
+A function builds a vector of a million readings and returns it. In C the question would not arise: a function
+returns a pointer and the caller frees the block. In C++ the vector is an object returned by value, and an object
+returned by value is, in principle, a copy. The program below counts. Its element type \code{Tracked} (shown in
+\cref{sec:b2:cpp-copy-move:moving}) adds one to a global counter each time one of its values is copied or moved.
+
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/hook.cpp}{6}{26}{A million values returned by
+value}\label{lst:b2:cpp-copy-move:hook}
+
+\omoutput{code/bachelor-2/02-cpp-copy-move/outputs/hook.txt}{Returning copied nothing; asking for a copy copied a
+million values.}\label{out:b2:cpp-copy-move:hook}
+
+Returning the vector copied nothing and moved nothing: the elements the caller holds are the very ones the
+function built, at the same address. Writing \code{backup = r} copied all million. This chapter explains both
+lines: what a copy of an object that owns memory must do, how C++ hands over the memory instead of copying it when
+the source is about to die, and how the standard \omterm{def:b2:cpp-copy-move:unique-ptr}{smart pointers} express who owns a heap object.
+
+\begin{recall}
+\cref{ch:b2:cpp-classes-raii}: an object that owns a resource acquires it in its \omterm{def:b2:cpp-classes-raii:constructor}{constructor} and releases it in its
+\omterm{def:b2:cpp-classes-raii:constructor}{destructor} (RAII), and copying such an object was forbidden with \code{= delete} until this chapter. A dynamic array
+(Book 3) keeps $n$ elements in a block of capacity $c \geq n$; when it is full it allocates a larger block, carries
+the $n$ elements over and frees the old one. Doubling the capacity makes the amortised cost of an append constant.
+\end{recall}
+
+\section{Copying an object that owns memory}\label{sec:b2:cpp-copy-move:copying}
+
+\begin{definition}[Copy constructor, copy assignment operator]\label{def:b2:cpp-copy-move:copy}
+The \emph{copy constructor}\index{copy constructor} of a class \code{T} is the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} \code{T(const T &)}: it
+builds a new object from an existing one, as in \code{T b = a;} or when \code{a} is passed by value. The \emph{copy
+assignment operator}\index{copy assignment operator} \code{T &operator=(const T &)} gives an existing object the value
+of another, as in \code{b = a;}. If a class declares neither, the compiler writes them: they copy each member in turn.
+\end{definition}
+
+For a class whose members are numbers and strings, the compiler's copy is right. For a class that holds a raw
+pointer to a block it owns, it copies the pointer and not the block. The \code{Buffer} below owns a heap copy of a
+street name; it has a \omterm{def:b2:cpp-classes-raii:constructor}{destructor} and lets the compiler write its copy.
+
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/shallow.cpp}{6}{26}{A buffer with the compiler's
+copy}\label{lst:b2:cpp-copy-move:shallow}
+
+\omoutput[1-6,11-15,18-21,24-26]{code/bachelor-2/02-cpp-copy-move/outputs/shallow.txt}{AddressSanitizer: the same
+block freed twice.}\label{out:b2:cpp-copy-move:shallow}
+
+The line printed by \code{main} is missing: the output stream had not been flushed when the sanitizer stopped the
+program. The report itself is exact: the block allocated on line 22 (for \code{a}) was freed by a \omterm{def:b2:cpp-classes-raii:constructor}{destructor} called
+on line 26 (that of \code{b}, destroyed first) and then again by the next \omterm{def:b2:cpp-classes-raii:constructor}{destructor} (that of \code{a}). Without the
+sanitizer, freeing a block twice is undefined behaviour, which in practice corrupts the allocator's lists and fails
+far from the cause.
+
+\begin{definition}[Shallow copy, deep copy]\label{def:b2:cpp-copy-move:deep}
+A \emph{shallow copy}\index{shallow copy} of an object copies its pointers, so that the copy and the original share
+the blocks they point to. A \emph{deep copy}\index{deep copy} allocates new blocks for the copy and copies their
+contents, so that the two objects share nothing and each can change or free its blocks alone.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize]
+\node[font=\footnotesize\bfseries, anchor=west] at (-0.4,2.1) {shallow copy};
+\foreach \o/\y in {a/1.2, b/0} {
+  \node[cell, minimum width=1.1cm] (\o n) at (0.6,\y) {12};
+  \node[cell, minimum width=1.1cm, right=0mm of \o n] (\o p) {$\bullet$};
+  \node[anchor=east] at (0,\y) {\texttt{\o}};
+}
+\node[draw, fill=omThm!10, minimum width=2.8cm, minimum height=7mm, font=\ttfamily\scriptsize] (blk) at (4.6,0.6) {Harbour Road\textbackslash 0};
+\draw[ptr] (ap.center) -- (blk.west);
+\draw[ptr] (bp.center) -- (blk.west);
+\node[font=\scriptsize, text=omThm, align=left, anchor=north] at (4.6,0.1) {one block, two owners:\\ freed twice};
+\begin{scope}[xshift=7.6cm]
+\node[font=\footnotesize\bfseries, anchor=west] at (-0.4,2.1) {deep copy};
+\foreach \o/\y in {a/1.2, b/0} {
+  \node[cell, minimum width=1.1cm] (\o n) at (0.6,\y) {12};
+  \node[cell, minimum width=1.1cm, right=0mm of \o n] (\o p) {$\bullet$};
+  \node[anchor=east] at (0,\y) {\texttt{\o}};
+  \node[draw, fill=omMeth!10, minimum width=2.8cm, minimum height=7mm, font=\ttfamily\scriptsize] (blk\o) at (4.3,\y) {Harbour Road\textbackslash 0};
+  \draw[ptr] (\o p.center) -- (blk\o.west);
+}
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Two \code{Buffer} objects after \code{Buffer b = a;}. Each object holds the length of the
+text, 12, and a pointer to a block of 13 bytes. On the left, the compiler's copy: both pointers name the
+same block. On the right, a \omterm{def:b2:cpp-copy-move:copy}{copy constructor} that allocates: each object owns its block.}
+\end{omfigure}
+
+The fix writes the \omterm{def:b2:cpp-copy-move:copy}{copy constructor} and the copy assignment by hand. The \omterm{def:b2:cpp-classes-raii:constructor}{constructor} allocates a block of its own
+and copies the characters; the assignment is written in the form of \cref{sec:b2:cpp-copy-move:value}.
+
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/buffer.hpp}{7}{32}{A buffer with a \omterm{def:b2:cpp-copy-move:deep}{deep
+copy}}\label{lst:b2:cpp-copy-move:buffer}
+
+\omoutput{code/bachelor-2/02-cpp-copy-move/outputs/deep_copy.txt}{Three buffers, three blocks; the sanitizer is
+silent.}\label{out:b2:cpp-copy-move:deep-copy}
+
+Changing \code{b} left \code{a} alone, and the sanitizer found nothing to report. The three functions written here,
+the \omterm{def:b2:cpp-classes-raii:constructor}{destructor}, the \omterm{def:b2:cpp-copy-move:copy}{copy constructor} and the copy assignment, go together: a class that needs one of them almost
+always needs the three, since a \omterm{def:b2:cpp-classes-raii:constructor}{destructor} that frees means a raw resource that a member-wise copy would share.
+This is the \emph{rule of three}, which \cref{sec:b2:cpp-copy-move:rules} completes.
+
+\section{Value semantics}\label{sec:b2:cpp-copy-move:value}
+
+\begin{definition}[Value semantics, reference semantics]\label{def:b2:cpp-copy-move:value-semantics}
+A type has \emph{value semantics}\index{value semantics} if a copy of an object is a new, independent object with
+the same value: changing one never changes the other, as with \code{int}, \code{std::string} and the
+\code{Buffer} of \cref{lst:b2:cpp-copy-move:buffer}. A type has \emph{reference semantics}\index{reference
+semantics} if copying an object gives a second name for the same underlying data, as with a pointer, or with every
+object in Python.
+\end{definition}
+
+The C++ standard library gives its containers \omterm{def:b2:cpp-copy-move:value-semantics}{value semantics}, and a class that owns memory should do the same
+unless there is a reason not to. The assignment of \cref{lst:b2:cpp-copy-move:buffer} has a pattern of its own,
+named after its two steps.
+
+\begin{method}[Copy and swap]\label{met:b2:cpp-copy-move:copy-and-swap}
+To write \code{T &operator=(const T &o)} for a class that owns resources:
+\begin{enumerate}
+\item make a local copy \code{tmp} of \code{o} with the \omterm{def:b2:cpp-copy-move:copy}{copy constructor} (all the work that may fail happens here,
+before \code{*this} is touched);
+\item exchange the members of \code{*this} and \code{tmp}, with operations that cannot throw (\code{std::swap} of
+pointers and numbers);
+\item return \code{*this}; at the end of the function, \code{tmp} is destroyed and frees the old resources.
+\end{enumerate}
+\end{method}
+
+\begin{proposition}[Copy and swap is strong]\label{prop:b2:cpp-copy-move:copy-and-swap}
+An assignment written by \cref{met:b2:cpp-copy-move:copy-and-swap} gives the strong guarantee: if it throws, the
+target is unchanged. It is also correct when the source and the target are the same object.
+\end{proposition}
+
+\begin{proof}
+Only step 1 can throw, since swaps of pointers and integers cannot. If it throws, the \omterm{def:b2:cpp-copy-move:copy}{copy constructor} has cleaned
+up after itself (its partly built members are destroyed, \cref{ch:b2:cpp-classes-raii}), and no statement has yet
+changed \code{*this}: the target keeps its value. If step 1 succeeds, \code{tmp} holds an independent copy of the
+value of \code{o}; the swaps give that value to \code{*this} and the old resources to \code{tmp}, whose \omterm{def:b2:cpp-classes-raii:constructor}{destructor}
+frees them. When \code{o} is \code{*this}, step 1 copies the target's own value into fresh blocks before anything is
+freed, so the result is again that value.
+\end{proof}
+
+The self-assignment case is not academic: \code{v[i] = v[j]} with $i = j$ is one, and an assignment written as
+``free my block, allocate a new one, copy the source's characters'' reads freed memory in that case
+(\cref{exo:b2:cpp-copy-move:2}). The price of copy and swap is a new allocation even when the target's block was
+large enough; the standard containers reuse the target's memory when they can, and in exchange do not promise the
+strong guarantee for their assignment.
+
+\section{Moving}\label{sec:b2:cpp-copy-move:moving}
+
+A copy is the right meaning of \code{b = a} when \code{a} is used afterwards. When the source is a temporary about
+to be destroyed, copying its block and then freeing the original is wasted work: the target could take the block
+itself. C++ tells the two cases apart by the kind of expression the source is.
+
+\begin{definition}[Value category, lvalue, rvalue]\label{def:b2:cpp-copy-move:rvalue}
+Every expression has a \emph{value category}\index{value category}. An \emph{lvalue}\index{lvalue} names an object
+that outlives the expression: a variable \code{a}, \code{*p}, \code{v[i]}. A \emph{prvalue} computes a value that no
+name holds yet: \code{42}, \code{x + y}, a call \code{f()} returning by value, \code{Buffer("Quay")}. An
+\emph{xvalue} names an object whose resources may be taken, such as \code{std::move(a)}. Prvalues and xvalues together
+are the \emph{rvalues}\index{rvalue}.
+\end{definition}
+
+\begin{definition}[Rvalue reference]\label{def:b2:cpp-copy-move:rvalue-reference}
+An \emph{rvalue reference}\index{rvalue reference} \code{T &&} is a reference that binds only to \omterm{def:b2:cpp-copy-move:rvalue}{rvalues}. When a
+function is overloaded on \code{const T &} and \code{T &&}, a call with an \omterm{def:b2:cpp-copy-move:rvalue}{lvalue} picks the first and a call with an
+\omterm{def:b2:cpp-copy-move:rvalue}{rvalue} picks the second. \code{std::move(a)} does not move anything: it is a cast of the \omterm{def:b2:cpp-copy-move:rvalue}{lvalue} \code{a} to an xvalue,
+which tells the overload resolution that \code{a} may be emptied.
+\end{definition}
+
+\begin{definition}[Move constructor, move assignment, moved-from object]\label{def:b2:cpp-copy-move:move}
+The \emph{move constructor}\index{move constructor} \code{T(T &&o)} and the \emph{move assignment
+operator}\index{move assignment operator} \code{T &operator=(T &&o)} build or assign from an \omterm{def:b2:cpp-copy-move:rvalue}{rvalue} by taking
+\code{o}'s resources rather than copying them. Afterwards \code{o} is a \emph{moved-from object}\index{moved-from
+object}: it must still be valid, which means it can be destroyed and assigned a new value, but its value is
+unspecified unless its class documents it.
+\end{definition}
+
+% ledger: b2:cpp11-move
+\omterm{def:b2:cpp-copy-move:rvalue-reference}{Rvalue references} and moves arrived in C++11. The \code{Buffer} below has both a copy and a \omterm{def:b2:cpp-copy-move:move}{move constructor}, each
+announcing itself; the move takes the pointer and leaves the source with none.
+
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/move_demo.cpp}{14}{45}{A copy, a move and
+neither}\label{lst:b2:cpp-copy-move:move-demo}
+
+\omoutput{code/bachelor-2/02-cpp-copy-move/outputs/move_demo.txt}{The move left \code{a}
+empty.}\label{out:b2:cpp-copy-move:move-demo}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize]
+\node[font=\footnotesize\bfseries, anchor=west] at (-0.5,1.9) {before \texttt{Buffer c = std::move(a);}};
+\node[anchor=east] at (0,1.0) {\texttt{a}};
+\node[cell, minimum width=1.0cm] (an) at (0.55,1.0) {9};
+\node[cell, minimum width=1.0cm, right=0mm of an] (ap) {$\bullet$};
+\node[draw, fill=omDef!10, minimum width=2.4cm, minimum height=7mm, font=\ttfamily\scriptsize] (blk) at (4.0,1.0) {Mill Lane\textbackslash 0};
+\draw[ptr] (ap.center) -- (blk.west);
+\begin{scope}[xshift=7.4cm]
+\node[font=\footnotesize\bfseries, anchor=west] at (-0.5,1.9) {after};
+\node[anchor=east] at (0,1.0) {\texttt{a}};
+\node[cell, minimum width=1.0cm] (an2) at (0.55,1.0) {0};
+\node[cell, minimum width=1.0cm, right=0mm of an2, font=\ttfamily\scriptsize] (ap2) {null};
+\node[anchor=east] at (0,0) {\texttt{c}};
+\node[cell, minimum width=1.0cm] (cn) at (0.55,0) {9};
+\node[cell, minimum width=1.0cm, right=0mm of cn] (cp) {$\bullet$};
+\node[draw, fill=omDef!10, minimum width=2.4cm, minimum height=7mm, font=\ttfamily\scriptsize] (blk2) at (4.0,0) {Mill Lane\textbackslash 0};
+\draw[ptr] (cp.center) -- (blk2.west);
+\node[font=\scriptsize, text=black!60, anchor=north] at (4.0,-0.45) {same block, new owner};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small A move copies the two members of \code{a} into \code{c} and then empties \code{a}, so that
+exactly one object owns the block. Nothing is allocated, and the cost does not depend on the length of the text.}
+\end{omfigure}
+
+The third statement printed no \omterm{def:b2:cpp-classes-raii:constructor}{constructor} at all: \code{label} returns the prvalue \code{Buffer(t)}, and C++17
+requires that it be built directly in \code{d}.
+
+\begin{definition}[Copy elision]\label{def:b2:cpp-copy-move:elision}
+\emph{Copy elision}\index{copy elision} is the construction of an object directly in its final place, which removes a
+copy or move. Since C++17 it is guaranteed when an object is initialised from a prvalue of its type: \code{T x =
+T(...)}, \code{T x = f()} with \code{f} returning a prvalue, and \code{return T(...);}. When a function returns a
+named local object, the compiler may also build it in the caller's object (the \emph{named return value
+optimisation}), but is not required to; if it does not, the return moves.
+\end{definition}
+
+% ledger: b2:cpp17-elision
+This is the first line of \cref{out:b2:cpp-copy-move:hook}: \code{make_readings} returns its local vector \code{v}
+by name, the compiler built \code{v} in the caller's \code{r}, and had it not done so the return would have moved the
+vector, which copies three pointers. Returning a large object by value is therefore cheap in C++, and the usual
+style.
+
+\begin{inpractice}[When to write std::move]
+Write \code{std::move(x)} only when \code{x} is a named object you will not read again: passing it to a
+function that keeps it, or pushing it into a container. Do not write \code{return std::move(local);}: it turns the
+returned name into an xvalue, which forbids the elision and forces a move. Do not move from a \code{const} object:
+\code{std::move} gives a \code{const T &&}, which binds only to the \omterm{def:b2:cpp-copy-move:copy}{copy constructor}, and the ``move'' silently
+copies.
+\end{inpractice}
+
+A vector that grows faces the same choice. When it carries its elements to a larger block, moving them is cheaper
+than copying them. But if one move throws halfway, some elements are in the new block and some, already moved
+from, in the old one, and the strong guarantee of \code{push_back} is lost. The library therefore moves only if the
+\omterm{def:b2:cpp-copy-move:move}{move constructor} is declared \code{noexcept}, and copies otherwise. \code{Tracked}, the type of the opening, comes
+in two versions that differ only in that word.
+
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/tracked.hpp}{9}{31}{A value that counts its copies and moves, in
+two versions}\label{lst:b2:cpp-copy-move:tracked}
+
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/growth.cpp}{6}{20}{Filling a vector from
+empty}\label{lst:b2:cpp-copy-move:growth}
+
+\omoutput{code/bachelor-2/02-cpp-copy-move/outputs/growth.txt}{The same pushes, moved or copied at each
+regrowth.}\label{out:b2:cpp-copy-move:growth}
+
+% ledger: b2:vector-nothrow-move
+Each push moves its temporary into the vector, hence $n$ moves in every line. With $n = 1000$ the capacity went
+$1, 2, 4, \dots, 1024$ in 11 regrowths, which carried $1 + 2 + \dots + 512 = 1023$ elements: 1023 more moves with
+\code{noexcept}, 1023 copies without it. The count is bounded for any growth factor.
+
+\begin{proposition}[Transfers of a growing array]\label{prop:b2:cpp-copy-move:growth-moves}
+An array starts empty and receives $n \geq 2$ elements by appends. Whenever it is full, it moves to a block whose
+capacity is at least $r$ times the old one, for a fixed $r > 1$, and carries all its elements over. Then the total
+number of elements carried over is less than $\frac{r}{r-1}(n-1)$. For elements whose \omterm{def:b2:cpp-copy-move:move}{move constructor} is
+\code{noexcept}, each transfer of a \code{std::vector} is a move and no element is ever copied; otherwise each
+transfer is a copy.
+\end{proposition}
+
+\begin{proof}
+Let $c_1 < c_2 < \dots < c_k$ be the capacities at which the array was full and regrew; regrowth $j$ carries $c_j$
+elements. Since $c_{j+1} \geq r c_j$, we have $c_j \leq c_k / r^{k-j}$, and
+\[ \sum_{j=1}^{k} c_j \leq c_k \sum_{i=0}^{k-1} r^{-i} < c_k \cdot \frac{1}{1 - 1/r} = \frac{r}{r-1}\, c_k . \]
+The last regrowth happened when the array already held $c_k$ elements and received another, so $c_k + 1 \leq n$,
+and the sum is less than $\frac{r}{r-1}(n-1)$. If there was no regrowth the sum is $0$. The last sentence is the rule
+of the library: it transfers with the \omterm{def:b2:cpp-copy-move:move}{move constructor} exactly when that \omterm{def:b2:cpp-classes-raii:constructor}{constructor} cannot throw, or when there is
+no \omterm{def:b2:cpp-copy-move:copy}{copy constructor}.
+\end{proof}
+
+For $r = 2$ the bound is $2(n-1)$; the run made 1023 transfers for $n = 1000$, under 1998, and 2047 for $n = 1025$,
+under 2048. With $n$ just above a power of two the bound is nearly reached (\cref{exo:b2:cpp-copy-move:11}). Added
+to the $n$ insertions themselves, a vector of $n$ elements is filled with fewer than $3n$ element operations, which is
+the amortised constant cost recalled at the start, now counted exactly.
+
+\section{The rule of zero and the rule of five}\label{sec:b2:cpp-copy-move:rules}
+
+A class can declare five special members beyond its ordinary \omterm{def:b2:cpp-classes-raii:constructor}{constructors}: the \omterm{def:b2:cpp-classes-raii:constructor}{destructor}, the \omterm{def:b2:cpp-copy-move:copy}{copy constructor},
+the copy assignment, the \omterm{def:b2:cpp-copy-move:move}{move constructor} and the move assignment. The compiler writes the missing ones, member by
+member, under rules that come down to this: declaring a \omterm{def:b2:cpp-classes-raii:constructor}{destructor} or a copy operation stops the compiler from
+writing the moves (copies are used instead), and declaring a move operation deletes the copies.
+
+\begin{definition}[Rule of zero, rule of five]\label{def:b2:cpp-copy-move:rules}
+The \emph{rule of zero}\index{rule of zero} says that a class whose members all manage their own resources (strings,
+containers, \omterm{def:b2:cpp-copy-move:unique-ptr}{smart pointers}) should declare none of the five special members: the member-wise versions the compiler
+writes are correct. The \emph{rule of five}\index{rule of five} says that a class that manages a resource itself, and
+so declares one of the five, should declare all five, each written or explicitly \code{= default} or
+\code{= delete}.
+\end{definition}
+
+\begin{method}[Applying the rule of zero]\label{met:b2:cpp-copy-move:rule-of-zero}
+To give a class correct copies and moves:
+\begin{enumerate}
+\item hold each resource in a member of a type that already owns it: \code{std::string}, \code{std::vector},
+\code{std::unique_ptr}, or a small class of your own written once by the \omterm{def:b2:cpp-copy-move:rules}{rule of five};
+\item declare none of the five special members in the class itself;
+\item check the result: the class copies if every member copies, and moves cheaply if every member moves cheaply.
+\end{enumerate}
+\end{method}
+
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/rule_of_zero.cpp}{7}{30}{Two classes that declare nothing
+special}\label{lst:b2:cpp-copy-move:rule-of-zero}
+
+\omoutput{code/bachelor-2/02-cpp-copy-move/outputs/rule_of_zero.txt}{The copy is deep, the moved-from vector is
+empty, the sensor moved.}\label{out:b2:cpp-copy-move:rule-of-zero}
+
+\code{Station} copies and moves correctly with no code at all, because \code{std::string} and \code{std::vector} do.
+\code{Sensor} cannot be copied, because one member cannot: a member that is move-only makes its class move-only. The
+moved-from \code{b.readings} printed 0, which is what the library's vector leaves behind, though only its validity is
+promised. Of the five special members, a class following the \omterm{def:b2:cpp-copy-move:rules}{rule of zero} writes none; \code{Buffer}, which manages
+a raw block, is the kind of class that writes them all, once (\cref{exo:b2:cpp-copy-move:3}).
+
+\section{Smart pointers}\label{sec:b2:cpp-copy-move:smart}
+
+In C, a pointer returned by a function says nothing about who must free the block. C++ separates the two meanings
+of a pointer: an \emph{owning} pointer, whose holder must free the object, and a plain pointer or reference, which
+only refers to an object owned by someone else. Owning pointers are objects of the standard library.
+
+\begin{definition}[Smart pointer, unique pointer, unique ownership]\label{def:b2:cpp-copy-move:unique-ptr}
+A \emph{smart pointer}\index{smart pointer} is a class that holds a pointer to a heap object and releases the object
+in its \omterm{def:b2:cpp-classes-raii:constructor}{destructor}. The \emph{unique pointer}\index{unique pointer} \code{std::unique_ptr<T>} is the \emph{sole}
+owner of its object (\emph{unique ownership}\index{unique ownership}): it cannot be copied, it can be moved, which
+transfers the ownership and leaves the source null, and its \omterm{def:b2:cpp-classes-raii:constructor}{destructor} deletes the object if it holds one.
+\code{std::make_unique<T>(args)} allocates and constructs the object.
+\end{definition}
+
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/unique.cpp}{8}{30}{Photos owned by an
+album}\label{lst:b2:cpp-copy-move:unique}
+
+\omoutput{code/bachelor-2/02-cpp-copy-move/outputs/unique.txt}{Each photo is freed when its owner
+goes.}\label{out:b2:cpp-copy-move:unique}
+
+A \code{std::unique_ptr} holds one pointer and nothing else, so it costs what a raw pointer costs. The rule that
+follows is short: \code{new} and \code{delete} no longer appear in application code. Sometimes, though, an object
+has several owners and none of them knows which will finish last: a photo shown in two albums, a cached page held
+by several requests.
+
+\begin{definition}[Shared pointer, shared ownership, weak pointer]\label{def:b2:cpp-copy-move:shared-ptr}
+A \emph{shared pointer}\index{shared pointer} \code{std::shared_ptr<T>} is one of possibly several owners of an
+object (\emph{shared ownership}\index{shared ownership}). The object comes with a \emph{control block} that counts its
+shared pointers: copying a \code{shared_ptr} adds one, destroying or resetting one subtracts one, and the owner that
+brings the count to zero deletes the object. A \emph{weak pointer}\index{weak pointer} \code{std::weak_ptr<T>}
+refers to an object owned by shared pointers without being counted as an owner; \code{lock()} gives a
+\code{shared_ptr} to the object if it is still alive, and a null one if not.
+\end{definition}
+
+The count makes a \omterm{def:b2:cpp-copy-move:shared-ptr}{shared pointer} cost more than a unique one (a second block, and an update of the count on every
+copy), and it has a blind spot. In the program below a photo owns its album and the album owns its cover photo.
+
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/shared_cycle.cpp}{7}{30}{An album and a photo that own each
+other}\label{lst:b2:cpp-copy-move:shared-cycle}
+
+\omoutput[1-8,18-22,32-36]{code/bachelor-2/02-cpp-copy-move/outputs/shared_cycle.txt}{LeakSanitizer reports two
+blocks nobody can reach.}\label{out:b2:cpp-copy-move:shared-cycle}
+
+Neither \omterm{def:b2:cpp-classes-raii:constructor}{destructor} printed. When \code{main} returned, \code{a} and \code{p} were destroyed and each count fell from
+2 to 1, the one held by the other object. Nothing outside the pair points to it any more, but each keeps the other
+above zero: the count only sees owners, not whether they are reachable. The fix is to decide that one direction of
+the edge observes rather than owns. A photo needs to know its album, but does not keep it alive.
+
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/weak_fix.cpp}{7}{34}{The photo observes its
+album}\label{lst:b2:cpp-copy-move:weak-fix}
+
+\omoutput{code/bachelor-2/02-cpp-copy-move/outputs/weak_fix.txt}{Both objects freed; the photo saw its album
+go.}\label{out:b2:cpp-copy-move:weak-fix}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, box/.style={draw, rounded corners=2pt, minimum width=2.5cm, minimum height=1.1cm, align=center}]
+\node[font=\footnotesize\bfseries, anchor=west] at (-1.3,2.5) {two owning edges};
+\node[box, fill=omDef!10] (A) at (0,1.2) {\texttt{Album} Coast\\[1pt] {\scriptsize strong 1, weak 0}};
+\node[box, fill=omThm!10] (P) at (3.8,1.2) {\texttt{Photo} pier\\[1pt] {\scriptsize strong 1, weak 0}};
+\draw[ptr, bend left=25] (A.north east) to node[above, font=\scriptsize] {cover} (P.north west);
+\draw[ptr, bend left=25] (P.south west) to node[below, font=\scriptsize] {album} (A.south east);
+\node[font=\scriptsize, text=omThm, align=center] at (1.9,-0.4) {after \texttt{main}: counts stay at 1,\\ nothing is freed};
+\begin{scope}[xshift=8.0cm]
+\node[font=\footnotesize\bfseries, anchor=west] at (-1.3,2.5) {one weak edge};
+\node[box, fill=omDef!10] (A2) at (0,1.2) {\texttt{Album} Coast\\[1pt] {\scriptsize strong 1, weak 1}};
+\node[box, fill=omThm!10] (P2) at (3.8,1.2) {\texttt{Photo} pier\\[1pt] {\scriptsize strong 2, weak 0}};
+\draw[ptr, bend left=25] (A2.north east) to node[above, font=\scriptsize] {cover} (P2.north west);
+\draw[ptr, dashed, black!60, bend left=25] (P2.south west) to node[below, font=\scriptsize] {album (weak)} (A2.south east);
+\node[draw, dotted, font=\scriptsize] (va) at (-2.0,1.2) {\texttt{a}};
+\draw[ptr, black!60] (va.east) -- (A2.west);
+\node[draw, dotted, font=\scriptsize] (vp) at (5.8,1.2) {\texttt{p}};
+\draw[ptr, black!60] (vp.west) -- (P2.east);
+\node[font=\scriptsize, text=omMeth!80!black, align=center] at (1.9,-0.4) {\texttt{a} goes: album strong 0, freed;\\ then the photo when \texttt{p} goes};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Each object made by \code{make_shared} carries a control block counting its strong owners and
+its weak observers. Left: the cycle of \cref{lst:b2:cpp-copy-move:shared-cycle} once \code{a} and \code{p} are gone.
+Right: inside the block of \cref{lst:b2:cpp-copy-move:weak-fix}, while \code{a} and \code{p} still exist; the dashed
+edge does not count, so the album dies with \code{a}.}
+\end{omfigure}
+
+\begin{inpractice}[Choosing an owner]
+Most objects should have exactly one owner, and \code{std::unique_ptr} or a plain member says so. Reach for
+\code{std::shared_ptr} only when the lifetime is genuinely shared, and then draw the ownership graph: every cycle
+in it must contain a weak edge. Pointers back to a parent, to an observer, or to a cache entry are the usual
+candidates. A child owned by its parent can even point back with a raw pointer, since the parent always outlives it
+(\cref{exo:b2:cpp-copy-move:9}). Book 5 returns to reference counting as a technique for managing memory, and to its
+alternatives.
+\end{inpractice}
+
+Moving costs a few pointer copies whatever the size of the object; copying costs time proportional to the data. The
+program below measures both for vectors of \code{double} of growing length.
+
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/copy_vs_move.cpp}{16}{28}{Copy and move of a vector, timed
+(\code{ns} returns the mean time of \code{reps} calls of its argument)}\label{lst:b2:cpp-copy-move:copy-vs-move}
+
+\omoutput{code/bachelor-2/02-cpp-copy-move/outputs/copy_vs_move.txt}{One run on the author's laptop; the digits
+change from run to run.}\label{out:b2:cpp-copy-move:copy-vs-move}
+
+The copy grows with $n$: a few hundredths of a nanosecond per element while the vectors fit in the processor's
+caches, and about ten times more once they do not (\cref{ch:b2:caches}). The move stays at a nanosecond or two
+whatever the length, because it copies three pointers and empties the source.
+
+\section{Exercises}\label{sec:b2:cpp-copy-move:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-copy-move:1}
+Using \code{Tracked} from \cref{lst:b2:cpp-copy-move:tracked}, say for each of the lines A to F whether it copies,
+moves, or neither, and give the two numbers the program prints.
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/exo_count.cpp}{7}{22}{Copies and moves, line by line}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-copy-move:2}
+The class \code{Text} below has a copy assignment written the obvious way. The program assigns an object to
+itself. Run under AddressSanitizer, it stops at once. Explain the report, then fix the assignment twice: with a test
+for self-assignment, and with \cref{met:b2:cpp-copy-move:copy-and-swap}. Which fix also gives the strong guarantee?
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/exo_selfassign.cpp}{5}{31}{An assignment to oneself}
+\omoutput[1-8]{code/bachelor-2/02-cpp-copy-move/outputs/run_selfassign.txt}{The beginning of the report.}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-copy-move:3}
+Complete the \code{Buffer} of \cref{lst:b2:cpp-copy-move:buffer} by the \omterm{def:b2:cpp-copy-move:rules}{rule of five}: add a \code{noexcept} \omterm{def:b2:cpp-copy-move:move}{move
+constructor} that leaves the source empty, and replace the copy assignment by a single assignment
+\code{operator=(Buffer o)} that takes its parameter by value. Explain why this one function serves as both copy and
+move assignment.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-copy-move:4}
+A vector doubles its capacity from 1 whenever it is full. Count exactly the elements carried over while it
+receives $n = 2^m$ elements, then $n = 2^m + 1$. Check both against \cref{prop:b2:cpp-copy-move:growth-moves} and
+against \cref{out:b2:cpp-copy-move:growth}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-copy-move:5}
+For each of the eight numbered statements, say which special member of \code{W} runs, or that none does, and
+which rule of the chapter decides it. One of the eight depends on the compiler: which one, and what may another
+compiler print?
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/exo_which.cpp}{4}{28}{Eight statements}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-copy-move:6}
+The program below should keep, for each day, the day's list of jobs. Explain the output. Is it undefined behaviour?
+Fix the loop so that each day starts from the same three jobs, and say which line of the fix copies.
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/exo_after_move.cpp}{6}{18}{A job list kept each day}
+\omoutput{code/bachelor-2/02-cpp-copy-move/outputs/exo_after_move.txt}{The output.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-copy-move:7}
+Write a class template \code{UniquePtr<T>} with the behaviour of \cref{def:b2:cpp-copy-move:unique-ptr}: a
+\omterm{def:b2:cpp-classes-raii:constructor}{constructor} from \code{T *}, no copies, a \code{noexcept} \omterm{def:b2:cpp-copy-move:move}{move constructor} and move assignment (a self-move must not
+delete the object), \code{*}, \code{->}, \code{get}, \code{release}, \code{reset} and a test for null. Test that a
+vector of a hundred \code{UniquePtr} frees each object exactly once.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-copy-move:8}
+Prove \cref{prop:b2:cpp-copy-move:copy-and-swap} again in the form of \cref{exo:b2:cpp-copy-move:3}, where the
+parameter is taken by value. Where does the copy that may throw now happen, and why is the target still unchanged
+if it throws? Does the move assignment that this function also provides give the strong guarantee?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-copy-move:9}
+Represent a tree of named places (town, quarters, buildings) with nodes that own their children through
+\code{std::vector<std::unique_ptr<Node>>} and point to their parent with a raw \code{Node *}. Write \code{add},
+\code{path} (\code{town/west/mill}) and \code{move_child(i, to)}, which moves a whole subtree under another node.
+Why is a raw parent pointer safe here, and why would a \code{std::shared_ptr} to the parent leak? Does the moved
+subtree change address?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-copy-move:10}
+Write a string class \code{SmallString} that keeps strings of at most 15 characters inside the object, in a member
+array, and longer ones in a heap block (a \emph{small-buffer optimisation}). Give it the five special members. What
+must the \omterm{def:b2:cpp-copy-move:move}{move constructor} do when the source is small, and why is it then not cheaper than a copy? Test copies and
+moves between every combination of small and long strings, self-assignment, and growth of a vector of them.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-copy-move:11}
+(a) Show that the bound of \cref{prop:b2:cpp-copy-move:growth-moves} cannot be improved to $\frac{r}{r-1}(n-1)
+\cdot \alpha$ for any $\alpha < 1$: exhibit, for $r = 2$, values of $n$ for which the number of transfers divided by
+$2(n-1)$ tends to $1$. (b) What does the proof give for $r = 1.5$, and how many transfers does a growth from 1 by
+\emph{rounded} factor 1.5 (capacities $1, 2, 3, 4, 6, 9, \dots$) make up to $n = 100$? (c) An array that grows by a
+fixed number $d$ of places instead of a factor makes how many transfers for $n$ elements? Conclude about the
+amortised cost.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-copy-move:12}
+A station keeps the displays that show its readings, and each display keeps its station. Explain the output, draw
+the ownership graph with the counts at the end of \code{main}, and fix the program with one \code{std::weak_ptr}.
+Which edge should it be, and why not the other? Prove that, in your fixed version, every object is freed when the
+last outside \code{shared_ptr} to the station goes, for any number of displays.
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/exo_observers.cpp}{6}{37}{A station and its displays}
+\omoutput[1-5,63-64]{code/bachelor-2/02-cpp-copy-move/outputs/exo_observers.txt}{The start and the end of the
+report.}
+\end{exercise}
+
+\section{Problem: The photo library that copied itself}\label{sec:b2:cpp-copy-move:problem}
+
+\begin{problem}[{Weekend problem --- The photo library that copied itself}]\label{pb:b2:cpp-copy-move:1}
+A photo library edits images of $4000 \times 3000$ pixels, one byte per pixel, held by value in an \code{Image} class
+that counts its copies and moves. It runs the same two-step edit in two styles and then files three images in an
+album.
+
+\omcodes{code/bachelor-2/02-cpp-copy-move/listings/pipeline.cpp}{9-22,24-29,31-49}{An editing
+pipeline}\label{lst:b2:cpp-copy-move:pipeline}
+
+\medskip\noindent\textbf{Part I --- Counting copies.}\par\nopagebreak
+\begin{enumerate}[beginpenalty=10000]
+\item How many bytes does one copy of an \code{Image} allocate and copy?
+\item In version 1, which statements copy an \code{Image} when \code{a} is computed? Predict the count of copies and
+moves for the first report.
+\item Why does \code{return out;} in \code{brighten1} not count as a move in this run? What would it count with a
+compiler that does not apply the named return value optimisation?
+\item In version 2, where does the one copy of the second report happen, and why must it happen if \code{photo} is
+used again?
+\item Where do the two moves of the second report happen? Why is \code{return im;} a move and not elided?
+\item Why does the result of \code{brighten2} reach the parameter of \code{darken2} with neither a copy nor a move?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Adding moves.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Predict the third report (with \code{std::move(photo)}). What may the program do with \code{photo} afterwards?
+\item Predict the fourth report: the three \code{push_back} calls, with the vector growing from capacity 0 as in
+\cref{out:b2:cpp-copy-move:growth}.
+\item How many bytes are copied in the whole run? Compare with a version where \code{Image}'s \omterm{def:b2:cpp-copy-move:move}{move constructor} lacks
+\code{noexcept}.
+\item Rewrite the album part with \code{album.reserve(3)}; what does the fourth report become?
+\item \code{Image} declares its five special members only to count. Which of them would the \omterm{def:b2:cpp-copy-move:rules}{rule of zero} let it
+drop, and what would the class then do on a copy and a move?
+\item State a rule for choosing between \code{const Image &} and \code{Image} as the parameter type of an edit
+function, from the counts above.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Albums and photos.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item The library now lets one photo belong to several albums, and an album keeps its photos with
+\code{std::vector<std::shared_ptr<Photo>>}. Why is \code{std::unique_ptr} no longer possible?
+\item Each photo keeps the list of albums that contain it, as \code{std::vector<std::shared_ptr<Album>>}. Draw the
+ownership graph for two albums sharing one photo, with every strong count, once the library's own pointers to the
+albums are gone.
+\item Which objects leak? How many bytes, for photos of the size above?
+\item Fix it with \omterm{def:b2:cpp-copy-move:shared-ptr}{weak pointers}. Which edges become weak, and what are the counts afterwards?
+\item When an album is deleted, a photo's list keeps an expired \code{weak_ptr}. Write the loop that removes the
+expired entries, using \code{expired()} or \code{lock()}.
+\item A photo shown on screen must not disappear while it is being drawn, even if its last album is deleted at that
+moment by another part of the program. Which call gives the drawing code that guarantee?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- What a copy costs.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item In \cref{out:b2:cpp-copy-move:copy-vs-move}, estimate the time per element of a copy for $n = 10^3$ and for
+$n = 10^7$. Why do they differ?
+\item Estimate the time of one copy of an \code{Image} from those figures (its elements are bytes, not
+\code{double}s: state your assumption).
+\item The library processes 50\,000 photos a night with version 1 and then files them. Estimate the time spent in
+copies, and the time saved by version 2 with \code{std::move}.
+\item Why does the move column not grow with $n$? Name the members a move of \code{std::vector} touches.
+\item A vector of $n$ images grows by doubling, without \code{reserve}. With \cref{prop:b2:cpp-copy-move:growth-moves},
+bound the bytes copied if \code{Image}'s moves were not \code{noexcept}, for $n = 1000$.
+\item State the result of the problem: the number of transfers of a growing array, and what each costs with and
+without \code{noexcept} moves.
+\end{enumerate}
+\end{problem}

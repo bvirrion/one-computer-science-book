@@ -1,0 +1,336 @@
+\chapter{Memory Management and Garbage Collection}\label{ch:b3:garbage-collection}
+
+A C program asks for memory with \code{malloc} and gives it back with \code{free}; a Python, Java or Lisp program only asks, and something else decides when a block can be reused. This chapter opens both boxes. It writes the \omterm{def:b3:garbage-collection:allocator}{allocator} behind \code{malloc} and measures how its free memory crumbles into pieces; it then writes the three classic ways of finding the blocks a program can no longer use (counting references, tracing from the roots, and copying), proves what each guarantees, and measures what each costs on a model of the town's server. A last section asks what a language without a collector, such as Rust, pays instead.
+
+\begin{recall}
+The Year~1 volume's heap is the region from which \code{malloc} hands out blocks while a program runs; \code{free} returns one. A block the program can no longer reach but never freed is a memory leak; a pointer used after its block was freed is dangling.
+\end{recall}
+
+\omimg{images/book5/b3-09-core-memory.jpg}{0.5\linewidth}{A magnetic-core memory plane: 32 by 32 ferrite rings at the crossings of the wires, each holding one bit, 1024 bits in all, or 128 bytes. Programs that build lists and trees as they run must reuse memory: a whole plane holds only eight of this chapter's cells.} % ledger: b3:core-plane-bits
+
+\section{Allocators}\label{sec:b3:garbage-collection:allocators}
+
+\begin{definition}[Allocator, free list, first fit, best fit, boundary tag]\label{def:b3:garbage-collection:allocator}
+An \emph{allocator}\index{allocator} manages a region of memory: it hands out blocks on request and takes them back. Its \emph{free list}\index{free list} is the set of its free blocks, found by walking all the blocks in address order or linked through the free blocks themselves. Given a request, \emph{first fit}\index{first fit} takes the first free block large enough, in address order; \emph{best fit}\index{best fit} takes the smallest free block large enough. A \emph{boundary tag}\index{boundary tag} is a word at each end of a block that records its size and whether it is in use.
+\end{definition}
+
+\Cref{lst:b3:garbage-collection:tags} lays the arena out: the blocks tile it from one end to the other, so the size in a block's header leads to the next block, and the footer at its end lets the block after it find the start of this one. A used word at each end of the arena, the prologue and the epilogue, saves every walk from testing the bounds.
+
+\omcode{code/bachelor-3/09-garbage-collection/listings/arena.c}{1}{17}{\omterm{def:b3:garbage-collection:allocator}{Boundary tags}. Sizes are multiples of 16 bytes, so the lowest bit of a tag is free to say whether the block is in use.}\label{lst:b3:garbage-collection:tags}
+
+\omcode{code/bachelor-3/09-garbage-collection/listings/arena.c}{19}{40}{An empty arena, and the two placement policies, each a walk over the blocks.}\label{lst:b3:garbage-collection:fits}
+
+A request for $n$ bytes needs a block of $n$ plus two tags, rounded up to 16 bytes. If the chosen free block is larger, the \omterm{def:b3:garbage-collection:allocator}{allocator} splits it and the tail stays free; if the tail would be too small to hold even its own tags and a little payload, the request takes the whole block (\cref{lst:b3:garbage-collection:allocfree}).
+
+\begin{definition}[Fragmentation, coalescing of free blocks]\label{def:b3:garbage-collection:fragmentation}
+\emph{Internal fragmentation}\index{internal fragmentation} is memory inside used blocks that the program did not ask for: tags and rounding. \emph{External fragmentation}\index{external fragmentation} is free memory split into blocks too small to serve a request, although their total would; we measure it as $1 - \text{largest free block}/\text{total free}$. \emph{Coalescing of free blocks}\index{coalescing of free blocks} merges a freed block with the free blocks next to it in memory, so that no two free blocks touch.
+\end{definition}
+
+\omcode{code/bachelor-3/09-garbage-collection/listings/arena.c}{48}{71}{Allocating with a split, and freeing with coalescing on both sides. The footer at $i - 1$ gives the previous block's size, so its start, in constant time.}\label{lst:b3:garbage-collection:allocfree}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=1mm, y=1mm,
+  u/.style={draw, fill=omDef!25, minimum height=6mm, inner sep=0pt},
+  f/.style={draw, fill=white, minimum height=6mm, inner sep=0pt},
+  t/.style={draw, fill=black!20, minimum width=2mm, minimum height=6mm, inner sep=0pt}]
+  \newcommand{\blk}[4]{% x, width, style, label
+    \node[t, anchor=west] at (#1, 0) {};
+    \node[#3, anchor=west, minimum width=#2 mm - 4mm] at (#1 + 2, 0) {#4};
+    \node[t, anchor=west] at (#1 + #2 - 2, 0) {};}
+  \begin{scope}[yshift=12mm]
+    \node[anchor=east] at (-2, 0) {before};
+    \blk{0}{24}{u}{used 96}
+    \blk{24}{20}{f}{free 64}
+    \blk{44}{24}{u}{freed: 96}
+    \blk{68}{28}{f}{free 128}
+    \blk{96}{20}{u}{used 64}
+  \end{scope}
+  \node[anchor=east] at (-2, 0) {after};
+  \blk{0}{24}{u}{used 96}
+  \blk{24}{72}{f}{free $64 + 96 + 128 = 288$}
+  \blk{96}{20}{u}{used 64}
+  \draw[->, >=Stealth, omThm] (56, 8.5) -- (56, 3.5);
+  \node[font=\scriptsize, text=omThm, anchor=west] at (57, 6) {\code{arena_free}: one tag at each end};
+\end{tikzpicture}
+\par\smallskip{\small Freeing the middle block of 96 bytes. Its neighbours on both sides are free: the footer just before it gives the start of the block of 64, and its own size gives the header of the block of 128. The three become one block of 288 bytes; the grey \omterm{def:b3:garbage-collection:allocator}{boundary tags} at its two ends are rewritten, the ones in between are simply forgotten.}
+\end{omfigure}
+
+Which policy fragments less depends on the program. \Cref{out:b3:garbage-collection:frag} runs one seeded workload of 20,000 steps under each: 280 slots, each either empty or holding a block, are allocated and freed at random, with mostly small requests and one in five a buffer of 400 to 2,000 bytes, in an arena of 64~KiB.
+
+\omoutput{code/bachelor-3/09-garbage-collection/outputs/frag.txt}{One workload under \omterm{def:b3:garbage-collection:allocator}{first fit} and \omterm{def:b3:garbage-collection:allocator}{best fit}: the requests that found no free block large enough, and the arena at the end.}\label{out:b3:garbage-collection:frag}
+
+\omterm{def:b3:garbage-collection:allocator}{Best fit} refused 11 requests and \omterm{def:b3:garbage-collection:allocator}{first fit} 17, all of them buffers of at most 2,016 bytes, although each time at least 6,208 bytes were free: \omterm{def:b3:garbage-collection:fragmentation}{external fragmentation}, not a lack of memory. \omterm{def:b3:garbage-collection:allocator}{First fit} ends with 17 free blocks under 64 bytes, slivers too small for almost any request. \omterm{def:b3:garbage-collection:fragmentation}{Internal fragmentation} is under 10~\%, the price of the tags and the rounding. A real \omterm{def:b3:garbage-collection:allocator}{allocator} keeps a separate \omterm{def:b3:garbage-collection:allocator}{free list} per size class (\emph{segregated lists}), so that a small request never searches the large blocks and blocks of one size sit together; for a request of a given class, its search is constant time.
+
+\section{Reference counting}\label{sec:b3:garbage-collection:refcount}
+
+From here on the program does not call \code{free}: the runtime must find out by itself when a block can never be used again.
+
+\begin{definition}[Reference counting]\label{def:b3:garbage-collection:refcount}
+\emph{Reference counting}\index{reference counting} stores in each object its \emph{reference count}\index{reference count}, the number of references to it held by variables and by other objects. Every copy of a reference increments the count of its target, every overwritten or discarded reference decrements it, and an object whose count reaches 0 is freed at once, decrementing the counts of the objects it refers to.
+\end{definition}
+
+CPython counts references. \code{sys.getrefcount} shows a count one higher than expected, because its own argument is a reference while it runs (\cref{lst:b3:garbage-collection:refcount}). % ledger: b3:py-getrefcount-plus-one
+
+\omcode{code/bachelor-3/09-garbage-collection/listings/refcount.py}{1}{33}{Counts rising and falling, an object freed the moment its count reaches 0, and a cycle that counting cannot free.}\label{lst:b3:garbage-collection:refcount}
+
+\omoutput{code/bachelor-3/09-garbage-collection/outputs/refcount.txt}{\code{Dune} is freed by \code{del a}, before the next line runs. \code{Emma} and \code{Ulysses} survive their names: each keeps the other's count at 1, until the cycle collector finds them unreachable.}\label{out:b3:garbage-collection:refcount}
+
+The good side of counting is in the first half of the output: memory comes back at a known moment, in small steps, with no pause. The bad side is the second half: two objects that refer to each other keep their counts above 0 forever, whether the program can reach them or not. CPython therefore adds a tracing collector for cycles, the subject of the next section, and \code{gc.collect} reports the number of unreachable objects it found. % ledger: b3:py-gc-collect-returns
+Counting has two other costs: every assignment of a reference writes two counts, which is costly when several threads share objects, and freeing a long list frees its cells one after the other in one go. \emph{Deferred} counting ignores the references held in local variables and checks for zero counts now and then; \emph{weighted} counting splits a weight between copies of a reference so that copying it does not touch the target.
+
+\section{Tracing: mark and sweep}\label{sec:b3:garbage-collection:tracing}
+
+\begin{definition}[Root set, reachable object, garbage]\label{def:b3:garbage-collection:reachability}
+The \emph{root set}\index{root set} of a running program is the set of references it holds outside the heap: in its variables, its registers and its call stack. An object is \emph{reachable}\index{reachable object} if a path of references leads to it from a root. A heap object that is not reachable is \emph{garbage}\index{garbage}: no future step of the program can read it.
+\end{definition}
+
+\omterm{def:b3:garbage-collection:reachability}{Garbage} is a safe approximation of ``never used again'': an unreachable object is certainly never used, while a \omterm{def:b3:garbage-collection:reachability}{reachable} one may or may not be. A collector frees only \omterm{def:b3:garbage-collection:reachability}{garbage}, so it never frees an object the program will use.
+
+The collectors of this chapter manage a heap of \emph{cells} (\code{heap.h}), each with an integer and two references, which is enough for lists, trees and arbitrary graphs. Their program is a model of the town's server (\code{server.h}): each request builds a list of short-lived work, then a session, a list of a few cells kept in a table of the most recent sessions, the roots. Every reference the program keeps across an allocation is in that table, since an allocation may collect.
+
+\begin{definition}[Garbage collection, mark and sweep, tri-colour invariant]\label{def:b3:garbage-collection:marksweep}
+\emph{Garbage collection}\index{garbage collection} is the automatic freeing of \omterm{def:b3:garbage-collection:reachability}{garbage}. A \emph{mark-and-sweep}\index{mark and sweep} collector marks every object \omterm{def:b3:garbage-collection:reachability}{reachable} from the roots, then sweeps the whole heap and frees every object left unmarked. During marking, an object is \emph{white} if not yet reached, \emph{grey} if reached but its references not yet examined, \emph{black} if reached and all its references examined. The \emph{tri-colour invariant}\index{tri-colour invariant} says that no black object refers to a white one.
+\end{definition}
+
+\omcode{code/bachelor-3/09-garbage-collection/listings/marksweep.c}{24}{56}{Mark with an explicit stack: a grey cell is a marked cell still on the stack. Sweep visits every cell of the heap.}\label{lst:b3:garbage-collection:marksweep}
+
+\begin{theorem}[Marking is correct]\label{thm:b3:garbage-collection:tricolour}
+The marking loop of \cref{lst:b3:garbage-collection:marksweep} keeps the \omterm{def:b3:garbage-collection:marksweep}{tri-colour invariant}, and it stops with every \omterm{def:b3:garbage-collection:reachability}{reachable} cell black and every other cell white.
+\end{theorem}
+
+\begin{proof}
+Grey cells are exactly the cells on the stack: a cell is marked when it is pushed and becomes black when it is popped and its two references examined. At the start nothing is black. One iteration pops a grey cell $c$ and examines its references; every white one is marked and pushed, so becomes grey. Afterwards $c$ is black and refers to no white cell; no other black cell changed or lost a black neighbour's colour, since colours only go from white to grey to black. So the invariant holds after every iteration. Each cell is pushed at most once, when it stops being white, so the loop stops, with an empty stack: no grey cell. Take a \omterm{def:b3:garbage-collection:reachability}{reachable} cell $x$ and a path $r = x_0, x_1, \dots, x_k = x$ from a root. $x_0$ was made grey by the first loop, so it is black at the end. If $x_i$ is black, $x_{i+1}$ is not white by the invariant, and not grey since none is left: it is black. By induction $x$ is black. Conversely a cell becomes grey only when reached from a root or from a grey cell, so every marked cell is \omterm{def:b3:garbage-collection:reachability}{reachable}.
+\end{proof}
+
+The invariant is what makes marking safe to interleave with the program, the subject of collectors that run alongside it: the program may change references while marking is under way, and it must then never store a reference to a white cell into a black one without telling the collector (exercise~\ref{exo:b3:garbage-collection:11} meets the same constraint in another form). The explicit stack can hold every cell of the heap; a collector that cannot afford such a stack marks with a bounded one, and when it overflows, it rescans the heap for marked cells whose references still point to white ones.
+
+\omoutput{code/bachelor-3/09-garbage-collection/outputs/ms_demo.txt}{The server on a heap of 3,000 cells: 150 sessions of 8 cells, each closed into a cycle, and 24 cells of work per request. In the steady state a collection marks the 1,208 live cells and sweeps the other 1,792.}\label{out:b3:garbage-collection:ms}
+
+Every session is a cycle, and the collector frees them anyway, since a cycle that no root reaches is \omterm{def:b3:garbage-collection:reachability}{garbage} like any other cell. The cost of one collection is the number of \omterm{def:b3:garbage-collection:reachability}{reachable} cells for marking plus the size of the whole heap for sweeping; between two collections, the program allocates the cells that were swept.
+
+\section{Copying and generational collection}\label{sec:b3:garbage-collection:copying}
+
+\begin{definition}[Copying collector, forwarding pointer]\label{def:b3:garbage-collection:copying}
+A \emph{copying collector}\index{copying collector} splits the heap into two halves, \emph{from-space}, where the program allocates, and \emph{to-space}, kept empty. A collection copies every \omterm{def:b3:garbage-collection:reachability}{reachable} cell of from-space into to-space, updates every reference to point at the copies, and swaps the two halves' roles. When a cell is copied, its old place receives a \emph{forwarding pointer}\index{forwarding pointer}, the address of the copy, so that later references to it are redirected instead of copying it twice.
+\end{definition}
+
+Cheney's algorithm does it breadth first with no stack: the cells copied into to-space form the queue. Two indices walk to-space: \code{next}, where the next copy goes, and \code{scan}, the first copied cell whose references have not been updated. The cells before \code{scan} are black, those between \code{scan} and \code{next} grey, and from-space cells without a \omterm{def:b3:garbage-collection:copying}{forwarding pointer} white (\cref{lst:b3:garbage-collection:cheney}).
+
+\omcode{code/bachelor-3/09-garbage-collection/listings/cheney.c}{22}{46}{Cheney's algorithm: forward the roots, then scan to-space until the scan index catches up with the free index.}\label{lst:b3:garbage-collection:cheney}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=9mm, y=8mm, >=Stealth,
+  c/.style={draw, minimum width=8mm, minimum height=5mm, inner sep=0pt}]
+  \node[anchor=east] at (-0.6, 2) {from};
+  \foreach \n/\x/\col in {D/0/white, C/1/black!8, B/2/black!8, A/3/black!8, E/4/white} {
+    \node[c, fill=\col] (f\n) at (\x, 2) {};
+    \node[font=\tiny, above] at (f\n.north) {\n};
+  }
+  \node at (fA) {$\to 0$};
+  \node at (fB) {$\to 1$};
+  \node at (fC) {$\to 2$};
+  \node at (fD) {D};
+  \node at (fE) {\textcolor{black!50}{dead}};
+  \node[anchor=east] at (-0.6, 0) {to};
+  \foreach \n/\x/\col in {A/0/black!45, B/1/black!20, C/2/black!20, e1/3/white, e2/4/white, e3/5/white}
+    \node[c, fill=\col] (t\n) at (\x, 0) {};
+  \node at (tA) {A}; \node at (tB) {B}; \node at (tC) {C};
+  \draw[->] (0.5, -0.9) node[below] {\code{scan}} -- (0.5, -0.3);
+  \draw[->] (2.5, -0.9) node[below] {\code{next}} -- (2.5, -0.3);
+  \draw[->, omThm, densely dashed] (fA.south) -- (tA.north);
+  \draw[->, omThm, densely dashed] (fB.south) -- (tB.north);
+  \draw[->, omThm, densely dashed] (fC.south) -- (tC.north);
+  \node[anchor=west, align=left] at (6, 0.9) {black: A (scanned)\\grey: B, C (copied)\\white: D (not reached yet)};
+\end{tikzpicture}
+\par\smallskip{\small Cheney's algorithm on the graph of exercise~\ref{exo:b3:garbage-collection:8}, after the root A was copied and scanned. A's references were forwarded: B and C were copied and their old places hold \omterm{def:b3:garbage-collection:copying}{forwarding pointers} (to cells 1 and 2). E, \omterm{def:b3:garbage-collection:reachability}{garbage}, is never touched. Scanning B next will copy D to cell 3.}
+\end{omfigure}
+
+\begin{theorem}[Cheney's algorithm]\label{thm:b3:garbage-collection:cheney}
+A collection copies each cell \omterm{def:b3:garbage-collection:reachability}{reachable} from the roots exactly once, and no other, leaves every reference pointing at the copy of its target, and does work proportional to the number of \omterm{def:b3:garbage-collection:reachability}{reachable} cells plus the number of roots.
+\end{theorem}
+
+\begin{proof}
+A cell is copied only by \code{forward}, the first time a reference to it is forwarded; the \omterm{def:b3:garbage-collection:copying}{forwarding pointer} it leaves makes every later call return the same copy. Each copy is scanned once, when \code{scan} passes it, and each of its two references is then forwarded, so the set of copied cells is closed under references and contains the roots' targets: it contains every \omterm{def:b3:garbage-collection:reachability}{reachable} cell. Conversely a cell is copied only when a root or a copied cell refers to it, so every copied cell is \omterm{def:b3:garbage-collection:reachability}{reachable}. Every reference in to-space and every root was forwarded, so points at a copy. The work is one forward per root and two per copied cell, each in constant time. \omterm{def:b3:garbage-collection:reachability}{Garbage} is never examined.
+\end{proof}
+
+This is the \omterm{def:b3:garbage-collection:copying}{copying collector}'s great property: its cost does not depend on the amount of \omterm{def:b3:garbage-collection:reachability}{garbage}. \Cref{out:b3:garbage-collection:cheney} runs the server's workload of \cref{out:b3:garbage-collection:ms} under it, on the same 3,000 cells.
+
+\omoutput{code/bachelor-3/09-garbage-collection/outputs/cheney_demo.txt}{The same workload on a copying heap of 3,000 cells, so 1,500 per half. A collection copies the live cells and nothing else.}\label{out:b3:garbage-collection:cheney}
+
+On the same memory the \omterm{def:b3:garbage-collection:copying}{copying collector} runs 211 collections instead of 34, because the program has only half of it: after copying 1,204 live cells, only 296 are free in from-space. The weekend problem prices that half: exercise~\ref{exo:b3:garbage-collection:10} proves that with $L$ live cells in a heap of $H$ cells, the \omterm{def:b3:garbage-collection:copying}{copying collector} copies $L/(H/2 - L)$ cells per cell allocated.
+
+Most objects die young: the work list of a request is \omterm{def:b3:garbage-collection:reachability}{garbage} before the request ends. \emph{Generational} collectors bet on this \emph{generational hypothesis}: collecting the young objects often and the old ones rarely spends little time on objects that survive.
+
+\begin{definition}[Generational collection, write barrier, remembered set]\label{def:b3:garbage-collection:generational}
+A \emph{generational collector}\index{generational collection} allocates in a small \emph{nursery} and collects it alone in a \emph{minor} collection, which moves its survivors into an old generation (\emph{promotion}); a \emph{major} collection collects the whole heap. The \emph{remembered set}\index{remembered set} holds the old objects that may refer to nursery objects; a minor collection treats them as roots. A \emph{write barrier}\index{write barrier} is code run at every store of a reference into an object; here, it adds the object to the remembered set when an old object receives a reference to a young one.
+\end{definition}
+
+Without the \omterm{def:b3:garbage-collection:generational}{remembered set}, a minor collection would have to trace the whole old generation to find the references into the nursery, and would no longer be minor. In \code{gen.c} a minor collection is Cheney's loop applied to the nursery only, copying into the free end of the old generation (\cref{lst:b3:garbage-collection:gen}); a reference to an old cell is left as it is.
+
+\omcode{code/bachelor-3/09-garbage-collection/listings/gen.c}{30}{58}{The \omterm{def:b3:garbage-collection:generational}{generational collector}'s two pieces of Cheney: \code{copy} moves a cell only if it is young, or in a major collection; a minor collection starts from the remembered cells and the roots.}\label{lst:b3:garbage-collection:gen}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=10mm, y=10mm, >=Stealth,
+  c/.style={draw, circle, minimum size=5mm, inner sep=0pt, fill=white}]
+  \draw[fill=black!6] (0, 0) rectangle (6, 1.6);
+  \node[anchor=north west] at (0, 1.6) {old generation};
+  \draw[fill=omDef!10] (6.4, 0) rectangle (9, 1.6);
+  \node[anchor=north west] at (6.4, 1.6) {nursery};
+  \node[c] (o1) at (1, 0.6) {};
+  \node[c] (o2) at (2.5, 0.6) {};
+  \node[c, fill=omThm!25] (o3) at (4.5, 0.6) {$s$};
+  \node[c] (y1) at (7.2, 0.6) {$y$};
+  \node[c, fill=black!30] (y2) at (8.3, 0.6) {};
+  \draw[->] (o1) -- (o2);
+  \draw[->, thick, omThm] (o3) to[bend left=15] (y1);
+  \node[font=\scriptsize, text=omThm] at (6.2, 1.85) {\code{gc_write}};
+  \node[draw, rounded corners, anchor=north, align=left] (rs) at (4.5, -0.5) {remembered set: $\{s\}$};
+  \draw[->, densely dashed] (rs.north) -- (o3.south);
+  \node[anchor=west] at (9.2, 0.6) {grey: garbage};
+  \draw[->] (-0.8, 1.2) node[left] {root} -- (o1);
+\end{tikzpicture}
+\par\smallskip{\small Two generations. The store of a reference to the young cell $y$ into the old cell $s$ goes through the \omterm{def:b3:garbage-collection:generational}{write barrier}, which adds $s$ to the \omterm{def:b3:garbage-collection:generational}{remembered set}. The next minor collection starts from the roots and from $s$, so it promotes $y$; the grey cell, which nothing refers to, is never examined.}
+\end{omfigure}
+
+The server never stores into a cell after creating it, so a new cell can only refer to older ones and its \omterm{def:b3:garbage-collection:generational}{remembered set} stays empty; exercise~\ref{exo:b3:garbage-collection:11} writes the barrier for a program that does store. \Cref{out:b3:garbage-collection:gen} runs the weekend problem's workload, with 2,000 live cells, under the \omterm{def:b3:garbage-collection:generational}{generational collector} with 12,000 cells in all.
+
+\omoutput{code/bachelor-3/09-garbage-collection/outputs/gen_demo.txt}{The \omterm{def:b3:garbage-collection:generational}{generational collector} with nurseries of 250 to 2,000 cells: minor and major collections, cells promoted by minors and copied by majors, and all copies per cell allocated.}\label{out:b3:garbage-collection:gen}
+
+The \omterm{def:b3:garbage-collection:copying}{copying collector} on the same 12,000 cells copies 0.492 cells per cell allocated (\cref{out:b3:garbage-collection:pbcopy} below); the generational one 0.390 to 0.427. The gain is modest because the hypothesis is only three quarters true here: 4 of every 16 cells belong to a session, which lives for the next 500 requests, so every minor collection promotes them, and the old generation fills with sessions that die there. When nearly everything dies young, minor collections copy almost nothing and the gain is large; the program decides.
+
+\section{Memory safety without a collector}\label{sec:b3:garbage-collection:ownership}
+
+The Year~2 volume's Rust frees a value when its single owner goes out of scope, which the compiler checks: no counts, no tracing, and no pause. For a value with several owners, Rust offers \code{Rc}, a reference-counted pointer, with the weakness of every count: a cycle between \code{Rc} pointers is never freed. Its remedy is \code{Weak}, a reference that does not count: \code{Weak::upgrade} returns \code{None} once the value is gone (\cref{lst:b3:garbage-collection:rc}). % ledger: b3:rust-rc-cycle
+
+\omcode{code/bachelor-3/09-garbage-collection/listings/rc_cycle.rs}{21}{44}{Two members who are each other's friend are never dropped. A member who holds his sponsor by a \code{Weak} pointer does not keep her alive.}\label{lst:b3:garbage-collection:rc}
+
+\omoutput{code/bachelor-3/09-garbage-collection/outputs/rc_cycle.txt}{Ann and Bob leak: nothing is printed when their scope ends. Cleo and Dan are dropped as soon as Cleo's last strong count goes.}\label{out:b3:garbage-collection:rc}
+
+Rust's documentation gives the rule for a tree: strong pointers from a parent to its children, weak ones from a child back to its parent. A third way avoids per-object freeing altogether: an \emph{arena}, a region in which a computation allocates freely and which is freed in one step when the computation ends, as a compiler does with a whole syntax tree. \Cref{tab:b3:garbage-collection:costs} sums up what each strategy costs. % ledger: b3:rust-rc-cycle
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{22mm}>{\raggedright\arraybackslash}p{28mm}>{\raggedright\arraybackslash}p{34mm}>{\raggedright\arraybackslash}p{22mm}>{\raggedright\arraybackslash}p{26mm}@{}}
+\hline
+strategy & cost on each pointer store & cost of reclaiming & cycles & when memory returns \\
+\hline
+manual \code{free} & none & constant per block & the programmer's job & when the program says \\
+counting & two counts updated & constant per object & leak & at once \\
+\omterm{def:b3:garbage-collection:marksweep}{mark and sweep} & none & live objects + whole heap & freed & at a collection \\
+copying & none & live objects only; half the memory idle & freed & at a collection \\
+generational & a \omterm{def:b3:garbage-collection:generational}{write barrier} & live young objects, rare majors & freed & at a collection \\
+ownership & none (checked by the compiler) & constant per object & impossible without \code{Rc} & end of the owner's scope \\
+arena & none & one step for the arena & freed with it & when the arena goes \\
+\hline
+\end{tabular}
+\caption{What each way of managing memory costs, and when.}\label{tab:b3:garbage-collection:costs}
+\end{table}
+
+\begin{history}[Collectors]
+Two papers of 1960 on list processing stand at the start: John McCarthy's \emph{Recursive functions of symbolic expressions and their computation by machine} in April, and George Collins's \emph{A method for overlapping and erasure of lists} in December. % ledger: b3:mccarthy-1960, b3:collins-1960
+C.~J.~Cheney published his nonrecursive list compacting algorithm in November 1970. % ledger: b3:cheney-1970
+Edsger Dijkstra, Leslie Lamport, A.~J.~Martin, C.~S.~Scholten and E.~F.~M.~Steffens published on-the-fly \omterm{def:b3:garbage-collection:marksweep}{garbage collection} in 1978. % ledger: b3:dijkstra-onthefly-1978
+Henry Lieberman and Carl Hewitt described a real-time \omterm{def:b3:garbage-collection:reachability}{garbage} collector based on the lifetimes of objects in 1983, and David Ungar generation scavenging in 1984. % ledger: b3:lieberman-hewitt-1983, b3:ungar-1984
+\end{history}
+
+\section{Exercises}\label{sec:b3:garbage-collection:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:garbage-collection:1}
+An arena holds, in address order, free blocks of 96, 48, 160 and 64 bytes, separated by used blocks, then one large free block. Requests of 40, 24, 130 and 80 bytes arrive in that order; each needs a block of its size plus 16 bytes of tags, rounded up to 16. Which block does each one take under \omterm{def:b3:garbage-collection:allocator}{first fit}, and under \omterm{def:b3:garbage-collection:allocator}{best fit}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:garbage-collection:2}
+After \texttt{a = O(); b = a; c = [a, b]; d = \{\textquotesingle{}k\textquotesingle{}:\ a\}; del a; b = None; c.append(c[0]); d[\textquotesingle{}k\textquotesingle{}] = None}, what is the \omterm{def:b3:garbage-collection:refcount}{reference count} of the object, and what does \code{sys.getrefcount(c[0])} print?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:garbage-collection:3}
+Roots: $r_1 \to A$ and $r_2 \to D$. References: $A \to B$, $B \to C$, $C \to A$, $E \to F$, $F \to E$, $G \to D$. Which objects are \omterm{def:b3:garbage-collection:reachability}{garbage}? Which of them does \omterm{def:b3:garbage-collection:refcount}{reference counting} free?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:garbage-collection:4}
+In \cref{lst:b3:garbage-collection:rc}, the line that makes Ann Bob's friend becomes \code{*bob.sponsor.borrow_mut() = Rc::downgrade(&ann);}. Predict the first block of the output.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:garbage-collection:5}
+\code{exercises/ex5_sweep_bug.c} is \code{marksweep.c} with one line missing. On the workload of \cref{out:b3:garbage-collection:ms} it marks fewer and fewer cells, sweeps fewer and fewer, and runs out of memory during request 367. Find the line, and explain the run.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:garbage-collection:6}
+Write next fit: a placement policy for \code{arena.c} that starts each search at the block where the previous one stopped, wrapping round at the end. Why can its saved position become wrong after an \code{arena_free}, and how do you keep it right?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:garbage-collection:7}
+Using the \omterm{def:b3:garbage-collection:marksweep}{tri-colour invariant}, prove that after \code{mark} and \code{sweep} the \omterm{def:b3:garbage-collection:allocator}{free list} holds exactly the cells that were \omterm{def:b3:garbage-collection:reachability}{garbage} or free before, and that every cell is white again.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:garbage-collection:8}
+The heap holds cells D, C, B, A, E, allocated in that order, with $A \to B, C$; $B \to D, A$; $C \to D$; $E \to A$. Only A is a root. List the cells Cheney's algorithm copies, in order, with the new value of every reference.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:garbage-collection:9}
+Find a short sequence of requests on an arena with two free blocks of 2,000 and 1,504 bytes, in that order, that \omterm{def:b3:garbage-collection:allocator}{first fit} serves entirely and \omterm{def:b3:garbage-collection:allocator}{best fit} does not.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:garbage-collection:10}
+A program keeps exactly $L$ cells live and allocates without end, in a copying heap of $H$ cells with $H/2 > L$. Prove that in the steady state the collector copies $L/(H/2 - L)$ cells per cell allocated. What is the analogous cost of \omterm{def:b3:garbage-collection:marksweep}{mark and sweep}, counting one unit per cell marked and one per cell swept?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:garbage-collection:11}
+Write \code{gc_write(c, k, v)} for \code{gen.c}, a store of the reference $v$ into field $k$ of cell $c$ with a \omterm{def:b3:garbage-collection:generational}{write barrier}. Test that an old cell that receives a reference to a young one keeps it alive across a minor collection, and that without the barrier the young cell is lost.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:garbage-collection:12}
+Prove that \omterm{def:b3:garbage-collection:refcount}{reference counting} frees exactly the \omterm{def:b3:garbage-collection:reachability}{garbage} objects that cannot be reached from a cycle of \omterm{def:b3:garbage-collection:reachability}{garbage} objects.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:garbage-collection:problem}
+
+\begin{problem}[{Weekend problem --- Choosing the heap size of the town's server}]\label{pb:b3:garbage-collection:1}
+The town's server keeps the sessions of its last 500 requests, 4 cells each; every request also builds 12 cells of work that die with it (\cref{lst:b3:garbage-collection:server}). How much memory should it get? \Cref{out:b3:garbage-collection:pbcopy} runs 20,000 requests under the \omterm{def:b3:garbage-collection:copying}{copying collector} for heaps of $H$ cells from 2.5 to 16 times the live data $L$; \cref{out:b3:garbage-collection:pbms} does the same under \omterm{def:b3:garbage-collection:marksweep}{mark and sweep}.
+
+\omcode{code/bachelor-3/09-garbage-collection/listings/server.h}{24}{35}{One request of the server: work, then a session that replaces the oldest one.}\label{lst:b3:garbage-collection:server}
+
+\omoutput{code/bachelor-3/09-garbage-collection/outputs/pb_copying.txt}{The \omterm{def:b3:garbage-collection:copying}{copying collector}: collections, cells copied, cells copied per cell allocated, and the model $L/(H/2 - L)$ with $L$ the mean number of cells copied by a collection.}\label{out:b3:garbage-collection:pbcopy}
+
+\omoutput{code/bachelor-3/09-garbage-collection/outputs/pb_marksweep.txt}{\omterm{def:b3:garbage-collection:marksweep}{Mark and sweep} on the same requests: cells marked and swept, the work per cell allocated (marked plus the heap swept at each collection), and the model $(L + H)/(H - L)$.}\label{out:b3:garbage-collection:pbms}
+
+\medskip\noindent\textbf{Part I --- Live data and allocation.}
+\begin{enumerate}
+\item How many cells are live once 500 requests have run, and how many more at most while a request is in progress?
+\item How many cells does one request allocate, and what fraction of them are \omterm{def:b3:garbage-collection:reachability}{garbage} by the end of the next request?
+\item With cells of 16 bytes, how many bytes are live? How many bytes does the server allocate over the 20,000 requests?
+\item Why is the number of cells copied at a collection close to $L$ but not always equal to it?
+\item The generational hypothesis: what fraction of the cells die before 16 more cells are allocated? And before 8,000?
+\item Why must the work list being built be a root?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The copying model.}
+\begin{enumerate}[resume]
+\item After a collection, how many cells can the program allocate before the next one?
+\item Derive the cost $L/(H/2 - L)$ cells copied per cell allocated.
+\item What happens to the cost as $H$ approaches $2L$? What is the smallest heap that works at all?
+\item Show that for $H$ much larger than $L$ the cost is close to $2L/H$, so that doubling the heap halves it.
+\item With $L = 2{,}000$, what heap gives one cell copied per cell allocated?
+\item The memory the program never uses is a cost too. What fraction of a copying heap holds live data at $H = 4L$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Measured.}
+\begin{enumerate}[resume]
+\item Check the model against the measured column for $H = 2.5L$ and $H = 8L$.
+\item Why is the measured value slightly below the model for large $H$? (Look at the number of collections.)
+\item How many collections would $H = 32L$ need, by the model?
+\item From $H = 4L$ to $H = 8L$, by what factor does the work fall? From $8L$ to $16L$?
+\item The total number of copies at $H = 16L$ is exactly 22 times 2,000. Explain.
+\item If copying a cell costs 20~ns, how much time does the collector spend at $H = 2.5L$ and at $H = 6L$ over the 20,000 requests?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Mark and sweep compared.}
+\begin{enumerate}[resume]
+\item Derive the model $(L + H)/(H - L)$ for \omterm{def:b3:garbage-collection:marksweep}{mark and sweep}.
+\item Compare the two collectors with the same memory, $H = 4L$: which does less work per cell, counting a copy and a sweep step alike?
+\item Why does the \omterm{def:b3:garbage-collection:marksweep}{mark-and-sweep} cost never fall below 1, however large the heap?
+\item A sweep step is cheaper than a copy: it reads one cell and may link it into the \omterm{def:b3:garbage-collection:allocator}{free list}. If a sweep step costs a quarter of a copy, which collector wins at $H = 4L$, and at $H = 16L$?
+\item What does the \omterm{def:b3:garbage-collection:copying}{copying collector} give in exchange for its idle half, besides speed?
+\item Sum up: what heap size do you give the server, and why?
+\end{enumerate}
+\end{problem}

@@ -1,0 +1,106 @@
+\section*{Chapter \ref{ch:b3:virtual-memory} --- Virtual Memory}
+
+\begin{solution}{exo:b3:virtual-memory:1}
+In binary, \code{0x7ffff123} is \code{0111111111 1111111111 000100100011}: VPN[1] = \code{0x1ff}, VPN[0] = \code{0x3ff}, offset \code{0x123}. The walk reads the root entry at $\mathtt{0x1000} + \mathtt{0x1ff} \times 4 = \mathtt{0x17fc}$, which points to frame 7, then the entry at $\mathtt{0x7000} + \mathtt{0x3ff} \times 4 = \mathtt{0x7ffc}$, a leaf for frame 6. The \omterm{def:b3:virtual-memory:space}{physical address} is \code{0x06123} (\code{demo_test.c}).
+\end{solution}
+
+\begin{solution}{exo:b3:virtual-memory:2}
+The average is $80 + (1 - h) \times 2 \times 80$~ns: 81.6~ns at 99~\% (2~\% slower), 80.16~ns at 99.9~\%. The slowdown $(1 - h) \times 160 / 80 = 2(1 - h)$ stays under 5~\% when $h \ge 97.5$~\%.
+\end{solution}
+
+\begin{solution}{exo:b3:virtual-memory:3}
+7, 0, 1 fault and fill the frames; 2 faults and evicts 7; 0 hits; 3 evicts 1; 0 hits; 4 evicts 2; 2 evicts 3; 3 evicts 0, leaving 4, 2, 3. Eight faults (\code{test_exercise_3_lru_by_hand}).
+\end{solution}
+
+\begin{solution}{exo:b3:virtual-memory:4}
+VPN[1] is \code{0x040}, as for the data \omterm{def:b3:virtual-memory:paging}{page}, so the root entry exists; VPN[0] is \code{0x001}, an entry of the data \omterm{def:b3:virtual-memory:paging}{page}'s table that was never written:
+\omoutput{code/bachelor-3/11-virtual-memory/outputs/sv32_ex4.txt}{Exercise 4: the walk stops at level 0.}\label{out:b3:virtual-memory:ex4}
+\end{solution}
+
+\begin{solution}{exo:b3:virtual-memory:5}
+\code{(va >> 10) & 0x3ff} takes bits 19 to 10: the low eight bits of VPN[0] and the top two bits of the offset. \code{map} stored the \omterm{def:b3:virtual-memory:paging}{page} \code{0x10000000}, whose offset is 0, at index 0. A load at offset below \code{0x400} has bits 11 and 10 clear, finds index 0 and works; at \code{0x10000abc} they are \code{10}, the index is 2, an empty entry, and the walk faults at level 0 (\code{vpn_bug_test.c}). The right index is \code{((va) >> 12) & 0x3ff}. The bug also folds four \omterm{def:b3:virtual-memory:paging}{pages} onto overlapping indices, so it could map one \omterm{def:b3:virtual-memory:paging}{page} over another: an index must be built from the \omterm{def:b3:virtual-memory:paging}{page} number alone.
+\end{solution}
+
+\begin{solution}{exo:b3:virtual-memory:6}
+\code{exercises/ex6_clock_dirty.py}. On the example the three frames hold 1 (written), 2 and 3, all used. The first turn finds no \omterm{def:b3:virtual-memory:paging}{page} that is neither used nor dirty; the second clears the three bits and finds none unused; the next first turn finds \omterm{def:b3:virtual-memory:paging}{page} 2, unused and clean, and evicts it. Plain clock clears the bits and evicts \omterm{def:b3:virtual-memory:paging}{page} 1, the first under the hand, which is dirty and must be written back: \code{test_exercise_6_clock_with_dirty_bit} gets (4, 0) and (4, 1). On random strings the test also checks that the faults are never fewer than OPT's.
+\end{solution}
+
+\begin{solution}{exo:b3:virtual-memory:7}
+Let $A$ be any policy. We build policies $A_0 = A$, $A_1$, $A_2$, \dots, where $A_k$ makes the same choices as OPT on the first $k$ references and never more faults than $A_{k-1}$; then $A_n$ is OPT on a string of length $n$, with no more faults than $A$.
+
+Given $A_k$, suppose that at reference $k + 1$ it faults and evicts $y$ where OPT evicts $x$; both were in memory, and $x$'s next use is not before $y$'s. $A_{k+1}$ evicts $x$ and then copies $A_k$; their memories differ only by $y$ (held by $A_{k+1}$) against $x$ (held by $A_k$). While they differ: a reference to a common \omterm{def:b3:virtual-memory:paging}{page} hits in both; a reference to a \omterm{def:b3:virtual-memory:paging}{page} in neither faults in both, and if $A_k$ evicts $x$, $A_{k+1}$ evicts $y$ and the memories become equal, otherwise both evict the same \omterm{def:b3:virtual-memory:paging}{page}. $x$ cannot be referenced before $y$. When $y$ is referenced, $A_k$ faults and $A_{k+1}$ does not; if $A_k$ evicts $x$ the memories are equal, and if it evicts another \omterm{def:b3:virtual-memory:paging}{page} $v$, $A_{k+1}$ evicts $v$ too and loads $x$ at once, a load that $A_k$'s fault pays for. From then on the two are identical, and $A_{k+1}$ has made no more faults.
+
+The load of $x$ before it is requested is a \emph{prefetch}; a policy that prefetches can always be changed into one that loads each \omterm{def:b3:virtual-memory:paging}{page} only when requested, with no more faults: postpone each load until the \omterm{def:b3:virtual-memory:paging}{page} is requested, and skip it if the \omterm{def:b3:virtual-memory:paging}{page} is evicted first. \code{test_opt_is_never_beaten} compares OPT with FIFO, LRU and clock on 300 random strings.
+\end{solution}
+
+\begin{solution}{exo:b3:virtual-memory:8}
+The code is in the 4~MiB region 1 (\code{0x00400000 >> 22}); the heap covers regions \code{0x80} and \code{0x81}, since 8~MiB is two regions; the stack is in region \code{0x1ff}. Four level-0 tables and the root: 5 \omterm{def:b3:virtual-memory:paging}{pages}, 20~KiB, for $16 + 2{,}048 + 16$ \omterm{def:b3:virtual-memory:paging}{pages} of data (\code{test_exercise_8_table_pages}).
+\end{solution}
+
+\begin{solution}{exo:b3:virtual-memory:9}
+2,048 faults for the writes to every other \omterm{def:b3:virtual-memory:paging}{page}, each copying a \omterm{def:b3:virtual-memory:paging}{page}; none for the reads, since every \omterm{def:b3:virtual-memory:paging}{page} is mapped, shared or copied; 2,048 for the second writes, to the \omterm{def:b3:virtual-memory:paging}{pages} still shared. \code{cow_test.c} runs the same three phases on 1,024 \omterm{def:b3:virtual-memory:paging}{pages} and finds 512, 0 and 512 (it allows up to 4 faults more for the program's own \omterm{def:b3:virtual-memory:paging}{pages}).
+\end{solution}
+
+\begin{solution}{exo:b3:virtual-memory:10}
+Keep the list of the \omterm{def:b3:virtual-memory:paging}{pages} referenced so far, ordered by last use, most recent first; it does not depend on the number of frames. We show by induction on the references that LRU with $f$ frames holds exactly the first $f$ \omterm{def:b3:virtual-memory:paging}{pages} of the list (all of them, if there are fewer). Before any reference both are empty. Let \omterm{def:b3:virtual-memory:paging}{page} $p$ be referenced. If $p$ is among the first $f$, LRU hits, and $p$ moves to the front: the first $f$ are the same \omterm{def:b3:virtual-memory:paging}{pages}. Otherwise LRU faults; if its frames are full, it evicts the \omterm{def:b3:virtual-memory:paging}{page} used least recently among those it holds, the $f$-th of the list, and loads $p$, which goes to the front: LRU now holds $p$ and the old first $f - 1$, which are the new first $f$. Hence the \omterm{def:b3:virtual-memory:paging}{pages} held with $f$ frames, the first $f$ of the list, are among the first $f + 1$: LRU is a \omterm{def:b3:virtual-memory:belady}{stack algorithm} (\code{test_lru_is_a_stack_algorithm} checks the inclusion at every step of 300 random strings).
+\end{solution}
+
+\begin{solution}{exo:b3:virtual-memory:11}
+Take $f = 2k - 1$ frames and $f - 1$ hot \omterm{def:b3:virtual-memory:paging}{pages} $1, \dots, f - 1$, used in order after each new \omterm{def:b3:virtual-memory:paging}{page} that is used once: $1, \dots, f - 1$, then for every round $r$, \omterm{def:b3:virtual-memory:paging}{page} $100 + r$ followed by $1, \dots, f - 1$. LRU holds the hot \omterm{def:b3:virtual-memory:paging}{pages} for good, and each new \omterm{def:b3:virtual-memory:paging}{page} evicts the previous one, the least recently used: one fault per round. Clock alternates. When a new \omterm{def:b3:virtual-memory:paging}{page} arrives and every bit is set, the hand clears all the bits in one turn and evicts the \omterm{def:b3:virtual-memory:paging}{page} under it. If that is a hot \omterm{def:b3:virtual-memory:paging}{page}, it is about to be used: its fault evicts the next frame, whose bit is now clear, another hot \omterm{def:b3:virtual-memory:paging}{page} used soon after, and so on, so the whole round faults, $f$ faults. The next round's new \omterm{def:b3:virtual-memory:paging}{page} then evicts the previous new \omterm{def:b3:virtual-memory:paging}{page} and the hot \omterm{def:b3:virtual-memory:paging}{pages} hit: one fault. Two rounds cost $f + 1 = 2k$ faults under clock against 2 under LRU. Over $R$ rounds the counts are $2k - 2 + kR$ and $2k - 2 + R$, a ratio that tends to $k$ (\code{test_exercise_11_clock_k_times_worse}, with $R = 200$ and $k = 2, 3, 5$).
+\end{solution}
+
+\begin{solution}{exo:b3:virtual-memory:12}
+Reach of 64 entries: $64 \times 4$~KiB = 256~KiB; with 2~MiB megapages, 128~MiB; with 1~GiB gigapages, 64~GiB. A table of 512 entries maps $512 \times 4$~KiB = 2~MiB at level 0, $512 \times 2$~MiB = 1~GiB at level 1. The array with small \omterm{def:b3:virtual-memory:paging}{pages}: 262,144 entries in 512 level-0 tables, one level-1 table and the root, 514 \omterm{def:b3:virtual-memory:paging}{pages}, about 2~MiB, 8 bytes per \omterm{def:b3:virtual-memory:paging}{page} mapped. With megapages: 512 leaves in one level-1 table, plus the root, 2 \omterm{def:b3:virtual-memory:paging}{pages}. With a gigapage: one leaf in the root, 1 \omterm{def:b3:virtual-memory:paging}{page}. Sv32 needed 257 \omterm{def:b3:virtual-memory:paging}{pages} for the same array, 4 bytes per \omterm{def:b3:virtual-memory:paging}{page}: Sv39 entries are twice as large, the price of a larger \omterm{def:b3:virtual-memory:space}{address space}, and large \omterm{def:b3:virtual-memory:paging}{pages} remove nearly all of it.
+\end{solution}
+
+\begin{solution}{pb:b3:virtual-memory:1}
+\textbf{1.} Oldest first: 1 [1]; 2 [1 2]; 3 [1 2 3]; 4 [2 3 4]; 1 [3 4 1]; 2 [4 1 2]; 5 [1 2 5]; 1 and 2 hit; 3 [2 5 3]; 4 [5 3 4]; 5 hits. Nine faults.
+
+\textbf{2.} 1, 2, 3, 4 fault [1 2 3 4]; 1 and 2 hit; 5 [2 3 4 5]; 1 [3 4 5 1]; 2 [4 5 1 2]; 3 [5 1 2 3]; 4 [1 2 3 4]; 5 [2 3 4 5]. Ten faults.
+
+\textbf{3.} After the seventh reference neither memory contains the other: $\{1, 2, 5\}$ and $\{2, 3, 4, 5\}$. The 3-frame run had paid for that position with two faults of its own (references 5 and 6, which hit with 4 frames), and it now has the right \omterm{def:b3:virtual-memory:paging}{pages}: references 8, 9 and 12 fault only with 4 frames, 10 and 11 in both. Two extra faults against three.
+
+\textbf{4.} \omterm{def:b3:virtual-memory:paging}{Pages} enter the circle in the order they are loaded, and the hand moves round in that order, so the frame under the hand holds the \omterm{def:b3:virtual-memory:paging}{page} loaded earliest. Clock departs from FIFO only when the hand passes over a set bit and evicts a later \omterm{def:b3:virtual-memory:paging}{page}. Here, at every fault, either all the bits are set, so the hand clears them in one turn and evicts the \omterm{def:b3:virtual-memory:paging}{page} under it, or the \omterm{def:b3:virtual-memory:paging}{page} under the hand has its bit clear: clock evicts the oldest \omterm{def:b3:virtual-memory:paging}{page} each time.
+
+\textbf{5.} 1, 2, 3 fault. 4 evicts 3 (next used at reference 10, after 1 and 2). 1 and 2 hit. 5 evicts 4 (used at 11, after 1 and 2). 1 and 2 hit. 3 evicts 1 or 2, never used again. 4 evicts the other of them, or 3. 5 hits. Seven faults.
+
+\textbf{6.} Five: each of the five \omterm{def:b3:virtual-memory:paging}{pages} faults at its first use, whatever the policy, and 5 frames achieve it.
+
+\textbf{7.} $\{1, 2, 5\}$ with 3 frames, $\{2, 3, 4, 5\}$ with 4: \omterm{def:b3:virtual-memory:paging}{page} 1 is in the first and not in the second, so the inclusion fails.
+
+\textbf{8.} $\{1, 2, 5\}$ and $\{1, 2, 4, 5\}$: included.
+
+\textbf{9.} A reference at time $t$ hits with $f$ frames when its \omterm{def:b3:virtual-memory:paging}{page} is in the set held with $f$ frames just before it; that set is contained in the set held with $f + 1$, so the \omterm{def:b3:virtual-memory:paging}{page} is there too.
+
+\textbf{10.} No: on Belady's string clock faults 9 times with 3 frames and 10 with 4, which question 9 rules out for a \omterm{def:b3:virtual-memory:belady}{stack algorithm}.
+
+\textbf{11.} FIFO holds the $f$ \omterm{def:b3:virtual-memory:paging}{pages} most recently \emph{loaded}. But which references load a \omterm{def:b3:virtual-memory:paging}{page} depends on $f$: with 4 frames, the references to 1 and 2 at 5 and 6 hit and load nothing, so 1 and 2 count as old, while with 3 frames they are reloaded and count as young.
+
+\textbf{12.} Keep LRU's list. At each reference, the \omterm{def:b3:virtual-memory:paging}{page}'s position in the list, its distance, says at once for which numbers of frames it hits: those at least the distance. Counting the references at each distance, with first uses at distance infinity, gives the faults with $f$ frames as the number of references at a distance greater than $f$, for every $f$, in one pass.
+
+\textbf{13.} The policies only compare \omterm{def:b3:virtual-memory:paging}{pages} for equality, so renaming the \omterm{def:b3:virtual-memory:paging}{pages} one to one changes no fault. Each class of strings equal up to renaming has exactly one member that names its \omterm{def:b3:virtual-memory:paging}{pages} 1, 2, 3, \dots\ in order of first use.
+
+\textbf{14.} Length 1: 1. Length 2: 11, 12. Length 3: 111, 112, 121, 122, 123. Length 4: 1111, 1112, 1121, 1122, 1123, 1211, 1212, 1213, 1221, 1222, 1223, 1231, 1232, 1233, 1234: fifteen.
+
+\textbf{15.} Twelve references, and Belady's string, the first one found, uses five \omterm{def:b3:virtual-memory:paging}{pages}. No string of length 11 or less is anomalous, with any number of \omterm{def:b3:virtual-memory:paging}{pages}.
+
+\textbf{16.} Eight. All begin with 1 2 3 4 1 2 5 1 and end with 5; they differ only in references 9 to 11.
+
+\textbf{17.} A \omterm{def:b3:virtual-memory:paging}{page} used only once faults in both runs, and FIFO evicts the oldest \omterm{def:b3:virtual-memory:paging}{page} whatever arrives: it acts as a filler that ages both queues, as a reference to 3 or 4 does at those places.
+
+\textbf{18.} No anomaly under LRU at any length, as \cref{thm:b3:virtual-memory:stack} and exercise~\ref{exo:b3:virtual-memory:10} require.
+
+\textbf{19.} The strings form a tree, each extending its prefix by one reference, and the search carries the four memories along the tree, so each string costs one step from its prefix. There are $1 + 2 + 5 + \dots + 4{,}213{,}597 = 5{,}034{,}584$ strings of length at most 12 in all: a few million steps.
+
+\textbf{20.} By question 9, every hit with $f$ frames is a hit with $f + 1$, so the faults with $f + 1$ are among the faults with $f$: $\mathit{faults}(f + 1) \le \mathit{faults}(f)$.
+
+\textbf{21.} LRU is a \omterm{def:b3:virtual-memory:belady}{stack algorithm} (exercise~\ref{exo:b3:virtual-memory:10}), so question 20 applies: on every string, more frames never mean more faults.
+
+\textbf{22.} It only compares 3 frames with 4, and only up to length 12. An exhaustive search can find a counterexample but proves nothing beyond the cases it covers.
+
+\textbf{23.} FIFO orders \omterm{def:b3:virtual-memory:paging}{pages} by when they were loaded, and with more frames some \omterm{def:b3:virtual-memory:paging}{pages} are not reloaded, so the order, and with it the \omterm{def:b3:virtual-memory:paging}{pages} held, differ between the two runs.
+
+\textbf{24.} LRU must update its order on every memory access, which no kernel can do; clock needs only the A bit, which the hardware sets for free, and work at fault time. On programs with locality, the \omterm{def:b3:virtual-memory:paging}{pages} in use have their bits set and survive, as under LRU; the anomaly needs strings that defeat the bit, like Belady's.
+
+\textbf{25.} FIFO and clock show the anomaly; the shortest anomalous string for 3 against 4 frames has 12 references, and there are eight of that length up to renaming, Belady's among them. LRU, and every \omterm{def:b3:virtual-memory:belady}{stack algorithm}, cannot show it: with $f$ frames it holds the first $f$ \omterm{def:b3:virtual-memory:paging}{pages} of a list that does not depend on $f$, so every hit with fewer frames is a hit with more.
+\end{solution}

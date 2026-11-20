@@ -1,0 +1,466 @@
+% Book 3, Year 1, chapter 13 -- asymptotic analysis and recurrences.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 13.
+\chapter{Asymptotic Analysis and Recurrences}\label{ch:b1:asymptotic-analysis}
+
+Two programs sort thirty million records, and both are correct. On a machine that performs a billion \omterm{def:b1:asymptotic-analysis:ram}{elementary
+operations} a second, the first finishes in under a second and the second runs for more than ten days. Neither the
+language nor the machine makes the difference: the first does about $n \log_2 n$ operations and the second about
+$n^2$. This chapter makes such statements precise: what is counted, how \omterm{def:b1:asymptotic-analysis:cost}{costs} are compared when $n$ grows, how the
+\omterm{def:b1:asymptotic-analysis:cost}{cost} of an algorithm differs between its best, worst and average inputs, and how to solve the recurrences that the
+\omterm{def:b1:asymptotic-analysis:cost}{cost} of a recursive algorithm obeys.
+
+\begin{recall}
+For sequences $u$ and $v$ of positive reals, $\lim u_n/v_n = 0$ means that $u$ becomes negligible beside $v$. For
+$a > 0$ and $b > 1$: $(\log n)/n^a \to 0$, $n^a/b^n \to 0$ and $b^n/n! \to 0$. The sum $1 + 2 + \dots + n = n(n + 1)/2$,
+and $1 + q + \dots + q^{m - 1} = (q^m - 1)/(q - 1)$ for $q \neq 1$. Insertion sort inserts each element into the sorted
+part before it, shifting the larger elements one place to the right.
+\end{recall}
+
+\section{What the model counts}\label{sec:b1:asymptotic-analysis:model}
+
+\begin{definition}[Model of computation, elementary operation]\label{def:b1:asymptotic-analysis:ram}
+The \emph{RAM model}\index{RAM model} is a model of computation: an idealised machine with a memory of numbered
+cells, each holding a machine word, in which each \emph{elementary operation}\index{elementary operation} \omterm{def:b1:asymptotic-analysis:cost}{costs} one
+unit of time --- an arithmetic operation or a comparison on words, reading or writing a cell, a jump. Words have
+$\Theta(\log n)$ bits for inputs of size $n$, enough to index the input.
+\end{definition}
+
+\begin{definition}[Input size, cost function]\label{def:b1:asymptotic-analysis:cost}
+The \emph{input size}\index{input size} $n$ is a natural number measuring an input: the length of a list, the number of
+vertices and edges of a graph, the number of bits of an integer. The \emph{cost}\index{cost function} of an algorithm
+on an input is the number of \omterm{def:b1:asymptotic-analysis:ram}{elementary operations} it performs; a \emph{cost function} gives a cost for each size.
+\end{definition}
+
+Counting every operation is tedious and depends on details of the translation to machine code, so in practice one
+counts a single operation that dominates: the comparisons of a sort, the multiplications of an arithmetic algorithm.
+The other operations are at most a constant multiple of it. A counter added to the program makes the count observable.
+
+\omcode{code/bachelor-1/13-asymptotic-analysis/listings/count_ops.py}{6}{18}{Insertion sort, counting its
+comparisons}\label{lst:b1:asymptotic-analysis:count-ops}
+
+\omoutput{code/bachelor-1/13-asymptotic-analysis/outputs/count_ops.txt}{Comparisons on a sorted, a reversed and a
+shuffled list.}\label{out:b1:asymptotic-analysis:count-ops}
+
+On a sorted list, each insertion stops at its first comparison: $n - 1$ comparisons. On a reversed list, the $i$-th
+insertion goes to the front, with $i$ comparisons: $1 + 2 + \dots + (n - 1) = n(n - 1)/2$. A shuffled list lands near
+$n(n - 1)/4$, which \cref{sec:b1:asymptotic-analysis:cases} explains. Constants are dropped for two reasons: they depend
+on the machine and the \omterm{def:b1:compilation-pipeline:compiler}{compiler}, which the model abstracts away, and they matter less than the growth as soon as $n$
+is large. The model also hides the memory hierarchy: on a real machine, an access to a cell far from the last ones
+\omterm{def:b1:asymptotic-analysis:cost}{costs} much more than a comparison, which the second year studies.
+
+\section{\texorpdfstring{$O$, $\Omega$ and $\Theta$}{O, Omega and Theta}}\label{sec:b1:asymptotic-analysis:big-o}
+
+\begin{definition}[Big O, big Omega, big Theta]\label{def:b1:asymptotic-analysis:big-o}
+Let $f, g : \mathbb{N} \to \mathbb{R}_+$. Then $f \in O(g)$\index{big O} if there are a constant $c > 0$ and a rank $n_0$
+with $f(n) \leq c\,g(n)$ for all $n \geq n_0$; $f \in \Omega(g)$\index{big Omega} if $g \in O(f)$, that is $f(n) \geq
+c\,g(n)$ from some rank on for some $c > 0$; and $f \in \Theta(g)$\index{big Theta} if both hold.
+\end{definition}
+
+One often writes $f = O(g)$; the equality sign is then read as ``belongs to''. The constant $c$ and the rank $n_0$ are
+chosen once, before $n$: \cref{exo:b1:asymptotic-analysis:5} shows what goes wrong otherwise. If $f(n)/g(n)$ has a
+limit $\ell$, then $\ell < \infty$ gives $f \in O(g)$, and $0 < \ell < \infty$ gives $f \in \Theta(g)$.
+
+\begin{proposition}[Rules for O]\label{prop:b1:asymptotic-analysis:rules}
+For \omterm{def:b1:asymptotic-analysis:cost}{cost functions} $f_1 \in O(g_1)$ and $f_2 \in O(g_2)$: $f_1 + f_2 \in O(\max(g_1, g_2))$ and $f_1 f_2 \in O(g_1
+g_2)$; if moreover $g_1 \in O(h)$, then $f_1 \in O(h)$. The same rules hold for $\Omega$ and $\Theta$.
+\end{proposition}
+
+\begin{proof}
+With $f_1 \leq c_1 g_1$ from $n_1$ on and $f_2 \leq c_2 g_2$ from $n_2$ on: from $\max(n_1, n_2)$ on, $f_1 + f_2 \leq
+(c_1 + c_2) \max(g_1, g_2)$ and $f_1 f_2 \leq c_1 c_2\, g_1 g_2$. For transitivity, $g_1 \leq c\,h$ from some rank on
+gives $f_1 \leq c_1 c\, h$.
+\end{proof}
+
+The sum rule says that a sequence of steps \omterm{def:b1:asymptotic-analysis:cost}{costs} as much as its most expensive step, and the product rule that a
+loop \omterm{def:b1:asymptotic-analysis:cost}{costs} its number of iterations times the \omterm{def:b1:asymptotic-analysis:cost}{cost} of one iteration, when that \omterm{def:b1:asymptotic-analysis:cost}{cost} does not depend on the iteration.
+
+\begin{proposition}[The scale of growth]\label{prop:b1:asymptotic-analysis:scale}
+For $a > 0$ and $b > 1$, as $n \to \infty$: $\log n \in O(n^a)$, $n^a \in O(b^n)$ and $b^n \in O(n!)$, and none of these
+is a $\Theta$. Moreover $\log_b n \in \Theta(\log_2 n)$, so the base of a logarithm does not matter inside $O$.
+\end{proposition}
+
+\begin{proof}
+The three limits recalled at the start of the chapter are 0, which gives each $O$ and excludes each $\Theta$. And
+$\log_b n = \log_2 n / \log_2 b$ is a constant multiple.
+\end{proof}
+
+\omoutput{code/bachelor-1/13-asymptotic-analysis/outputs/growth.txt}{The usual \omterm{def:b1:asymptotic-analysis:cost}{cost functions}, and the two programs of
+the opening at thirty million records and a billion operations a
+second.}\label{out:b1:asymptotic-analysis:growth}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=11cm, height=6.4cm, ymode=log, xmin=1, xmax=40, ymin=1, ymax=1e12, xlabel={$n$},
+  ylabel={cost (log scale)}, legend pos=outer north east, legend style={font=\small}, tick label style={font=\small},
+  domain=1:40, samples=79]
+\addplot[thick, omCode] {ln(x)/ln(2) + 1}; \addlegendentry{$1 + \log_2 n$}
+\addplot[thick, omDef] {x}; \addlegendentry{$n$}
+\addplot[thick, omThm] {x*ln(x)/ln(2) + 1}; \addlegendentry{$1 + n \log_2 n$}
+\addplot[thick, dashed] {x^2}; \addlegendentry{$n^2$}
+\addplot[thick, dotted] {x^3}; \addlegendentry{$n^3$}
+\addplot[very thick, omThm!50, domain=1:39.8] {2^x}; \addlegendentry{$2^n$}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The usual \omterm{def:b1:asymptotic-analysis:cost}{cost functions} on a logarithmic scale. Powers of $n$ become straight lines of
+increasing slope on a log--log plot; here, with $n$ on a linear axis, the exponential $2^n$ is the straight line, and it
+crosses every power of $n$ eventually.}
+\end{omfigure}
+
+$O$ is only an upper bound. ``Merge sort is in $O(n^3)$'' is true and useless; ``insertion sort is in $O(n^2)$'' holds for
+every input, including the sorted ones that it finishes in $n - 1$ comparisons. A lower bound needs $\Omega$, and a
+precise statement needs $\Theta$, with the \omterm{def:b1:c-modules-make-tests:input-class}{input class} it is about.
+
+\section{Worst, best and average case}\label{sec:b1:asymptotic-analysis:cases}
+
+\begin{definition}[Worst-case, best-case and average-case cost]\label{def:b1:asymptotic-analysis:cases}
+For an algorithm whose \omterm{def:b1:asymptotic-analysis:cost}{cost} on an input $x$ is $C(x)$, and $I_n$ the finite set of inputs of size $n$ considered, the
+\emph{worst-case cost}\index{worst-case cost} is $\max_{x \in I_n} C(x)$, the \emph{best-case cost}\index{best-case cost}
+is $\min_{x \in I_n} C(x)$, and the \emph{average-case cost}\index{average-case cost} is $\frac{1}{|I_n|}\sum_{x \in I_n}
+C(x)$.
+\end{definition}
+
+For a comparison sort on distinct keys, only the order of the keys matters, so $I_n$ can be taken as the $n!$ orders of
+$0, \dots, n - 1$. For insertion sort, the best case is $n - 1$ and the worst $n(n - 1)/2$; the average needs a count.
+
+\begin{proposition}[Average cost of insertion sort]\label{prop:b1:asymptotic-analysis:insertion}
+Over the $n!$ orders of $n$ distinct keys, insertion sort makes on average exactly $\frac{n(n - 1)}{4} + n - H_n$
+comparisons, where $H_n = 1 + \frac12 + \dots + \frac1n$. This is in $\Theta(n^2)$.
+\end{proposition}
+
+\begin{proof}
+An \emph{inversion} of an order is a pair of positions $i < j$ whose keys are in decreasing order. In insertion sort,
+each comparison either shifts an element, which removes exactly one inversion, or stops the inner loop. The inner loop
+stops on a comparison unless the key reaches the front, which happens exactly when the key is smaller than every key
+before it, a \emph{left-to-right minimum}. So an order with $I$ inversions and $L$ left-to-right minima (the first
+key counts) \omterm{def:b1:asymptotic-analysis:cost}{costs} $C = I + (n - 1) - (L - 1)$.
+
+Average of $I$: exchanging the keys at two positions $i < j$ is a one-to-one correspondence between the orders where
+the pair is inverted and those where it is not, so each of the $\binom{n}{2}$ pairs is inverted in exactly half of
+the orders: the total of $I$ is $n! \binom{n}{2}/2$, and the average $n(n - 1)/4$. Average of $L$: position $i$ (from 0)
+holds a left-to-right minimum when it holds the smallest of the first $i + 1$ keys; grouping the orders by the set of
+those keys and the arrangement of the rest, that smallest key is at each of the $i + 1$ positions equally often, so in
+exactly $1/(i + 1)$ of the orders. Summing over $i$, the average of $L$ is $H_n$, and the average \omterm{def:b1:asymptotic-analysis:cost}{cost} is $n(n - 1)/4 +
+(n - 1) - (H_n - 1)$. As $H_n \leq n$, it lies between $n(n - 1)/4$ and $n(n + 3)/4$.
+\end{proof}
+
+\omoutput{code/bachelor-1/13-asymptotic-analysis/outputs/inversions.txt}{The average over all orders, as an exact
+fraction, against the formula, for $n \leq 8$.}\label{out:b1:asymptotic-analysis:inversions}
+
+\begin{definition}[Space cost]\label{def:b1:asymptotic-analysis:space}
+The \emph{space cost}\index{space cost} of an algorithm is the number of memory cells it uses beyond its input, at its
+peak, as a function of the \omterm{def:b1:asymptotic-analysis:cost}{input size}; the \omterm{def:b1:c-functions-and-stack:call-stack}{stack frames} of recursive calls count.
+\end{definition}
+
+Insertion sort uses $\Theta(1)$ cells beyond the list: it sorts \emph{in place}. A merge sort that copies its halves
+uses $\Theta(n)$ cells, and the recursion of a binary search uses $\Theta(\log n)$ frames where the loop of
+\cref{ch:b1:program-correctness} uses $\Theta(1)$.
+
+\section{Sums}\label{sec:b1:asymptotic-analysis:sums}
+
+Nested loops give sums. A double loop over $0 \leq i < j < n$ performs $\binom{n}{2} = n(n - 1)/2$ iterations; a triple
+loop over $i < j < k$ performs $\binom{n}{3}$ (\cref{exo:b1:asymptotic-analysis:7}). A loop that doubles $j$ from 1
+until $n$ runs $\lceil \log_2 n \rceil$ times. Three tools bound the sums that have no closed form.
+
+\begin{method}[Bounding a sum]\label{met:b1:asymptotic-analysis:sums}
+\begin{enumerate}
+\item \emph{Bound each term by the largest}: $\sum_{i=1}^{n} f(i) \leq n \max_i f(i)$, an upper bound.
+\item \emph{Split}: for $f$ increasing, the $\lceil n/2 \rceil$ terms from $i = \lfloor n/2 \rfloor + 1$ on are at least
+$f(n/2)$, so $\sum_{i=1}^n f(i) \geq \frac{n}{2} f(\frac{n}{2})$, a lower bound of the same order as the upper one when
+$f(n/2) \in \Theta(f(n))$.
+\item \emph{Compare with an integral}: for $f$ decreasing on $[1, \infty)$, $\int_1^{n + 1} f \leq \sum_{i=1}^n f(i)
+\leq f(1) + \int_1^n f$.
+\end{enumerate}
+\end{method}
+
+\begin{proposition}[Harmonic numbers and $\log n!$]\label{prop:b1:asymptotic-analysis:harmonic}
+$\ln(n + 1) \leq H_n \leq 1 + \ln n$, so $H_n \in \Theta(\log n)$; and $\log_2 n! \in \Theta(n \log n)$.
+\end{proposition}
+
+\begin{proof}
+The integral of $1/x$ from 1 to $n + 1$ is $\ln(n + 1)$, and from 1 to $n$ it is $\ln n$; the third rule gives the first
+claim. For the second, $\log_2 n! = \sum_{i=1}^n \log_2 i \leq n \log_2 n$ by the first rule, and $\geq \frac{n}{2}
+\log_2 \frac{n}{2} = \frac{n}{2}(\log_2 n - 1)$ by the second, which is at least $\frac{n}{4}\log_2 n$ for $n \geq 4$.
+\end{proof}
+
+The harmonic number thus contributes only $\Theta(\log n)$ to the average of insertion sort, and $\log_2 n!$ will be the
+number of comparisons that any comparison sort needs in the worst case (\cref{ch:b1:sorting}).
+
+\section{Recurrences}\label{sec:b1:asymptotic-analysis:recurrences}
+
+\begin{definition}[Recurrence relation, recursion tree]\label{def:b1:asymptotic-analysis:recurrence}
+A \emph{recurrence relation}\index{recurrence relation} defines a \omterm{def:b1:asymptotic-analysis:cost}{cost function} by its values on small sizes and an
+equation expressing $T(n)$ in terms of values on smaller sizes. The \emph{recursion tree}\index{recursion tree} of such
+an equation has a node for each call, labelled with the \omterm{def:b1:asymptotic-analysis:cost}{cost} spent in that call outside its recursive calls; its
+children are the calls it makes. $T(n)$ is the sum of all the labels, which one often computes level by level.
+\end{definition}
+
+A recursive algorithm gives a recurrence directly: binary search halves its interval with one comparison, $T(n) =
+T(n/2) + 1$; merge sort sorts two halves and merges them with at most $n$ comparisons, $T(n) = 2T(n/2) + n$. Three
+methods solve them. \emph{Unrolling} substitutes the equation into itself: $T(n) = T(n/2) + 1 = T(n/4) + 2 = \dots =
+T(1) + \log_2 n$ for $n$ a power of 2. The \emph{\omterm{def:b1:asymptotic-analysis:recurrence}{recursion tree}} sums level by level. And one can \emph{guess and prove
+by induction}, the guess coming from either method or from computed values.
+
+\begin{omfigure}
+\begin{tikzpicture}[n/.style={draw, rounded corners=2pt, fill=omCode!8, font=\scriptsize, inner sep=2pt,
+  minimum width=9mm}, level distance=11mm]
+\node[n] (r) at (0,0) {$n$};
+\node[n] (a) at (-3,-1.1) {$n/2$}; \node[n] (b) at (3,-1.1) {$n/2$};
+\foreach \p/\q in {a/-4.5, a/-1.5, b/1.5, b/4.5} {\draw (\p) -- (\q,-2.2) node[n] {$n/4$};}
+\draw (r) -- (a); \draw (r) -- (b);
+\foreach \x in {-5.25,-3.75,-2.25,-0.75,0.75,2.25,3.75,5.25} {\node[font=\scriptsize] at (\x,-3.1) {$\vdots$};}
+\foreach \x in {-5.4,-4.6,...,5.4} {\node[draw, fill=omDef!20, inner sep=1.3pt, font=\tiny] at (\x,-3.9) {1};}
+\node[font=\scriptsize, anchor=west] at (6.2,0) {level 0: $n$};
+\node[font=\scriptsize, anchor=west] at (6.2,-1.1) {level 1: $2 \cdot n/2 = n$};
+\node[font=\scriptsize, anchor=west] at (6.2,-2.2) {level 2: $4 \cdot n/4 = n$};
+\node[font=\scriptsize, anchor=west] at (6.2,-3.9) {level $\log_2 n$: $n$ leaves};
+\node[font=\scriptsize, anchor=west, text=omThm] at (6.2,-4.7) {total: $n \log_2 n$ (+ leaves)};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b1:asymptotic-analysis:recurrence}{recursion tree} of $T(n) = 2T(n/2) + n$: every level \omterm{def:b1:asymptotic-analysis:cost}{costs} $n$, and there are $\log_2 n$
+levels above the leaves, hence $T(n) = n\log_2 n + nT(1)$ for $n$ a power of 2.}
+\end{omfigure}
+
+\omoutput{code/bachelor-1/13-asymptotic-analysis/outputs/recurrences.txt}{Four recurrences computed exactly for $n$ a
+power of 2, each equal to its closed form: $T_1 = \log_2 n$, $T_2 = n\log_2 n$, $T_3 = 3n^{\log_2 3} - 2n$ and $T_4 =
+2n^2 - n$.}\label{out:b1:asymptotic-analysis:recurrences}
+
+The forms of $T_3$ and $T_4$ come from the proof below; checking them by induction is short. For $T_4$: $T_4(1) = 1 = 2
+- 1$, and $4(2(n/2)^2 - n/2) + n = 2n^2 - 2n + n = 2n^2 - n$.
+
+\begin{theorem}[Master theorem]\label{thm:b1:asymptotic-analysis:master}
+Let $a \geq 1$, $b \geq 2$ an integer, $k \geq 0$, and $T$ defined on the powers of $b$ by $T(1) > 0$ and $T(n) =
+aT(n/b) + n^k$. Then\index{master theorem}
+\[
+T(n) \in \begin{cases} \Theta(n^k) & \text{if } a < b^k \quad\text{(the root dominates)},\\
+\Theta(n^k \log n) & \text{if } a = b^k \quad\text{(every level costs the same)},\\
+\Theta(n^{\log_b a}) & \text{if } a > b^k \quad\text{(the leaves dominate)}. \end{cases}
+\]
+\end{theorem}
+
+\begin{proof}
+Let $n = b^m$. Unrolling, level $i$ of the \omterm{def:b1:asymptotic-analysis:recurrence}{recursion tree} has $a^i$ nodes of size $n/b^i$, each costing $(n/b^i)^k$,
+and the $a^m$ leaves \omterm{def:b1:asymptotic-analysis:cost}{cost} $T(1)$ each:
+\[
+T(n) = a^m T(1) + \sum_{i=0}^{m-1} a^i \Bigl(\frac{n}{b^i}\Bigr)^k = a^m T(1) + n^k \sum_{i=0}^{m-1} q^i, \qquad q =
+\frac{a}{b^k}.
+\]
+Note that $a^m = b^{m \log_b a} = n^{\log_b a}$. If $a < b^k$, then $q < 1$ and $1 \leq \sum q^i \leq 1/(1 - q)$; and
+$\log_b a < k$, so $a^m T(1) \leq T(1) n^k$; hence $n^k \leq T(n) \leq (T(1) + 1/(1 - q))\, n^k$. If $a > b^k$, then
+$q > 1$ and $n^k \sum_{i<m} q^i = n^k (q^m - 1)/(q - 1) = (a^m - n^k)/(q - 1)$, between 0 and $a^m/(q - 1)$; so $T(1)\,
+a^m \leq T(n) \leq (T(1) + 1/(q - 1))\, a^m$. The case $a = b^k$ is \cref{exo:b1:asymptotic-analysis:10}.
+\end{proof}
+
+\begin{remark}
+Algorithms split $n$ into $\lfloor n/b \rfloor$ and $\lceil n/b \rceil$ parts, and their \omterm{def:b1:asymptotic-analysis:cost}{costs} are $an^k$ plus lower
+terms. The conclusions still hold for such recurrences when $T$ is increasing: $T(n)$ lies between its values at the
+powers of $b$ around $n$, which are within a constant factor of each other. \Cref{exo:b1:asymptotic-analysis:11} treats
+merge sort's recurrence with floors and ceilings exactly.
+\end{remark}
+
+\omcode{code/bachelor-1/13-asymptotic-analysis/listings/master.py}{6}{14}{The three
+cases}\label{lst:b1:asymptotic-analysis:master}
+
+\omoutput{code/bachelor-1/13-asymptotic-analysis/outputs/master.txt}{The cases on six recurrences, and the ratio of the
+exact $T(n)$, with $T(1) = 1$, to the predicted order at $2^{10}$ and $2^{20}$: it settles to a
+constant.}\label{out:b1:asymptotic-analysis:master}
+
+Karatsuba's multiplication of $n$-digit numbers replaces four half-size products by three, which moves the \omterm{def:b1:asymptotic-analysis:cost}{cost} from
+$\Theta(n^2)$ to $\Theta(n^{\log_2 3}) \approx \Theta(n^{1.585})$; Strassen's product of matrices replaces eight
+half-size products by seven, from $\Theta(n^3)$ to $\Theta(n^{2.807})$. Both are leaf-dominated: the count of
+subproblems matters more than the \omterm{def:b1:asymptotic-analysis:cost}{cost} of combining them. The ratio for merge sort, $1 + 1/\log_2 n$, shows how slowly
+the lower term fades.
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1cm, y=1cm]
+\foreach \col/\title/\a/\b/\c/\note in {0/{$a < b^k$: $2T(n/2) + n^2$}/{$n^2$}/{$n^2/2$}/{$n^2/4$}/{levels shrink:
+root},
+  5.2/{$a = b^k$: $2T(n/2) + n$}/{$n$}/{$n$}/{$n$}/{levels equal: $\times \log n$},
+  10.4/{$a > b^k$: $4T(n/2) + n$}/{$n$}/{$2n$}/{$4n$}/{levels grow: leaves}} {
+  \node[font=\scriptsize\bfseries] at (\col+1.6,0.7) {\title};
+  \node[font=\scriptsize, anchor=west] at (\col+2.9,0.05) {\a};
+}
+\fill[omCode!25] (0.4,-0.1) rectangle (2.8,0.2); \fill[omCode!25] (5.6,-0.1) rectangle (8.0,0.2);
+\fill[omCode!25] (0.4,-0.6) rectangle (1.6,-0.3); \node[font=\scriptsize, anchor=west] at (2.9,-0.45) {$n^2/2$};
+\fill[omCode!25] (0.4,-1.1) rectangle (1.0,-0.8); \node[font=\scriptsize, anchor=west] at (2.9,-0.95) {$n^2/4$};
+\fill[omCode!25] (0.4,-1.6) rectangle (0.7,-1.3); \node[font=\scriptsize, anchor=west] at (2.9,-1.45) {$\cdots$};
+\fill[omCode!25] (5.6,-0.6) rectangle (8.0,-0.3); \node[font=\scriptsize, anchor=west] at (8.1,-0.45) {$n$};
+\fill[omCode!25] (5.6,-1.1) rectangle (8.0,-0.8); \node[font=\scriptsize, anchor=west] at (8.1,-0.95) {$n$};
+\fill[omCode!25] (5.6,-1.6) rectangle (8.0,-1.3); \node[font=\scriptsize, anchor=west] at (8.1,-1.45) {$\cdots$};
+\fill[omThm!30] (10.8,-0.6) rectangle (11.4,-0.3); \node[font=\scriptsize, anchor=west] at (13.3,-0.45) {$2n$};
+\fill[omThm!30] (10.8,-1.1) rectangle (12.0,-0.8); \node[font=\scriptsize, anchor=west] at (13.3,-0.95) {$4n$};
+\fill[omThm!30] (10.8,-1.6) rectangle (13.2,-1.3); \node[font=\scriptsize, anchor=west] at (13.3,-1.45) {$\cdots
+n^2$};
+\fill[omThm!30] (10.8,-0.1) rectangle (11.1,0.2);
+\node[font=\scriptsize, text=omThm] at (2,-2.1) {total $\Theta(n^2)$};
+\node[font=\scriptsize, text=omThm] at (7.2,-2.1) {total $\Theta(n \log n)$};
+\node[font=\scriptsize, text=omThm] at (12.2,-2.1) {total $\Theta(n^2)$};
+\end{tikzpicture}
+\par\smallskip{\small The three regimes of the master theorem, drawn as the \omterm{def:b1:asymptotic-analysis:cost}{cost} of each level of the \omterm{def:b1:asymptotic-analysis:recurrence}{recursion tree}
+(one bar per level, from the root down). The level \omterm{def:b1:asymptotic-analysis:cost}{costs} form a geometric sequence of ratio $a/b^k$: decreasing, the
+root's term dominates; constant, the $\log_b n$ levels add up; increasing, the leaves dominate.}
+\end{omfigure}
+
+\section{Counts and times}\label{sec:b1:asymptotic-analysis:times}
+
+A count predicts a time if each counted operation \omterm{def:b1:asymptotic-analysis:cost}{costs} about the same. The \emph{doubling test} checks the order of a
+\omterm{def:b1:asymptotic-analysis:cost}{cost} from measurements alone: double $n$ and look at the ratio of the \omterm{def:b1:asymptotic-analysis:cost}{costs}. For a \omterm{def:b1:asymptotic-analysis:cost}{cost} in $\Theta(n^2)$ the ratio tends
+to 4, for $\Theta(n)$ to 2, and for $\Theta(n \log n)$ to $2(1 + 1/\log_2 n)$, slightly above 2 (the weekend problem
+proves it).
+
+\omcode{code/bachelor-1/13-asymptotic-analysis/listings/doubling.py}{8}{20}{Counts of three algorithms as $n$
+doubles}\label{lst:b1:asymptotic-analysis:doubling}
+
+\omoutput{code/bachelor-1/13-asymptotic-analysis/outputs/doubling.txt}{Comparisons of the maximum, merge sort and
+insertion sort on shuffled lists, then the ratios to the previous row.}\label{out:b1:asymptotic-analysis:doubling}
+
+\omoutput{code/bachelor-1/13-asymptotic-analysis/outputs/timing.txt}{The same three algorithms timed on the author's
+laptop, best of five runs, in milliseconds, then the ratios.}\label{out:b1:asymptotic-analysis:timing}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=10cm, height=5.4cm, xmode=log, log basis x=2, xmin=400, xmax=10000, ymin=0, ymax=130,
+  xtick={500,1000,2000,4000,8000}, xticklabels={500,1000,2000,4000,8000}, xlabel={$n$},
+  ylabel={ns per comparison}, legend pos=outer north east, legend style={font=\small},
+  tick label style={font=\small}]
+\addplot[thick, mark=*, omThm] table[x=n, y=merge]
+  {code/bachelor-1/13-asymptotic-analysis/figures/timing.dat}; \addlegendentry{merge sort}
+\addplot[thick, mark=square*, omDef] table[x=n, y=max]
+  {code/bachelor-1/13-asymptotic-analysis/figures/timing.dat}; \addlegendentry{maximum}
+\addplot[thick, mark=triangle*, omCode] table[x=n, y=ins]
+  {code/bachelor-1/13-asymptotic-analysis/figures/timing.dat}; \addlegendentry{insertion sort}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Time divided by count, from the two outputs above: nearly flat for each algorithm, so the count
+predicts the time up to a constant, which differs between algorithms (a merge step allocates and appends, an insertion
+step only compares and moves).}
+\end{omfigure}
+
+The time ratios scatter around the count ratios: a measurement on a real machine includes caches, the \omterm{def:b1:compilation-pipeline:interpreter}{interpreter}
+and the other programs running at the same time. The counts are exact and repeatable; the times say what the counts
+\omterm{def:b1:asymptotic-analysis:cost}{cost} on one machine.
+
+\begin{inpractice}
+To estimate an unknown \omterm{def:b1:asymptotic-analysis:cost}{cost}, run the program for sizes $n, 2n, 4n, \dots$ until the time is a second or more, and look
+at the ratios. A ratio near 2 suggests linear time; near 4 quadratic; near 8 cubic. A ratio that keeps growing suggests
+exponential time, and the end of the experiment.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b1:asymptotic-analysis:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:asymptotic-analysis:1}
+Predict what the program prints, and give the two counts as functions of the bounds 10 and 1000.
+\omcode{code/bachelor-1/13-asymptotic-analysis/listings/exo_count.py}{3}{12}{Two counts}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:asymptotic-analysis:2}
+Order by growth, from slowest to fastest: $n^2 \log n$, $(\log n)^{10}$, $1.01^n$, $\sqrt{n}$, $n^{2.5}$. Justify each
+step with \cref{prop:b1:asymptotic-analysis:scale}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:asymptotic-analysis:3}
+With $T(1) = 1$ and $T(n) = 2T(n/2) + 1$, compute $T(16)$, guess a closed form, and prove it.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:asymptotic-analysis:4}
+Which case of the master theorem applies, and what is the order of $T$? (a) $T(n) = 4T(n/2) + n$. (b) $T(n) = 4T(n/2)
++ n^2$. (c) $T(n) = T(n/3) + n$. (d) $T(n) = 2T(n/4) + \sqrt{n}$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:asymptotic-analysis:5}
+Find the error. ``We prove $n^2 \in O(n)$ by induction on $n$. For $n = 1$, $1 \leq c \cdot 1$ with $c = 1$. If $n^2
+\leq c n$, then $(n + 1)^2 = n^2 + 2n + 1 \leq cn + 3n = (c + 3)n \leq c'(n + 1)$ with $c' = c + 3$. So $n^2 \in O(n)$.''
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:asymptotic-analysis:6}
+A student reasons: ``the inner loop runs at most $\log_2 n$ times, so the function \omterm{def:b1:asymptotic-analysis:cost}{costs} $\Theta(n \log n)$''. What is
+right and what is wrong? Find the true order, and prove it.
+\omcode{code/bachelor-1/13-asymptotic-analysis/listings/exo_cost.py}{6}{13}{A loop that depends on $i$}
+\omoutput[2-4]{code/bachelor-1/13-asymptotic-analysis/outputs/exo_cost.txt}{The counts.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:asymptotic-analysis:7}
+Write \code{count_triples(n)}, which counts the iterations of three nested loops over $0 \leq i < j < k < n$. Find a
+closed form, prove it, and test it against the counter.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:asymptotic-analysis:8}
+Prove that $\sum_{i=1}^n i \log_2 i \in \Theta(n^2 \log n)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:asymptotic-analysis:9}
+Solve exactly $T(0) = 0$, $T(n) = T(n - 1) + n$, and $U(0) = 0$, $U(n) = 2U(n - 1) + 1$. Why does the master theorem not
+apply?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:asymptotic-analysis:10}
+Prove the case $a = b^k$ of \cref{thm:b1:asymptotic-analysis:master}: give $T(n)$ exactly for $n = b^m$, and deduce
+$T(n) \in \Theta(n^k \log n)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:asymptotic-analysis:11}
+Let $T(1) = 0$ and $T(n) = T(\lfloor n/2 \rfloor) + T(\lceil n/2 \rceil) + n$ for $n \geq 2$. Prove that $T$ is increasing
+and that $T(n) \in \Theta(n \log n)$; then check that $T(n) = n\lceil \log_2 n \rceil + n - 2^{\lceil \log_2 n
+\rceil}$ for every $n \geq 1$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:asymptotic-analysis:12}
+Write \code{identify(a, b, k)}, which computes $T(b^i)$ for $T(n) = aT(n/b) + n^k$ and $T(1) = 1$, estimates the
+exponent of $T$ from the numbers, and says which case of the master theorem the numbers show, without using the
+comparison of $a$ with $b^k$. Test it against \cref{lst:b1:asymptotic-analysis:master}.
+\end{exercise}
+
+\section{Problem: Three ways to find a duplicate}\label{sec:b1:asymptotic-analysis:problem}
+
+\begin{problem}[{Weekend problem --- Three ways to find a duplicate}]\label{pb:b1:asymptotic-analysis:1}
+The town's library keeps its loans in order; which books were borrowed more than once among the first $n$ loans?
+Three functions answer, each counting its operations: one comparison of two loans, one comparison of neighbours after
+sorting, or one look-up in a set.
+\omcodes{code/bachelor-1/13-asymptotic-analysis/listings/duplicates.py}{14-42}{Three ways to find the
+duplicates}\label{lst:b1:asymptotic-analysis:duplicates}
+\omoutput{code/bachelor-1/13-asymptotic-analysis/outputs/duplicates.txt}{The number of duplicated books, the
+counts, and their ratios as $n$ doubles.}\label{out:b1:asymptotic-analysis:duplicates}
+
+\medskip\noindent\textbf{Part I --- The double loop.}
+\begin{enumerate}
+\item Show that \code{by_pairs} makes exactly $n(n - 1)/2$ comparisons, whatever the data.
+\item Deduce that it is in $\Theta(n^2)$, in the best, the worst and the average case.
+\item Check the column \code{pairs} of the table.
+\item Compute the ratio of the counts for $2n$ and $n$, and its limit.
+\item Could the function stop early? Rewrite its specification so that it can (``is there a duplicate?''), and give its
+best and worst cases then.
+\item What is its \omterm{def:b1:asymptotic-analysis:space}{space cost}, beyond the input and the answer?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Sort, then scan.}
+\begin{enumerate}[resume]
+\item Show that after sorting, two equal values are neighbours, and that the scan finds every duplicated value.
+\item Merge sort makes at most $T(n)$ comparisons, with $T(1) = 0$ and $T(n) = T(\lfloor n/2 \rfloor) + T(\lceil n/2
+\rceil) + n - 1$. Show that $T(n) \leq n \lceil \log_2 n \rceil$.
+\item Deduce that \code{by_sorting} is in $O(n \log n)$.
+\item On the table, compare the counts with $n \log_2 n$ for $n = 400$.
+\item Show that $(2n)\log_2(2n) / (n \log_2 n) = 2(1 + 1/\log_2 n)$, and compute it for $n = 25$ and $n = 200$.
+\item Why are the measured ratios not exactly these values?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- A set of seen values.}
+\begin{enumerate}[resume]
+\item Show that \code{by_set} makes exactly $n$ look-ups.
+\item Under which assumption on the set is its \omterm{def:b1:asymptotic-analysis:cost}{cost} in $\Theta(n)$? (Hash tables are studied in
+\cref{ch:b1:hash-tables}.)
+\item What is the \omterm{def:b1:asymptotic-analysis:space}{space cost} of each of the three methods?
+\item The book identifiers are numbers from 1 to 80. Give a method that uses a list of 80 booleans instead of a set, and
+its \omterm{def:b1:asymptotic-analysis:cost}{cost}.
+\item For $n = 400$, how many times fewer operations does the set make than the double loop?
+\item Why does the table count only one operation per look-up, when a look-up does several \omterm{def:b1:asymptotic-analysis:ram}{elementary operations}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The doubling ratio.}
+\begin{enumerate}[resume]
+\item For a \omterm{def:b1:asymptotic-analysis:cost}{cost} $f(n) = c\,n^k$, show that $f(2n)/f(n) = 2^k$ exactly.
+\item For $f(n) = c\, n^k + d\,n^{k - 1}$ with $c > 0$, show that the ratio tends to $2^k$.
+\item For $f \in \Theta(g)$ only, can the ratio of $f$ fail to converge? Give an example.
+\item Read the ratios of the table, and say which order each column suggests.
+\item Why do the ratios of the merge sort column approach 2 so slowly?
+\item State the named result of the problem, \emph{the doubling ratio test}: the limits of the ratios for counts
+$c\,n^2$, $c\,n \log_2 n$ and $c\,n$, proved, and the values read from the table.
+\end{enumerate}
+\end{problem}

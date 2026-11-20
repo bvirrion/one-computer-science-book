@@ -1,0 +1,190 @@
+% Solutions of Book 4, chapter 4 (cpp-templates).
+\section*{Chapter \ref{ch:b2:cpp-templates} --- Templates and Generic Programming}
+
+\begin{solution}{exo:b2:cpp-templates:1}
+\omoutput{code/bachelor-2/04-cpp-templates/outputs/exo_overload.txt}{The seven lines.}
+a: \code{show(int)} is an exact match and not a \omterm{def:b2:cpp-templates:template}{template}, so it wins over the \omterm{def:b2:cpp-templates:template}{template} with \code{T = int}. b: the
+same with \code{show(double)}. c: \code{1.5f} is a \code{float}; \code{show(double)} needs a promotion, the \omterm{def:b2:cpp-templates:template}{template}
+with \code{T = float} is exact. d: \code{'x'} is a \code{char}: exact for the \omterm{def:b2:cpp-templates:template}{template} with \code{T = char}, a
+promotion for \code{show(int)}. e: explicit \omterm{def:b2:cpp-templates:template}{template} arguments leave only \omterm{def:b2:cpp-templates:template}{templates}, \code{T = int}. f: both
+\omterm{def:b2:cpp-templates:template}{templates} match exactly (\code{T = int *} and \code{T = int}); the one with parameter \code{T *} is more specialised
+and wins. g: \code{nullptr} has type \code{std::nullptr_t}, which converts to no \code{int} or \code{double} and from
+which \code{T *} cannot be deduced; only \code{show<T>(T)} matches.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-templates:2}
+\code{main_twice.cpp} sees only the declaration, so the compiler emits a call to \code{twice<int>} and trusts the
+linker to find it. \code{twice.cpp} contains the \omterm{def:b2:cpp-templates:template}{template} but never uses it, so nothing there is instantiated, and
+no file defines \code{twice<int>}: the linker reports it undefined. Fix 1, the usual one: define the \omterm{def:b2:cpp-templates:template}{template} in the
+header. Fix 2: keep the definition in \code{twice.cpp} and add an \emph{explicit instantiation},
+\code{template int twice<int>(int);}, for every argument list the program will use, which only works when that list
+is known in advance.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-templates:3}
+\omcode{code/bachelor-2/04-cpp-templates/exercises/clamp.hpp}{6}{19}{\code{clamp_to}}
+It returns a reference to one of its arguments to avoid a copy of a large value. That is safe when the result is
+used at once or copied, as in \code{int y = clamp_to(x, 0, 10);}. It dangles in \code{const int &r = clamp_to(x, 0,
+10);} when the result is the temporary \code{0} or \code{10}, which dies at the end of the statement: the same caveat
+as for the standard \code{std::clamp}. \code{tests/exercises_test.cpp} checks a type without \code{<} is refused,
+through a \omterm{def:b2:cpp-templates:concept}{concept} that asks whether the call is valid.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-templates:4}
+For each of \code{int}, \code{double} and \code{std::string}: the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} and \omterm{def:b2:cpp-classes-raii:constructor}{destructor}, \code{push_back},
+\code{reserve} and \code{clear}; plus \code{at} for \code{Vec<int>} and the \omterm{def:b2:cpp-copy-move:copy}{copy constructor} for
+\code{Vec<std::string>}: 17 \omterm{def:b2:cpp-classes-raii:class}{member functions} (the defaulted \omterm{def:b2:cpp-classes-raii:constructor}{constructor} may generate no code). Members never used,
+such as \code{capacity}, are not instantiated. Split in two files that both use \code{Vec<int>}, each object file
+contains its own copies of the \code{Vec<int>} members, as weak symbols, and the linker keeps one of each: the
+program contains the same 17 functions.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-templates:5}
+1: \code{T} is deduced as \code{int} from 3 and as \code{double} from 7.5, a conflict; write \code{larger<double>(3,
+7.5)} or \code{larger(3.0, 7.5)}. 2: \code{T} appears only in the return type, so nothing deduces it; write
+\code{parse<int>("12")}. 3: the two arguments are arrays of 5 and 9 characters, which, passed by value, decay to
+pointers: \code{T} is \code{const char *} for both, and the call compiles. It compares two \emph{addresses} of
+unrelated string literals, whose order is unspecified, and returns one of the two pointers, converted to a string.
+Fix: \code{larger(std::string("pier"), std::string("dunes rd"))}.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-templates:6}
+\code{Ordered} asks only for \code{<}, and both types have it, so the call is accepted; the body also computes
+\code{(lo + hi) / 2}, and for strings \code{+} concatenates but nothing divides a string by 2. Steps 1 and 3 of
+\cref{met:b2:cpp-templates:concept-first} were skipped: the operations of the body were not all listed. The right
+\omterm{def:b2:cpp-templates:concept}{concept} also requires \code{{(a + b) / 2} -> std::convertible_to<T>} in its \code{requires} expression; strings are
+then refused at the call.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-templates:7}
+\omcode{code/bachelor-2/04-cpp-templates/exercises/bsearch.hpp}{6}{29}{Binary search over any random-access range}
+Invariant: every element before \code{first} is less than the key, and every element from \code{first + n} on is not;
+the answer is therefore in $[\code{first}, \code{first} + n]$. Each step keeps it and at least halves $n$, so the loop
+ends after at most $\lceil \log_2(n + 1) \rceil$ steps with $n = 0$, and \code{first} is the answer. The test
+compares with \code{std::lower_bound} and \code{std::binary_search} on 200 random sorted vectors and every key from
+$-1$ to 41.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-templates:8}
+\code{Pow<20>::value} needs \code{Pow<19>::value}, which needs \code{Pow<18>}, and so on down to \code{Pow<0>}, the
+specialisation written by hand: 20 classes instantiated, \code{Pow<1>} to \code{Pow<20>}. With \code{Pow<25>} as well,
+only \code{Pow<21>} to \code{Pow<25>} are new, since each class is instantiated once
+(\cref{prop:b2:cpp-templates:instantiations}): 25 in all. A \code{constexpr} function \code{power(3, n)} is one
+function, which the compiler runs on the constant arguments; no class at all is generated, and compile-time loops
+are no longer limited by the depth of recursive instantiation.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-templates:9}
+\omcode{code/bachelor-2/04-cpp-templates/exercises/matrix.hpp}{6}{33}{Dimensions in the type}
+The product is a \omterm{def:b2:cpp-templates:template}{template} in four parameters, \code{T}, \code{R}, \code{K} and \code{C}, and its two parameters
+share \code{K}: a $2 \times 3$ by a $2 \times 3$ would need $K = 3$ and $K = 2$ at once, deduction fails, and there is
+no other \code{operator*}. The test defines the \omterm{def:b2:cpp-templates:concept}{concept} \code{Multipliable<A, B>} (the product is valid) and asserts
+it for $2 \times 3$ by $3 \times 4$ and refutes it for $2 \times 3$ by $2 \times 3$, at compile time; it also checks
+$M M^{\mathsf{T}}$ for a $2 \times 3$ matrix.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-templates:10}
+\omcodes{code/bachelor-2/04-cpp-templates/exercises/heap.hpp}{10-29,30-49}{\code{Heap<T, Less>}}
+\code{push} adds at the end and sifts up while the parent is ``less''; \code{pop} moves the last element to the root
+and sifts it down, choosing the larger child. Each instantiation knows the comparator's \emph{type}, hence the exact
+function it calls (for \code{std::less<int>}, the built-in \code{<}), and can inline it. \code{qsort} receives a
+pointer \emph{value}, known only when the program runs, and is compiled once in the C library: it must make an
+indirect call each time.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-templates:11}
+(a) At most $kmb$ bytes: one copy of each member per type. (b) Each of the $u$ object files contains up to $km$
+functions, $ukm$ weak copies in all; the program, after linking, $km$. The compile time grows with $u$, the program
+does not. (c) 30 symbols for 3 types, about 10 functions per type (\omterm{def:b2:cpp-classes-raii:constructor}{constructors}, \omterm{def:b2:cpp-classes-raii:constructor}{destructor}, \code{push_back},
+\code{reserve}, \code{clear}, \code{operator[]}, \code{begin}, \code{end} and others). A \code{void *} version is
+compiled once, about 10 functions for every type together, at the price of the type checks and the inlining.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-templates:12}
+\omcode{code/bachelor-2/04-cpp-templates/exercises/binomial.hpp}{6}{21}{Pascal's triangle at compile time}
+The largest entry of row $n$ is the middle one. $\binom{67}{33} \approx 1.42 \times 10^{19}$ is below $2^{64} \approx
+1.84 \times 10^{19}$, and $\binom{68}{34} \approx 2.85 \times 10^{19}$ is above: 67 is the last row that fits entirely.
+Pascal's rule only adds entries of the previous row, and each sum is an entry of the table, so no intermediate
+result overflows up to $N = 67$. The test checks the rule for every entry and the row sum
+$\sum_k \binom{20}{k} = 2^{20}$.
+\end{solution}
+
+\begin{solution}{pb:b2:cpp-templates:1}
+\textbf{1.} Read both values as \code{double} and return \code{(x > y) - (x < y)}. \code{x - y} is converted to
+\code{int}: a difference of 0.5 becomes 0, ``equal''. For \code{int}, \code{x - y} overflows when, say, $x$ is near
+\code{INT_MAX} and $y$ negative, which is undefined behaviour and in practice gives the wrong sign.
+
+\textbf{2.} Compare \code{due} with the same three-way formula, and if equal, compare \code{id}.
+
+\textbf{3.} \code{qsort} swaps elements as blocks of bytes. A \code{std::string} may point into its own small buffer
+or own a heap block; a byte copy breaks the first (the pointer still points into the old place) and duplicates the
+owner of the second. Moving C++ objects that are not trivially copyable without their \omterm{def:b2:cpp-classes-raii:constructor}{constructors} is undefined
+behaviour.
+
+\textbf{4.} Only the types of the four arguments: any object pointer converts to \code{void *}. \code{qsort(d, n,
+sizeof(int), compare_ints)} on an array of \code{double} compiles and sorts garbage.
+
+\textbf{5.} About $n \log_2 n = 10^6 \times 20 = 2 \times 10^7$ calls.
+
+\textbf{6.} Nothing: no algorithm, no complexity, no stability.
+
+\textbf{7.} For $i$ from 1 to $n - 1$: \code{T x = std::move(a[i])}; shift the elements before it that are greater
+than \code{x} (\code{less(x, a[j - 1])}) one place right, by move-assignment; put \code{x} in the hole.
+
+\textbf{8.} A lambda \code{(double x, double y) -> x < y}; \code{std::less<>()}; a lambda that compares \code{due},
+then \code{id}.
+
+\textbf{9.} Three functions: \code{insertion_sort} for \code{double} with the first lambda's type, for
+\code{std::string} with \code{std::less<void>}, and for \code{loan} with the second lambda's type (every lambda has a
+type of its own).
+
+\textbf{10.} The \omterm{def:b2:cpp-templates:template}{template} is compiled for \code{std::string} and moves elements with \code{std::string}'s \omterm{def:b2:cpp-copy-move:move}{move
+constructor} and assignment, which keep its invariant.
+
+\textbf{11.} \code{T tmp = std::move(a); a = std::move(b); b = std::move(tmp);}, or \code{std::swap(a, b)}: three moves
+of a few pointers each for long strings, whatever their length.
+
+\textbf{12.} Up to $n^2 / 2 = 5 \times 10^{11}$ comparisons against about $2 \times 10^7$ for \code{qsort}: the
+algorithm matters far more than inlining.
+
+\textbf{13.} A \code{requires} expression with parameters \code{L less}, \code{const T &a} and
+\code{const T &b}, requiring \code{less(a, b)} to be valid and convertible to \code{bool}; the library's
+\code{std::predicate<L, const T &, const T &>} says the same.
+
+\textbf{14.} \code{std::movable<T>}.
+
+\textbf{15.} No: the \omterm{def:b2:cpp-templates:concept}{concept} calls it with \code{const T &}, which does not bind to \code{T &}. That is right: a
+comparison must not modify its arguments, and the sort relies on it.
+
+\textbf{16.} \code{<=} is not a strict order: \code{x <= x} is true. Sorts assume irreflexivity; insertion sort then
+loses stability, and \code{std::sort} given such a comparator may read past the end of the range. A \omterm{def:b2:cpp-templates:concept}{concept} checks
+syntax, not meaning: \code{std::strict_weak_order} only documents the requirement.
+
+\textbf{17.} Take two iterators \code{first} and \code{last} of a type \code{It} constrained by the
+library's \omterm{def:b2:cpp-templates:concept}{concept} of random-access iterators, and keep \code{Less less}; \code{std::sortable<It, Less>} states both
+requirements at once.
+
+\textbf{18.} For each type, sort a copy of random input and check \code{std::is_sorted} with the same comparator and
+\code{std::is_permutation} against the input.
+
+\textbf{19.} In the printed run, for $n = 10^6$: \code{qsort} takes of the order of 90\,ns per element, about 4\,ns
+per comparison (dividing by $2 \times 10^7$); \code{std::sort} about half of each.
+
+\textbf{20.} Yes, between about 1.5 and 2: the difference is a cost per comparison, not a different growth. Both make
+$O(n \log n)$ comparisons; each comparison costs more in \code{qsort}.
+
+\textbf{21.} \code{qsort}: pass two addresses, make an indirect call, load the two \code{int}s through the pointers,
+compute the three-way result with two comparisons, return, and test that result. \code{std::sort}: one comparison of
+two registers, and a branch.
+
+\textbf{22.} The night: tens of milliseconds saved, irrelevant. Ten thousand orders every millisecond: from the
+printed run a sort of $10^4$ elements takes about half a millisecond with \code{qsort}; the difference is a large
+share of the budget, and the rewrite is worth it.
+
+\textbf{23.} At \code{-O0} nothing is inlined: \code{std::sort}'s comparisons become calls of the lambda's
+\code{operator()}, and its iterator operations calls too. The ratio falls to about 1 or below.
+
+\textbf{24.} \emph{The comparator speed-up of \code{std::sort} over \code{qsort}, measured on the laptop}: in the
+printed run, a factor of about 1.5 to 2 for $10^4$ to $10^7$ integers, constant in $n$, because the comparison is
+inlined into the instantiated sort instead of being called through a pointer.
+\end{solution}

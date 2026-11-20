@@ -1,0 +1,163 @@
+% Solutions of 02-c-types-and-control.
+\section*{Chapter \ref{ch:b1:c-types-and-control} --- C: Types, Operators and Control Flow}
+
+\begin{solution}{exo:b1:c-types-and-control:1}
+$300 \bmod 256 = 44$; the pattern of 200 read as a signed 8-bit number is $200 - 256 = -56$ (implementation-defined,
+two's complement here); $7.99$ and $-7.99$ truncate toward zero.
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/casts.txt}{The four conversions.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-types-and-control:2}
+C truncates toward zero: $-9/4 = -2$ and $-9 \,\%\, 4 = -1$ (indeed $(-2)\cdot 4 - 1 = -9$); $9/{-4} = -2$ and
+$9 \,\%\, {-4} = 1$ ($(-2)(-4) + 1 = 9$).
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/exo_div.txt}{The C results.}
+Python's \code{//} rounds down (toward $-\infty$) and its \texttt{\%} takes the sign of the divisor: $-9 \,//\, 4 = -3$,
+$-9 \,\%\, 4 = 3$, $9 \,//\, {-4} = -3$, $9 \,\%\, {-4} = -3$. Both languages keep the identity; they choose
+different quotients.
+\end{solution}
+
+\begin{solution}{exo:b1:c-types-and-control:3}
+\code{-1 < (int)u}: both \code{int}, $-1 < 0$, so 1. \code{l < 1u}: \code{long} has greater rank and holds every
+\code{unsigned}, so \code{1u} becomes \code{long}: 1. \code{big < neg}: both promoted to \code{int}, $200 < -1$ is
+false: 0. \code{(unsigned)neg > 1000u}: $-1$ becomes 4294967295: 1.
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/exo_compare.txt}{The four comparisons.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-types-and-control:4}
+The \code{do} body runs before the first test: $n$ goes $20 \to 13 \to 6 \to -1$ in 3 steps. The \code{while} loop
+tests first, $-1 > 0$ is false, so it runs 0 times.
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/exo_dowhile.txt}{The trace's result.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-types-and-control:5}
+\code{sum / 4} divides two \code{int}s, which truncates: $50 / 4 = 12$; only then is the result converted to
+\code{double}. Converting one operand first makes the division floating:
+\code{double average = (double)sum / 4;} prints \code{average = 12.50}.
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/average.txt}{Before the fix.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-types-and-control:6}
+$2\,000\,000\,000 + 2\,100\,000\,000 = 4\,100\,000\,000 > 2^{31} - 1$: the sum overflows. On this machine it wrapped to
+$4\,100\,000\,000 - 2^{32} = -194\,967\,296$, halved to $-97\,483\,648$. Write \code{return lo + (hi - lo) / 2;}: with
+$0 \leq lo \leq hi$, $hi - lo$ lies in $[0, hi]$, and $lo + (hi-lo)/2 \leq hi$, so no step leaves the range of
+\code{int}.
+\end{solution}
+
+\begin{solution}{exo:b1:c-types-and-control:7}
+Test the operands before adding: if $b > 0$, the sum exceeds \code{INT32_MAX} exactly when
+$a > \code{INT32_MAX} - b$, and that subtraction cannot overflow because $b > 0$; symmetrically for $b < 0$. The
+tested solution is \code{exercises/sat_add.c} (test \code{tests/sat_add_test.c}):
+\omcode{code/bachelor-1/02-c-types-and-control/exercises/sat_add.c}{4}{11}{Saturating addition}
+\end{solution}
+
+\begin{solution}{exo:b1:c-types-and-control:8}
+Level 1 enters at \code{case 1} and falls through all three: $100 + 10 + 1$. Level 2 enters at \code{case 2}: 11.
+Level 3: 1.
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/exo_switch.txt}{The three scores.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-types-and-control:9}
+Four values: 1, 127, 129 and 255. Proof: we need $x^2 \equiv 1 \pmod{256}$, that is $256 \mid (x-1)(x+1)$. Then $x$ is
+odd, so $x - 1$ and $x + 1$ are two consecutive even numbers; one of them is $\equiv 2 \pmod 4$ and carries a single
+factor 2, so the other carries at least seven: $x \equiv 1$ or $x \equiv -1 \pmod{128}$. In $[0, 255]$ that gives
+$x \in \{1, 129\}$ or $x \in \{127, 255\}$, and each works (for instance $127^2 = 16129 = 63 \cdot 256 + 1$). The
+chapter's test \code{tests/test_squares_mod.py} checks the count by brute force.
+\end{solution}
+
+\begin{solution}{exo:b1:c-types-and-control:10}
+Each bit of \code{~x} is $1$ minus the bit of $x$, so $x + \code{~x}$ has every bit set: it equals $2^N - 1$. Hence
+$x + (\code{~x} + 1) = 2^N \equiv 0 \pmod{2^N}$. In two's complement, $-x$ is represented by $2^N - x$, which we have
+just shown equals $\code{~x} + 1$: negation is ``flip the bits and add one''.
+\end{solution}
+
+\begin{solution}{exo:b1:c-types-and-control:11}
+If either factor is 0 there is no overflow. Otherwise compare one factor with a quotient that is always
+representable: both positive, overflow iff $a > \code{INT64_MAX} / b$; $a > 0 > b$, iff $b < \code{INT64_MIN} / a$;
+$a < 0 < b$, iff $a < \code{INT64_MIN} / b$; both negative (positive product), iff $a < \code{INT64_MAX} / b$. Each
+division has a divisor that is not 0 and never divides \code{INT64_MIN} by $-1$. The tested solution compares
+with the \omterm{def:b1:compilation-pipeline:compiler}{compiler}'s checked multiplication on a table of extreme values:
+\omcode{code/bachelor-1/02-c-types-and-control/exercises/mul_overflows.c}{4}{16}{Testing the factors first}
+\end{solution}
+
+\begin{solution}{exo:b1:c-types-and-control:12}
+The body runs for the even $i$ with $0 \leq i \leq n$; after the body with $i = 2k$, the loop computes $2k + 2$, which
+overflows exactly when $2k + 2 > \code{INT_MAX} = 2^{31} - 1$, that is when $2k = 2^{31} - 2$, the largest even
+\code{int}. That body runs iff $n \geq 2^{31} - 2$. So the behaviour is undefined exactly for $n = 2^{31} - 2$ and
+$n = 2^{31} - 1$, and defined for every other \code{n} (for $n < 0$ the loop does not run). A correct version
+counts in a wider type: \code{for (long long i = 0; i <= n; i += 2)}; or it stops before stepping:
+\code{if (i > n - 2) break;} at the end of the body, where $n - 2$ cannot overflow because $n \geq 0$ there.
+\end{solution}
+
+\begin{solution}{pb:b1:c-types-and-control:1}
+\textbf{1.} $t_i \in [-32768, 32767]$, from $-3276.8$ to $3276.7$ degrees: far more than any weather needs.
+
+\textbf{2.} $w = 25$; $w = 65535$; $w = 65536 - 990 = 64546$.
+
+\textbf{3.} For $t \geq 0$ the bits read the same in both ways: $w = t = t \bmod 2^{16}$. For $t < 0$ the two's
+complement pattern of $t$ is that of $2^{16} + t \in [2^{15}, 2^{16})$, which is $t \bmod 2^{16}$.
+
+\textbf{4.} $65535^2 = 4\,294\,836\,225 < 2^{32}$: 32 bits.
+
+\textbf{5.} 730 products, each below $2^{32}$: the sum is below $730 \cdot 2^{32} < 2^{10} \cdot 2^{32}$, so 42 bits.
+
+\textbf{6.} Write $a = qm + r$ and $b = q'm + r'$ with $0 \leq r, r' < m$. Then $a + b = (q + q')m + (r + r')$, so $a + b$
+and $r + r'$ have the same remainder modulo $m$.
+
+\textbf{7.} By induction on the loop: if $s$ holds the partial sum modulo $2^{32}$ and the product $p$ is exact or
+reduced modulo $2^{32}$, the unsigned addition stores $(s + p) \bmod 2^{32}$, which by question 6 is the next partial
+sum modulo $2^{32}$.
+
+\textbf{8.} $ab = (qm + r)(q'm + r') = m(qq'm + qr' + q'r) + rr'$, so $ab \equiv rr' \pmod m$.
+
+\textbf{9.} \code{(uint32_t)w[i]} has type \code{unsigned int}, of rank \code{int}; by the \omterm{def:b1:c-types-and-control:promotion}{usual arithmetic
+conversions} the promoted \code{w[i + 1]} becomes \code{unsigned int} too, and the product is computed modulo $2^{32}$,
+in $[0, 2^{32})$. Since the exact product is below $2^{32}$ (question 4), it is even exact.
+
+\textbf{10.} No: a \code{uint16_t} operand is promoted to \code{int} again, and the trap returns.
+
+\textbf{11.} Both are \code{uint16_t}, narrower than \code{int}; the \omterm{def:b1:c-types-and-control:promotion}{integer promotion} converts them to \code{int},
+which can hold every value from 0 to 65535.
+
+\textbf{12.} The exact product is a natural number; it is representable in \code{int} iff it is at most
+$2^{31} - 1$.
+
+\textbf{13.} $46340^2 = 2\,147\,395\,600 \leq 2\,147\,483\,647 < 46341^2 = 2\,147\,488\,281$: the smallest is $a = 46341$.
+
+\textbf{14.} $w \geq 46341$ iff $t < 0$ and $t + 65536 \geq 46341$, that is $-19195 \leq t \leq -1$: every negative
+reading of a real thermometer. A non-negative reading has $w \leq 32767$ and $32767 \cdot 65535 = 2\,147\,385\,345
+\leq 2^{31} - 1$, so it never overflows; and two readings in $[-19195, -1]$ give a product at least $46341^2$. So a
+product overflows exactly when two consecutive readings are both negative.
+
+\textbf{15.} $65535$ is $-1$ ($-0.1$ degree) and $65533$ is $-3$ ($-0.3$ degree): the Riverside reading of 22 January
+and the Hilltop reading of 23 January.
+
+\textbf{16.} $-23 \mapsto 65513$ and $-9 \mapsto 65527$; $65513 \cdot 65527 = 4\,292\,870\,351 > 2^{31} - 1$.
+
+\textbf{17.} $658\,928\,599 / 2^{32} \approx 0.153$: about 15\,\% of all pairs.
+
+\textbf{18.} The processor's multiplication keeps the low 32 bits; the negative \code{int} it produced was then
+converted to \code{uint32_t} for the addition, which gives back exactly the low 32 bits of the true product. The
+result is right because this \omterm{def:b1:compilation-pipeline:compiler}{compiler}, at these options, happened to emit that instruction.
+
+\textbf{19.} The \omterm{def:b1:compilation-pipeline:compiler}{compiler} may assume that \code{w[i] * w[i + 1]} never exceeds \code{INT_MAX}, as it assumed
+\code{x + 1 > x}: for instance it may compute the product in a narrower or a reordered way, or delete a later test
+that only an overflow could make true. Any output is then legal.
+
+\textbf{20.} A warning is decided when compiling, without the data; the multiplication is valid for most values. The
+sanitizer checks the values actually met at run time.
+
+\textbf{21.} The sanitizer reports each source location once by default; both overflows happen at the same line and
+column.
+
+\textbf{22.} \code{uint64_t s = 0; s += (uint64_t)w[i] * w[i + 1];} then return \code{(uint32_t)s}: the same $C$, since
+reducing at the end or at each step gives the same remainder (question 6). Without the \omterm{def:b1:c-types-and-control:cast}{cast} on the product, the
+promotion to \code{int} still happens first, and the trap remains.
+
+\textbf{23.} $73\,402\,730 = 1120 \cdot 65536 + 2410$, and $1120 = \code{0x460}$, $2410 = \code{0x96A}$:
+\code{0x0460096A}.
+
+\textbf{24.} \emph{The promotion trap.} A product of two \code{uint16_t} is computed in \code{int} and is undefined
+exactly when $ab > 2^{31} - 1$; the smallest equal operands are $46341$, and about 15\,\% of all pairs overflow. In
+the town's 731 readings, 2 of the 730 products did; all four programs printed $C = 73\,402\,730$, but only
+colleague B's version is guaranteed to.
+\end{solution}

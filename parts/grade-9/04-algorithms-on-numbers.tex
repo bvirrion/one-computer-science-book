@@ -1,0 +1,397 @@
+% Provenance (never printed): see sources/outline_sources.md and sources/book1/BRIEFS.md (g9/04).
+\chapter{Algorithms on Numbers}\label{ch:g9:algorithms-on-numbers}
+
+Is 1,000,003 a prime number? To find out by hand, you would try to divide it
+by 2, by 3, by 4, and so on: about a million divisions, weeks of work. A short
+\omterm{def:g4:programs-and-operating-system:program}{program} does them in a moment. A better \omterm{def:g4:programs-and-operating-system:program}{program} does a thousand times fewer,
+because it knows where to stop. This chapter \omterm{def:g4:programs-and-operating-system:program}{programs} some of the oldest
+\omterm{def:g4:algorithms-repeat-and-decide:algorithm}{algorithms} there are, and counts the work they do.
+
+\begin{recall}
+A \omterm{def:g7:functions:function}{function} takes \omterm{def:g7:functions:parameter}{parameters} and returns a \omterm{def:g6:variables-and-input:value}{value}
+(\cref{ch:g7:functions}); a \code{while} \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop} repeats as long as a \omterm{def:g4:algorithms-repeat-and-decide:condition}{condition}
+holds (\cref{ch:g6:while-loops}); a \omterm{def:g8:searching-and-sorting:binary-search}{binary search} halves the part of a \omterm{def:g8:searching-and-sorting:sorted}{sorted
+list} that is left at each step (\cref{ch:g8:searching-and-sorting}). From
+mathematics: a divisor of $n$ divides it with no remainder; a prime number has
+exactly two divisors, 1 and itself; the greatest common divisor (gcd) of two
+numbers is found by Euclid's \omterm{def:g4:algorithms-repeat-and-decide:algorithm}{algorithm}.
+\end{recall}
+
+\section{Divisors and primality by trial division}
+
+The operator \texttt{\%} gives the remainder of a division: \texttt{n \% d == 0}
+means that \code{d} divides \code{n}. Listing the divisors is one \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop}:
+
+\omcode{code/grade-9/04-algorithms-on-numbers/listings/divisors.py}{1}{11}{The
+divisors of a number.}\label{lst:g9:algorithms-on-numbers:divisors}
+
+\Needspace*{6\baselineskip}
+\omoutput{code/grade-9/04-algorithms-on-numbers/outputs/divisors.txt}{36 has nine
+divisors, 37 only two.}\label{out:g9:algorithms-on-numbers:divisors}
+
+\begin{definition}[Primality test]\label{def:g9:algorithms-on-numbers:primality-test}
+A \emph{primality test}\index{primality test} is an \omterm{def:g4:algorithms-repeat-and-decide:algorithm}{algorithm} that tells, for a
+whole number, whether it is prime.
+\end{definition}
+
+\begin{method}[Trial division]\label{met:g9:algorithms-on-numbers:trial-division}
+To test\index{trial division} whether $n \ge 2$ is prime, try to divide it by 2,
+3, 4, and so on. If one of them divides $n$, it is not prime; if none does, it
+is.
+\end{method}
+
+The \omterm{def:g4:programs-and-operating-system:program}{program} below counts the divisions it tries:
+
+\omcode{code/grade-9/04-algorithms-on-numbers/listings/is_prime_slow.py}{1}{12}{\omterm{met:g9:algorithms-on-numbers:trial-division}{Trial
+division} by every number below n.}\label{lst:g9:algorithms-on-numbers:slow}
+
+\Needspace*{7\baselineskip}
+\omoutput{code/grade-9/04-algorithms-on-numbers/outputs/is_prime_slow.txt}{A prime
+costs a division for every number below it.}\label{out:g9:algorithms-on-numbers:slow}
+
+$91 = 7 \times 13$ is found out after 6 divisions. A prime is the worst case:
+nothing divides it, so every number from 2 to $n - 1$ is tried, more than a
+million divisions for 1,000,003.
+
+\section{Stopping at the square root}
+
+Divisors come in pairs: if $d$ divides $n$, so does $n / d$. For 36, the pairs
+are $1 \times 36$, $2 \times 18$, $3 \times 12$, $4 \times 9$ and $6 \times 6$.
+
+\begin{omfigure}
+\begin{tikzpicture}[x=0.17cm, y=0.17cm]
+  \foreach \w/\h/\y in {36/1/0, 18/2/-3, 12/3/-7, 9/4/-12, 6/6/-18} {
+    \fill[ocBlue!25] (0,\y) rectangle ++(\w,-\h);
+    \draw[ocInk] (0,\y) rectangle ++(\w,-\h);
+    \node[anchor=west, font=\small] at (\w+1,\y-\h/2) {$\h \times \w$};
+  }
+  \fill[ocRed!30] (0,-18) rectangle ++(6,-6);
+  \draw[ocRed, thick] (0,-18) rectangle ++(6,-6);
+\end{tikzpicture}
+
+{\small The divisor pairs of 36 as rectangles of area 36. In each pair, one side
+is at most 6 and the other at least 6; the square $6 \times 6$ sits in the
+middle.}
+\end{omfigure}
+
+\begin{proposition}[A divisor below the square root]\label{prop:g9:algorithms-on-numbers:sqrt-bound}
+If a whole number $n \ge 2$ is not prime, it has a divisor $d$ with $2 \le d$ and
+$d \times d \le n$.
+\end{proposition}
+
+\begin{proof}
+As $n$ is not prime, $n = d \times e$ with $d$ and $e$ both between 2 and
+$n - 1$. Say $d \le e$. If $d \times d$ were larger than $n$, then
+$d \times e \ge d \times d > n$, which is false. So $d \times d \le n$.
+\end{proof}
+
+So the test can stop as soon as $d \times d > n$: if no divisor was found by
+then, there is none.
+
+\omcode{code/grade-9/04-algorithms-on-numbers/listings/is_prime.py}{1}{17}{\omterm{met:g9:algorithms-on-numbers:trial-division}{Trial
+division} up to the square root.}\label{lst:g9:algorithms-on-numbers:fast}
+
+\Needspace*{7\baselineskip}
+\omoutput{code/grade-9/04-algorithms-on-numbers/outputs/is_prime.txt}{999 divisions
+instead of 1,000,001.}\label{out:g9:algorithms-on-numbers:fast}
+
+The square root of 1,000,003 is just above 1,000, so the \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop} tries $d = 2$ to
+$1{,}000$: 999 divisions. For a number $n$, the work falls from about $n$
+divisions to about $\sqrt{n}$. The test is written \code{d * d <= n} rather than
+with a square root, so that it uses whole numbers only.
+
+\section{The sieve for all the primes below a number}
+
+To find \emph{all} the primes below 100, testing each number one by one repeats
+work. A \omterm{def:g7:lists:list}{list} can remember what is already known.
+
+\begin{method}[Sieve of Eratosthenes]\label{met:g9:algorithms-on-numbers:sieve}
+To find\index{sieve of Eratosthenes} the primes below $n$, write the numbers
+from 2 to $n - 1$. Take the smallest number not crossed out: it is prime. Cross
+out its multiples. Repeat with the next number not crossed out, until the end of
+the \omterm{def:g7:lists:list}{list}.
+\end{method}
+
+In Python, a \omterm{def:g7:lists:list}{list} of $n$ Booleans says, for each number, whether it is still in:
+
+\omcode{code/grade-9/04-algorithms-on-numbers/listings/sieve.py}{1}{19}{The
+sieve.}\label{lst:g9:algorithms-on-numbers:sieve}
+
+\Needspace*{6\baselineskip}
+\omoutput{code/grade-9/04-algorithms-on-numbers/outputs/sieve.txt}{The primes below
+50, and how many there are below
+100,000.}\label{out:g9:algorithms-on-numbers:sieve}
+
+Crossing out starts at $p \times p$, not at $2 \times p$: Exercise
+\ref{exo:g9:algorithms-on-numbers:9} asks why that is enough. Printed as a
+\omterm{def:g9:grids-and-images:grid}{grid} of ten rows, the sieve shows where the primes fall:
+
+\omcode{code/grade-9/04-algorithms-on-numbers/listings/sieve_grid.py}{1}{12}{The
+primes up to 100, as a \omterm{def:g9:grids-and-images:grid}{grid}.}\label{lst:g9:algorithms-on-numbers:grid}
+
+\omoutput{code/grade-9/04-algorithms-on-numbers/outputs/sieve_grid.txt}{A dot for each
+number crossed out.}\label{out:g9:algorithms-on-numbers:grid}
+
+\input{code/grade-9/04-algorithms-on-numbers/figures/out/primes.tex}
+\begin{omfigure}
+\begin{tikzpicture}[x=0.62cm, y=0.62cm]
+  \foreach \k in {1,...,100} {
+    \pgfmathtruncatemacro{\row}{(\k-1)/10}
+    \pgfmathtruncatemacro{\col}{mod(\k-1,10)}
+    \draw[black!30, fill=black!4] (\col,-\row) rectangle ++(1,-1);
+    \node[font=\scriptsize, black!45] at (\col+0.5,-\row-0.5) {\k};
+  }
+  \foreach \p in \gnineprimes {
+    \pgfmathtruncatemacro{\row}{(\p-1)/10}
+    \pgfmathtruncatemacro{\col}{mod(\p-1,10)}
+    \draw[ocInk, fill=ocYellow!60] (\col,-\row) rectangle ++(1,-1);
+    \node[font=\scriptsize\bfseries] at (\col+0.5,-\row-0.5) {\p};
+  }
+\end{tikzpicture}
+
+{\small The 25 primes up to 100, from the \omterm{def:g1:what-is-a-computer:input}{output} of the sieve. After 2 and 5,
+every prime ends in 1, 3, 7 or 9: the other columns hold multiples of 2 or of 5.}
+\end{omfigure}
+
+\begin{history}[A librarian's sieve]
+% ledger: g9:eratosthenes
+Eratosthenes was born in Cyrene, in today's Libya, about 276~BC, and died in
+Alexandria about 194~BC. He was the third librarian of the great library of
+Alexandria. He is remembered for the
+prime number sieve that carries his name, still used today in a modified form.
+\end{history}
+
+How much faster is the sieve? This \omterm{def:g4:programs-and-operating-system:program}{program} finds the primes below 100,000 both
+ways and times them:
+
+\omcode{code/grade-9/04-algorithms-on-numbers/listings/primes_timing.py}{1}{15}{\omterm{met:g9:algorithms-on-numbers:trial-division}{Trial
+division} against the sieve.}\label{lst:g9:algorithms-on-numbers:timing}
+
+\Needspace*{6\baselineskip}
+\omoutput{code/grade-9/04-algorithms-on-numbers/outputs/primes_timing.txt}{Timings on
+the author's laptop; yours will differ.}\label{out:g9:algorithms-on-numbers:timing}
+
+Both find the same 9,592 primes; the sieve is many times faster, because each
+number is crossed out by a few additions instead of being divided again and
+again.
+
+\begin{dated}{2026}
+% ledger: g9:largest-prime-2026
+The largest prime number known in 2026 is $2^{136\,279\,841} - 1$, found in
+October 2024 by a project in which volunteers lend their \omterm{def:g1:what-is-a-computer:computer}{computers} to the
+search. Written out, it has 41,024,320 digits. No sieve could reach it: it was
+proved prime by a test made for numbers of the form $2^p - 1$.
+\end{dated}
+
+\section{Euclid's algorithm programmed}
+
+The gcd of two numbers also divides their difference. Euclid's \omterm{def:g4:algorithms-repeat-and-decide:algorithm}{algorithm} in its
+oldest form subtracts the smaller number from the larger until both are equal:
+
+\omcode{code/grade-9/04-algorithms-on-numbers/listings/gcd_subtract.py}{1}{12}{Euclid
+by subtraction.}\label{lst:g9:algorithms-on-numbers:subtract}
+
+\Needspace*{11\baselineskip}
+\omoutput{code/grade-9/04-algorithms-on-numbers/outputs/gcd_subtract.txt}{The gcd of
+84 and 30.}\label{out:g9:algorithms-on-numbers:subtract}
+
+Subtracting 30 from 84 twice is what a division does at once: $84 = 2 \times 30
++ 24$. Euclid's \omterm{def:g4:algorithms-repeat-and-decide:algorithm}{algorithm} by division replaces the pair $(a, b)$ by $(b, a \bmod
+b)$, the remainder, until $b$ is 0:
+
+\omcode{code/grade-9/04-algorithms-on-numbers/listings/gcd.py}{1}{12}{Euclid by
+division, counting the steps.}\label{lst:g9:algorithms-on-numbers:gcd}
+
+\Needspace*{7\baselineskip}
+\omoutput{code/grade-9/04-algorithms-on-numbers/outputs/gcd.txt}{A gcd and the number
+of steps.}\label{out:g9:algorithms-on-numbers:gcd}
+
+The line \texttt{a, b = b, a \% b} changes both \omterm{def:g6:variables-and-input:value}{variables} at once: the new
+\code{b} is computed from the old \code{a} and \code{b}. Subtraction would need
+999,999 steps for the last pair; division needs 2.
+
+\begin{omfigure}
+\begin{tikzpicture}[x=0.27cm, y=0.27cm]
+  \draw[ocInk, thick] (0,0) rectangle (21,13);
+  \foreach \x/\y/\s in {0/0/13, 13/5/8, 16/0/5, 13/0/3, 13/3/2, 15/3/1, 15/4/1} {
+    \draw[ocInk, fill=ocBlue!15] (\x,\y) rectangle ++(\s,\s);
+  }
+  \foreach \x/\y/\s in {0/0/13, 13/5/8, 16/0/5, 13/0/3} {
+    \node[font=\small] at (\x+\s/2,\y+\s/2) {\s};
+  }
+  \node[anchor=west, align=left, font=\small] at (23,6.5) {$21 = 1 \times 13 + 8$\\ $13 = 1 \times 8 + 5$\\
+    $8 = 1 \times 5 + 3$\\ $5 = 1 \times 3 + 2$\\ $3 = 1 \times 2 + 1$\\ $2 = 2 \times 1 + 0$};
+\end{tikzpicture}
+
+{\small Euclid on 21 and 13: cut the largest square from the rectangle, then from
+what is left, again and again. The last squares, 1 by 1, fit exactly: the gcd is
+1. Each step cuts as many squares as its quotient: one, five times, then two
+squares of side 1; six steps in all.}
+\end{omfigure}
+
+\section{Why Euclid is fast}
+
+\begin{proposition}[The remainders halve]\label{prop:g9:algorithms-on-numbers:euclid-halves}
+If $0 < b \le a$, then the remainder $a \bmod b$ is less than $a / 2$.
+\end{proposition}
+
+\begin{proof}
+Two cases. If $b \le a / 2$, the remainder is smaller than $b$, so smaller than
+$a / 2$. If $b > a / 2$, then $b$ fits once into $a$ and the remainder is
+$a - b$, which is less than $a - a / 2 = a / 2$.
+\end{proof}
+
+After two steps, the pair $(a, b)$ has become $(b, r)$, then $(r, \ldots)$:
+the larger number is now $r$, less than half of $a$. Every two steps halve the
+larger number at least, so for numbers below 1,000, which can be halved only
+ten times before reaching 1, Euclid needs at most about twenty steps. The
+chart below shows the real counts: they grow very slowly.
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[width=12cm, height=5cm, xmin=0, xmax=202, ymin=0, ymax=11,
+      xlabel={larger number $a$}, ylabel={most steps},
+      ytick={0,2,...,10}, grid=major, grid style={black!10}]
+    \addplot[only marks, mark=*, mark size=0.9pt, ocBlue] table[x=a, y=steps]
+      {code/grade-9/04-algorithms-on-numbers/figures/out/steps.dat};
+    \addplot[only marks, mark=*, mark size=2.2pt, ocRed] coordinates
+      {(2,1) (3,2) (5,3) (8,4) (13,5) (21,6) (34,7) (55,8) (89,9) (144,10)};
+    \node[anchor=east, font=\small, ocRed, fill=white, inner sep=1pt] at (axis cs:198,1.5) {red: a new record, at $a$ = 2, 3, 5, 8, 13, 21, \ldots};
+  \end{axis}
+\end{tikzpicture}
+
+{\small For each $a$ up to 200, the largest number of division steps of Euclid's
+\omterm{def:g4:algorithms-repeat-and-decide:algorithm}{algorithm} over all pairs $(a, b)$ with $b < a$, computed by the chapter's
+\code{gcd}. A new record (red) is set only at a few \omterm{def:g6:variables-and-input:value}{values} of $a$.}
+\end{omfigure}
+
+\section{A square root by halving}
+
+The halving of \omterm{def:g8:searching-and-sorting:binary-search}{binary search} also finds numbers. $1 \times 1 < 2 < 2 \times 2$,
+so $\sqrt{2}$ lies between 1 and 2.
+
+\begin{method}[Square root by halving]\label{met:g9:algorithms-on-numbers:sqrt-halving}
+To approach $\sqrt{2}$, start with an interval whose ends' squares are below
+and above 2. Take its middle. If the middle's square is below 2, the middle
+becomes the lower end; otherwise it becomes the upper end. Repeat: each step
+halves the interval.
+\end{method}
+
+\Needspace*{12\baselineskip}
+\omcode{code/grade-9/04-algorithms-on-numbers/listings/sqrt_halving.py}{1}{9}{Ten
+halvings for the square root of 2.}\label{lst:g9:algorithms-on-numbers:sqrt}
+
+\omoutput{code/grade-9/04-algorithms-on-numbers/outputs/sqrt_halving.txt}{The interval
+shrinks around 1.414.}\label{out:g9:algorithms-on-numbers:sqrt}
+
+After ten halvings the interval is $1 / 1024$ wide, less than a thousandth: the
+square root of 2 is 1.414 to three decimals. Each halving gains one \omterm{def:g5:bits-and-bytes:binary}{binary}
+digit, so about one decimal digit every three or four steps.
+
+\section{Exercises}
+
+\begin{exercise}[$\star$]\label{exo:g9:algorithms-on-numbers:1}
+What does \code{divisors(28)} return? Add up the divisors smaller than 28. What
+do you notice?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g9:algorithms-on-numbers:2}
+On the numbers from 2 to 30, cross out the multiples of 2, then of 3, as the
+sieve does. Which numbers are left? Which of them are not prime?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g9:algorithms-on-numbers:3}
+Write the pairs that \code{gcd(48, 18)} goes through, step by step. How many
+steps does it take, and what does it return?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g9:algorithms-on-numbers:4}
+A number is \emph{perfect} when it equals the sum of its divisors smaller than
+itself, like 6 $= 1 + 2 + 3$. Write a \omterm{def:g4:programs-and-operating-system:program}{program} that prints the perfect numbers
+below 1,000.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:algorithms-on-numbers:5}
+This test says that 1 is prime. Why? Fix it.
+
+\omcode{code/grade-9/04-algorithms-on-numbers/exercises/is_prime_one_bug.py}{1}{7}{A
+\omterm{def:g9:algorithms-on-numbers:primality-test}{primality test} with a gap.}\label{lst:g9:algorithms-on-numbers:one-bug}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:algorithms-on-numbers:6}
+In this version the \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop} runs while \code{d * d < n}. Which numbers does it
+wrongly call prime? Find the smallest one, then fix the test.
+
+\omcode{code/grade-9/04-algorithms-on-numbers/exercises/square_bug.py}{1}{9}{One
+\omterm{def:g7:strings:string}{character} changed.}\label{lst:g9:algorithms-on-numbers:square-bug}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:algorithms-on-numbers:7}
+Write a \omterm{def:g7:functions:function}{function} \code{gcd3(a, b, c)} for the gcd of three numbers, using the
+gcd of two. Try it on 84, 126 and 210.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:algorithms-on-numbers:8}
+Twin primes are two primes that differ by 2, like 11 and 13. Write a \omterm{def:g4:programs-and-operating-system:program}{program}
+that counts the pairs of twin primes below 1,000 and prints the last pair.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:algorithms-on-numbers:9}
+The sieve starts crossing out the multiples of $p$ at $p \times p$. Why have the
+smaller multiples, such as $2 \times p$ and $3 \times p$, already been crossed
+out?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g9:algorithms-on-numbers:10}
+10,007 is prime. Without running the \omterm{def:g4:programs-and-operating-system:program}{program}, how many divisions does
+\code{is_prime(10007)} try?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g9:algorithms-on-numbers:11}
+Use the proposition on halving remainders to find an upper bound on the number
+of division steps of Euclid's \omterm{def:g4:algorithms-repeat-and-decide:algorithm}{algorithm} for two numbers below 1,000. Compare it
+with the real record, found by the weekend problem.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g9:algorithms-on-numbers:12}
+Write a \omterm{def:g7:functions:function}{function} \code{next_prime(n)} that returns the smallest prime larger
+than \code{n}, together with the total number of divisions it tried on the way.
+Add a few lines that ask the user for \code{n}.
+\end{exercise}
+
+\section{Problem: The Slowest Pairs for Euclid}
+
+\begin{problem}[{Weekend problem --- the slowest pairs for Euclid}]\label{pb:g9:algorithms-on-numbers:1}
+Euclid's \omterm{def:g4:algorithms-repeat-and-decide:algorithm}{algorithm} is fast, but some pairs make it work harder than others.
+Which pair of numbers below 1,000 takes the most steps?
+
+\medskip\noindent\textbf{Part I --- By hand.}
+\begin{enumerate}
+  \item Count the division steps of Euclid's \omterm{def:g4:algorithms-repeat-and-decide:algorithm}{algorithm} for $(13, 8)$.
+  \item The same for $(21, 13)$; compare with the figure of the squares.
+  \item The same for $(100, 1)$. Are large numbers always slow?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- A search for records.}
+
+\omcode{code/grade-9/04-algorithms-on-numbers/listings/slowest_pairs.py}{1}{9}{Every
+pair below 1,000, printing each new record.}\label{lst:g9:algorithms-on-numbers:slowest}
+
+\begin{enumerate}[resume]
+  \item How many pairs does the \omterm{def:g4:programs-and-operating-system:program}{program} try?
+  \item Why does it print only some pairs, and not every pair?
+  \item Run it. Which pair holds the final record, and with how many steps?
+  \item Look at the numbers in the record pairs. How is each number made from
+    the two before it?
+  \item What is the next record pair, above 1,000?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Why these pairs.}
+\begin{enumerate}[resume]
+  \item For a record pair $(a, b)$, what is the quotient at each step?
+  \item Show that one step of Euclid on a record pair gives the record pair just
+    before it.
+  \item Why do quotients of 1 make the \omterm{def:g4:algorithms-repeat-and-decide:algorithm}{algorithm} as slow as it can be?
+  \item State the result.
+\end{enumerate}
+\end{problem}

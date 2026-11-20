@@ -1,0 +1,34 @@
+$ cut -d, -f2 books.csv | tail -n +2 > titles.txt
+$ rustc --edition 2021 -O dict.rs -o dict && ./dict < titles.txt
+34 different words; most frequent: The (42)
+$ for b in bug1 bug2 bug3; do rustc --edition 2021 --cfg $b dict_bugs.rs 2>&1 | grep -m1 -A9 '^error\['; done
+error[E0499]: cannot borrow `*d` as mutable more than once at a time
+  --> dict_bugs.rs:11:6
+   |
+10 |     let first = d.count("The"); // a reference into the table, kept...
+   |                 - first mutable borrow occurs here
+11 |     *d.count(w) += 1; // ...across an insertion that may move the slots
+   |      ^ second mutable borrow occurs here
+12 |     *first += 0;
+   |     ----------- first borrow later used here
+
+error[E0507]: cannot move out of `*best` which is behind a shared reference
+  --> dict_bugs.rs:18:24
+   |
+18 |     let mine: String = *best; // take the word for ourselves, to free it
+   |                        ^^^^^ move occurs because `*best` has type `String`, which does not implement the `Copy` trait
+   |
+help: consider removing the dereference here
+   |
+18 -     let mine: String = *best; // take the word for ourselves, to free it
+18 +     let mine: String = best; // take the word for ourselves, to free it
+error[E0597]: `line` does not live long enough
+  --> dict_bugs.rs:27:18
+   |
+26 |         let line = format!("line {i}"); // a buffer that dies at the end of each iteration
+   |             ---- binding `line` declared here
+27 |         for w in line.split(' ') {
+   |                  ^^^^ borrowed value does not live long enough
+...
+30 |     }
+   |     - `line` dropped here while still borrowed

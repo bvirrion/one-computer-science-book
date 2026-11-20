@@ -1,0 +1,218 @@
+\section*{Chapter \ref{ch:b2:search-and-games} --- Search and Games}
+
+\begin{solution}{exo:b2:search-and-games:1}
+The queue starts with the Bus Depot (16). Its roads lead to 4, 7 and 24, in that order, which form depth 1. Expanding 4
+adds 15; 7 adds 23; 24 adds 1 and 3: depth 2. The \omterm{def:b2:processes-and-system-calls:process}{process} goes on until every place is reached, at depth 6 at most.
+
+\omoutput{code/bachelor-2/28-search-and-games/outputs/exo_bfs_order.txt}{The places by depth from the Bus Depot, in the
+order they leave the queue.}
+\end{solution}
+
+\begin{solution}{exo:b2:search-and-games:2}
+From the Bus Depot to the Bakery Corner, A* with three times the straight line returns a route of 4,800 m, while the
+shortest is 4,360 m. On the other two pairs it is lucky, and it expands fewer states every time.
+
+\omoutput{code/bachelor-2/28-search-and-games/outputs/exo_inadmissible.txt}{An overestimate expands fewer states and can
+return a longer route.}
+
+In the proof, the new cost $c' = c - h(s) + h(t)$ was non-negative because $h$ was \omterm{def:b2:search-and-games:heuristic}{consistent}. With $h$ three times the
+straight line, a road of length $c$ towards the goal can lower $h$ by up to $3c$, so $c'$ can be negative, and the
+argument of \omterm{def:b2:search-and-games:ucs}{uniform-cost search}, which needs non-negative costs, breaks. The \omterm{def:b2:search-and-games:heuristic}{heuristic} is not even \omterm{def:b2:search-and-games:heuristic}{admissible}: at the Bus
+Depot it exceeds the true distance, so the good route keeps too high a priority and the goal is reached first by the
+other one.
+\end{solution}
+
+\begin{solution}{exo:b2:search-and-games:3}
+\omoutput{code/bachelor-2/28-search-and-games/outputs/exo_iddfs.txt}{\omterm{def:b2:search-and-games:iddfs}{Iterative deepening} expands more states, but keeps
+only one path.}
+Breadth-first search keeps every state it has generated, tens of thousands at depth 20; \omterm{def:b2:search-and-games:iddfs}{iterative deepening} keeps a path of
+$d + 1$ states. It expands more than the ratio $b/(b - 1)$ of \cref{exo:b2:search-and-games:4} suggests, seven times
+more at depth 20, because the 8-puzzle's \omterm{def:b2:search-and-games:state-space}{state space} is a graph, not a tree: depth-first search reaches the same state by
+many paths and expands it each time, while breadth-first search expands it once. \omterm{def:b2:search-and-games:iddfs}{Iterative deepening} trades time for
+memory.
+\end{solution}
+
+\begin{solution}{exo:b2:search-and-games:4}
+There are $b^k$ nodes at depth $k$, so $1 + b + \dots + b^d = (b^{d+1} - 1)/(b - 1)$ down to depth $d$, by the sum of a
+geometric series. \omterm{def:b2:search-and-games:iddfs}{Iterative deepening} runs the searches to depths $0, \dots, d$, so it expands
+\[
+\sum_{k=0}^{d} \frac{b^{k+1} - 1}{b - 1} \leq \frac{1}{b - 1} \sum_{k=0}^{d} b^{k+1} = \frac{b}{b - 1} \cdot \frac{b^{d+1}
+- 1}{b - 1}
+\]
+nodes, which is $b/(b - 1)$ times the count of the last search alone: at most twice for $b = 2$, about $1.1$ times for
+$b = 10$.
+\end{solution}
+
+\begin{solution}{exo:b2:search-and-games:5}
+With \textsc{min} at the root, the second level is \textsc{max} and the third \textsc{min}. The children are
+\[
+\max(\min(4, 8, 2), \min(7, 1)) = \max(2, 1) = 2, \quad \max(3, 6, 0) = 6, \quad \max(2, 1) = 2,
+\]
+and the root is $\min(2, 6, 2) = 2$. With \textsc{max} at the root, the children are $\min(8, 7) = 7$, $\min(3, 9, 5) = 3$ and
+$\min(6, 8) = 6$, and the root is $7$.
+
+\omoutput{code/bachelor-2/28-search-and-games/outputs/exo_minimax.txt}{The two values.}
+\end{solution}
+
+\begin{solution}{exo:b2:search-and-games:6}
+\omoutput{code/bachelor-2/28-search-and-games/outputs/exo_ab_bug.txt}{Without inherited bounds, nothing is pruned.}
+The value is right, but all 729 leaves are evaluated. In a \textsc{max} node with fresh bounds, $\beta$ stays $+\infty$, so
+$\alpha \geq \beta$ never holds; in a \textsc{min} node, $\alpha$ stays $-\infty$. The function is minimax with a test that
+never fires. A cut-off happens when a node's value falls outside a bound set by an ancestor: the bounds must come from
+above.
+\end{solution}
+
+\begin{solution}{exo:b2:search-and-games:7}
+\omoutput{code/bachelor-2/28-search-and-games/outputs/exo_subtraction.txt}{The losing \omterm{def:b2:search-and-games:game}{positions} up to 30.}
+Claim: the player to move loses exactly when $k \equiv 0$ or $2 \pmod 7$. By strong induction on $k$. With $k \equiv 0$,
+the moves lead to residues $6$, $4$ and $3$; with $k \equiv 2$, to $1$, $6$ and $5$: never to a losing residue, so by
+induction the opponent wins. From the other residues there is a move to a losing one: from $1$ take 1, from $3$ take 1,
+from $4$ take 4, from $5$ take 3, from $6$ take 4; in each case the move is possible, since $k$ is at least that residue.
+So these \omterm{def:b2:search-and-games:game}{positions} are won.
+\end{solution}
+
+\begin{solution}{exo:b2:search-and-games:8}
+Let $s = s_0, s_1, \dots, s_n$ be an optimal path to a goal $s_n$, with costs $c_1, \dots, c_n$. Consistency gives
+$h(s_{i-1}) \leq c_i + h(s_i)$ for each $i$. Adding these inequalities, the terms $h(s_1), \dots, h(s_{n-1})$ cancel and
+$h(s) \leq c_1 + \dots + c_n + h(s_n) = h^*(s)$, since $h = 0$ on goals. If no goal is reachable, $h^*(s) = \infty$ and
+there is nothing to prove.
+\end{solution}
+
+\begin{solution}{exo:b2:search-and-games:9}
+A move slides one tile by one cell, so it changes that tile's distance to its place by exactly $1$ and leaves the others
+unchanged: the Manhattan distance changes by $\pm 1$ for a move of cost $1$, hence $h(s) \leq 1 + h(t)$. Each misplaced
+tile is at least one cell from its place, so the Manhattan distance is at least the number of misplaced tiles. By
+\cref{prop:b2:search-and-games:consistent-admissible} both are \omterm{def:b2:search-and-games:heuristic}{admissible}.
+
+\omoutput{code/bachelor-2/28-search-and-games/outputs/exo_manhattan.txt}{Both \omterm{def:b2:search-and-games:heuristic}{heuristics} against the true distances of
+all reachable states.}
+Neither \omterm{def:b2:search-and-games:heuristic}{heuristic} ever exceeds the true distance. The Manhattan distance is exact on 2,351 states and falls short by about
+8 moves on average, against about 15 for the misplaced tiles: that gap is what \cref{out:b2:search-and-games:hook}
+measures.
+\end{solution}
+
+\begin{solution}{exo:b2:search-and-games:10}
+Write $[x] = \min(\max(x, \alpha), \beta)$ for $x$ clamped to $[\alpha, \beta]$. The three cases of the theorem say exactly
+$[r] = [v]$: if $\alpha < v < \beta$, then $[r] = v$ forces $r = v$; if $v \leq \alpha$, $[r] = \alpha$ means $r \leq
+\alpha$; if $v \geq \beta$, $[r] = \beta$ means $r \geq \beta$.
+
+Induction on the height. At a leaf, $r = v$. Take a \textsc{max} node with children of values $v_1, \dots, v_k$, and let
+$m_j = \max(v_1, \dots, v_j)$ and $\mu_j$ the variable \code{value} after child $j$, with $m_0 = \mu_0 = -\infty$. We
+show $[\mu_j] = [m_j]$ for each $j$ that the loop reaches. It holds for $j = 0$. Suppose it holds for $j - 1$ and the
+loop goes on, so $\mu_{j-1} < \beta$. Then $m_{j-1} < \beta$ too, and both clamps equal $\alpha_j = \max(\alpha,
+\mu_{j-1}) = \max(\alpha, m_{j-1})$, which is the lower bound passed to child $j$. For any $m < \beta$ and any $x$, a
+check of the three \omterm{def:b2:search-and-games:game}{positions} of $x$ gives $[\max(m, x)] = \min(\max(x, \alpha_m), \beta)$ with $\alpha_m = \max(\alpha,
+m)$. Applying it with $m = \mu_{j-1}$, $x = r_j$, and with $m = m_{j-1}$, $x = v_j$, and using the induction hypothesis on
+child $j$ with bounds $(\alpha_j, \beta)$, gives $[\mu_j] = [m_j]$.
+
+If the loop stops after child $j$ because $\mu_j \geq \beta$, then $[m_j] = [\mu_j] = \beta$, so $m_j \geq \beta$ and
+$v = m_k \geq m_j \geq \beta$: $[v] = \beta = [\mu_j]$. Otherwise the loop ends at $j = k$ with $[\mu_k] = [m_k] = [v]$.
+\textsc{min} nodes are symmetric, exchanging the roles of $\alpha$ and $\beta$ and of $\max$ and $\min$.
+\end{solution}
+
+\begin{solution}{exo:b2:search-and-games:11}
+\omoutput{code/bachelor-2/28-search-and-games/outputs/exo_symmetry.txt}{The \omterm{def:b2:search-and-games:game}{positions}, and their classes under the eight
+symmetries.}
+A depth-first walk from the empty board collects the 5,478 reachable \omterm{def:b2:search-and-games:game}{positions}. For each, the program computes its eight
+images under the four rotations and their mirror images, and keeps the smallest string as the representative of its
+class: two \omterm{def:b2:search-and-games:game}{positions} are in the same class exactly when they have the same representative. There are 765 classes. A
+search with memoisation keyed on the representative computes each value once per class.
+\end{solution}
+
+\begin{solution}{exo:b2:search-and-games:12}
+Building the predecessor lists costs $O(|V| + |E|)$. A position is put in the queue only when it receives a layer, and
+never again, since \omterm{def:b2:search-and-games:game}{positions} with a layer are skipped; so each position leaves the queue at most once, and when $v$
+leaves it, its predecessor list is walked once. Each edge $(u, v)$ is therefore looked at once, at constant cost: the
+loop costs $O(|V| + |E|)$ in all.
+
+The counter of a position $u$ of the opponent starts at its number of successors, counted with repetition. It is
+decremented once for each edge $(u, v)$ when $v$ leaves the queue, that is once for each successor entering the
+\omterm{def:b2:search-and-games:attractor}{attractor}. It reaches $0$ exactly when all successors are in the \omterm{def:b2:search-and-games:attractor}{attractor}, which is the condition of the definition;
+with a counter instead of a check of all successors, the time stays linear.
+\end{solution}
+
+\begin{solution}{pb:b2:search-and-games:1}
+\textbf{1.} A state is a place and a subset of the three stops: $30 \times 2^3 = 240$ states. The goals are the 30 states
+with no delivery left.
+
+\textbf{2.} The same place means different things before and after a delivery: the round from the Library back past the
+South Bridge would be a cycle if the state were the place alone, and the \omterm{def:b2:search-and-games:state-space}{goal test}, ``all parcels delivered'', could not
+be read from it.
+
+\textbf{3.} The Library has only two roads, to the South Bridge and to the Garden Centre, and the shortest way on to the
+Museum goes back over the South Bridge. The states $(24, \{3, 8, 12\})$ and $(24, \{8, 12\})$ are different, so the route
+is a simple path in the \omterm{def:b2:search-and-games:state-space}{state space}.
+
+\textbf{4.} One action per road leaving the place, with one-way roads only in their direction; its cost is the road's
+length. The deliveries left lose the new place if it is a stop.
+
+\textbf{5.} Not necessarily: breadth-first search minimises the number of roads, not the metres, and the round of fewest
+roads may be longer.
+
+\textbf{6.} $30 \cdot 2^k$: exponential in the number of stops, as for the travelling salesman problem.
+
+\textbf{7.} Any route that delivers the stops left visits the farthest one, $s$, so its length is at least the road
+distance to $s$, which is at least the straight line, since no road is shorter than the straight line between its ends.
+On goals $h = 0$.
+
+\textbf{8.} Take an action from $(u, S)$ to $(v, S')$ along a road of length $d \geq \lVert u - v \rVert$. For $s \in S$:
+if $s = v$, then $\lVert u - s \rVert \leq d$; otherwise $s \in S'$ and $\lVert u - s \rVert \leq d + \lVert v - s \rVert \leq d
++ h(v, S')$. Taking the maximum over $s$, $h(u, S) \leq d + h(v, S')$.
+
+\textbf{9.} No. With stops 1 km and 2 km away along a straight road, the round costs 2 km and the sum is 3 km.
+
+\textbf{10.} A* never expands a state with $g + h$ above 11,980 m, the optimal cost; \omterm{def:b2:search-and-games:ucs}{uniform-cost search} expands every
+state with $g$ below it, including those that head away from the remaining stops.
+
+\textbf{11.} The length of a minimum spanning tree, in straight lines, of the current place and the stops left. Any round
+from the place through all the stops, shortened to straight lines between the points it visits in order, is a spanning
+path, so at least as long as the minimum spanning tree: the \omterm{def:b2:search-and-games:heuristic}{heuristic} is \omterm{def:b2:search-and-games:heuristic}{admissible}. It is at least the old $h$, since
+the tree contains a path to the farthest stop.
+
+\textbf{12.} The goal becomes $(16, \varnothing)$, and a natural \omterm{def:b2:search-and-games:heuristic}{admissible heuristic} is the maximum over the stops left of
+the straight line to the stop plus the straight line from it to the depot, or the straight line to the depot when no stop
+is left.
+
+\textbf{13.} The robot has 30 places, the rival 30, and the turn two values: $30 \cdot 30 \cdot 2 = 1{,}800$.
+
+\textbf{14.} The robot's target is the \omterm{def:b2:search-and-games:game}{positions} with the robot at the Library and the rival elsewhere; the rival's, those
+with both robots on the same place. The play stops there, and the loop gives each such position a successor, so that the
+definition of the \omterm{def:b2:search-and-games:attractor}{attractor}, which asks about all successors, applies everywhere.
+
+\textbf{15.} The robot moves to the South Bridge. The rival, at the Station, can reach only the Town Hall, the River Park and the Hill Park, none of which is the South Bridge or the
+Library. The robot then moves to the Library: three moves
+in all.
+
+\textbf{16.} The Town Square touches both roads into the Library, from the South Bridge and from the Garden Centre. A
+rival there answers any step of the robot onto one of them by a capture, so the robot keeps away. The position is in
+neither \omterm{def:b2:search-and-games:attractor}{attractor}: by the proof of \cref{thm:b2:search-and-games:attractor}, the rival can keep the token out of the
+robot's \omterm{def:b2:search-and-games:attractor}{attractor} and the robot can keep it out of the rival's, so the robots circle for ever, the rival guarding the
+Library and the robot keeping out of reach.
+
+\textbf{17.} The position is in the rival's \omterm{def:b2:search-and-games:attractor}{attractor}, at layer 8: by \cref{thm:b2:search-and-games:attractor} the rival
+has a \omterm{def:b2:search-and-games:strategy}{strategy} that catches the robot within 8 moves, whatever the robot does. A position in an \omterm{def:b2:search-and-games:attractor}{attractor} is won, so it is
+never a draw.
+
+\textbf{18.} The targets differ: the robot must reach one fixed place, the rival must meet a moving robot. Moreover the
+robot is caught whenever the two share a place, whoever moved last.
+
+\textbf{19.} Of the $4^8 = 65{,}536$ leaves, alpha--beta evaluates 7,139 in random order, about 11~\%, and 511 when the
+children are best first, exactly $4^4 + 4^4 - 1$.
+
+\textbf{20.} The best case is about $2b^{d/2}$ leaves. In the time minimax takes to search to depth $d$, about $b^d$
+leaves, alpha--beta searches to about $2d$: twice as deep.
+
+\textbf{21.} The values are only $-1$, $0$ and $1$, and most are draws: as soon as a player is sure of $0$ and the other
+finds $0$, the test $\alpha \geq \beta$ holds and the rest is cut. Many games also end before the board is full, so the
+tree is far from uniform.
+
+\textbf{22.} All values lie in $[-1, 1]$, so $-2$ and $2$ act as infinite bounds: by \cref{thm:b2:search-and-games:alpha-beta}
+the value returned is exact, and the program stays in integers.
+
+\textbf{23.} Try first a move that wins at once, then one that blocks the opponent's line, then the centre, the corners and
+the edges; or the moves that were best in a shallower search, or best according to the memo.
+
+\textbf{24.} On the random tree with $b = 4$ and $d = 8$, alpha--beta with perfect ordering visits $L = 511$ of $N =
+65{,}536$ leaves, exactly the bound $b^{\lceil d/2 \rceil} + b^{\lfloor d/2 \rfloor} - 1$; on noughts and crosses, it
+finishes 7,330 of the 255,168 games.
+\end{solution}

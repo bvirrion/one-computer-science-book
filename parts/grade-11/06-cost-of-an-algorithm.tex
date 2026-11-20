@@ -1,0 +1,330 @@
+% Provenance (never printed): NSI premiere "Algorithmique: cout des algorithmes (lineaire, quadratique),
+% recherche dichotomique: cout logarithmique (here only counted as halvings)". See sources/book2/BRIEFS.md.
+\chapter{The Cost of an Algorithm}\label{ch:g11:cost-of-an-algorithm}
+
+Two programs look for the names that appear twice in a list. They give the same answer. On a hundred names both
+answer at once; on a million names, one answers in well under a second and the other takes hours. Nothing in the
+answers tells them apart. What tells them apart is how much work each does, and how that work grows with the size of
+the list.
+
+The previous chapter proved that a loop stops and gives the right answer. This one counts how many steps it takes
+before it stops: exactly, by counting operations in the code, and then roughly, by timing it. The two agree in a way
+that lets one predict, from a small run, how long a large one will take.
+
+\begin{recall}
+Linear search, binary search, selection sort and insertion sort, with their invariants and variants, are in chapter
+\ref{ch:g11:proving-algorithms-correct}. Counting the comparisons a search or a sort makes, on small lists and by
+hand, was done in Book 1, grade 8.
+\end{recall}
+
+\section{Counting elementary operations}\label{sec:g11:cost-of-an-algorithm:counting}
+
+\begin{definition}[Elementary operation, input size]\label{def:g11:cost-of-an-algorithm:elementary}
+An \emph{elementary operation}\index{elementary operation} is an operation whose time does not depend on the size of
+the data: comparing two numbers, adding them, reading or writing one element of a list. The \emph{input
+size}\index{input size} is a number that measures the data, usually written $n$: the length of a list, the number of
+names.
+\end{definition}
+
+\begin{definition}[Cost]\label{def:g11:cost-of-an-algorithm:cost}
+The \emph{cost}\index{cost (time cost)} of an algorithm on an input is the number of \omterm{def:g11:cost-of-an-algorithm:elementary}{elementary operations} it
+performs. One usually counts a single kind of operation that the others follow, such as the comparisons between
+elements in a search or a sort.
+\end{definition}
+
+The simplest way to count is to let the program count: a variable that grows by one at each comparison.
+
+\omcode{code/grade-11/06-cost-of-an-algorithm/listings/count_linear.py}{1}{18}{Linear search, counting its
+comparisons.}\label{lst:g11:cost-of-an-algorithm:count-linear}
+
+\omoutput{code/grade-11/06-cost-of-an-algorithm/outputs/count_linear.txt}{The first name \omterm{def:g11:cost-of-an-algorithm:cost}{costs} one comparison; a name
+that is absent \omterm{def:g11:cost-of-an-algorithm:cost}{costs} $n$.}\label{out:g11:cost-of-an-algorithm:count-linear}
+
+\section{Best and worst case}\label{sec:g11:cost-of-an-algorithm:cases}
+
+\begin{definition}[Best case, worst case]\label{def:g11:cost-of-an-algorithm:cases}
+For a given \omterm{def:g11:cost-of-an-algorithm:elementary}{input size} $n$, the \emph{best case}\index{best case} of an algorithm is an input of size $n$ on which its
+\omterm{def:g11:cost-of-an-algorithm:cost}{cost} is the smallest, and the \emph{worst case}\index{worst case} one on which it is the largest. The \omterm{def:g11:cost-of-an-algorithm:cost}{cost} in the worst
+case is a promise: no input of that size \omterm{def:g11:cost-of-an-algorithm:cost}{costs} more.
+\end{definition}
+
+Insertion sort shows how far apart the two may be. On a sorted list, each new element is compared once with the one
+before it and stays put. On a list in reverse order, each new element is compared with every element before it and
+travels to the front.
+
+\omcode{code/grade-11/06-cost-of-an-algorithm/listings/count_insertion.py}{1}{26}{Insertion sort, counting the
+comparisons between elements.}\label{lst:g11:cost-of-an-algorithm:count-insertion}
+
+\omoutput{code/grade-11/06-cost-of-an-algorithm/outputs/count_insertion.txt}{A sorted list \omterm{def:g11:cost-of-an-algorithm:cost}{costs} $n - 1$ comparisons,
+a reversed one $n(n-1)/2$, and a shuffled one about half of that.}\label{out:g11:cost-of-an-algorithm:count-insertion}
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum size=7mm, font=\small}]
+  \node[font=\footnotesize, anchor=east] at (-0.6,0) {sorted};
+  \node[font=\footnotesize, anchor=east] at (-0.6,-1.6) {reversed};
+  \foreach \v [count=\k from 0] in {1, 2, 3, 4, 5, 6} \node[c, fill=omMeth!12] (a\k) at (0.7*\k, 0) {\v};
+  \foreach \v [count=\k from 0] in {6, 5, 4, 3, 2, 1} \node[c, fill=omThm!12] (b\k) at (0.7*\k, -1.6) {\v};
+  \foreach \k in {1,...,5} {
+    \pgfmathtruncatemacro{\p}{\k - 1}
+    \draw[->, omDef, thick] (a\k.north) to[bend right=50] (a\p.north);
+  }
+  \draw[->, omThm, thick] (b5.south) to[bend left=25] node[below, font=\footnotesize] {$5$ comparisons} (b0.south);
+  \node[font=\footnotesize, anchor=west] at (4.4,0) {each new element: $1$ comparison, $5$ in all};
+  \node[font=\footnotesize, anchor=west] at (4.4,-1.6) {element $k$: $k$ comparisons, $1 + 2 + \dots + 5 = 15$};
+\end{tikzpicture}
+
+{\small Insertion sort on six elements. Sorted: every new element is checked once against its left neighbour. Reversed:
+the last one, $1$, is compared with all five before it on its way to the front.}
+\end{omfigure}
+
+\section{Constant, linear and quadratic cost}\label{sec:g11:cost-of-an-algorithm:growth}
+
+The exact count depends on details: counting assignments too, or starting the loop at $0$ or $1$, changes it a little.
+What does not change is how it grows with $n$.
+
+\begin{definition}[Constant, linear, quadratic cost]\label{def:g11:cost-of-an-algorithm:growth}
+A \omterm{def:g11:cost-of-an-algorithm:cost}{cost} is \emph{constant}\index{constant, linear, quadratic cost} if it does not grow with $n$; \emph{linear} if it
+is about proportional to $n$, so that doubling $n$ about doubles it; \emph{quadratic} if it is about proportional to
+$n^2$, so that doubling $n$ about multiplies it by $4$.
+\end{definition}
+
+Linear search \omterm{def:g11:cost-of-an-algorithm:cost}{costs} $n$ in its \omterm{def:g11:cost-of-an-algorithm:cases}{worst case}: linear. Insertion sort \omterm{def:g11:cost-of-an-algorithm:cost}{costs} $n(n-1)/2 = (n^2 - n)/2$: for large $n$ the
+term $n^2/2$ is almost all of it, and the \omterm{def:g11:cost-of-an-algorithm:cost}{cost} is quadratic.
+
+\omcode{code/grade-11/06-cost-of-an-algorithm/listings/doubling.py}{1}{14}{The worst-case counts when $n$
+doubles.}\label{lst:g11:cost-of-an-algorithm:doubling}
+
+\omoutput{code/grade-11/06-cost-of-an-algorithm/outputs/doubling.txt}{Doubling $n$ doubles the linear count and
+multiplies the quadratic one by $4$.}\label{out:g11:cost-of-an-algorithm:doubling}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=11cm, height=6cm, xlabel={$n$}, ylabel={comparisons, worst case}, xmin=0, xmax=100,
+    ymin=0, ymax=5000, legend pos=north west, scaled y ticks=false,
+    yticklabel style={/pgf/number format/1000 sep={\,}}]
+  \addplot[very thick, omDef] table[x=n, y=linear]
+    {code/grade-11/06-cost-of-an-algorithm/figures/counts.dat};
+  \addplot[very thick, omThm] table[x=n, y=quadratic]
+    {code/grade-11/06-cost-of-an-algorithm/figures/counts.dat};
+  \legend{linear search, insertion sort}
+\end{axis}
+\end{tikzpicture}
+
+{\small Worst-case counts, from \code{figures/counts.py}. At $n = 100$, $100$ comparisons against $4950$; the
+straight line is not zero, it only looks flat beside the parabola.}
+\end{omfigure}
+
+\section{The cost of halving}\label{sec:g11:cost-of-an-algorithm:halving}
+
+Binary search does not look at the elements one by one: it halves the window each time. Its \omterm{def:g11:cost-of-an-algorithm:cost}{cost} is the \omterm{def:g11:cost-of-an-algorithm:halvings}{number of
+halvings}.
+
+\begin{definition}[Number of halvings]\label{def:g11:cost-of-an-algorithm:halvings}
+For a whole number $n \ge 1$, the \emph{number of halvings}\index{number of halvings h(n)} $h(n)$ is the number of
+times $n$ can be halved, rounding down, before it reaches $1$. It is the whole number $h$ such that
+$2^h \le n < 2^{h + 1}$.
+\end{definition}
+
+\omcode{code/grade-11/06-cost-of-an-algorithm/listings/halvings.py}{1}{14}{$h(n)$, counted, and checked against the
+powers of $2$.}\label{lst:g11:cost-of-an-algorithm:halvings}
+
+\omoutput{code/grade-11/06-cost-of-an-algorithm/outputs/halvings.txt}{A thousand is halved $9$ times, a million $19$,
+a billion $29$: multiplying $n$ by a thousand adds about $10$.}\label{out:g11:cost-of-an-algorithm:halvings}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, ybar, width=11cm, height=5.2cm, bar width=7mm, xlabel={halving}, ylabel={$n$}, ymin=0,
+    ymax=1200, xtick={0,...,9}, nodes near coords, nodes near coords style={font=\scriptsize,
+    /pgf/number format/1000 sep={}}]
+  \addplot[fill=omDef!40, draw=omDef] coordinates {(0,1000) (1,500) (2,250) (3,125) (4,62) (5,31) (6,15) (7,7) (8,3)
+    (9,1)};
+\end{axis}
+\end{tikzpicture}
+
+{\small Halving $1000$, rounding down: after $9$ halvings only $1$ is left, so $h(1000) = 9$, and indeed
+$2^9 = 512 \le 1000 < 1024$.}
+\end{omfigure}
+
+The binary search of the previous chapter looks at one element, \code{t[mid]}, per turn, comparing it with \code{x}
+at most twice. Its window starts with $n$ elements, and each turn leaves at most half of it, rounded down. In the \omterm{def:g11:cost-of-an-algorithm:cases}{worst
+case} it makes $h(n) + 1$ turns: $20$ for a million names, against a million comparisons for linear search. Its \omterm{def:g11:cost-of-an-algorithm:cost}{cost}
+grows by one turn when $n$ doubles.
+
+\section{Measured running times}\label{sec:g11:cost-of-an-algorithm:measured}
+
+Counts predict running times, up to a factor that depends on the machine. \code{time.perf_counter()} reads a clock
+meant for measuring short times; the difference between two readings is the time spent between them. One run is
+never enough: the machine does other things at the same time, so each measurement is repeated and the median kept, the
+middle value, which an occasional slow run does not move.
+
+\omcode{code/grade-11/06-cost-of-an-algorithm/listings/measure_sorts.py}{1}{25}{Timing insertion sort as $n$
+doubles.}\label{lst:g11:cost-of-an-algorithm:measure-sorts}
+
+\omoutput{code/grade-11/06-cost-of-an-algorithm/outputs/measure_sorts.txt}{Measured on the author's laptop: each
+doubling multiplies the time by about $4$, as the quadratic count
+predicted.}\label{out:g11:cost-of-an-algorithm:measure-sorts}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=11cm, height=6cm, xlabel={$n$}, ylabel={milliseconds}, xmin=0, xmax=4200, ymin=0, ymax=210,
+    scaled x ticks=false, xticklabel style={/pgf/number format/1000 sep={\,}}, xtick={0,1000,2000,3000,4000}]
+  \addplot[very thick, omThm, mark=*, mark size=1.5pt] table[x=n, y=ms]
+    {code/grade-11/06-cost-of-an-algorithm/figures/measured_plot.dat};
+  \draw[dashed, omDef] (axis cs:1000,0) -- (axis cs:1000,11) (axis cs:2000,0) -- (axis cs:2000,45)
+    (axis cs:4000,0) -- (axis cs:4000,187);
+\end{axis}
+\end{tikzpicture}
+
+{\small Insertion sort on shuffled lists, median of five runs, measured on the author's laptop
+(\code{figures/measured_plot.py}). The dashed lines mark $n = 1000$, $2000$, $4000$: each doubling, about four times
+the time.}
+\end{omfigure}
+
+The same machine, looking for a number in a million: a scan of the list against a binary search and against a set,
+which finds an element by computing where it is stored rather than by comparing.
+
+\omcode{code/grade-11/06-cost-of-an-algorithm/listings/measure_search.py}{1}{31}{One lookup in a million numbers, three
+ways.}\label{lst:g11:cost-of-an-algorithm:measure-search}
+
+\omoutput{code/grade-11/06-cost-of-an-algorithm/outputs/measure_search.txt}{Measured on the author's laptop. The scan is
+tens of thousands of times slower than binary search on a million elements.}\label{out:g11:cost-of-an-algorithm:measure-search}
+
+\begin{remark}
+A timing measures everything between the two clock readings. A \code{print} inside the timed part, or building the
+list there, is measured too. Timings also vary from run to run and from machine to machine: this book's timings are
+printed as measured once, on one laptop, and only their ratios are meant to carry over.
+\end{remark}
+
+\section{Exercises}\label{sec:g11:cost-of-an-algorithm:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g11:cost-of-an-algorithm:1}
+How many comparisons does linear search make, in its \omterm{def:g11:cost-of-an-algorithm:cases}{worst case}, on a list of $500$ names? When is that case?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:cost-of-an-algorithm:2}
+Compute $h(1000)$ by halving by hand, and check it with powers of $2$.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:cost-of-an-algorithm:3}
+What does \code{count_insertion.py} print for the sorted and the reversed lists if $n = 20$?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:cost-of-an-algorithm:4}
+How many times does the body run in \code{for i in range(n)}, then inside it \code{for j in range(i)}? Give the count
+for $n = 10$ and in general.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:cost-of-an-algorithm:5}
+Write \code{count_comparisons(sort, t)} that sorts a copy of \code{t} with a given sorting function, such as
+\code{sorted}, and returns how many comparisons it made. Hint: \code{functools.cmp_to_key} turns a comparison function
+into a key.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:cost-of-an-algorithm:6}
+Selection sort compares, at turn $i$, the element in place $i$ and those after it. Show that it makes exactly
+$n(n-1)/2$ comparisons on every list, by writing the sum $(n-1) + (n-2) + \dots + 1$ twice, the second time backwards,
+and adding.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:cost-of-an-algorithm:7}
+A student times a sort with a \code{print} of the list after each turn, inside the timed part. Why is the measurement
+wrong, and what does it measure?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:cost-of-an-algorithm:8}
+A quadratic \omterm{def:g11:cost-of-an-algorithm:cost}{cost} takes $2$ seconds for $n = 10\,000$. About how long for $n = 30\,000$?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:cost-of-an-algorithm:9}
+Write \code{has_duplicate(t)} that compares every pair of elements once, and give its number of comparisons when there
+is no duplicate.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:cost-of-an-algorithm:10}
+Which list of length $n$ is the \omterm{def:g11:cost-of-an-algorithm:cases}{worst case} for the chapter's \code{largest}, if one counts the assignments
+\code{best = t[i]}? How many are there then?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:cost-of-an-algorithm:11}
+Write \code{h(n)} by halving, and check on all $n$ from $1$ to $5000$ that $2^{h(n)} \le n < 2^{h(n) + 1}$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:cost-of-an-algorithm:12}
+Prove that the binary search of the previous chapter makes at most $h(n) + 1$ turns on a list of $n \ge 1$
+elements.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:cost-of-an-algorithm:13}
+Rank the \omterm{def:g11:cost-of-an-algorithm:cost}{costs} $1000$, $h(n)$, $100n$, $n \cdot h(n)$ and $n^2$ at $n = 10$, $1000$ and $10^6$. Which is smallest
+at $n = 10$? Is $n \cdot h(n)$ below $100n$ at $n = 10^6$? What does this say about comparing \omterm{def:g11:cost-of-an-algorithm:cost}{costs} only by their
+growth?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:cost-of-an-algorithm:14}
+Write a duplicate search that sorts the list and then compares neighbours. How many comparisons does the scan make?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:cost-of-an-algorithm:15}
+From the three times of \code{measure_sorts.py}, predict the time of insertion sort for $n = 40\,000$. Running it
+would take a while: estimate how long, and say why the prediction might be off.
+\end{exercise}
+
+\section{Problem: Two Ways to Find Duplicates}\label{sec:g11:cost-of-an-algorithm:problem}
+
+\begin{problem}[{Weekend problem --- from which size sorting first pays}]\label{pb:g11:cost-of-an-algorithm:1}
+A list of $n$ numbers may hold a duplicate. Three functions answer: one compares every pair, one sorts the list with
+Python's \code{sorted} and compares neighbours, one builds a set. The first two are counted with a value that counts
+each comparison made with it; the third compares nothing, it computes where each number goes.
+
+\omcode{code/grade-11/06-cost-of-an-algorithm/listings/duplicates.py}{1}{34}{Three ways to find a duplicate, and a
+counted value.}\label{lst:g11:cost-of-an-algorithm:duplicates}
+
+\omcode{code/grade-11/06-cost-of-an-algorithm/listings/dup_count.py}{1}{27}{Counting the comparisons on lists without
+duplicates.}\label{lst:g11:cost-of-an-algorithm:dup-count}
+
+\omoutput{code/grade-11/06-cost-of-an-algorithm/outputs/dup_count.txt}{The counts, on shuffled lists of different
+numbers.}\label{out:g11:cost-of-an-algorithm:dup-count}
+
+\omcode{code/grade-11/06-cost-of-an-algorithm/listings/dup_measure.py}{1}{30}{Timing the three, and predicting the
+quadratic one at $n = 100\,000$.}\label{lst:g11:cost-of-an-algorithm:dup-measure}
+
+\omoutput{code/grade-11/06-cost-of-an-algorithm/outputs/dup_measure.txt}{Measured on the author's
+laptop.}\label{out:g11:cost-of-an-algorithm:dup-measure}
+
+\medskip\noindent\textbf{Part I --- Every pair.}
+\begin{enumerate}
+  \item Why is a list without duplicate the \omterm{def:g11:cost-of-an-algorithm:cases}{worst case} of \code{by_pairs}?
+  \item Count its comparisons on such a list of $n$ elements, and check the line $n = 100$.
+  \item Is its \omterm{def:g11:cost-of-an-algorithm:cost}{cost} \omterm{def:g11:cost-of-an-algorithm:growth}{constant}, linear or quadratic?
+  \item What does \code{Counted} do, and why can it count the comparisons made inside \code{sorted}?
+  \item Why is \code{by_pairs} not run at $n = 100\,000$ in \code{dup_count.py}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Sort, then scan.}
+\begin{enumerate}[resume]
+  \item Why do two equal values end up side by side once the list is sorted?
+  \item How many comparisons does the scan make, at most?
+  \item Subtract them from the printed counts at $n = 10$ and $n = 100$: how many comparisons did the sort make?
+  \item From the output, from which $n$ does sorting win, on these lists? Why did it lose for small $n$?
+  \item At $n = 100\,000$, how many times fewer comparisons than every pair?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The measured times.}
+\begin{enumerate}[resume]
+  \item Check that the times of \code{by_pairs} at $1000$, $2000$, $4000$ grow like a quadratic \omterm{def:g11:cost-of-an-algorithm:cost}{cost}.
+  \item Explain the factor $625$ in the prediction for $n = 100\,000$.
+  \item Express the predicted time in minutes.
+  \item The set version compares nothing. Why can it still not take a \omterm{def:g11:cost-of-an-algorithm:growth}{constant} time?
+  \item Rank the three by measured time at $n = 100\,000$.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The verdict.}
+\begin{enumerate}[resume]
+  \item Check the printed speed-up from the two times it divides.
+  \item Why is the speed-up measured in time different from the ratio of comparisons of question 10?
+  \item For a list of a thousand numbers checked once, does the choice matter? For a million?
+  \item Why is the prediction for \code{by_pairs} at $100\,000$ reasonable but not exact?
+  \item State the result: the size from which sorting needs fewer comparisons, and the speed-up measured at
+    $n = 100\,000$.
+\end{enumerate}
+\end{problem}

@@ -1,0 +1,504 @@
+% Book 3, Year 1, chapter 6 -- strings, structures and files.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 6.
+% ledger: b1:ascii-nul, b1:snprintf, b1:strtol, b1:psabi-struct-layout, b1:c-fopen-modes, b1:x86-little-endian
+\chapter{Strings, Structures and Files}\label{ch:b1:c-strings-structs-files}
+
+A program keeps a person's name in a ten-byte field and their age just after it. Someone types a twelve-letter name;
+the program copies it; the name prints correctly, and the age has become 0. Nothing crashed, no warning appeared, and
+the next program to read the age will believe it. This chapter explains the three facts behind that story: how C
+stores text, how it lays out a group of \omterm{def:b1:c-strings-structs-files:struct}{fields} in memory, and how those bytes reach a file. With them, a C program
+can read the town's weather file robustly and write it back in a form that a program can reach record by record.
+
+\begin{recall}
+A \omterm{def:b1:c-strings-structs-files:text-binary}{text file} is a sequence of characters cut into lines, and a file of records holds one record per line, its \omterm{def:b1:c-strings-structs-files:struct}{fields}
+separated by a character such as a comma. Each character is stored as a number, its code: ASCII for the letters of
+English, UTF-8 for every script, ASCII characters keeping their one-byte codes. Programs read standard input and write
+standard output.
+\end{recall}
+
+\section{Null-terminated strings}\label{sec:b1:c-strings-structs-files:strings}
+
+C has no string type. It has \omterm{def:b1:pointers-and-arrays:array}{arrays} of \code{char}, and a convention.
+
+\begin{definition}[Null-terminated string]\label{def:b1:c-strings-structs-files:string}
+In C, a \emph{null-terminated string}\index{null-terminated string}\index{string (C)} is a sequence of characters
+stored in consecutive \code{char} and followed by a byte of value 0, the null character \texttt{'\textbackslash{}0'}
+(code 0, NUL, in ASCII). Its length is the number of characters before that byte. A string literal \code{"rain"} is an
+\omterm{def:b1:pointers-and-arrays:array}{array} of 5 \code{char}, the last one zero, that the program must not modify.
+\end{definition}
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/strlen_demo.c}{2}{16}{The characters of a string, and
+its length}\label{lst:b1:c-strings-structs-files:strlen}
+
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/strlen_demo.txt}{Eight codes, then the zero byte; cutting
+the string takes one assignment.}
+
+\code{strlen} counts the characters until it meets the zero byte: it reads the whole string, so its cost is linear in
+the length, and calling it in the condition of a loop over the string, as \cref{lst:b1:c-strings-structs-files:strlen}
+does for brevity, makes the loop quadratic. \code{sizeof} gives the size of the \omterm{def:b1:pointers-and-arrays:array}{array}, fixed at compile time and
+unrelated to the length of the string it currently holds. Every function of \code{<string.h>} relies on the zero byte:
+\code{strcpy(dst, src)} copies the characters of \code{src} and its zero into \code{dst}, \code{strcat(dst, src)}
+copies them after the end of \code{dst}, \code{strcmp} compares two strings character by character. None of them knows
+the size of \code{dst}.
+
+\begin{definition}[Buffer overflow]\label{def:b1:c-strings-structs-files:buffer-overflow}
+A \emph{buffer overflow}\index{buffer overflow} is a write past the end (or before the start) of an \omterm{def:b1:pointers-and-arrays:array}{array}, into the
+memory that follows it. It is \omterm{def:b1:c-types-and-control:ub}{undefined behaviour}; in practice, it changes whatever the program keeps there.
+\end{definition}
+
+Here is the story of the introduction, built three ways: plainly, with the address sanitizer, and with the
+optimisation that this machine's \omterm{def:b1:compilation-pipeline:compiler}{compiler} accompanies with extra checks.
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/overflow.c}{2}{17}{Twelve letters for a ten-byte
+field}\label{lst:b1:c-strings-structs-files:overflow}
+
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/overflow.txt}{Silent corruption, a sanitizer that sees
+nothing, the same copy into a plain \omterm{def:b1:pointers-and-arrays:array}{array} caught, and the optimised build stopped.}\label{out:b1:c-strings-structs-files:overflow}
+
+\begin{omfigure}
+\begin{tikzpicture}[b/.style={draw, minimum width=7mm, minimum height=7mm, font=\small\ttfamily, inner sep=0pt}]
+\foreach \c [count=\i from 0] in {C,h,r,i,s,t,a,b,e,l} {\node[b, fill=omCode!8] at (\i*0.7,0) {\c};}
+\node[b, fill=omThm!20] at (10*0.7,0) {l};
+\node[b, fill=omThm!20] at (11*0.7,0) {e};
+\node[b, fill=omThm!20] at (12*0.7,0) {0};
+\node[b, fill=omThm!20] at (13*0.7,0) {0};
+\node[b, fill=omThm!20] at (14*0.7,0) {0};
+\node[b, fill=omThm!20] at (15*0.7,0) {0};
+\draw[decorate, decoration={brace, amplitude=4pt}] (-0.35,0.45) -- (6.65,0.45) node[midway, above=4pt, font=\small]
+  {\code{name}, 10 bytes};
+\draw[decorate, decoration={brace, amplitude=4pt}] (6.65,0.45) -- (8.05,0.45) node[midway, above=4pt, font=\small]
+  {padding};
+\draw[decorate, decoration={brace, amplitude=4pt}] (8.05,0.45) -- (10.85,0.45) node[midway, above=4pt, font=\small]
+  {\code{age}};
+\node[font=\scriptsize, align=center] at (9.45,-0.85) {was \code{13 00 00 00} (19),\\now \code{00 00 00 00}};
+\node[font=\scriptsize, align=left, anchor=west] at (-0.35,-0.85) {offsets 0 to 15 of \code{struct person}};
+\end{tikzpicture}
+\par\smallskip{\small The thirteen bytes written by \code{strcpy}. The last two letters fall into the two unused bytes
+that keep \code{age} at an offset multiple of 4; the zero byte that ends the string lands on the low byte of
+\code{age}, stored first, and 19 becomes 0.}
+\end{omfigure}
+
+The address sanitizer protects the space around each variable, not the inside of a \omterm{def:b1:c-strings-structs-files:struct}{structure}: the write stays within
+the 16 bytes of \code{p}, so it is not reported. Into a plain \omterm{def:b1:pointers-and-arrays:array}{array} of 10 bytes the same copy is caught at once. The
+third build shows a defence many systems add: when optimising, this \omterm{def:b1:compilation-pipeline:compiler}{compiler} defines \code{_FORTIFY_SOURCE}, which
+replaces \code{strcpy} by a version that knows the size of \code{p.name} when the \omterm{def:b1:compilation-pipeline:compiler}{compiler} does, and stops the program
+on an overflow. None of the three should be relied on. The size must travel with the buffer, and every copy must
+respect it.
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/safe_copy.c}{2}{16}{A bounded copy that reports
+truncation}\label{lst:b1:c-strings-structs-files:safe}
+
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/safe_copy.txt}{\code{snprintf} keeps 9 characters and the
+zero byte, and returns the length it would have needed.}
+
+\code{snprintf(buf, size, format, ...)} writes at most \code{size} bytes, the last always zero, and returns the length
+the full result would have had: a result greater than or equal to \code{size} means the text was cut. The program then
+decides: refuse, warn, or allocate a bigger buffer.
+
+A program receives its command-line arguments as strings: \code{main(int argc, char *argv[])} gets their number and an
+\omterm{def:b1:pointers-and-arrays:array}{array} of \omterm{def:b1:pointers-and-arrays:pointer}{pointers} to them, \code{argv[0]} being the program's name. Turning them into numbers is a small lesson in
+robustness.
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/args.c}{3}{21}{Two conversions of the same
+arguments}\label{lst:b1:c-strings-structs-files:args}
+
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/args.txt}{\code{atoi} cannot say that something went
+wrong.}\label{out:b1:c-strings-structs-files:args}
+
+\code{atoi} returns 0 for \code{hello}, as for the string \code{0}, and 7 for \code{7x}; on a number too large for an
+\code{int} its behaviour is undefined, here a value cut to 32 bits. \code{strtol} reports, through its second argument,
+where the digits stopped, and through \code{errno}, a variable of the C library that it sets to \code{ERANGE}, an
+overflow of \code{long}. The last argument fits in a \code{long} but not in an \code{int}: a caller wanting an
+\code{int} still has to check the range (\cref{exo:b1:c-strings-structs-files:12}).
+
+\section{Structures, unions and enumerations}\label{sec:b1:c-strings-structs-files:structs}
+
+\begin{definition}[Structure, field]\label{def:b1:c-strings-structs-files:struct}
+A \emph{structure}\index{structure (C struct)} in C is a type made of several named members, the \emph{fields}\index{field
+(of a structure)}, of possibly different types, stored in one block of memory in the order of their declaration. A
+field is reached with \code{.} from a structure and with \code{->} from a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to one: \code{p->x} means
+\code{(*p).x}.
+\end{definition}
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/point.c}{2}{32}{Initialising, reaching and copying
+\omterm{def:b1:c-strings-structs-files:struct}{structures}}\label{lst:b1:c-strings-structs-files:point}
+
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/point.txt}{A \omterm{def:b1:c-strings-structs-files:struct}{structure} is copied as a whole, \omterm{def:b1:c-functions-and-stack:by-value}{by value}, like
+an \code{int}.}
+
+\code{typedef} gives a type a second name, so that \code{point} can be written instead of a full \omterm{def:b1:c-strings-structs-files:struct}{structure} type.
+\emph{Designated initialisers}, \code{.name = ...}, set \omterm{def:b1:c-strings-structs-files:struct}{fields} by name in any order and set every other field to zero.
+A \omterm{def:b1:c-strings-structs-files:struct}{structure} passed to a function is copied, like any argument (\cref{ch:b1:c-functions-and-stack}); assignment copies
+every field, including \omterm{def:b1:pointers-and-arrays:array}{arrays} inside it, which an \omterm{def:b1:pointers-and-arrays:array}{array} alone cannot do. To let a function change a \omterm{def:b1:c-strings-structs-files:struct}{structure}, or to
+avoid copying a large one, pass its address.
+
+\begin{definition}[Enumeration]\label{def:b1:c-strings-structs-files:enum}
+An \emph{enumeration}\index{enumeration (C)} declares named integer constants: \code{enum kind { CIRCLE, RECTANGLE };}
+makes \code{CIRCLE} 0 and \code{RECTANGLE} 1, and \code{enum kind} a type whose values are meant to be those names.
+\end{definition}
+
+\begin{definition}[Union, tagged union]\label{def:b1:c-strings-structs-files:union}
+A \emph{union}\index{union (C)} is a type whose members all start at the same address and share the same storage: its
+size is that of its largest member, and only the member last written holds a meaningful value. A \emph{tagged
+union}\index{tagged union} is a \omterm{def:b1:c-strings-structs-files:struct}{structure} holding a union and a field, the tag, that records which member is in use.
+\end{definition}
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/shapes.c}{2}{38}{A shape is a circle or a
+rectangle}\label{lst:b1:c-strings-structs-files:shapes}
+
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/shapes.txt}{The \omterm{def:b1:c-strings-structs-files:union}{union} takes the size of its larger
+member; a lying tag gives a wrong answer and no error.}
+
+\begin{omfigure}
+\begin{tikzpicture}[b/.style={draw, minimum height=7mm, font=\small, inner sep=1pt, anchor=west}]
+\foreach \y/\lab in {0/circle, -1.2/rectangle} {
+  \node[b, minimum width=12mm, fill=omCode!8] at (0,\y) {\code{kind}};
+  \node[b, minimum width=12mm, fill=black!8] at (1.2,\y) {pad};
+  \node[font=\small, anchor=east] at (-0.2,\y) {\lab};
+}
+\node[b, minimum width=24mm, fill=omDef!12] at (2.4,0) {\code{r}};
+\node[b, minimum width=24mm, fill=black!4] at (4.8,0) {unused};
+\node[b, minimum width=24mm, fill=omDef!12] at (2.4,-1.2) {\code{w}};
+\node[b, minimum width=24mm, fill=omDef!12] at (4.8,-1.2) {\code{h}};
+\foreach \x/\o in {0/0, 1.2/4, 2.4/8, 4.8/16, 7.2/24} {\node[font=\scriptsize] at (\x,0.6) {\o};}
+\draw[decorate, decoration={brace, amplitude=4pt, mirror}] (2.4,-1.7) -- (7.2,-1.7) node[midway, below=4pt,
+  font=\small] {the union \code{as}: 16 bytes, read through the member the tag names};
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b1:c-strings-structs-files:union}{tagged union} of 24 bytes. The same 16 bytes hold a radius or a width and a height; the tag
+(4 bytes, then 4 bytes of \omterm{def:b1:c-strings-structs-files:alignment}{padding} so the \code{double} starts at offset 8) says which reading is meaningful.}
+\end{omfigure}
+
+The function \code{area} must check the tag before reading the \omterm{def:b1:c-strings-structs-files:union}{union}, and the \code{switch} without a
+\code{default} lets \code{-Wall} warn when a new kind is added to the \omterm{def:b1:c-strings-structs-files:enum}{enumeration} but not to the \code{switch}. Nothing
+in C prevents the tag and the contents from disagreeing; the Year~2 volume meets languages whose sum types make that
+disagreement impossible.
+
+\section{Layout and alignment}\label{sec:b1:c-strings-structs-files:layout}
+
+The \omterm{def:b1:c-strings-structs-files:struct}{structure} of the opening story occupies 16 bytes for 14 bytes of \omterm{def:b1:c-strings-structs-files:struct}{fields}. The two extra bytes come from a
+requirement of the processor and its calling conventions.
+
+\begin{definition}[Alignment, padding]\label{def:b1:c-strings-structs-files:alignment}
+The \emph{alignment}\index{alignment} of a type is a power of two by which the address of every object of that type
+must be divisible; on this machine it equals the size for \code{char}, \code{short}, \code{int}, \code{long},
+\code{double} and \omterm{def:b1:pointers-and-arrays:pointer}{pointers}. \emph{Padding}\index{padding} is the unused bytes that the \omterm{def:b1:compilation-pipeline:compiler}{compiler} inserts in a \omterm{def:b1:c-strings-structs-files:struct}{structure}
+so that each field lies at an offset multiple of its alignment, and at the end so that the size is a multiple of the
+largest alignment of a field, which keeps every element of an \omterm{def:b1:pointers-and-arrays:array}{array} of \omterm{def:b1:c-strings-structs-files:struct}{structures} aligned.
+\end{definition}
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/layout.c}{2}{33}{The same four \omterm{def:b1:c-strings-structs-files:struct}{fields} in two
+orders}\label{lst:b1:c-strings-structs-files:layout}
+
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/layout.txt}{24 bytes, then 16, for the same 14 bytes of
+\omterm{def:b1:c-strings-structs-files:struct}{fields}.}\label{out:b1:c-strings-structs-files:layout}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=5.2mm, y=1mm]
+\newcommand{\fld}[5]{\draw[fill=#4] (#1,#2) rectangle (#1+#3,#2+6); \node[font=\scriptsize] at (#1+#3/2,#2+3) {#5};}
+\foreach \o in {0,4,...,24} {\node[font=\scriptsize] at (\o,8.5) {\o};}
+\node[font=\small, anchor=east] at (-0.4,3) {\code{loose}};
+\fld{0}{0}{1}{omCode!8}{s} \fld{1}{0}{7}{black!12}{padding} \fld{8}{0}{8}{omDef!12}{\code{temp}}
+\fld{16}{0}{1}{omCode!8}{f} \fld{17}{0}{3}{black!12}{pad} \fld{20}{0}{4}{omDef!12}{\code{date}}
+\node[font=\small, anchor=east] at (-0.4,-9) {\code{tight}};
+\fld{0}{-12}{8}{omDef!12}{\code{temp}} \fld{8}{-12}{4}{omDef!12}{\code{date}} \fld{12}{-12}{1}{omCode!8}{s}
+\fld{13}{-12}{1}{omCode!8}{f} \fld{14}{-12}{2}{black!12}{pad}
+\foreach \k in {0,...,23} {\draw[black!30] (\k,0) -- (\k,1);}
+\end{tikzpicture}
+\par\smallskip{\small The two layouts of \cref{lst:b1:c-strings-structs-files:layout}, with offsets in bytes (s:
+\code{station}, f: \code{flag}). In \code{loose}, the \code{double} forces seven bytes of \omterm{def:b1:c-strings-structs-files:alignment}{padding} after the first
+\code{char}; sorted by decreasing \omterm{def:b1:c-strings-structs-files:alignment}{alignment}, the \omterm{def:b1:c-strings-structs-files:struct}{fields} leave only two bytes at the end.}
+\end{omfigure}
+
+\begin{method}[Ordering the fields of a structure]\label{met:b1:c-strings-structs-files:order}
+Declare the \omterm{def:b1:c-strings-structs-files:struct}{fields} by decreasing \omterm{def:b1:c-strings-structs-files:alignment}{alignment}: \code{double}, \omterm{def:b1:pointers-and-arrays:pointer}{pointers} and \code{long} first, then \code{int} and
+\code{float}, then \code{short}, then \code{char} and \omterm{def:b1:pointers-and-arrays:array}{arrays} of \code{char}. No \omterm{def:b1:c-strings-structs-files:alignment}{padding} is then needed between \omterm{def:b1:c-strings-structs-files:struct}{fields},
+and the size is the sum of the \omterm{def:b1:c-strings-structs-files:struct}{fields} rounded up to the largest \omterm{def:b1:c-strings-structs-files:alignment}{alignment}, the smallest size possible
+(\cref{exo:b1:c-strings-structs-files:9}). Use \code{offsetof} and \code{sizeof} to check, never a count by hand.
+\end{method}
+
+The C standard leaves layout to the implementation; on this machine, the rules are those of the calling conventions
+of \cref{ch:b1:c-functions-and-stack}, which every \omterm{def:b1:compilation-pipeline:compiler}{compiler} for it follows, so that a \omterm{def:b1:c-strings-structs-files:struct}{structure} built by one
+library is read correctly by another.
+
+\section{Text files and binary files}\label{sec:b1:c-strings-structs-files:files}
+
+\begin{definition}[Stream, standard streams]\label{def:b1:c-strings-structs-files:stream}
+A \emph{stream}\index{stream} is the C library's access to a file or a device: a \code{FILE *} returned by
+\code{fopen}, through which the program reads or writes bytes in order, the library collecting them in a buffer and
+passing them to the system in large blocks. Three \emph{standard streams}\index{standard streams} are open when
+\code{main} starts: \code{stdin} (standard input), \code{stdout} (standard output) and \code{stderr} (standard error,
+for messages, not fully buffered).
+\end{definition}
+
+\code{fopen(path, mode)} opens a \omterm{def:b1:c-strings-structs-files:stream}{stream}, or returns \code{NULL} and sets \code{errno}; \code{perror} prints the
+reason. The mode \code{"r"} reads; \code{"w"} creates the file or empties it; \code{"a"} writes at the end; a
+\code{"+"} allows both reading and writing; a \code{"b"} asks for binary mode, which changes nothing on this system but
+matters on systems that translate line ends. \code{fclose} writes what is left in the buffer and can fail, so its
+result is checked when writing.
+
+\begin{definition}[Text file, binary file]\label{def:b1:c-strings-structs-files:text-binary}
+A \emph{text file}\index{text file} holds characters only, usually in lines, so that a person can read it and any
+program can parse it; a number in it is a sequence of digit characters. A \emph{binary file}\index{binary file} holds
+bytes in a format defined by a program, such as the bytes of values copied from memory; it is smaller and faster to
+read, but meaningless without its format.
+\end{definition}
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/write_text.c}{6}{21}{Three numbers as
+text}\label{lst:b1:c-strings-structs-files:wtext}
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/write_binary.c}{6}{21}{The same numbers as
+bytes}\label{lst:b1:c-strings-structs-files:wbin}
+
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/bytes.txt}{Both files, their sizes, and their bytes in
+hexadecimal (\code{od -t x1}), then the binary one read back as 4-byte integers.}\label{out:b1:c-strings-structs-files:bytes}
+
+\begin{omfigure}
+\begin{tikzpicture}[b/.style={draw, minimum width=6.5mm, minimum height=6.5mm, font=\scriptsize\ttfamily,
+                    inner sep=0pt}]
+\node[font=\small, anchor=east] at (-0.5,0) {text, 17 bytes};
+\foreach \c/\h [count=\i from 0] in {7/37,{\textbackslash n}/0a,1/31,0/30,0/30,0/30,{\textbackslash n}/0a,3/33,0/30,
+  5/35,4/34,1/31,9/39,8/38,9/39,6/36,{\textbackslash n}/0a}
+  {\node[b, fill=omCode!8] at (\i*0.65,0) {\h}; \node[font=\scriptsize] at (\i*0.65,0.55) {\c};}
+\node[font=\small, anchor=east] at (-0.5,-1.4) {binary, 12 bytes};
+\foreach \h [count=\i from 0] in {07,00,00,00,e8,03,00,00,78,56,34,12}
+  {\node[b, fill=omDef!12] at (\i*0.65,-1.4) {\h};}
+\foreach \a/\b/\v in {0/3/7, 4/7/1000, 8/11/305419896}
+  {\draw[decorate, decoration={brace, amplitude=3pt, mirror}] (\a*0.65-0.3,-1.8) -- (\b*0.65+0.3,-1.8)
+     node[midway, below=3pt, font=\scriptsize] {\v};}
+\end{tikzpicture}
+\par\smallskip{\small The same three numbers. In the \omterm{def:b1:c-strings-structs-files:text-binary}{text file} each digit is a character code and each line ends
+with a newline (\code{0a}); its size depends on how many digits the numbers have. In the \omterm{def:b1:c-strings-structs-files:text-binary}{binary file} each number is
+four bytes, whatever its value, least significant byte first.}
+\end{omfigure}
+
+The \omterm{def:b1:c-strings-structs-files:text-binary}{binary file} stores \code{1000 = 0x000003e8} as \code{e8 03 00 00}: the least significant byte first.
+
+\begin{definition}[Byte order]\label{def:b1:c-strings-structs-files:byte-order}
+The \emph{byte order}\index{byte order} (or endianness) of a machine is the order in which it stores the bytes of a
+multi-byte integer at increasing addresses. A \emph{little-endian}\index{little-endian} machine stores the least
+significant byte first, a \emph{big-endian}\index{big-endian} one the most significant byte first. x86-64 processors
+are little-endian.
+\end{definition}
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/endian.c}{2}{18}{The bytes of an \code{int}, and a byte
+widened two ways}\label{lst:b1:c-strings-structs-files:endian}
+
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/endian.txt}{\omterm{def:b1:c-strings-structs-files:byte-order}{Little-endian}; and \code{0xf0} becomes $-16$
+or 240.}\label{out:b1:c-strings-structs-files:endian}
+
+\begin{definition}[Sign extension]\label{def:b1:c-strings-structs-files:sign-extension}
+\emph{Sign extension}\index{sign extension} is the widening of a signed integer to more bits by copying its sign bit
+into all the new high bits, which keeps its value in two's complement: the byte \code{f0} read as a signed
+\code{char} ($-16$) becomes \code{fffffff0}, still $-16$. An unsigned value is widened by zeros instead.
+\end{definition}
+
+Whether plain \code{char} is signed depends on the platform (it is signed here); code that reads bytes from a file
+uses \code{unsigned char}, as \cref{lst:b1:c-strings-structs-files:endian} does, or a byte above 127 becomes negative.
+A \omterm{def:b1:c-strings-structs-files:text-binary}{binary file} written by \code{fwrite} from memory therefore depends on the machine twice: on its \omterm{def:b1:c-strings-structs-files:byte-order}{byte order} and on
+the layout of its \omterm{def:b1:c-strings-structs-files:struct}{structures}. A format meant to be read elsewhere writes each value byte by byte, in an order the
+format fixes (\cref{exo:b1:c-strings-structs-files:10}).
+
+\begin{definition}[File position]\label{def:b1:c-strings-structs-files:position}
+The \emph{file position}\index{file position} of a \omterm{def:b1:c-strings-structs-files:stream}{stream} is the offset, in bytes from the start of the file, at which
+the next read or write happens; each read or write advances it by the number of bytes transferred. \code{ftell}
+returns it, and \code{fseek} moves it, which allows access to any record of a file of fixed-size records without
+reading the ones before.
+\end{definition}
+
+Reading byte after byte from the start is sequential access; jumping with \code{fseek} to offset $k \times s$, the
+record number $k$ of size $s$, is direct access, possible because every record has the same size. A \omterm{def:b1:c-strings-structs-files:text-binary}{text file} of lines
+of different lengths only allows the first.
+
+\section{Reading input robustly}\label{sec:b1:c-strings-structs-files:robust}
+
+Input comes from people and from other programs, and either can be wrong. \texttt{scanf("\%d", \&v)} skips spaces,
+reads digits, and returns the number of values it converted; on a line \code{4.5} it reads 4 and leaves \code{.5} for
+the next call, and on \code{twelve} it converts nothing and leaves the whole word in the input, so that a loop that
+does not check its result reads the same word forever. The robust pattern reads whole lines, then converts them.
+
+\begin{method}[Reading a number per line]\label{met:b1:c-strings-structs-files:robust}
+\begin{enumerate}
+\item Read a line with \code{fgets(buf, sizeof buf, f)}, which stops at the newline or at the buffer's size and returns
+\code{NULL} at the end of the input.
+\item Remove the newline: \texttt{buf[strcspn(buf, \string"\textbackslash{}n\string")] = '\textbackslash{}0';}.
+\item Convert with \code{strtol} (or \code{strtod}), setting \code{errno} to 0 first; reject the line if no digit was
+read, if characters remain after the number, or if \code{errno} is \code{ERANGE}.
+\item Report a rejected line on \code{stderr}, with its number, and decide whether to go on or to stop.
+\end{enumerate}
+\end{method}
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/read_numbers.c}{2}{27}{One number per line, every error
+checked}\label{lst:b1:c-strings-structs-files:read}
+
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/read_numbers.txt}{Nine lines of input, four
+numbers: 12, 30, $-7$ and 100.}\label{out:b1:c-strings-structs-files:read}
+
+The messages go to \code{stderr} so that they reach the person even when the standard output is redirected to a file
+or to another program, which then receives only the result. The line \code{15 } (with a space) is rejected here; a
+real program would probably accept trailing spaces, as \cref{exo:b1:c-strings-structs-files:12} does. With these
+tools, the town's weather file can be read and checked.
+
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/weather_csv.c}{2}{37}{Counting what the weather file
+holds}\label{lst:b1:c-strings-structs-files:weather}
+
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/weather.txt}{731 rows, two kinds of bad temperatures, and
+a file that does not exist.}\label{out:b1:c-strings-structs-files:weather}
+
+Two stations over 365 days make 730 rows: one row too many, which the weekend problem finds. Splitting a line with
+\code{strtok}, the library's tokeniser, would have been shorter and wrong: it treats two consecutive commas as one, so
+an empty field disappears and the next field takes its place.
+
+\begin{safety}
+Never use \code{gets}, removed from the language because it cannot be told the size of its buffer, nor \texttt{scanf("\%s")}
+without a width. Copy strings with a size: \code{snprintf}, or a function that takes the capacity of the destination
+and reports truncation. Check the result of every \code{fopen}, \code{fgets}, \code{fread}, \code{fwrite} and
+\code{fclose}.
+\end{safety}
+
+\section{Exercises}\label{sec:b1:c-strings-structs-files:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-strings-structs-files:1}
+Predict the eight numbers printed.
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/exo_lengths.c}{5}{16}{Lengths and sizes}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-strings-structs-files:2}
+Predict the sizes of the two \omterm{def:b1:c-strings-structs-files:struct}{structures}, drawing the offset of each field.
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/exo_sizes.c}{2}{22}{Same \omterm{def:b1:c-strings-structs-files:struct}{fields}, two orders}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-strings-structs-files:3}
+The program below reads its standard input, made of the four lines \code{1 12}, \code{2 0}, \code{3 x7} and \code{4 5}.
+What does it print, and why is day 4 never read?
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/exo_fscanf.c}{2}{12}{What \code{scanf} returns}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-strings-structs-files:4}
+The program writes \code{0x12345678} with \code{fwrite}. Which four bytes does the file hold on this machine, in order,
+and which on a \omterm{def:b1:c-strings-structs-files:byte-order}{big-endian} machine?
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/exo_fwrite.c}{5}{14}{An \code{int} in a file}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-strings-structs-files:5}
+Explain the report: which bytes does the first \code{strcat} write, and why is the write 13 bytes long? Give two
+corrections.
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/exo_strcat.c}{2}{12}{Building a greeting}
+\omoutput[3-4,6-6,10-10]{code/bachelor-1/06-c-strings-structs-files/outputs/exo_strcat.txt}{Lines of the report.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-strings-structs-files:6}
+With the input \code{10}, \code{20}, \code{30} on three lines, this program prints \code{4 numbers, total 90}. Explain,
+and correct the loop.
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/exo_feof.c}{3}{15}{Until the end of the file}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-strings-structs-files:7}
+Write \code{int str_append(char *dst, size_t cap, const char *src)}, which appends as much of \code{src} to the string
+in \code{dst} (a buffer of \code{cap} bytes) as fits, always leaves \code{dst} terminated, and returns 0, or $-1$ if it
+had to truncate.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-strings-structs-files:8}
+A settings file holds lines \code{key=value}, empty lines and comment lines starting with \texttt{\#}. Write a function
+that reads it into an \omterm{def:b1:pointers-and-arrays:array}{array} of \code{struct setting { char key[32]; char value[64]; }}, and reports the number of the
+first malformed line.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-strings-structs-files:9}
+The \omterm{def:b1:c-strings-structs-files:alignment}{alignments} are powers of two, and the size of each type is a multiple of its \omterm{def:b1:c-strings-structs-files:alignment}{alignment}. Prove that ordering the
+\omterm{def:b1:c-strings-structs-files:struct}{fields} of a \omterm{def:b1:c-strings-structs-files:struct}{structure} by decreasing \omterm{def:b1:c-strings-structs-files:alignment}{alignment} gives the smallest possible size, namely the sum of the sizes of the
+\omterm{def:b1:c-strings-structs-files:struct}{fields} rounded up to a multiple of the largest \omterm{def:b1:c-strings-structs-files:alignment}{alignment}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-strings-structs-files:10}
+Write \code{record_write} and \code{record_read} for the record \code{{ uint32_t date; int16_t temp; uint16_t
+rain; }} in an 8-byte format, \omterm{def:b1:c-strings-structs-files:byte-order}{little-endian}, written byte by byte with shifts so that the file is the same on every
+machine. Test the round trip, and give the 8 bytes for the date 20250614, $-35$ and 123.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-strings-structs-files:11}
+A sentence of $n$ words of $w$ letters, each followed by a space, is built in a large buffer by $n$ calls of
+\code{strcat}. Counting the bytes of the destination that \code{strcat} examines to find its end, then the bytes it
+writes, show that the total is $(w+1)\,n(n-1)/2 + n(w+3)$. Give a linear method.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-strings-structs-files:12}
+Write \code{int read_int(const char *s, int *out)}, which accepts optional spaces, a sign, digits and optional
+trailing spaces or newline, and rejects an empty string, a non-number, trailing characters and any value outside the
+range of \code{int}. Test it on a table of at least twelve cases.
+\end{exercise}
+
+\section{Problem: A binary file for the weather station}\label{sec:b1:c-strings-structs-files:problem}
+
+\begin{problem}[{Weekend problem --- A binary file for the weather station}]\label{pb:b1:c-strings-structs-files:1}
+The town's weather file holds one line per station and per day: date, station, temperature in degrees Celsius, rain in
+millimetres and wind in kilometres per hour. A program reads it into memory, skipping a line identical to the one
+before, and writes the readings to three archives: \code{first.bin} with the \omterm{def:b1:c-strings-structs-files:struct}{structure} \code{reading_first},
+\code{reading.bin} with \code{reading}, and \code{packed.bin} in a format of 12 bytes written byte by byte. It then
+reads the packed file back.
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/weather.h}{2}{35}{Two \omterm{def:b1:c-strings-structs-files:struct}{structures} for one day of one
+station}\label{lst:b1:c-strings-structs-files:weather-h}
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/weather_io.c}{16}{48}{Parsing a
+line}\label{lst:b1:c-strings-structs-files:weather-io}
+\omcode{code/bachelor-1/06-c-strings-structs-files/listings/weather_io.c}{85}{93}{Packing a reading in 12
+bytes}\label{lst:b1:c-strings-structs-files:pack}
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/problem.txt}{The run, the sizes of the four files, and the
+first bytes of two archives.}\label{out:b1:c-strings-structs-files:problem}
+
+\medskip\noindent\textbf{Part I --- Designing the record.}
+\begin{enumerate}
+\item Give the offset of each field of \code{reading_first}, and the number of \omterm{def:b1:c-strings-structs-files:alignment}{padding} bytes after \code{station},
+after \code{flag} and at the end. Check the total, 32.
+\item Same question for \code{reading}, and check 24.
+\item How many bytes of the 32 hold data? What fraction of \code{first.bin} is \omterm{def:b1:c-strings-structs-files:alignment}{padding}?
+\item Why is \code{reading} not 22 bytes, the sum of its \omterm{def:b1:c-strings-structs-files:struct}{fields}? What would go wrong in an \omterm{def:b1:pointers-and-arrays:array}{array} of 22-byte \omterm{def:b1:c-strings-structs-files:struct}{structures}?
+\item The temperature is stored as a \code{double} in memory but as a 2-byte count of tenths in the packed format. Which
+temperatures can 2 signed bytes hold, and is that enough for the town?
+\item The flag has two bits, \code{TEMP_MISSING} and \code{TEMP_ERROR}. Why store a flag rather than a special
+temperature such as $-99.0$, the value the logger itself writes?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Text against binary.}
+\begin{enumerate}[resume]
+\item Recompute the sizes of the three archives from the number of readings and the three record sizes.
+\item The CSV file is 24\,358 bytes. Its header line has 36 characters. What is the mean length of a data line,
+newline included?
+\item In the first 32 bytes of \code{first.bin}, find the date, the station, the temperature 3.9 and the wind 15.3.
+Decode the date \code{f5 fd 34 01}.
+\item Bytes 17 to 19 of \code{first.bin} are \code{40 55 55}, not zeros. What are they, and why could writing \omterm{def:b1:c-strings-structs-files:alignment}{padding}
+bytes to a file be a problem for a program that handles secrets?
+\item Why are the \omterm{def:b1:c-strings-structs-files:alignment}{padding} bytes of \code{reading.bin} zeros? (Look at where \code{days} is declared in
+\code{archive.c}.)
+\item The program jumps straight to reading 160 of \code{packed.bin}. At which \omterm{def:b1:c-strings-structs-files:position}{file position} does it read, and why
+could it not do the same in the CSV file?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Byte order and a portable format.}
+\begin{enumerate}[resume]
+\item Decode the first 12 bytes of \code{packed.bin}, and the second reading (the next 12 bytes).
+\item Which bytes would a \omterm{def:b1:c-strings-structs-files:byte-order}{big-endian} machine write for the first reading into \code{reading.bin} with \code{fwrite}? And
+into \code{packed.bin}?
+\item Why does \code{pack_reading} convert the temperature to \code{int16_t} before \code{uint16_t}? Give the two bytes
+written for $-3.5$.
+\item In \code{unpack_reading}, explain how \code{(int16_t)get(in + 6, 2)} recovers $-35$ from those two bytes, and
+where \omterm{def:b1:c-strings-structs-files:sign-extension}{sign extension} happens.
+\item The packed format rounds to tenths with \code{lround}. Why is that exact for this file, but would not be for a
+temperature measured to the hundredth?
+\item A reader on another machine receives \code{packed.bin}. What must the format's documentation say for it to read
+the file correctly?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Reading the CSV robustly.}
+\begin{enumerate}[resume]
+\item The program reports 731 lines, 1 duplicate and 730 readings. Why is 730 the expected count, and how does
+\code{read_weather} find the duplicate? What kind of duplicate would it miss?
+\item Six temperatures are missing and two are error codes. How does \code{parse_reading} tell the three cases apart
+(missing, $-99.0$, a real value)?
+\item Why does \code{field_double} compare \code{end} with \code{stop}? Give a field it rejects that \code{strtod}
+alone would accept.
+\item What does \code{parse_reading} return for the line \code{2025-03-01,Hilltop,4.1,0.0} (a field missing), and
+which test detects it?
+\item The packed archive is how many times smaller than the CSV? Than \code{first.bin}?
+\item State the named result of the problem, \emph{the size of the archive}.
+\end{enumerate}
+\end{problem}

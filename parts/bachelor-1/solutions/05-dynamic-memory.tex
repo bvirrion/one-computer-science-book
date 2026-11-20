@@ -1,0 +1,158 @@
+% Solutions of 05-dynamic-memory.
+\section*{Chapter \ref{ch:b1:dynamic-memory} --- Dynamic Memory}
+
+\begin{solution}{exo:b1:dynamic-memory:1}
+\code{a}: \code{p[10]} writes one element past a block of 10, a \omterm{def:b1:dynamic-memory:heap}{heap} buffer overflow; reported. \code{b}: when
+\code{n > 100} the function returns without freeing \code{p}, a leak; reported by the leak detector at the end of a run
+that takes that path. \code{c}: \code{s[0]} is read after \code{free(s)}, a \omterm{def:b1:dynamic-memory:dangling}{use after free}; reported. \code{d}:
+\code{p} points to a local variable, which did not come from \code{malloc}; freeing it is \omterm{def:b1:c-types-and-control:ub}{undefined behaviour}, and the
+sanitizer reports an attempt to free memory that was not allocated by \code{malloc}.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-memory:2}
+The members take $8 + 4 + 1 = 13$ bytes; the structure is padded to 16 so that, in an \omterm{def:b1:pointers-and-arrays:array}{array} of structures, every
+\code{value} starts at a multiple of 8. Ten of them: 160 bytes. \code{sizeof *r} does not read \code{r}, which may
+therefore be uninitialised.
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/exo_bytes.txt}{The sizes.}
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-memory:3}
+\code{realloc} keeps the first three values, wherever the block goes; \code{b[3]} $= 7 + 9 = 16$. If the block moved,
+\code{a} holds the address of a freed block: after a successful \code{realloc}, only \code{b} may be used.
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/exo_realloc.txt}{The output.}
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-memory:4}
+When \code{fopen} fails, the function returns $-1$ and \code{buffer} is lost. Free it on that path:
+\code{if (f == NULL) { free(buffer); return -1; }}, or open the file before allocating.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-memory:5}
+If \code{realloc} fails it returns \code{NULL}, which \code{grow} stores into \code{*a}: the only address of the old
+block, still allocated and holding the caller's data, is lost (a leak), and the caller's \omterm{def:b1:pointers-and-arrays:array}{array} is gone. The result must
+go to a new variable:
+\code{int *bigger = realloc(*a, 2 * *cap * sizeof **a); if (bigger == NULL) return -1; *a = bigger; *cap *= 2;}.
+On failure the caller still has its \omterm{def:b1:pointers-and-arrays:array}{array}, unchanged.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-memory:6}
+The loop's step \code{p = p->next} runs after \code{free(p)}: it reads the field \code{next} of a freed node (8 bytes at
+offset 8 of a 16-byte block, which the report locates at line 21). Save the next node first:
+\code{struct node *p = head; while (p != NULL) { struct node *next = p->next; free(p); p = next; }}.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-memory:7}
+The returned block belongs to the caller, who must free it, and \code{s} is only read; the test
+is \code{tests/strdup_test.c}.
+\omcode{code/bachelor-1/05-dynamic-memory/exercises/my_strdup.c}{5}{16}{Count, allocate, copy}
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-memory:8}
+\omcode{code/bachelor-1/05-dynamic-memory/exercises/grid2d.c}{5}{27}{Rows, and a clean failure}
+When row $i$ cannot be allocated, rows $0, \dots, i-1$ and the table exist: \code{grid2d_free(g, i)} frees exactly
+those. The test is \code{tests/grid_test.c}.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-memory:9}
+A growth happens when the \omterm{def:b1:pointers-and-arrays:array}{array} is full at a capacity below $n$: at capacities $k, 2k, \dots, mk$ with $mk < n$, that
+is $m = \lfloor (n-1)/k \rfloor$. They copy $k + 2k + \dots + mk = k\,m(m+1)/2$ elements, and $m \approx n/k$ gives
+about $n^2/(2k)$. For $n = 1000$ and $k = 16$: $m = 62$ and $16 \times 62 \times 63/2 = 31\,248$, as printed. The test
+\code{tests/test_growth_counts.py} checks the formula.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-memory:10}
+The growths happen at capacities $c_0, 2c_0, \dots, 2^m c_0$, all below $n$, and copy
+$c_0(2^{m+1} - 1) < 2 \cdot 2^m c_0 < 2n$ elements. For $c_0 = 1$ and $n = 2^m + 1$, the copies are
+$2^{m+1} - 1 = 2n - 3$, and $(2n - 3)/n$ tends to 2: no bound $(2 - \varepsilon)n$ holds for all $n$.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-memory:11}
+\omcodes{code/bachelor-1/05-dynamic-memory/exercises/pool.c}{5-23,25-41}{A pool of blocks with a free list}
+A free block holds the address of the next free block in its first bytes, so it must have room for a \omterm{def:b1:pointers-and-arrays:pointer}{pointer}, and
+start at an address suitable for one; \code{pool_init} rounds the size up to a multiple of \code{sizeof(void *)}.
+\code{pool_get} and \code{pool_put} change two \omterm{def:b1:pointers-and-arrays:pointer}{pointers} each: constant time. The test \code{tests/pool_test.c} takes
+all five blocks, checks that a sixth is refused, and that the last block returned is the first reused.
+\end{solution}
+
+\begin{solution}{exo:b1:dynamic-memory:12}
+A growth from capacity $c$ to $2c$ happens when $c$ elements are stored and one more is pushed, so $n = c + 1$. During
+the move both blocks exist: $c + 2c = 3c < 3n$ slots. Between moves only one block exists, of capacity below $2n$. The
+test \code{tests/test_growth_counts.py} checks the bound for every $n < 5000$.
+\end{solution}
+
+\begin{solution}{pb:b1:dynamic-memory:1}
+\textbf{1.} \code{strcpy} at line 39 writes the 15 characters of \code{"Emil Thornworth"} and the final zero byte, 16
+bytes, into the block made at line 36 by \code{malloc(strlen(name))}, which counts the characters but not the zero.
+
+\textbf{2.} The bad write happens inside the C library's \code{strcpy}, which the sanitizer replaces by a checking
+version; the summary names the innermost frame. The start of the report shows the next frames: \code{book_add} at line
+39.
+
+\textbf{3.} \code{book_find} (line 49), called at line 10 of the session: \code{strcmp} reads the stored name until its
+zero byte, which was written one byte past the block. Same short block, now read.
+
+\textbf{4.} The \omterm{def:b1:pointers-and-arrays:array}{array} of contacts of capacity 1, which \code{book_add} freed at line 32 when it moved the contacts to a
+block of capacity 2 for Rosa; \code{emil} pointed into the old block.
+
+\textbf{5.} Element 4 of a block of 4 contacts: one past its end (64 bytes, then the overflow). The last contact is
+\code{b->items[b->len - 1]}.
+
+\textbf{6.} To Rosa's name, which \code{book_remove} freed at line 58, as the convention says it does.
+
+\textbf{7.} The names still in the book when \code{book_destroy} ran, which it did not free: \code{Emil Thornworth} (15
+bytes, error 1), \code{Sami Ashworth} (13), and \code{Vera Lakewick} (13), $15 + 13 + 13 = 41$. Vera's name is no longer
+reachable from the book (question 9), but its block was still allocated.
+
+\textbf{8.} \code{malloc(strlen(name) + 1)}: a string of $\ell$ characters occupies $\ell + 1$ bytes, the last one zero.
+
+\textbf{9.} \code{b->items[i] = b->items[b->len - 1];}. With 4 contacts, removing Rosa (index 1) copied the slot past
+the end into index 1, and the length became 3: the last contact, Vera, fell outside the book, and index 1 holds garbage.
+
+\textbf{10.} \code{for (size_t i = 0; i < b->len; i++) free(b->items[i].name); free(b->items);}, then reset the
+structure: the names first, since their addresses are stored in the \omterm{def:b1:pointers-and-arrays:array}{array}.
+
+\textbf{11.} ``Valid only until the next \code{book_add}.'' Correct: read the number into a variable,
+\code{long emil_number = emil->number;}, before adding, or call \code{book_find} again after the addition.
+
+\textbf{12.} ``Valid only until the next \code{book_remove}''; the name was freed by the removal. Print or copy the name
+before removing.
+
+\textbf{13.} The \omterm{def:b1:pointers-and-arrays:array}{array} of capacity 4 and the three names: 4 blocks, so 4 calls of \code{free}.
+
+\textbf{14.} The book must free its names, so it must own them: a caller's \omterm{def:b1:pointers-and-arrays:pointer}{pointer} may point to a local \omterm{def:b1:pointers-and-arrays:array}{array}, to a
+string literal (which must never be freed), or to a buffer that the caller reuses, like \code{name} in the test, which
+would make every contact share one changing name.
+
+\textbf{15.} Growths at $16, 32, \dots, 992$: $m = 62$, $16 \times 62 \times 63 / 2 = 31\,248$.
+
+\textbf{16.} Capacities $1, 2, 4, \dots, 1024$; copies $1 + 2 + \dots + 512 = 1023$; unused $1024 - 1000 = 24$.
+
+\textbf{17.} $1, 2, 3, 5, 8, 12, 18$.
+
+\textbf{18.} $312\,450\,000 / 131\,071 \approx 2384$. The policy \code{+16} copies about $n^2/32$ elements, doubling about
+$1.3n$: the ratio grows like $n$, here about $100\,000 / 42$.
+
+\textbf{19.} $10\,000 = 625 \times 16$ and $100\,000 = 6250 \times 16$: the capacity, a multiple of 16, is exactly $n$.
+
+\textbf{20.} Let $c_1 < c_2 < \dots < c_m$ be the capacities at which growths happen; each is below $n$, and
+$c_{i+1} \geq r c_i$, so $c_i \leq c_m / r^{m-i}$. The copies are
+$\sum_i c_i \leq c_m (1 + 1/r + 1/r^2 + \cdots) = c_m \, r/(r-1) < rn/(r-1)$.
+
+\textbf{21.} The last growth, from $c_m$ to $C < r c_m + 1$, happened when the push number $c_m + 1$ arrived, so
+$n \geq c_m + 1$. Unused: $C - n < r c_m + 1 - c_m - 1 = (r-1)c_m < (r-1)n$.
+
+\textbf{22.} x2 ($r = 2$: copies $< 2n$, unused $< n$): $1023 < 2000$, $16\,383 < 20\,000$, $131\,071 < 200\,000$;
+$24$, $6384$, $31\,072$ below $n$. x1.5 ($r = 1.5$: copies $< 3n$, unused $< n/2$): $2120 < 3000$, $24\,261 < 30\,000$,
+$276\,492 < 300\,000$; $65 < 500$, $2137 < 5000$, $38\,254 < 50\,000$.
+
+\textbf{23.} \code{+16}: 0 bytes; x2: $31\,072 \times 16 = 497\,152$ bytes; x1.5: $38\,254 \times 16 = 612\,064$ bytes.
+For this $n$, x1.5 happens to waste more than x2: the bounds are worst cases, and where $n$ falls between two capacities
+decides the actual waste. On a small device, the bound $n/2$ of x1.5 (or growth by a fixed step, if the list stays
+short) is the safer choice; on a server that adds all day, doubling makes the fewest copies.
+
+\textbf{24.} \emph{The growth-factor trade-off.} A growable \omterm{def:b1:pointers-and-arrays:array}{array} whose capacity $c$ becomes $C$ with
+$rc \leq C < rc + 1$ copies fewer than $rn/(r-1)$ elements and keeps fewer than $(r-1)n$ unused slots for $n$ elements:
+doubling, below $2n$ and $n$; x1.5, below $3n$ and $n/2$. A larger factor copies less and wastes more. Growth by a
+fixed $k$ wastes fewer than $k$ slots but copies about $n^2/(2k)$ elements. The nine rows measured for $n = 10^3$,
+$10^4$ and $10^5$ all respect these bounds.
+\end{solution}

@@ -1,0 +1,424 @@
+% Book 3, Year 1, chapter 5 -- dynamic memory.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 5.
+% ledger: b1:malloc-spec, b1:lsan
+\chapter{Dynamic Memory}\label{ch:b1:dynamic-memory}
+
+A program must read the rainfall readings of a file, and the file may hold forty numbers or forty million. The \omterm{def:b1:pointers-and-arrays:array}{arrays}
+of \cref{ch:b1:pointers-and-arrays} have a size fixed in the source; a local \omterm{def:b1:pointers-and-arrays:array}{array} lives in a frame of a stack
+limited to 8~MiB; and both vanish when their function or the program ends. What the program needs is memory asked
+for while it runs, in the amount the data require, kept for exactly as long as it is useful. C provides it, and
+hands the programmer the duty to give it back. This chapter is about both halves of that bargain.
+
+\begin{recall}
+A running program's memory has regions: code, initialised and zero-initialised data, the \omterm{def:b1:c-functions-and-stack:call-stack}{call stack}, and the \omterm{def:b1:dynamic-memory:heap}{heap}
+(\cref{ch:b1:compilation-pipeline}). A \omterm{def:b1:pointers-and-arrays:pointer}{pointer} holds an address and a type; \code{void *} holds an address of
+anything; and \code{sizeof} gives sizes in bytes (\cref{ch:b1:pointers-and-arrays}).
+\end{recall}
+
+\section{\texttt{malloc} and \texttt{free}}\label{sec:b1:dynamic-memory:malloc}
+
+\begin{definition}[Heap, dynamic allocation]\label{def:b1:dynamic-memory:heap}
+The \emph{heap}\index{heap (memory)} is the region of a running program's memory from which blocks are handed out on
+request while it runs. \emph{Dynamic allocation}\index{dynamic allocation} is the obtaining of such a block:
+\code{malloc(n)} returns the address of a new block of \code{n} bytes, or the \omterm{def:b1:pointers-and-arrays:null}{null pointer} if it cannot. The block
+exists until the program passes its address to \code{free}, whatever functions return in between.
+\end{definition}
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/alloc_basic.c}{4}{27}{An \omterm{def:b1:pointers-and-arrays:array}{array} whose length comes from the command
+line}\label{lst:b1:dynamic-memory:basic}
+
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/alloc_basic.txt}{Run with the argument 1000.}
+
+Four habits are visible in these lines. The size is written \code{n * sizeof *squares}: the size of what the \omterm{def:b1:pointers-and-arrays:pointer}{pointer}
+points to, which stays right if the type of \code{squares} changes. The result of \code{malloc}, a \code{void *}, is
+stored without a \omterm{def:b1:c-types-and-control:cast}{cast}, since C converts it. The result is tested against \code{NULL} before use. And every
+\code{malloc} has its \code{free}. \code{calloc(n, size)} allocates \code{n} elements and fills them with zero bytes;
+\code{malloc} leaves the block's contents indeterminate.
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/nullcheck.c}{2}{15}{Asking for too much}
+
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/nullcheck.txt}{\code{malloc} cannot find nine exabytes and says
+so.}\label{out:b1:dynamic-memory:null}
+
+To change the size of a block, \code{realloc(p, n)} returns a block of \code{n} bytes holding the old contents
+(as much as fits): the same block if it can grow in place, otherwise a new one, the old one being freed. If it fails it
+returns \code{NULL} and leaves the old block untouched. So its result goes into a new variable: writing
+\code{a = realloc(a, ...)} would lose the only address of the old block on failure
+(\cref{exo:b1:dynamic-memory:5}).
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/realloc_grow.c}{2}{27}{Growing a block
+safely}\label{lst:b1:dynamic-memory:realloc}
+
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/realloc_grow.txt}{The first four values survived the move.}
+
+\begin{omfigure}
+\begin{tikzpicture}[f/.style={draw, minimum width=30mm, minimum height=6mm, font=\small, anchor=north},
+                    h/.style={draw, minimum height=6mm, font=\small, anchor=west}, >={Stealth[length=2mm]}]
+\node[font=\small\bfseries] at (0,0.5) {call stack};
+\node[f, fill=omCode!6] (s1) at (0,0) {\code{squares}};
+\node[f, fill=omCode!6] (s2) at (0,-0.6) {\code{zeros}};
+\node[f, fill=omCode!6] (s3) at (0,-1.2) {\code{n = 1000}};
+\node[font=\small\bfseries] at (6.2,0.5) {heap};
+\node[h, minimum width=40mm, fill=black!12, text=black!55] (b1) at (4.2,-0.3) {4000 bytes (freed)};
+\node[h, minimum width=40mm, fill=omDef!10] (b2) at (4.2,-1.3) {4000 bytes, all zero};
+\node[h, minimum width=16mm, fill=omDef!10] (b3) at (4.2,-2.3) {other block};
+\draw[->, thick, black!45, dashed] (s1.east) -- (b1.west);
+\draw[->, thick, omDef] (s2.east) -- (b2.west);
+\node[font=\scriptsize, align=left, anchor=west] at (6.9,-2.3) {blocks of the C library\\and of other calls};
+\end{tikzpicture}
+\par\smallskip{\small Near the end of \cref{lst:b1:dynamic-memory:basic}. The \omterm{def:b1:pointers-and-arrays:pointer}{pointers} live in \code{main}'s frame;
+the blocks they hold the addresses of live on the \omterm{def:b1:dynamic-memory:heap}{heap}. The first block has been freed: \code{squares} still holds
+its address, but the block is no longer the program's.}
+\end{omfigure}
+
+\begin{omfigure}
+\begin{tikzpicture}[>={Stealth[length=2mm]}, bar/.style={line width=5pt}]
+\draw[->] (0,0) -- (11,0) node[right, font=\small] {time};
+\foreach \x/\t in {0.5/\code{main}, 2.4/\code{f} called, 4.4/\code{malloc}, 6/\code{f} returns, 8.6/\code{free},
+                   10.4/end}
+  {\draw (\x,0.1) -- (\x,-0.1) node[below, font=\scriptsize] {\t};}
+\draw[bar, omCode] (2.4,1.6) -- (6,1.6); \node[left, font=\small] at (0.3,1.6) {a local of \code{f}};
+\draw[bar, omDef] (4.4,0.8) -- (8.6,0.8); \node[left, font=\small] at (0.3,0.8) {the heap block};
+\node[font=\scriptsize, above, omDef] at (6.5,0.9) {outlives \code{f}};
+\end{tikzpicture}
+\par\smallskip{\small Two \omterm{def:b1:c-functions-and-stack:lifetime}{lifetimes}. A local of \code{f} ends when \code{f} returns; a block that \code{f} obtains
+from \code{malloc} lasts until some part of the program frees it, possibly far from \code{f}. The programmer, not the
+call structure, chooses when.}
+\end{omfigure}
+
+Compare with \cref{ch:b1:c-functions-and-stack}: a function could not return the address of a local, which died with
+its frame; it can return the address of a block it allocated, which lives on. In exchange, the program must know
+at every moment which blocks it still needs, and free the others exactly once.
+
+\section{Errors and the tools that find them}\label{sec:b1:dynamic-memory:errors}
+
+Manual memory management fails in four classic ways. None is detected by the language; each is detected, when a
+run performs it, by the address sanitizer of \cref{ch:b1:pointers-and-arrays}.
+
+\begin{definition}[Memory leak]\label{def:b1:dynamic-memory:leak}
+A \emph{memory leak}\index{memory leak} is a \omterm{def:b1:dynamic-memory:heap}{heap} block that the program no longer frees because it no longer holds its
+address anywhere, or no longer needs it but keeps it. A leaking program's memory grows with the time it runs.
+\end{definition}
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/leak.c}{2}{23}{A \omterm{def:b1:pointers-and-arrays:pointer}{pointer} overwritten before its block was
+freed}\label{lst:b1:dynamic-memory:leak}
+
+\omoutput[1-12]{code/bachelor-1/05-dynamic-memory/outputs/run_leak.txt}{At the end of the run, the leak detector lists
+the blocks still allocated that nothing points to.}\label{out:b1:dynamic-memory:leak}
+
+The address sanitizer includes a leak detector, LeakSanitizer, which runs when the program ends. It scans the memory
+the program can still reach (globals, the stack, registers, the blocks reachable from them) for values that look like
+addresses of \omterm{def:b1:dynamic-memory:heap}{heap} blocks; a block that nothing points to is reported. The two blocks of \code{item 1} and
+\code{item 2} were lost when \code{s} was overwritten. The scan is conservative: a stale copy of an address left in a
+dead stack slot makes its block look reachable, which is why this session builds at \code{-O1}, where no such copy
+survives. The detector may miss a leak; it does not invent one.
+
+\begin{definition}[Dangling pointer, use after free, double free]\label{def:b1:dynamic-memory:dangling}
+After \code{free(p)}, every \omterm{def:b1:pointers-and-arrays:pointer}{pointer} that held the block's address is a \emph{dangling pointer}\index{dangling pointer}:
+it still holds the number, but the block is no longer the program's. Reading or writing through it is a \emph{use
+after free}\index{use after free}; passing it to \code{free} again is a \emph{double free}\index{double free}. Both are
+\omterm{def:b1:c-types-and-control:ub}{undefined behaviour}.
+\end{definition}
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/uaf.c}{2}{14}{A read after
+\code{free}}\label{lst:b1:dynamic-memory:uaf}
+
+\omoutput[1-6,11-14,17-19]{code/bachelor-1/05-dynamic-memory/outputs/run_uaf.txt}{The report gives three stacks: the
+bad read, the \code{free}, and the \code{malloc}.}\label{out:b1:dynamic-memory:uaf}
+
+A use-after-free report tells the whole story of the block: where it was allocated (line 7), where it was freed
+(line 11), and where it was used afterwards (line 12). Without the sanitizer, this program would most likely print 17,
+since nobody has reused the block yet; the next \code{malloc} could reuse it, and then the read would return someone
+else's data.
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/double_free.c}{2}{11}{Two \omterm{def:b1:pointers-and-arrays:pointer}{pointers}, one block, two
+\code{free}}\label{lst:b1:dynamic-memory:double}
+
+\omoutput[1-6,12-14]{code/bachelor-1/05-dynamic-memory/outputs/run_double_free.txt}{The second \code{free} is
+reported, with the first.}\label{out:b1:dynamic-memory:double}
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum width=26mm, minimum height=6.5mm, font=\small},
+                    p/.style={draw, minimum width=11mm, minimum height=6.5mm, font=\small\ttfamily},
+                    >={Stealth[length=2mm]}]
+\node[font=\small\bfseries] at (1.5,1.1) {before \code{free(a)}};
+\node[p] (a1) at (0,0.4) {a}; \node[p] (b1) at (0,-0.5) {b};
+\node[c, fill=omDef!10] (k1) at (3,0) {block of 8 \code{int}};
+\draw[->, thick, omDef] (a1.east) -- (k1.west); \draw[->, thick, omDef] (b1.east) -- (k1.west);
+\node[font=\small\bfseries] at (8.0,1.1) {after \code{free(a)}};
+\node[p] (a2) at (6.5,0.4) {a}; \node[p] (b2) at (6.5,-0.5) {b};
+\node[c, fill=black!12, text=black!55] (k2) at (9.5,0) {freed};
+\draw[->, thick, omThm, dashed] (a2.east) -- (k2.west); \draw[->, thick, omThm, dashed] (b2.east) -- (k2.west);
+\node[font=\scriptsize, omThm, align=center] at (8.0,-1.3) {both dangling: \code{*b} is a use after free,\\
+\code{free(b)} a double free};
+\end{tikzpicture}
+\par\smallskip{\small Freeing a block through one \omterm{def:b1:pointers-and-arrays:pointer}{pointer} leaves every other copy of its address dangling. Nothing in
+the \omterm{def:b1:pointers-and-arrays:pointer}{pointers} changes; only the block's status does, which is why the error is invisible in the source.}
+\end{omfigure}
+
+The fourth error, reading memory that was never given a value, is not an address error and the address sanitizer
+does not see it. For a local variable the \omterm{def:b1:compilation-pipeline:compiler}{compiler} often does.
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/uninit.c}{2}{12}{A total never set to
+zero}\label{lst:b1:dynamic-memory:uninit}
+
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/uninit.txt}{The warning of \code{-Wall} at
+\code{-O2}.}\label{out:b1:dynamic-memory:uninit}
+
+For a block from \code{malloc}, whose contents are indeterminate, no warning comes: the block may be filled by a
+loop the \omterm{def:b1:compilation-pipeline:compiler}{compiler} cannot follow. Use \code{calloc}, or write every element before reading it. A debugger, the tool
+that stops a running program and shows its variables, is the subject of a section of
+\cref{ch:b1:c-modules-make-tests}.
+
+\section{Who frees what}\label{sec:b1:dynamic-memory:convention}
+
+Every block must be freed once, by someone, after its last use. In a program of a few hundred lines with blocks passed
+between functions, this works only with a convention, written where every caller reads it: in the comment of the
+interface. The C library itself follows one: a block from \code{malloc} is the caller's to free; a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} returned by
+\code{getenv} must never be freed.
+
+\begin{method}[Writing down who frees]\label{met:b1:dynamic-memory:convention}
+For each function that receives or returns a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to a \omterm{def:b1:dynamic-memory:heap}{heap} block, state in its interface comment:
+\begin{enumerate}
+\item whether a returned block belongs to the caller, who must free it (as for \code{malloc});
+\item whether a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} it receives is kept (the function takes charge of the block) or only borrowed during the call;
+\item for a returned \omterm{def:b1:pointers-and-arrays:pointer}{pointer} into a block that the callee keeps (a borrowed \omterm{def:b1:pointers-and-arrays:pointer}{pointer}), until when it stays valid.
+\end{enumerate}
+Then give every structure a pair of functions, one that creates and one that destroys, and free in the destroying
+function everything the structure holds.
+\end{method}
+
+The phone book of the weekend problem states its convention in its header; here it is, with the structure it
+describes. A \code{struct} groups several variables under one name, accessed with \code{.} or, through a \omterm{def:b1:pointers-and-arrays:pointer}{pointer},
+\code{->}; \cref{ch:b1:c-strings-structs-files} treats structures in full.
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/phonebook.h}{2}{28}{An interface that says who
+frees}\label{lst:b1:dynamic-memory:phonebook-h}
+
+The \omterm{def:b1:pointers-and-arrays:pointer}{pointer} returned by \code{book_find} is borrowed, and the comment says until when: an addition may move the whole
+\omterm{def:b1:pointers-and-arrays:array}{array} of contacts to a bigger block, and a removal frees a name. The Year~2 volume shows a language in which this
+kind of convention is checked by the \omterm{def:b1:compilation-pipeline:compiler}{compiler}; in C it is checked by people and by sanitizers.
+
+\section{A growable array written by hand}\label{sec:b1:dynamic-memory:growable}
+
+To read an unknown number of values, keep them in a \omterm{def:b1:dynamic-memory:heap}{heap} block with room to spare, and move them to a bigger block when
+it is full. The structure holds the block's address, the number of elements used, and the capacity of the block.
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/intvec.c}{4}{34}{Pushing onto a growable \omterm{def:b1:pointers-and-arrays:array}{array} of
+\code{int}}\label{lst:b1:dynamic-memory:intvec}
+
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/read_all.txt}{Forty daily rainfalls of the town, in tenths of a
+millimetre, read from standard input.}\label{out:b1:dynamic-memory:read-all}
+
+\begin{definition}[Growth factor]\label{def:b1:dynamic-memory:growth}
+A growable \omterm{def:b1:pointers-and-arrays:array}{array} whose capacity, when full, is multiplied by a fixed $r > 1$ has \emph{growth factor}\index{growth
+factor (of an array)} $r$. The alternative is to add a fixed number $k$ of slots at each growth.
+\end{definition}
+
+Growth costs copies: moving from a full block of capacity $c$ copies $c$ elements. With growth by one slot, reaching
+$n$ elements copies $1 + 2 + \dots + (n-1) = n(n-1)/2$ elements; with doubling, it copies $1 + 2 + 4 + \dots$ up to the
+last power of two below $n$, fewer than $2n$. The program below counts both without allocating anything.
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/copies.c}{2}{27}{Counting the copies of two growth
+rules}\label{lst:b1:dynamic-memory:copies}
+
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/copies.txt}{Half a trillion copies against a million, for a million
+elements.}\label{out:b1:dynamic-memory:copies}
+
+\begin{proposition}[Doubling copies fewer than $2n$ elements]\label{prop:b1:dynamic-memory:doubling}
+A growable \omterm{def:b1:pointers-and-arrays:array}{array} that starts with capacity 1 and doubles its capacity when full copies fewer than $2n$ elements in all
+while $n \geq 1$ elements are pushed.
+\end{proposition}
+
+\begin{proof}
+The growths happen at capacities $1, 2, 4, \dots, 2^m$, where $2^m$ is the largest power of two below $n$ (a growth
+happens when the \omterm{def:b1:pointers-and-arrays:array}{array} is full and one more element arrives, so its capacity is less than $n$). They copy
+$1 + 2 + \dots + 2^m = 2^{m+1} - 1$ elements, and $2^m < n$ gives $2^{m+1} - 1 < 2n$. If $n = 1$, there is no growth
+and no copy.
+\end{proof}
+
+So each push costs, on average over the whole sequence, fewer than two copies, however large $n$ is; doubling also
+wastes at most half the block. \Cref{ch:b1:dynamic-arrays} turns this observation into a method, amortised analysis,
+and calls the structure by its usual name.
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum width=5.5mm, minimum height=5.5mm}]
+\foreach \cap/\y in {1/0, 2/-0.8, 4/-1.6, 8/-2.4, 16/-3.2} {
+  \node[font=\small, anchor=east] at (-0.3,\y) {capacity \cap};
+  \pgfmathtruncatemacro{\old}{\cap/2}
+  \foreach \k in {1,...,\cap} {
+    \ifnum\k>\old \def\fillc{white}\else \def\fillc{omThm!25}\fi
+    \node[c, fill=\fillc] at (\k*0.55,\y) {};
+  }
+}
+\node[font=\scriptsize, align=left, anchor=west] at (9.4,-1.6) {shaded: elements\\copied from the\\previous block};
+\end{tikzpicture}
+\par\smallskip{\small Doubling from capacity 1 to 16. Each new block receives a copy of the full block before it, half
+its size: $1 + 2 + 4 + 8 = 15$ copies to reach 16 elements, fewer than $2 \times 16$.}
+\end{omfigure}
+
+\section{Two-dimensional arrays of unknown size}\label{sec:b1:dynamic-memory:grids}
+
+A grid of $h \times w$ numbers known only at run time can be stored in two ways. The first allocates a table of $h$
+row \omterm{def:b1:pointers-and-arrays:pointer}{pointers}, then one block per row: \code{g[i][j]} works as for a static \omterm{def:b1:pointers-and-arrays:array}{array}, but there are $h + 1$ blocks to
+allocate, check and free.
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/grid_rows.c}{5}{30}{One block per
+row}\label{lst:b1:dynamic-memory:rows}
+
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/grid_rows.txt}{Four blocks for a $3 \times 5$ grid.}
+
+\begin{definition}[Linearised array]\label{def:b1:dynamic-memory:linearised}
+A \emph{linearised array}\index{linearised array} stores the elements of an $h \times w$ grid in a single block of
+$h \cdot w$ elements, in \omterm{def:b1:pointers-and-arrays:row-major}{row-major order}: element $(i, j)$ is at index $i \cdot w + j$.
+\end{definition}
+
+\omcode{code/bachelor-1/05-dynamic-memory/listings/grid_flat.c}{2}{15}{The same grid in one
+block}\label{lst:b1:dynamic-memory:flat}
+
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/grid_flat.txt}{One allocation, one \code{free}.}
+
+The linearised form makes one allocation and one \code{free}, keeps all elements contiguous (which the caches of the
+processor reward, as the Year~2 volume measures), and lets the program pass the whole grid as one \omterm{def:b1:pointers-and-arrays:pointer}{pointer}. The table of
+rows allows rows of different lengths, and swapping two rows by exchanging two \omterm{def:b1:pointers-and-arrays:pointer}{pointers}. Images, matrices and the
+spreadsheet of \cref{ch:b1:pointers-and-arrays} are nearly always linearised.
+
+\begin{safety}
+Build and test every program that allocates with \code{-fsanitize=address}, which includes the leak detector. Free
+every block exactly once, set a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to \code{NULL} after freeing it when it outlives the \code{free} (freeing
+\code{NULL} does nothing), and never return or keep a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} whose block someone else may free.
+\end{safety}
+
+\section{Exercises}\label{sec:b1:dynamic-memory:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:dynamic-memory:1}
+Each function below contains one memory error. Name it, and say whether the address sanitizer would report it.
+\omcode{code/bachelor-1/05-dynamic-memory/listings/exo_which.c}{5}{36}{Four errors}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:dynamic-memory:2}
+How many bytes does \code{malloc(n * sizeof *r)} request for $n = 10$ in the program below? Predict, then explain the
+size of \code{struct reading}, knowing that a \code{double} must start at a multiple of 8.
+\omcode{code/bachelor-1/05-dynamic-memory/listings/exo_bytes.c}{2}{16}{The size of a request}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:dynamic-memory:3}
+Predict the four numbers printed, and say which variable may no longer be used after the \code{realloc}.
+\omcode{code/bachelor-1/05-dynamic-memory/listings/exo_realloc.c}{2}{20}{What survives a \code{realloc}}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:dynamic-memory:4}
+One path through \code{sum_file} leaks. Which one? Fix it with one line.
+\omcode{code/bachelor-1/05-dynamic-memory/listings/exo_where_leak.c}{5}{22}{Find the leak}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:dynamic-memory:5}
+The function \code{grow} below is correct when memory is plentiful. What happens when \code{realloc} fails? Rewrite it.
+\omcode{code/bachelor-1/05-dynamic-memory/listings/exo_realloc_bad.c}{2}{11}{The tempting \code{realloc}}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:dynamic-memory:6}
+The loop at the end of the program frees a chain of three nodes. Read the report, explain the bug, and fix the loop.
+\omcode{code/bachelor-1/05-dynamic-memory/listings/exo_chain.c}{5}{25}{Freeing a chain}
+\omoutput[1-6]{code/bachelor-1/05-dynamic-memory/outputs/run_chain.txt}{The first lines of the report.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:dynamic-memory:7}
+Write \code{char *my_strdup(const char *s)}, which returns a new \omterm{def:b1:dynamic-memory:heap}{heap} block holding a copy of the string \code{s}
+(its characters and the final zero byte), or \code{NULL}. State its convention for freeing.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:dynamic-memory:8}
+Write \code{int **grid2d_new(size_t h, size_t w)}, which allocates a zero-filled grid as a table of rows, and
+\code{grid2d_free}. If an allocation fails halfway, \code{grid2d_new} must return \code{NULL} without leaking.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:dynamic-memory:9}
+A growable \omterm{def:b1:pointers-and-arrays:array}{array} starts with capacity $k$ and adds $k$ slots when full. Show that pushing $n$ elements copies
+$k\,m(m+1)/2$ elements, where $m = \lfloor (n-1)/k \rfloor$, roughly $n^2/(2k)$. Check it against the \code{+16} row of
+\cref{out:b1:dynamic-memory:policies} for $n = 1000$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:dynamic-memory:10}
+Prove \cref{prop:b1:dynamic-memory:doubling} again for an \omterm{def:b1:pointers-and-arrays:array}{array} that starts at capacity $c_0 \geq 1$, and show that the
+bound $2n$ cannot be replaced by $(2 - \varepsilon)n$ for any $\varepsilon > 0$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:dynamic-memory:11}
+A program allocates and frees many blocks of one size. Write a pool: one \code{malloc} of \code{count} blocks at the
+start, then \code{pool_get} and \code{pool_put} in constant time, keeping the free blocks in a chain that runs through
+their own first bytes. Why must each block be at least as large as a \omterm{def:b1:pointers-and-arrays:pointer}{pointer}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:dynamic-memory:12}
+During a \code{realloc} that moves, the old and the new block exist at once. For an \omterm{def:b1:pointers-and-arrays:array}{array} that doubles from capacity 1,
+prove that the number of slots allocated at the same moment never exceeds $3n$, where $n$ is the number of elements
+after the push that triggered the growth.
+\end{exercise}
+
+\section{Problem: The leaky phone book}\label{sec:b1:dynamic-memory:problem}
+
+\begin{problem}[{Weekend problem --- The leaky phone book}]\label{pb:b1:dynamic-memory:1}
+The phone book of \cref{lst:b1:dynamic-memory:phonebook-h} stores contacts in a growable \omterm{def:b1:pointers-and-arrays:array}{array}, under the convention
+written in its header. Its first version, \code{phonebook_v0.c}, and a short session, \code{pbdemo.c}, contain five
+memory errors, numbered in comments. The session was built with the address sanitizer in a mode that reports an error
+and goes on, so that one run shows them all; the report was saved, and its summary lines extracted. A second program,
+\code{policies.c}, adds contacts to the corrected book under three growth policies.
+\omcodes{code/bachelor-1/05-dynamic-memory/listings/phonebook_v0.c}{22-44,54-70}{The first version: adding, removing,
+destroying}\label{lst:b1:dynamic-memory:v0}
+\omcode{code/bachelor-1/05-dynamic-memory/listings/pbdemo.c}{6}{22}{The session}\label{lst:b1:dynamic-memory:pbdemo}
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/problem.txt}{The start of the first report, then every summary
+line and the session's own output.}\label{out:b1:dynamic-memory:problem}
+\omoutput{code/bachelor-1/05-dynamic-memory/outputs/policies.txt}{Copies, final capacity and unused slots for three
+policies.}\label{out:b1:dynamic-memory:policies}
+
+\medskip\noindent\textbf{Part I --- Reading the reports.}
+\begin{enumerate}
+\item The first report is a write of 16 bytes into a block of 15. Which call writes, which line of \code{book_add}
+made the block, and why is it one byte short?
+\item Why does the summary line of that report name \code{strcpy} rather than \code{book_add}, and how does the start of
+the report recover the line of \code{book_add}?
+\item The second summary is a read by \code{strcmp}. Which function calls it, and why is it the same error as the first?
+\item The third summary is a \omterm{def:b1:dynamic-memory:dangling}{use after free} at line 12 of \code{pbdemo.c}. Which block was freed, by which call, and
+why?
+\item The fourth summary is in \code{book_remove}. With 4 contacts in a block of capacity 4, which element does
+\code{b->items[b->len]} designate?
+\item The fifth summary is at line 17 of \code{pbdemo.c}. What does \code{who} point to, and who freed it?
+\item The leak report counts 41 bytes in 3 blocks. Identify the three blocks, and check the total with the lengths of
+the names and error 1.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Fixing under the convention.}
+\begin{enumerate}[resume]
+\item Fix error 1. Why is \code{strlen(name) + 1} the right size?
+\item Fix error 2, and say which contact the erroneous line lost.
+\item Fix error 3 so that \code{book_destroy} frees everything the book holds, in the right order.
+\item Error 4 is in the caller. Which sentence of the convention did it break? Rewrite the session so that it is
+correct.
+\item Same question for error 5.
+\item With all five fixed, which blocks exist just before \code{book_destroy}, and how many \code{free} calls does it
+make?
+\item Why does \code{book_add} copy the name instead of keeping the caller's \omterm{def:b1:pointers-and-arrays:pointer}{pointer}? Give a caller for whom keeping
+it would be a bug.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Growth policies.}
+\begin{enumerate}[resume]
+\item For the policy \code{+16} and $n = 1000$, recompute the 31\,248 copies of \cref{out:b1:dynamic-memory:policies}.
+\item For doubling and $n = 1000$: list the capacities reached and recompute 1023 copies and 24 unused slots.
+\item The policy x1.5 computes the new capacity as $\lceil 1.5c \rceil$. Give its first seven capacities, from 1.
+\item For $n = 100\,000$, by what factor does \code{+16} copy more than doubling? Explain the order of magnitude.
+\item Why does the policy \code{+16} have 0 unused slots for $n = 10\,000$ and $n = 100\,000$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The memory budget.}
+\begin{enumerate}[resume]
+\item Let a policy replace a full capacity $c$ by a capacity $C$ with $rc \leq C < rc + 1$, for a fixed $r > 1$ (doubling,
+and x1.5 rounded up, are such policies). Prove that pushing $n$ elements copies fewer than $rn/(r-1)$ elements.
+\item Prove that the unused slots after the last growth are fewer than $(r-1)n$.
+\item Check both bounds on the rows x2 and x1.5 of \cref{out:b1:dynamic-memory:policies}.
+\item A contact takes 16 bytes. For $n = 100\,000$, how many bytes does each policy leave unused? Which policy would you
+choose for a phone with little memory, and which for a server that adds contacts all day?
+\item State the named result of the problem, \emph{the growth-factor trade-off}.
+\end{enumerate}
+\end{problem}

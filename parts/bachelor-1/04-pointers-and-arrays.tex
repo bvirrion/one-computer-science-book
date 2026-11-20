@@ -1,0 +1,440 @@
+% Book 3, Year 1, chapter 4 -- pointers and arrays.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 4.
+% ledger: b1:ptr-size, b1:c-one-past-end, b1:qsort, b1:asan
+\chapter{Pointers and Arrays}\label{ch:b1:pointers-and-arrays}
+
+To read a whole number typed at the keyboard, a C program calls \texttt{scanf("\%d", \&n)}. Forget the ampersand, write
+\texttt{scanf("\%d", n)}, and the \omterm{def:b1:compilation-pipeline:compiler}{compiler} warns while the program, with luck, crashes; without luck it writes the
+number somewhere in memory and carries on. The \code{&} hands \code{scanf} the place where \code{n} lives, so that
+it can store a value there: \cref{ch:b1:c-functions-and-stack} showed that a function receives copies, and a copy of
+\code{n} would be of no use. This chapter is about such places, the addresses of memory, and about the values that
+hold them, \omterm{def:b1:pointers-and-arrays:pointer}{pointers}. They are the most powerful feature of C and the source of its worst bugs, and the two are the
+same thing.
+
+\begin{recall}
+Memory is a long row of bytes, each with a number, its \omterm{def:b1:pointers-and-arrays:pointer}{address}. A variable occupies a few consecutive bytes, from a
+first \omterm{def:b1:pointers-and-arrays:pointer}{address} on: an \code{int} four bytes here, a \code{double} eight. The school volumes drew it as a row of
+numbered boxes, and showed that a Python list holds references to its elements rather than the elements
+themselves.
+\end{recall}
+
+\section{Addresses and pointers}\label{sec:b1:pointers-and-arrays:pointers}
+
+\begin{definition}[Address, pointer, dereferencing]\label{def:b1:pointers-and-arrays:pointer}
+The \emph{address}\index{address (of an object)} of an object is the address of its first byte; the operator
+\code{&} gives it: \code{&n}. A \emph{pointer}\index{pointer} is a value that is an address together with the type
+of what is stored there; a variable declared \code{int *p} holds a pointer to an \code{int}. The operator \code{*}
+applied to a pointer, \code{*p}, designates the object at that address: reading \code{*p} reads it, assigning to
+\code{*p} writes into it. Following a pointer in this way is called \emph{dereferencing}\index{dereferencing} it.
+\end{definition}
+
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/addr.c}{2}{16}{A variable and a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to
+it}\label{lst:b1:pointers-and-arrays:addr}
+
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/addr.txt}{Writing through \code{p} changed
+\code{n}.}\label{out:b1:pointers-and-arrays:addr}
+
+The type in \code{int *} matters twice: it tells the \omterm{def:b1:compilation-pipeline:compiler}{compiler} how many bytes \code{*p} covers and how to read them,
+and it lets the \omterm{def:b1:compilation-pipeline:compiler}{compiler} refuse \code{double *q = &n;}. A \omterm{def:b1:pointers-and-arrays:pointer}{pointer} itself occupies 8 bytes on this machine, whatever
+it points to, because every \omterm{def:b1:pointers-and-arrays:pointer}{address} of a 64-bit process fits in 64 bits. The \code{*} has two roles in the text: in
+a declaration it says ``\omterm{def:b1:pointers-and-arrays:pointer}{pointer} to''; in an expression it dereferences.
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum width=16mm, minimum height=7mm, font=\small\ttfamily},
+                    >={Stealth[length=2mm]}]
+\foreach \k/\a in {0/1000, 1/1004, 2/1008, 3/1012} {
+  \node[font=\scriptsize\ttfamily, omCode] at (\k*1.6,0.65) {\a};
+}
+\node[c, fill=omDef!8] (n) at (0,0) {7};
+\node[c] at (1.6,0) {};
+\node[c, fill=omThm!8, minimum width=32mm] (p) at (4.0,0) {1000};
+\node[anchor=north west, font=\small] at (n.south west) {\code{n}};
+\node[anchor=north east, font=\small] at (p.south east) {\code{p}};
+\draw[->, thick, omThm] (p.south) to[out=-110, in=-70] node[below, font=\scriptsize\rmfamily] {\code{*p} is
+  \code{n}} (n.south);
+\end{tikzpicture}
+\par\smallskip{\small Memory after \code{*p = 7}, with made-up addresses (the real ones change from run to run).
+\code{n} occupies the four bytes from \omterm{def:b1:pointers-and-arrays:pointer}{address} 1000; \code{p}, eight bytes from 1008, holds the number 1000. Writing
+\code{*p} writes into the bytes at that number, which are \code{n}'s.}
+\end{omfigure}
+
+\begin{definition}[Null pointer]\label{def:b1:pointers-and-arrays:null}
+The \emph{null pointer}\index{null pointer} of a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} type, written \code{NULL} (or 0), compares unequal to the
+\omterm{def:b1:pointers-and-arrays:pointer}{address} of every object and function. It means ``points to nothing'': a function that finds nothing returns it, and
+a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} variable not yet given a target should hold it. \omterm{def:b1:pointers-and-arrays:pointer}{Dereferencing} the null \omterm{def:b1:pointers-and-arrays:pointer}{pointer} is \omterm{def:b1:c-types-and-control:ub}{undefined behaviour}.
+\end{definition}
+
+On this system the first page of memory is never mapped, and \omterm{def:b1:pointers-and-arrays:pointer}{dereferencing} \code{NULL} stops the program at once, the
+best outcome an \omterm{def:b1:c-types-and-control:ub}{undefined behaviour} can have (\cref{sec:b1:pointers-and-arrays:oob}).
+
+\section{A pointer passed to change the caller's data}\label{sec:b1:pointers-and-arrays:passing}
+
+\omterm{def:b1:c-functions-and-stack:by-value}{Passing by value} still holds: a function receives copies. But the copy of an \omterm{def:b1:pointers-and-arrays:pointer}{address} is the same \omterm{def:b1:pointers-and-arrays:pointer}{address}, and through
+it the function reaches the caller's variable. The failed \code{swap} of \cref{ch:b1:c-functions-and-stack} works
+once it receives addresses.
+
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/swap_ptr.c}{2}{17}{A swap that
+swaps}\label{lst:b1:pointers-and-arrays:swap}
+
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/swap_ptr.txt}{This time \code{x} and \code{y} are
+exchanged.}
+
+\begin{omfigure}
+\begin{tikzpicture}[f/.style={draw, minimum width=36mm, minimum height=6mm, font=\small, anchor=north},
+                    >={Stealth[length=2mm]}]
+\node[f, fill=omCode!6] (x) at (0,0) {\code{x = 2}};
+\node[f, fill=omCode!6] (y) at (0,-0.6) {\code{y = 1}};
+\node[f, fill=omThm!10] (r) at (0,-1.2) {return address};
+\node[f, fill=omDef!8] (b) at (0,-1.8) {\code{b = &y}};
+\node[f, fill=omDef!8] (a) at (0,-2.4) {\code{a = &x}};
+\node[f, fill=omDef!8] (t) at (0,-3.0) {\code{t = 1}};
+\draw[->, thick, omDef] (a.east) to[out=0, in=0, looseness=1.4] (x.east);
+\draw[->, thick, omDef] (b.east) to[out=0, in=0] (y.east);
+\draw[decorate, decoration={brace, amplitude=4pt, mirror}] (-1.95,0) -- (-1.95,-1.2)
+  node[midway, left=5pt, font=\small] {frame of \code{main}};
+\draw[decorate, decoration={brace, amplitude=4pt, mirror}] (-1.95,-1.2) -- (-1.95,-3.6)
+  node[midway, left=5pt, font=\small] {frame of \code{swap}};
+\end{tikzpicture}
+\par\smallskip{\small The frames at the end of the fixed \code{swap}. Its parameters hold the addresses of
+\code{main}'s variables: writing \code{*a} and \code{*b} writes into \code{main}'s frame. This is the only way a
+called function reaches the frame of its caller.}
+\end{omfigure}
+
+The same device gives a function several results: it returns one, or none, and writes the others through \omterm{def:b1:pointers-and-arrays:pointer}{pointer}
+parameters supplied by the caller. \code{scanf} works this way: it returns the number of values it converted, and
+stores each value at the \omterm{def:b1:pointers-and-arrays:pointer}{address} it was given.
+
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/divmod.c}{2}{16}{Two results through two
+\omterm{def:b1:pointers-and-arrays:pointer}{pointers}}\label{lst:b1:pointers-and-arrays:divmod}
+
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/divmod.txt}{$2026 = 7 \times 289 + 3$.}
+
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/read_number.c}{2}{13}{Reading a number: \code{scanf} stores
+it at \code{&n}}\label{lst:b1:pointers-and-arrays:read}
+
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/read_number.txt}{With 45 on standard input.}
+
+A \omterm{def:b1:pointers-and-arrays:pointer}{pointer} parameter that the function only reads from is declared \code{const int *p}: the function receives a
+read-only view and the \omterm{def:b1:compilation-pipeline:compiler}{compiler} refuses \code{*p = 0}. The \code{const} documents the contract and is checked: a
+reader of the \omterm{def:b1:c-functions-and-stack:declaration}{prototype} \code{int min_max(const int *a, size_t n, int *min, int *max)} knows that the \omterm{def:b1:pointers-and-arrays:array}{array} is
+read and that \code{*min} and \code{*max} are written.
+
+\section{Arrays and pointer arithmetic}\label{sec:b1:pointers-and-arrays:arrays}
+
+\begin{definition}[Array, array-to-pointer conversion]\label{def:b1:pointers-and-arrays:array}
+An \emph{array}\index{array (C)} of C, declared \code{int a[5]}, is a block of a fixed number of elements of one type,
+stored contiguously in memory; its size is fixed when it is created. In almost every expression, the name of an array
+is converted into a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to its first element: this is the \emph{array-to-pointer
+conversion}\index{array-to-pointer conversion}. The exceptions are \code{sizeof a} and \code{&a}, where \code{a}
+stays the whole array.
+\end{definition}
+
+\begin{definition}[Pointer arithmetic]\label{def:b1:pointers-and-arrays:arithmetic}
+If \code{p} points to element $i$ of an \omterm{def:b1:pointers-and-arrays:array}{array}, \code{p + k} points to element $i + k$: \emph{pointer
+arithmetic}\index{pointer arithmetic} counts in elements, not bytes, so the \omterm{def:b1:pointers-and-arrays:pointer}{address} grows by $k$ times the size of an
+element. The result must point into the \omterm{def:b1:pointers-and-arrays:array}{array} or exactly one element past its end. The difference \code{q - p} of two
+\omterm{def:b1:pointers-and-arrays:pointer}{pointers} into the same \omterm{def:b1:pointers-and-arrays:array}{array} is the number of elements between them, of type \code{ptrdiff_t}. By definition
+\code{a[i]} means \code{*(a + i)}.
+\end{definition}
+
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/array_layout.c}{2}{14}{The layout of an
+\omterm{def:b1:pointers-and-arrays:array}{array}}\label{lst:b1:pointers-and-arrays:layout}
+
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/array_layout.txt}{Elements four bytes apart; \code{a + 5}
+is one past the end.}\label{out:b1:pointers-and-arrays:layout}
+
+The \omterm{def:b1:pointers-and-arrays:pointer}{pointer} \code{a + 5} is allowed to exist, to be compared and subtracted, but not to be dereferenced: it is the
+end mark of every loop of the form \code{for (p = a; p < a + n; p++)}. A \omterm{def:b1:pointers-and-arrays:pointer}{pointer} further away, or before the start,
+is \omterm{def:b1:c-types-and-control:ub}{undefined behaviour} even if it is never dereferenced.
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum width=15mm, minimum height=7mm, font=\small\ttfamily},
+                    >={Stealth[length=2mm]}]
+\foreach \k/\v in {0/10, 1/20, 2/30, 3/40, 4/50} {
+  \node[c, fill=omDef!8] (e\k) at (\k*1.5,0) {\v};
+  \node[font=\scriptsize\ttfamily, omCode] at (\k*1.5,0.62) {+\the\numexpr\k*4\relax};
+  \node[font=\small\ttfamily] (l\k) at (\k*1.5,-1.2) {a+\k};
+  \draw[->] (l\k) -- (e\k);
+}
+\node[c, dashed, draw=omThm] (e5) at (7.5,0) {};
+\node[font=\scriptsize\ttfamily, omCode] at (7.5,0.62) {+20};
+\node[font=\small\ttfamily, omThm] (l5) at (7.5,-1.2) {a+5};
+\draw[->, omThm] (l5) -- (e5);
+\node[font=\scriptsize, omThm, align=center] at (7.5,-1.85) {one past the end:\\compare, never read};
+\node[font=\scriptsize, align=left, anchor=west] at (-0.8,1.2) {byte offset from \code{a}};
+\end{tikzpicture}
+\par\smallskip{\small An \omterm{def:b1:pointers-and-arrays:array}{array} of five \code{int}. The \omterm{def:b1:pointers-and-arrays:pointer}{pointer} \code{a + k} designates element $k$, $4k$ bytes from the
+start; \code{a[k]} and \code{*(a + k)} are the same element. The position after the last element can be pointed to
+but holds nothing of the \omterm{def:b1:pointers-and-arrays:array}{array}.}
+\end{omfigure}
+
+Since an \omterm{def:b1:pointers-and-arrays:array}{array} name becomes a \omterm{def:b1:pointers-and-arrays:pointer}{pointer}, an \omterm{def:b1:pointers-and-arrays:array}{array} is never passed to a function: its \omterm{def:b1:pointers-and-arrays:pointer}{address} is. A parameter written
+\code{int a[]} is a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} \code{int *a}, the function cannot know how many elements follow, and the length must
+travel in a separate parameter. \code{sizeof} on such a parameter gives the size of a \omterm{def:b1:pointers-and-arrays:pointer}{pointer}; GCC warns.
+
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/decay.c}{2}{19}{An \omterm{def:b1:pointers-and-arrays:array}{array} parameter is a
+\omterm{def:b1:pointers-and-arrays:pointer}{pointer}}\label{lst:b1:pointers-and-arrays:decay}
+
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/decay.txt}{48 bytes in \code{main}, 8 in
+\code{sum}.}\label{out:b1:pointers-and-arrays:decay}
+
+This is also why a function can change the elements of an \omterm{def:b1:pointers-and-arrays:array}{array} it receives, with no \code{&} at the call: the
+\omterm{def:b1:pointers-and-arrays:array}{array}'s \omterm{def:b1:pointers-and-arrays:pointer}{address} is passed \omterm{def:b1:c-functions-and-stack:by-value}{by value}, and the elements are reached through it.
+
+\begin{definition}[Row-major order]\label{def:b1:pointers-and-arrays:row-major}
+A two-dimensional \omterm{def:b1:pointers-and-arrays:array}{array} \code{int g[h][w]} is an \omterm{def:b1:pointers-and-arrays:array}{array} of $h$ rows, each an \omterm{def:b1:pointers-and-arrays:array}{array} of $w$ elements, stored one row
+after the other: this is \emph{row-major order}\index{row-major order}. Element \code{g[i][j]} is element
+$i \cdot w + j$ of the block of $h \cdot w$ elements.
+\end{definition}
+
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/rowmajor.c}{2}{16}{Twelve \code{int} in a
+row}\label{lst:b1:pointers-and-arrays:rowmajor}
+
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/rowmajor.txt}{\code{g[2][1]} is element $2 \cdot 4 + 1 = 9$.}
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum width=8.5mm, minimum height=6.5mm, font=\scriptsize\ttfamily}]
+\foreach \i in {0,1,2} \foreach \j in {0,1,2,3} {
+  \pgfmathtruncatemacro{\v}{10*\i+\j}
+  \node[c, fill=omDef!\the\numexpr 6+6*\i\relax] at (\j*0.85, -\i*0.65) {\v};
+}
+\node[font=\small, anchor=east] at (-0.6,-0.65) {\code{g[3][4]}};
+\foreach \k in {0,...,11} {
+  \pgfmathtruncatemacro{\i}{\k/4}
+  \pgfmathtruncatemacro{\j}{mod(\k,4)}
+  \pgfmathtruncatemacro{\v}{10*\i+\j}
+  \node[c, fill=omDef!\the\numexpr 6+6*\i\relax] at (\k*0.85+0.0, -2.6) {\v};
+  \node[font=\tiny\ttfamily, omCode] at (\k*0.85, -3.15) {\k};
+}
+\node[font=\small, anchor=east] at (-0.6,-2.6) {memory};
+\draw[->, >={Stealth[length=2mm]}] (1.3,-1.6) -- node[right, font=\scriptsize] {row after row} (1.3,-2.2);
+\node[font=\scriptsize, align=left, anchor=west] at (3.9,-0.65) {element $(i, j)$ is at\\index $i \cdot 4 + j$};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b1:pointers-and-arrays:array}{array} \code{g[3][4]} of \cref{lst:b1:pointers-and-arrays:rowmajor}, as written in the source
+and as stored. The shade marks the row. Walking a row is a stride of 1 in memory; walking a column, a stride of 4.}
+\end{omfigure}
+
+\section{Out of bounds}\label{sec:b1:pointers-and-arrays:oob}
+
+\begin{definition}[Out-of-bounds access]\label{def:b1:pointers-and-arrays:oob}
+An \emph{out-of-bounds access}\index{out-of-bounds access} reads or writes through a \omterm{def:b1:pointers-and-arrays:pointer}{pointer}, or an index, that does
+not designate an element of the \omterm{def:b1:pointers-and-arrays:array}{array} it was derived from. C does not check indices: an out-of-bounds access is
+\omterm{def:b1:c-types-and-control:ub}{undefined behaviour}, and in practice it reads or writes whatever lies at the computed \omterm{def:b1:pointers-and-arrays:pointer}{address}.
+\end{definition}
+
+The commonest one is a loop that runs once too many. In the program below, the fifth write of the loop meant for
+\code{marks} lands in \code{bonus}, which on this build is stored just after it; no message, no crash, and a wrong
+result far from the cause.
+
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/neighbour.c}{3}{13}{One write too
+many}\label{lst:b1:pointers-and-arrays:neighbour}
+
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/neighbour.txt}{\code{bonus[0]} was changed by a loop that
+never names it.}\label{out:b1:pointers-and-arrays:neighbour}
+
+The \omterm{def:b1:pointers-and-arrays:pointer}{address} sanitizer, enabled by \code{-fsanitize=address}, places a forbidden zone around every \omterm{def:b1:pointers-and-arrays:array}{array} and checks
+every access; \code{-g} lets it report source lines. The same program, built that way, stops at the bad write and
+explains it.
+
+\omoutput[1-6,14-16]{code/bachelor-1/04-pointers-and-arrays/outputs/neighbour_asan.txt}{The first lines of the sanitizer's
+report (the rest is a map of the forbidden zones).}\label{out:b1:pointers-and-arrays:asan}
+
+Read the report from the top: the kind of error (a buffer on the stack overflowed), the access (a write of 4 bytes),
+the place in the source (line 10, \code{marks[i] = 0}), then the variable it overflowed: \code{marks} occupies
+offsets 32 to 48 of \code{main}'s frame and the write hit offset 48. As with the undefined-behaviour sanitizer, it
+can only report the accesses that the run performs.
+
+A \omterm{def:b1:pointers-and-arrays:null}{null pointer} dereference needs no sanitizer: the system stops the program.
+
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/nullderef.c}{2}{13}{Reading through the \omterm{def:b1:pointers-and-arrays:null}{null
+pointer}}\label{lst:b1:pointers-and-arrays:null}
+
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/nullderef.txt}{Status 139, as for the \omterm{def:b1:c-functions-and-stack:stack-overflow}{stack overflow} of
+\cref{ch:b1:c-functions-and-stack}: a segmentation fault.}\label{out:b1:pointers-and-arrays:null}
+
+The status 139 reports a \emph{segmentation fault}: an access to an \omterm{def:b1:pointers-and-arrays:pointer}{address} that the process has no right to. It is
+the system's protection, not the language's; an \omterm{def:b1:pointers-and-arrays:oob}{out-of-bounds access} that stays inside memory the process owns, as
+in \code{neighbour.c}, is not caught at all.
+
+\begin{safety}
+Every \omterm{def:b1:pointers-and-arrays:array}{array} access in C is a promise by the programmer that the index is in range. Keep the length beside the
+\omterm{def:b1:pointers-and-arrays:array}{array}, write loops as \code{i < n}, never \code{i <= n}, and run the tests with \code{-fsanitize=address}. Most of
+the security flaws in C programs of the last decades started as an out-of-bounds write.
+\end{safety}
+
+\section{Pointers to functions}\label{sec:b1:pointers-and-arrays:functions}
+
+\begin{definition}[Function pointer]\label{def:b1:pointers-and-arrays:function-pointer}
+A \emph{function pointer}\index{function pointer} holds the \omterm{def:b1:pointers-and-arrays:pointer}{address} of a function together with its type: for
+example \code{int (*f)(int, int)} declares \code{f} as a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to a function taking two \code{int} and returning
+an \code{int}. The name of a function converts to a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to it, and a call \code{f(6, 7)} through the \omterm{def:b1:pointers-and-arrays:pointer}{pointer}
+calls the function it points to.
+\end{definition}
+
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/ops_table.c}{2}{17}{A table of
+operations}\label{lst:b1:pointers-and-arrays:ops}
+
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/ops_table.txt}{The operation is chosen by an index at run
+time.}
+
+A \omterm{def:b1:pointers-and-arrays:function-pointer}{function pointer} lets a function receive part of its algorithm as an argument. The C library's sorting function,
+\code{qsort}, sorts an \omterm{def:b1:pointers-and-arrays:array}{array} of any type: it receives the \omterm{def:b1:pointers-and-arrays:array}{array}'s \omterm{def:b1:pointers-and-arrays:pointer}{address}, the number of elements, the size of one
+element, and a comparison function that it calls with the addresses of two elements. Since \code{qsort} cannot know
+the type, those addresses arrive as \code{const void *}.
+
+\begin{definition}[Generic pointer]\label{def:b1:pointers-and-arrays:generic}
+A \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to \code{void}, or \emph{generic pointer}\index{generic pointer}, holds an \omterm{def:b1:pointers-and-arrays:pointer}{address} without saying what is
+stored there. Any object \omterm{def:b1:pointers-and-arrays:pointer}{pointer} converts to it and back without loss, with no \omterm{def:b1:c-types-and-control:cast}{cast} in C. It cannot be dereferenced
+nor used in \omterm{def:b1:pointers-and-arrays:arithmetic}{pointer arithmetic}: it must first be converted to a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to a real type.
+\end{definition}
+
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/sort_people.c}{6}{36}{Three orders for \code{qsort}, three
+comparators}\label{lst:b1:pointers-and-arrays:qsort}
+
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/sort_people.txt}{Birth years of eight people of the town,
+then their first names, in three orders.}\label{out:b1:pointers-and-arrays:qsort}
+
+A comparator returns a negative number, zero or a positive number as its first argument comes before, with or after
+the second. The expression \code{(a > b) - (a < b)} computes exactly that without the subtraction \code{a - b},
+which could overflow. To sort the names, the elements are \omterm{def:b1:pointers-and-arrays:pointer}{pointers} to characters; the comparator receives the
+addresses of two of them, hence the two levels of \omterm{def:b1:pointers-and-arrays:pointer}{pointer} in \code{*(const char *const *)x}. Strings are the
+subject of \cref{ch:b1:c-strings-structs-files}, and \cref{ch:b1:dynamic-memory} uses \code{void *} at every step.
+
+\begin{history}[Pointers in the hardware]
+C's \omterm{def:b1:pointers-and-arrays:pointer}{pointers} are a thin layer over the machine. The PDP-11, on which C grew up, addressed memory byte by byte and had
+instructions that read through a register and then advanced it by the size of the item read, which made
+\code{*p++} a single instruction. BCPL and B, C's ancestors, had a single type, the machine word; C added types to
+\omterm{def:b1:pointers-and-arrays:pointer}{pointers} so that \code{p + 1} could step by the size of the element, whatever it was.
+\end{history}
+
+\section{Exercises}\label{sec:b1:pointers-and-arrays:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:pointers-and-arrays:1}
+Predict the line printed, following the \omterm{def:b1:pointers-and-arrays:pointer}{pointers} one statement at a time.
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/exo_ptrs.c}{2}{15}{Follow the \omterm{def:b1:pointers-and-arrays:pointer}{pointers}}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:pointers-and-arrays:2}
+Draw the memory at the end of \code{main}, as in the figures of this chapter: the \omterm{def:b1:pointers-and-arrays:array}{array}, the three \omterm{def:b1:pointers-and-arrays:pointer}{pointers}, and an
+arrow for each \omterm{def:b1:pointers-and-arrays:pointer}{pointer}. What does \code{main} return?
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/exo_diagram.c}{2}{11}{A \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to a \omterm{def:b1:pointers-and-arrays:pointer}{pointer}}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:pointers-and-arrays:3}
+Predict the four values printed (a \code{double} occupies 8 bytes).
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/exo_diff.c}{2}{10}{\omterm{def:b1:pointers-and-arrays:pointer}{Pointers} into an \omterm{def:b1:pointers-and-arrays:array}{array} of \code{double}}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:pointers-and-arrays:4}
+What does this program print, and why does \code{length} not compute the length? Rewrite \code{length}'s caller so
+that the length is computed where it can be.
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/exo_sizeof.c}{2}{14}{The length, computed twice}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:pointers-and-arrays:5}
+Explain the warning below. What would \code{scanf} do with the value it received if the program ran, and why might it
+crash or might not?
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/exo_scanf.c}{2}{10}{Reading a number, the wrong way}
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/exo_scanf.txt}{The \omterm{def:b1:compilation-pipeline:compiler}{compiler}'s warning.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:pointers-and-arrays:6}
+The program below was built with the \omterm{def:b1:pointers-and-arrays:pointer}{address} sanitizer. Read the report, give the bug and its fix, and say what the
+program would have printed without the sanitizer, in the best case.
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/exo_loop.c}{3}{15}{The average rainfall}
+\omoutput[1-6,11-12]{code/bachelor-1/04-pointers-and-arrays/outputs/exo_loop_asan.txt}{The first lines of the report.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:pointers-and-arrays:7}
+Write \code{int min_max(const int *a, size_t n, int *min, int *max)}, which stores the smallest and the largest
+element of \code{a[0..n-1]} and returns 0, or returns $-1$ without storing anything when \code{n} is 0.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:pointers-and-arrays:8}
+Write \code{size_t reverse(int *a, size_t n)}, which reverses an \omterm{def:b1:pointers-and-arrays:array}{array} in place with two \omterm{def:b1:pointers-and-arrays:pointer}{pointers}, one moving
+forwards from the start and one backwards from the end, and returns the number of swaps it made.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:pointers-and-arrays:9}
+Predict what the program prints, and explain from the definition of \code{a[i]} why \code{2[a]} compiles.
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/exo_index.c}{2}{10}{\code{a[2]} and \code{2[a]}}
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:pointers-and-arrays:10}
+Prove that the \omterm{def:b1:pointers-and-arrays:pointer}{two-pointer} reversal of \cref{exo:b1:pointers-and-arrays:8} is correct and makes exactly
+$\lfloor n/2 \rfloor$ swaps. State the invariant of its loop in terms of \code{left - a} and \code{right - a}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:pointers-and-arrays:11}
+Write \code{generic_max(const void *base, size_t n, size_t size, int (*cmp)(const void *, const void *))}, which
+returns the \omterm{def:b1:pointers-and-arrays:pointer}{address} of a largest element of an \omterm{def:b1:pointers-and-arrays:array}{array} of any type, compared by \code{cmp} with the same contract as
+for \code{qsort}, or \code{NULL} when \code{n} is 0. Why must it convert \code{base} to a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to \code{char}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:pointers-and-arrays:12}
+In an \omterm{def:b1:pointers-and-arrays:array}{array} of $n$ elements, the valid \omterm{def:b1:pointers-and-arrays:pointer}{pointers} are \code{a + 0} to \code{a + n} (one past the end included). Count
+the pairs $(p, q)$ of valid \omterm{def:b1:pointers-and-arrays:pointer}{pointers} with $p \leq q$, and prove your count. What does each such pair describe?
+\end{exercise}
+
+\section{Problem: A spreadsheet in a flat array}\label{sec:b1:pointers-and-arrays:problem}
+
+\begin{problem}[{Weekend problem --- A spreadsheet in a flat array}]\label{pb:b1:pointers-and-arrays:1}
+A small spreadsheet program stores a grid of $h$ rows and $w$ columns of whole numbers in one block of $h \cdot w$
+\code{int}, row after row. The module \code{grid.c} computes the \omterm{def:b1:pointers-and-arrays:pointer}{address} of a cell, sums along a row and a column, and
+transposes a square grid in place; \code{sheet.c} tries it on a $4 \times 4$ grid. A colleague's first transpose,
+\code{transpose_bug.c}, was built with the \omterm{def:b1:pointers-and-arrays:pointer}{address} sanitizer.
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/grid.c}{5}{37}{The module: the index map, two walks, the
+transpose}\label{lst:b1:pointers-and-arrays:grid}
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/sheet.txt}{The grid, its sums, its transpose, and the swaps
+for $n = 1$ to 8.}\label{out:b1:pointers-and-arrays:sheet}
+\omcode{code/bachelor-1/04-pointers-and-arrays/listings/transpose_bug.c}{5}{13}{The colleague's
+transpose}\label{lst:b1:pointers-and-arrays:bug}
+\omoutput[1-7,15-16]{code/bachelor-1/04-pointers-and-arrays/outputs/transpose_asan.txt}{The first lines of the
+sanitizer's report.}\label{out:b1:pointers-and-arrays:bug}
+
+\medskip\noindent\textbf{Part I --- The index map.}
+\begin{enumerate}
+\item Let $f(i, j) = i w + j$ for $0 \leq i < h$, $0 \leq j < w$. Compute $f(2, 1)$ and $f(3, 3)$ for $w = 4$.
+\item Prove that $f$ takes its values in $[0, hw)$.
+\item Prove that $f$ is injective. (Hint: if $iw + j = i'w + j'$, look at the remainder of the division by $w$.)
+\item Deduce that $f$ is a bijection onto $[0, hw)$, and give its inverse with \code{/} and \texttt{\%}.
+\item Why does \code{cell} return \code{g + i * w + j} and not \code{g + (i * w + j) * sizeof(int)}?
+\item A grid of $h = 50\,000$ rows and $w = 50\,000$ columns: can \code{i * w + j} be computed in \code{int}? What
+type should the index have?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Walking with pointers.}
+\begin{enumerate}[resume]
+\item In \code{row_sum}, which cells does \code{p} visit, and what is the last value of \code{p}, which is never
+dereferenced?
+\item In \code{col_sum}, by how many elements does \code{p} advance at each step? By how many bytes?
+\item Prove that \code{col_sum} visits exactly the $h$ cells of column $j$.
+\item The last value of \code{p} in \code{col_sum} is \code{g + h * w + j}. Is it allowed to compute it? Rewrite the
+loop with an index so that no \omterm{def:b1:pointers-and-arrays:pointer}{pointer} beyond the end is formed.
+\item Check the printed sums: row 2 and column 3 of the grid \code{10 * i + j}.
+\item Give, for the grid \code{10 * i + j} with $h = w = n$, the formulas of row sum $i$ and column sum $j$.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The transpose in place.}
+\begin{enumerate}[resume]
+\item Show that exchanging \code{g[i * n + j]} and \code{g[j * n + i]} for every pair with $i < j$ transposes the grid.
+\item Why must the loop not also run over the pairs with $i > j$? What would the grid be after it?
+\item Count the swaps: prove that there are exactly $n(n-1)/2$.
+\item Check that count against the output for $n = 1$ to 8.
+\item Show that the diagonal cells $(i, i)$ never move, and that each other cell moves exactly once.
+\item How many swaps would a transpose into a second grid need, and how much extra memory? Compare.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The colleague's bug.}
+\begin{enumerate}[resume]
+\item For $n = 3$ and $i = 0$, list the pairs of indices that the buggy loop exchanges.
+\item Which of them is out of the \omterm{def:b1:pointers-and-arrays:array}{array}, and why does the sanitizer report a read of 4 bytes at offset 84 of the
+frame, given that \code{g} occupies offsets 48 to 84?
+\item Without the sanitizer, which two cells does the exchange with $j = n$ touch, for $i < n - 1$? Which of them lies inside the \omterm{def:b1:pointers-and-arrays:array}{array}, and what does it hold?
+\item For $n = 1$, which exchange does the buggy loop make? Explain why a test on a $1 \times 1$ grid, without the sanitizer, would not notice the bug.
+\item Which line of the report lets you find the faulty line of the source, and which tells you that the caller is
+\code{main}?
+\item State the named result of the problem: \emph{the in-place transpose makes exactly $n(n-1)/2$ swaps}, with the
+range of pairs that achieves it and the counts measured.
+\end{enumerate}
+\end{problem}

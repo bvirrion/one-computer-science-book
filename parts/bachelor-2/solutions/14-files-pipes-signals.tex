@@ -1,0 +1,220 @@
+% Solutions of Book 4, chapter 14 (files-pipes-signals).
+\section*{Chapter \ref{ch:b2:files-pipes-signals} --- Files, Pipes and Signals}
+
+\begin{solution}{exo:b2:files-pipes-signals:1}
+The calls return 10, 10, 6 and 0: the offset goes 0, 10, 20, 26, and the fourth read finds nothing left. The third
+read copies \code{uvwxyz} into the first six bytes of \code{buf} and leaves the other four as the second read left
+them, so \code{buf} holds \code{uvwxyzqrst}: only the first 6 bytes, the count \code{read} returned, are data. After
+\code{lseek(fd, 20, SEEK_SET)} the offset starts at 20: one read returns 6, \code{uvwxyz}, and the next 0.
+\end{solution}
+
+\begin{solution}{exo:b2:files-pipes-signals:2}
+The child duplicates \code{fd[0]} onto 0 and closes both \code{fd[0]} and \code{fd[1]} before its \omterm{def:b2:processes-and-system-calls:exec}{exec}, so
+\code{wc} holds no write end. The parent closes \code{fd[0]} but keeps \code{fd[1]}: it is the only holder, and by
+\cref{prop:b2:files-pipes-signals:eof} \code{wc} waits as long as it is open. The missing \code{close(fd[1])} goes
+right after the \code{write}, before \code{waitpid}. After \code{waitpid} it is too late: the parent waits for
+\code{wc}, which waits for end of file, which waits for the parent's \code{close}. Each waits for the other, forever.
+\end{solution}
+
+\begin{solution}{exo:b2:files-pipes-signals:3}
+\omcode{code/bachelor-2/14-files-pipes-signals/exercises/mycp.c}{24}{44}{Copying with the source's permission
+bits}
+\code{fstat} reads the source's \omterm{def:b2:files-pipes-signals:inode}{inode}, so the mode is the source's. \code{O_EXCL} with \code{O_CREAT} makes
+\code{open} fail if the destination exists, in the same \omterm{def:b2:processes-and-system-calls:syscall}{system call} that would create it, so no other program can
+create it in between. The mode passed to \code{open} is reduced by the \omterm{def:b2:processes-and-system-calls:process}{process}'s umask, which usually clears the
+write bits of the group and others, so \code{fchmod} sets the bits exactly at the end. The inner loop writes again
+until the \code{n} bytes read are all written, since a \code{write} may write fewer. The test copies 70\,000 bytes
+of mode \code{751} with $b = 1$, 7, 4096 and 100\,000, and checks that a second copy to the same name fails.
+\end{solution}
+
+\begin{solution}{exo:b2:files-pipes-signals:4}
+One \code{write} for each read that returned bytes: $\lceil n / b \rceil$. With the $\lceil n/b \rceil + 1$ reads of
+\cref{prop:b2:files-pipes-signals:calls}, two \code{open}s and two \code{close}s, the total is
+$2\lceil n/b \rceil + 5$ (the loader's own calls before \code{main}, about thirty, come on top). For $n = 10^6$, the
+total is under 300 when $\lceil 10^6 / b \rceil \le 147$, that is $b \ge 10^6 / 147$, so $b \ge 6803$:
+$\lceil 10^6 / 6803 \rceil = 147$ gives 299 calls, while $b = 6802$ gives 148 writes and 301.
+\end{solution}
+
+\begin{solution}{exo:b2:files-pipes-signals:5}
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/exo_nonewline.txt}{Two lines, both with the
+\code{A}.}
+Into a file, the output is fully buffered: \code{A} waits in the buffer, \code{fork} copies it, each \omterm{def:b2:processes-and-system-calls:process}{process} appends
+\code{B} and a newline, and each \omterm{def:b2:files-pipes-signals:buffering}{flushes} \code{AB} at exit. On a terminal the output is line buffered, but a line is
+flushed at its newline and \code{A} has none, so it is still in the buffer at the fork: the terminal shows \code{AB}
+twice as well. The newline matters, not the terminal. \code{fflush(stdout)} before \code{fork} prints \code{A},
+then \code{B} twice.
+\end{solution}
+
+\begin{solution}{exo:b2:files-pipes-signals:6}
+\code{dup2(1, fd)} makes \code{fd} point to the description of descriptor 1, the terminal or the capture file, and
+closes what \code{fd} pointed to: \code{out.txt}'s only description, so the file stays as \code{open} left it,
+created and truncated. \code{close(fd)} then removes the extra copy of descriptor 1, and \code{echo} writes to 1 as
+always: the text goes to the parent's output, and \code{out.txt} has 0 bytes. Read \code{dup2(old, new)} as ``make
+\code{new} a copy of \code{old}''.
+\end{solution}
+
+\begin{solution}{exo:b2:files-pipes-signals:7}
+\omcode{code/bachelor-2/14-files-pipes-signals/exercises/tee.c}{23}{46}{\code{tee}: one read, several
+writes}
+Descriptor 1 is placed first in the table of outputs, so the loop treats it like the files. \code{O_APPEND} makes the
+kernel move the offset to the end before each write, which is what \code{-a} asks even if another program writes the
+file meanwhile. A file that cannot be opened is reported and skipped; the others are still written, and the status
+says something failed. \code{write_all} loops as in \code{mycp}. The test sends 18\,000 bytes through two files,
+then appends a line with \code{-a}.
+\end{solution}
+
+\begin{solution}{exo:b2:files-pipes-signals:8}
+Suppose the \omterm{def:b2:files-pipes-signals:pipe}{pipe} is empty. By the definition of a \omterm{def:b2:files-pipes-signals:pipe}{pipe}, a read on it returns 0 when no write end is open anywhere,
+which is the ``if'' direction. Conversely, while some \omterm{def:b2:processes-and-system-calls:process}{process} holds an open descriptor of the write end, that \omterm{def:b2:processes-and-system-calls:process}{process}
+may still write: the kernel cannot know that no byte will come, so the read waits, and returns 0 only once the last
+such descriptor is closed (by \code{close}, by \code{dup2} over it, or by the \omterm{def:b2:processes-and-system-calls:process}{process}'s end, which closes all its
+descriptors). Closing a descriptor of the read end changes nothing, and neither does a reader's copy of the write end
+being ``its own'': it counts like any other.
+
+In the method, \omterm{def:b2:files-pipes-signals:pipe}{pipe} $i$'s write end is created in the parent, inherited by child $i$, and closed by the parent right
+after that fork, before child $i + 1$ exists; child $i$ moves it to descriptor 1 and closes the original. So the only
+descriptor of \omterm{def:b2:files-pipes-signals:pipe}{pipe} $i$'s write end is child $i$'s descriptor 1, and child $i + 1$ sees end of file exactly when child
+$i$ has ended (or closed its output). By induction on $i$: child 1 ends at some moment; child 2 sees end of file only
+after that, and, reading to the end before exiting, ends only after that; and so on to child $k$, which sees end of
+file only after children $1, \dots, k-1$ have all ended.
+\end{solution}
+
+\begin{solution}{exo:b2:files-pipes-signals:9}
+\omcode{code/bachelor-2/14-files-pipes-signals/exercises/capture_cmd.c}{14}{28}{Two children: the command, and one
+that feeds it}
+The function grows its result while it reads. The naive version hangs because two \omterm{def:b2:files-pipes-signals:pipe}{pipes} are full at once. \code{cat}
+copies its input to its output; nobody reads the output yet, so after 64 KiB that \omterm{def:b2:files-pipes-signals:pipe}{pipe} is full and \code{cat} waits in
+\code{write}, and stops reading. Then the input \omterm{def:b2:files-pipes-signals:pipe}{pipe} fills with the next 64 KiB, and the parent waits in its own
+\code{write}. Neither moves again. With 300\,000 bytes, more than the two \omterm{def:b2:files-pipes-signals:pipe}{pipes} and \code{cat}'s buffer hold, it
+happens every time; with a few KiB, never. The cure is to write and read at the same time: here a second child writes
+the input while the parent reads the output. The parent must close its copy of \code{to[1]}, or the command never sees
+end of file; the feeder ends after its write, closing the last copy. The test checks \code{cat}, a status of 3, and
+the 300\,000 bytes.
+\end{solution}
+
+\begin{solution}{exo:b2:files-pipes-signals:10}
+\omcode{code/bachelor-2/14-files-pipes-signals/exercises/minish2.c}{25}{45}{Applying and removing the
+redirections, in the child}
+\omcode{code/bachelor-2/14-files-pipes-signals/exercises/minish2.c}{57}{79}{Cutting the line into stages and wiring
+them}
+The line is cut at each \code{|} into stages, wired by \cref{met:b2:files-pipes-signals:pipeline}. Each child first
+installs its \omterm{def:b2:files-pipes-signals:pipe}{pipe} ends, then applies its redirections, which remove themselves from the words before the \omterm{def:b2:processes-and-system-calls:exec}{exec}. In
+that order a \code{>} replaces the \omterm{def:b2:files-pipes-signals:pipe}{pipe} on descriptor 1, so \code{a > f | b} writes \code{a}'s output to \code{f},
+and \code{b} reads an empty \omterm{def:b2:files-pipes-signals:pipe}{pipe}: end of file as soon as \code{a} ends. That is also what a real shell does. In the
+other order the \omterm{def:b2:files-pipes-signals:pipe}{pipe} would overwrite the redirection. The test runs a redirected \code{sort}, a three-stage pipeline,
+and \code{false | true}.
+\end{solution}
+
+\begin{solution}{exo:b2:files-pipes-signals:11}
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/fit_copy.py}{11}{26}{Least squares on relative
+errors}
+\omoutput{code/bachelor-2/14-files-pipes-signals/outputs/fit_copy.txt}{The fit, on one run of the author's
+laptop.}
+The model is linear in $a$ and $c$; the script uses the read counts of the measurement and minimises the relative
+errors, so that the fast rows count as much as the slow ones. On this run $a \approx 375$~ns for one read and its
+write, and $c \approx 0.2$~ns per byte; the model is within about 10~\% of every row. A read and a write are two
+\omterm{def:b2:processes-and-system-calls:syscall}{system calls}, about 190~ns each: more than the 70~ns of the empty call of \cref{ch:b2:processes-and-system-calls},
+because each finds the file, checks the offset and copies data. The two terms are equal when $a\,n/b = c\,n$, that is
+$b = a / c \approx 375 / 0.215 \approx 1700$ bytes. Beyond about 2 KiB the bytes cost more than the calls, which is
+where the curve of the chapter flattens.
+\end{solution}
+
+\begin{solution}{exo:b2:files-pipes-signals:12}
+\omcode{code/bachelor-2/14-files-pipes-signals/exercises/minish2.c}{101}{128}{The prompt reports; the handler
+reaps}
+The handler is that of \code{sigchld_reap.c}: it reaps every ended child with \code{WNOHANG} and counts them, and the
+main loop, never the handler, prints the report before the next prompt. A background line is wired as any other and
+not waited for. The danger is the handler's \code{waitpid(-1, ...)} reaping a foreground child before the shell's
+own \code{waitpid}, which would then fail and lose the status. Two measures prevent it: \code{SIGCHLD} is blocked from
+before the forks until the foreground stages are reaped, and the shell waits for its own PIDs only, never for any
+child. When the mask is restored, the pending \omterm{def:b2:files-pipes-signals:signal}{signal} runs the handler, which finds only background processes left. A
+child inherits the blocked mask, and an \omterm{def:b2:processes-and-system-calls:exec}{exec} keeps it, so each child unblocks \code{SIGCHLD} before its \omterm{def:b2:processes-and-system-calls:exec}{exec}. The
+test runs \code{sleep 0.2 &}, then \code{sleep 0.6}, and expects one report.
+\end{solution}
+
+\begin{solution}{pb:b2:files-pipes-signals:1}
+\textbf{1.} 3: \code{open} returns the lowest free descriptor, and 0, 1 and 2 are the standard streams, open since
+the program started.
+
+\textbf{2.} The \omterm{def:b2:files-pipes-signals:descriptor}{open file description} of \code{words.txt}, at offset 0; 3 is free again. Every child inherits it,
+but children 2 to 6 put a \omterm{def:b2:files-pipes-signals:pipe}{pipe} over their descriptor 0, so only the first, \code{tr -cs}, reads it.
+
+\textbf{3.} \code{close} freed 3, which is again the lowest free descriptor.
+
+\textbf{4.} The fork copies the \omterm{def:b2:files-pipes-signals:descriptor}{descriptor table}, not the description: parent and child share one offset. The child's
+11 bytes move it to 11, and the parent, which waited, writes its 12 bytes from there: 23 bytes, child first.
+
+\textbf{5.} The child would have a description of its own, at offset 0, and the parent's would stay at 0 too. The
+child writes its 11 bytes at 0, then the parent writes its 12 bytes at 0 over them: the file holds
+\code{parent line} and its newline, 12 bytes.
+
+\textbf{6.} The type and the permission bits (\code{-rw-r--r--}, or \code{l} for the link), the \omterm{def:b2:files-pipes-signals:inode}{link count}, the \omterm{def:b2:rust-ownership:ownership}{owner}
+and group, the size, and the time of the last change. The name comes from the directory, and the
+\code{-> hours.txt} from the symbolic link's contents.
+
+\textbf{7.} Child 1, \code{tr -cs}: 0 is \code{words.txt}, 1 the write end of \omterm{def:b2:files-pipes-signals:pipe}{pipe} 1. Child $i$ for $i = 2$ to 5: 0
+is the read end of \omterm{def:b2:files-pipes-signals:pipe}{pipe} $i - 1$, 1 the write end of \omterm{def:b2:files-pipes-signals:pipe}{pipe} $i$. Child 6, \code{head}: 0 is the read end of \omterm{def:b2:files-pipes-signals:pipe}{pipe} 5, and 1
+is the parent's standard output.
+
+\textbf{8.} Three. At the start of iteration $i$ the parent holds one, \code{prev}; \code{pipe} adds two, the fork
+copies them all to the child, and then the parent closes \code{prev} and \code{fd[1]}, keeping only \code{fd[0]}.
+So it holds three from the \code{pipe} to the closes, and one between iterations; after the last iteration, none.
+
+\textbf{9.} \code{tr -cs}, reading a regular file: its read returns 0 after the 440 bytes. Among the \omterm{def:b2:files-pipes-signals:pipe}{pipe} readers,
+child 2 is first: its end of file comes when child 1 ends, since child 1 holds the only write end of \omterm{def:b2:files-pipes-signals:pipe}{pipe} 1.
+
+\textbf{10.} The last line of the input may be the first line of the output, so \code{sort} can write nothing before
+end of file. \code{tr} translates each byte on its own and writes as soon as its buffer is full.
+
+\textbf{11.} None: end of file depends only on write ends. But if \code{head} stopped early with more data on the
+way, the stage before it would not die of \code{SIGPIPE}, since a read end would still be open in the parent. It
+would fill the \omterm{def:b2:files-pipes-signals:pipe}{pipe} and wait in \code{write} forever. With this small text no stage blocks, but in general one would.
+
+\textbf{12.} \code{false | true} has status 0, and \code{grep word missing.txt | sort} has status 0 though the file
+does not exist. A shell can collect every stage's status, as \code{run_pipeline}'s loop does before it keeps only the
+last, and return the first that is not 0. Some shells offer this as an option (\code{pipefail}).
+
+\textbf{13.} With $n = 100\,000$: $b = 1$, $100\,000 + 1$; $b = 10$, $10\,000 + 1$; $b = 100$, $1000 + 1$;
+$b = 1000$, $100 + 1$; $b = 4096$, $\lceil 24.4 \rceil + 1 = 26$; $b = 10\,000$, $10 + 1$; $b = 65\,536$,
+$\lceil 1.53 \rceil + 1 = 3$. Each count matches.
+
+\textbf{14.} $b = 3$: $\lceil 33\,333.3 \rceil + 1 = 33\,335$. $b = 99\,999$: $2 + 1 = 3$. $b = 100\,000$:
+$1 + 1 = 2$. $b = 100\,001$: also 2.
+
+\textbf{15.} On the run printed, $1619.3 / 380.2 \approx 4.3$, while the read counts give
+$4\,194\,305 / 1\,048\,577 \approx 4.0$. At small $b$ the time is almost exactly the number of \omterm{def:b2:processes-and-system-calls:syscall}{system calls} times a
+constant.
+
+\textbf{16.} Past a few KiB the calls are few: 1025 reads and writes at $b = 4096$, about 0.4~ms at the 375~ns of
+\cref{exo:b2:files-pipes-signals:11}. The time left is the moving of the 4 MiB from the kernel to the buffer and back,
+the $c\,n$ term, which no buffer size reduces.
+
+\textbf{17.} By \cref{prop:b2:files-pipes-signals:calls} with $n = 440$ and $b = 4096$: $\lceil 0.107 \rceil + 1 = 2$
+reads, one returning the 440 bytes and one returning 0.
+
+\textbf{18.} \code{putc} is a function call that stores a byte in the library's buffer, a few nanoseconds; the \omterm{def:b2:processes-and-system-calls:syscall}{system
+call} comes once per 4096 bytes, 1024 times for 4 MiB. That is the same number of writes as the copy with
+$b = 4096$; what remains is four million calls to \code{putc}, which the raw copy does not make.
+
+\textbf{19.} \omterm{def:b2:files-pipes-signals:pipe}{Pipe} 5's read end is closed in every \omterm{def:b2:processes-and-system-calls:process}{process} (\code{head} has exited, and the parent closed its copy),
+so the write raises \code{SIGPIPE} in \code{sort}.
+
+\textbf{20.} By default \code{SIGPIPE} kills the writer: \code{sort} ends by \omterm{def:b2:files-pipes-signals:signal}{signal} 13, which \code{run_pipeline}
+records as $128 + 13 = 141$, then ignores, since only \code{head}'s status is the pipeline's.
+
+\textbf{21.} Death by \code{SIGPIPE} is the normal end of a writer whose reader has stopped wanting more, as with
+\code{yes | head -3}; a shell that reported it would print a message under most pipelines ending in \code{head}. And
+the dead stage's status is not the pipeline's anyway.
+
+\textbf{22.} Every later \code{write} fails at once with \code{EPIPE}. Not checking, the program goes on computing
+and writing into nothing, until its work runs out; a program like \code{yes} would never stop.
+
+\textbf{23.} No. \code{sort -rn} writes only after its input has ended, and its output, a few hundred bytes, leaves
+its buffer in one \code{write} at exit. The \omterm{def:b2:files-pipes-signals:pipe}{pipe} holds 65\,536 bytes, so that write succeeds at once, whether or not
+\code{head} has yet read anything; \code{head} has not exited before it, since it waits for its first read. No write
+happens after \code{head}'s exit.
+
+\textbf{24.} The buffer-size law: a copy of $n$ bytes with a buffer of $b$ bytes makes $\lceil n/b \rceil + 1$
+reads. For $n = 100\,000$ it predicts, from $b = 1$ to $b = 65\,536$, 100\,001, 10\,001, 1001, 101, 26, 11 and 3
+reads, the seven counts of \cref{out:b2:files-pipes-signals:counts}.
+\end{solution}

@@ -1,0 +1,442 @@
+% Book 4, Year 2, chapter 7 -- Enums, pattern matching and error handling.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 7.
+\chapter{Enums, Pattern Matching and Error Handling}\label{ch:b2:rust-enums-and-errors}
+
+The weather stations write their temperatures with one decimal. A C function reads a field into tenths of a degree,
+and returns $-1$ when the field is not a number, the usual C convention.
+
+\omcode{code/bachelor-2/07-rust-enums-and-errors/listings/temp_code.c}{5}{12}{An error code inside the range of the
+answers}\label{lst:b2:rust-enums-and-errors:temp-code}
+
+\omoutput{code/bachelor-2/07-rust-enums-and-errors/outputs/temp_code.txt}{$-0.1$\,\textdegree C and an empty field
+give the same answer.}\label{out:b2:rust-enums-and-errors:temp-code}
+
+A temperature of $-0.1$\,\textdegree C is indistinguishable from a missing one. The function has two kinds of
+answers, a temperature or a failure, and its return type, \code{int}, has room for only one kind: the failure
+borrowed a value from the temperatures. This chapter gives each kind of answer its own place in the type, and makes
+the compiler check that every caller looks at both.
+
+\begin{recall}
+Book 3: a C \code{union} stores one of several types in the same bytes, and nothing records which; a C \code{enum}
+names integer constants. An inductive set is defined by base elements and \omterm{def:b2:cpp-classes-raii:constructor}{constructors}, and a property of all its
+elements is proved by structural induction: for the base elements, then for each \omterm{def:b2:cpp-classes-raii:constructor}{constructor} assuming it for the
+parts. \cref{ch:b2:rust-ownership}: \omterm{def:b2:rust-ownership:ownership}{ownership}, \code{Box}, and the \omterm{def:b2:rust-enums-and-errors:panic}{panic} that stops a program on a bug.
+\end{recall}
+
+\section{Product and sum types}\label{sec:b2:rust-enums-and-errors:types}
+
+\begin{definition}[Product type, sum type, algebraic data type]\label{def:b2:rust-enums-and-errors:adt}
+A \emph{product type}\index{product type} holds one value of each of its component types at once: a tuple
+\code{(A, B)} or a \code{struct}. A \emph{sum type}\index{sum type} holds one value of exactly one of its component
+types, together with which one: a Rust \code{enum}. The types built from basic types by products and sums, possibly
+recursively, are the \emph{algebraic data types}\index{algebraic data type}.
+\end{definition}
+
+\begin{definition}[Enumeration, enum variant]\label{def:b2:rust-enums-and-errors:enum}
+A Rust \emph{enumeration}\index{enumeration (Rust)} \code{enum E { V1(...), V2 { ... }, V3 }} lists its \emph{enum
+variants}\index{enum variant}, each a name with its own fields, unnamed, named or none. A value of type \code{E} is
+built by one variant, \code{E::V1(...)}, and records which.
+\end{definition}
+
+\omcode{code/bachelor-2/07-rust-enums-and-errors/listings/shapes_enum.rs}{4}{31}{Three shapes, one
+type}\label{lst:b2:rust-enums-and-errors:shapes}
+
+\omoutput{code/bachelor-2/07-rust-enums-and-errors/outputs/shapes_enum.txt}{The derived \code{Debug} prints each
+variant with its fields.}\label{out:b2:rust-enums-and-errors:shapes}
+
+The names \emph{product} and \emph{sum} come from counting.
+
+\begin{proposition}[Counting the values of algebraic types]\label{prop:b2:rust-enums-and-errors:counting}
+Write $|T|$ for the number of values of a finite type $T$. Then $|(A, B)| = |A| \cdot |B|$, and for an enum whose
+variants carry the types $A_1, \dots, A_k$ (a variant with no field carrying the unit type \code{()}, with one
+value), $|E| = |A_1| + \dots + |A_k|$. In particular $|\code{Option<A>}| = |A| + 1$ and
+$|\code{Result<A, B>}| = |A| + |B|$.
+\end{proposition}
+
+\begin{proof}
+A pair is determined by its first component, $|A|$ choices, and independently its second, $|B|$ choices: $|A||B|$
+pairs. A value of the enum is a variant $i$ and a value of $A_i$; two values with different variants differ, so the
+sets of values of the variants are disjoint, and their sizes add. \code{Option<A>} has the variants \code{Some(A)} and
+\code{None}, carrying \code{()}: $|A| + 1$. \code{Result<A, B>} has \code{Ok(A)} and \code{Err(B)}.
+\end{proof}
+
+A C \code{struct} of a \code{bool} and a \code{union} of an \code{int} and a \code{double} holds $2 \cdot (2^{32} +
+2^{64})$ bit \omterm{def:b2:rust-enums-and-errors:matching}{patterns}, of which the program means only $2^{32} + 2^{64}$; the other half are the cases where the flag
+and the stored member disagree, which nothing prevents. A Rust enum has exactly the values meant.
+
+\section{Pattern matching}\label{sec:b2:rust-enums-and-errors:match}
+
+\begin{definition}[Pattern, pattern matching]\label{def:b2:rust-enums-and-errors:matching}
+A \emph{pattern}\index{pattern} describes a shape of value: a literal (\code{0}), a range (\code{1..=9}), a variable
+that binds whatever it matches (\code{x}), the wildcard \code{_}, a variant with patterns for its fields
+(\code{Shape::Rect { w, h }}), a tuple of patterns, or alternatives \code{p | q}. \emph{Pattern
+matching}\index{pattern matching}, \code{match v { p1 => e1, p2 if c => e2, ... }}, tries the patterns in order and
+evaluates the expression of the first one that matches, with its variables bound; an arm may add a \emph{guard},
+\code{if c}, a condition on the bound variables.
+\end{definition}
+
+\begin{definition}[Exhaustive match]\label{def:b2:rust-enums-and-errors:exhaustive}
+A \code{match} is \emph{exhaustive}\index{exhaustive match} if every value of the matched type matches at least one of
+its \omterm{def:b2:rust-enums-and-errors:matching}{patterns}, guards not counted. Rust accepts only exhaustive matches.
+\end{definition}
+
+\omcode{code/bachelor-2/07-rust-enums-and-errors/listings/nonexhaustive.rs}{9}{14}{Corners of a shape, forgetting
+circles}\label{lst:b2:rust-enums-and-errors:nonexhaustive}
+
+\omoutput[2-6,13-14]{code/bachelor-2/07-rust-enums-and-errors/outputs/nonexhaustive.txt}{The missing variant,
+named.}\label{out:b2:rust-enums-and-errors:nonexhaustive}
+
+Exhaustiveness is what makes a \omterm{def:b2:rust-enums-and-errors:adt}{sum type} safe to extend: add a variant, and the compiler lists every \code{match} that
+must now handle it, unless the \code{match} ends with a wildcard \code{_}, which silently takes the new variant too
+(\cref{exo:b2:rust-enums-and-errors:2}). Write wildcards only where a default is right for every future variant.
+
+\section{Options and results}\label{sec:b2:rust-enums-and-errors:errors}
+
+\begin{definition}[Option type]\label{def:b2:rust-enums-and-errors:option}
+The \emph{option type}\index{option type} \code{Option<T>} of the standard library is the enum with the variants
+\code{Some(T)} and \code{None}. It is the type of a value that may be absent, and replaces the null pointer and the
+reserved \emph{no value} code.
+\end{definition}
+
+\omcode{code/bachelor-2/07-rust-enums-and-errors/listings/option_demo.rs}{7}{32}{A search that may find
+nothing}\label{lst:b2:rust-enums-and-errors:option}
+
+\omoutput{code/bachelor-2/07-rust-enums-and-errors/outputs/option_demo.txt}{Absences handled four ways: \code{match},
+\code{if let}, \code{unwrap_or} and \code{?}.}\label{out:b2:rust-enums-and-errors:option}
+
+The C version returns \code{NULL} for \emph{not found}, and nothing obliges the caller to test it. The first lookup
+succeeds; the second dereferences \code{NULL}.
+
+\omoutput[2-9,15-15]{code/bachelor-2/07-rust-enums-and-errors/outputs/run_null_crash.txt}{The same lookups in C
+(\code{null_crash.c}): \code{NULL->pages} reads address 8.}\label{out:b2:rust-enums-and-errors:null}
+
+In Rust the book cannot be used before the \code{Option} is opened: \code{find(...).pages} does not compile, since an
+\code{Option<&Book>} has no field \code{pages}. Failures that come with a reason use the second enum.
+
+\begin{definition}[Result type, error propagation]\label{def:b2:rust-enums-and-errors:result}
+The \emph{result type}\index{result type} \code{Result<T, E>} is the enum with the variants \code{Ok(T)}, a success
+carrying its value, and \code{Err(E)}, a failure carrying an error of type \code{E}. \emph{Error
+propagation}\index{error propagation} is the return of a failure to the caller: the operator \code{?} applied to a
+\code{Result} gives the value inside \code{Ok}, or returns \code{Err(e)} from the enclosing function at once,
+converting \code{e} with \code{From::from} into that function's error type.
+\end{definition}
+
+The stations' log, \code{data/town/weather.csv}, has a line per day and station. Each line is parsed into a
+\code{Reading} or an error that says what is wrong.
+
+\omcode{code/bachelor-2/07-rust-enums-and-errors/listings/weather.rs}{20}{57}{One line, one
+\code{Result}}\label{lst:b2:rust-enums-and-errors:parse}
+
+\code{read_log} applies \code{parse_line} to every line, keeps the readings, records each rejected line with its
+number and error, and sets aside a second reading for the same day and station. Its own errors, a file that cannot be
+read or has no header, form a third enum, \code{LogError}, and \code{From<std::io::Error> for LogError} lets \code{?}
+convert the error of \code{read_to_string} (both are shown in the weekend problem). Run on the log, and on a
+misspelt file name:
+
+\omoutput{code/bachelor-2/07-rust-enums-and-errors/outputs/run_weather.txt}{Every line accounted
+for.}\label{out:b2:rust-enums-and-errors:weather}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, f/.style={draw, rounded corners=2pt, fill=black!4, minimum width=36mm, minimum height=7mm, align=center}]
+\node[f] (m) at (0,0) {\texttt{main}\\ matches \texttt{Err(LogError::Io(e))}};
+\node[f] (r) at (5.4,0) {\texttt{read\_log}\\ \texttt{read\_to\_string(path)?}};
+\node[f] (p) at (10.8,0) {\texttt{std::fs}\\ fails: no such file};
+\draw[ptr] (m.north east) to[bend left=20] node[above, text=black!60] {calls} (r.north west);
+\draw[ptr] (r.north east) to[bend left=20] node[above, text=black!60] {calls} (p.north west);
+\draw[ptr, omThm, thick] (p.south west) to[bend left=20] node[below, align=center] {\texttt{Err(io::Error)}} (r.south east);
+\draw[ptr, omThm, thick] (r.south west) to[bend left=20] node[below, align=center] {\texttt{?}: \texttt{From::from}, returns\\ \texttt{Err(LogError::Io(e))}} (m.south east);
+\begin{scope}[yshift=-2.9cm]
+\node[f] (r2) at (0,0) {\texttt{read\_log}: \texttt{match}\\ records \texttt{Err(e)},\\ reads the next line};
+\node[f] (p2) at (5.4,0) {\texttt{parse\_line}\\ \texttt{number(\textquotedbl{}temp\_c\textquotedbl{}, f[2])?}};
+\node[f] (n2) at (10.8,0) {\texttt{number}\\ \texttt{Err(Missing(\textquotedbl{}temp\_c\textquotedbl{}))}};
+\draw[ptr, omThm, thick] (n2.west) -- node[above] {returned} (p2.east);
+\draw[ptr, omThm, thick] (p2.west) -- node[above] {\texttt{?}} node[below, align=center] {returns it} (r2.east);
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Two errors travelling back. Above, the missing file: \code{?} converts the \code{io::Error} and
+returns it from \code{read_log}, and \code{main} reports it. Below, a missing temperature: \code{?} in
+\code{parse_line} skips the remaining fields, and \code{read_log}, which matches instead of using \code{?}, records the
+error and reads the next line.}
+\end{omfigure}
+
+\begin{definition}[Panic]\label{def:b2:rust-enums-and-errors:panic}
+A \emph{panic}\index{panic} stops the current thread on a condition the program declares impossible: an index out of
+bounds, an \code{unwrap} of \code{None} or of \code{Err}, an explicit \code{panic!}. The values of the thread are
+dropped, a message gives the place and the cause, and if the thread is the main one the process exits with status
+101.
+\end{definition}
+
+The division of labour is the point. A \code{Result} is for failures that the program expects and handles: a bad line
+in a file, a missing file, a server that does not answer. A \omterm{def:b2:rust-enums-and-errors:panic}{panic} is for bugs: a state the code was written to make
+impossible. \code{unwrap} says \emph{this cannot fail}; on input data, it is usually wrong
+(\cref{exo:b2:rust-enums-and-errors:6}). C++ \omterm{def:b2:cpp-classes-raii:exception}{exceptions} (\cref{ch:b2:cpp-classes-raii}) travel up invisibly through
+any call; a \code{Result} is part of the signature, and each \code{?} marks a place where the function may return.
+
+\section{Recursive types}\label{sec:b2:rust-enums-and-errors:recursive}
+
+\begin{definition}[Recursive type, box]\label{def:b2:rust-enums-and-errors:recursive}
+A \emph{recursive type}\index{recursive type} has a variant or a field whose type contains the type itself. Its
+values must be finite, and its size must be known: the recursive field is therefore a \emph{box}\index{box (Rust)},
+\code{Box<T>}, a pointer to a value of type \code{T} on the heap that owns it and frees it when dropped.
+\end{definition}
+
+Without the \omterm{def:b2:rust-enums-and-errors:recursive}{box}, an \code{Expr} containing two \code{Expr}s would be larger than itself. With it, an \code{Add} holds
+two pointers. An arithmetic expression in one variable is a tree:
+
+\omcodes{code/bachelor-2/07-rust-enums-and-errors/listings/expr.rs}{5-10,14-38}{An expression type, evaluated and
+simplified}\label{lst:b2:rust-enums-and-errors:expr}
+
+\omoutput{code/bachelor-2/07-rust-enums-and-errors/outputs/expr.txt}{$(x \cdot (2 + (-1)) + 0) \cdot (3x + 4 \cdot 0)$
+and its simplified form, equal at $x = 5$.}\label{out:b2:rust-enums-and-errors:expr}
+
+The values are integers modulo $2^{64}$ (\code{wrapping_add}, \code{wrapping_mul}), a ring in which the rules
+$0 + e = e$, $0 \cdot e = 0$ and $1 \cdot e = e$ hold exactly; with \code{f64} the second would fail when $e$ is
+infinite.
+
+\begin{proposition}[Structural recursion terminates]\label{prop:b2:rust-enums-and-errors:structural}
+A function on the values of a \omterm{def:b2:rust-enums-and-errors:recursive}{recursive type}, defined by a \code{match} on the variants in which every recursive call
+is made on a field of the matched value, and whose other operations terminate, terminates on every value.
+\end{proposition}
+
+\begin{proof}
+By structural induction on the value. On a variant with no recursive field there is no recursive call, and the other
+operations terminate. On a variant with recursive fields $f_1, \dots, f_m$, assume the function terminates on each
+$f_i$ (the induction hypothesis, legitimate since each $f_i$ is a strictly smaller part of a finite value); the body
+makes finitely many calls on them, each terminating, plus terminating operations. Every value of a \omterm{def:b2:rust-enums-and-errors:recursive}{recursive type} is
+finite, being built by finitely many constructions, so the induction covers every value.
+\end{proof}
+
+\code{eval} and \code{simplify} recurse only on \code{a} and \code{b}, the fields of the matched \code{Add} or
+\code{Mul}: they terminate. The simplifier is useful only if it is right.
+
+\begin{theorem}[The simplifier preserves the value]\label{thm:b2:rust-enums-and-errors:simplify}
+For every expression \code{e} and every \code{x}, \code{e.clone().simplify().eval(x) == e.eval(x)}.
+\end{theorem}
+
+\begin{proof}
+By structural induction on \code{e}. Write $\llbracket e \rrbracket$ for \code{e.eval(x)} and $S(e)$ for the
+simplified expression. For \code{Num} and \code{X}, $S(e) = e$. For \code{Add(a, b)}, the induction hypothesis gives
+$\llbracket S(a) \rrbracket = \llbracket a \rrbracket$ and $\llbracket S(b) \rrbracket = \llbracket b \rrbracket$,
+and $\llbracket e \rrbracket = \llbracket a \rrbracket + \llbracket b \rrbracket$. The first arm returns
+\code{Num(m + n)} when $S(a) = \code{Num(m)}$ and $S(b) = \code{Num(n)}$, whose value is $m + n = \llbracket S(a)
+\rrbracket + \llbracket S(b) \rrbracket$. The second returns $S(b)$ when $S(a) = \code{Num(0)}$, of value $0 +
+\llbracket S(b) \rrbracket$, or symmetrically. The third returns \code{Add(S(a), S(b))}, of value $\llbracket S(a)
+\rrbracket + \llbracket S(b) \rrbracket$. In every arm the value is $\llbracket a \rrbracket + \llbracket b
+\rrbracket$. The \code{Mul} case is the same with the rules $0 \cdot v = v \cdot 0 = 0$ and $1 \cdot v = v \cdot 1 = v$
+of the ring (\cref{exo:b2:rust-enums-and-errors:11}).
+\end{proof}
+
+The test crate \code{tests/enums} checks the theorem on 3000 random expressions, and checks that simplifying twice
+changes nothing. A binary search tree is the same kind of type; \code{bst.rs} inserts the page counts of seven books.
+
+\omcode{code/bachelor-2/07-rust-enums-and-errors/listings/bst.rs}{2}{21}{A tree that owns its
+subtrees}\label{lst:b2:rust-enums-and-errors:bst}
+
+\omoutput{code/bachelor-2/07-rust-enums-and-errors/outputs/bst.txt}{The in-order walk is
+sorted.}\label{out:b2:rust-enums-and-errors:bst}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, n/.style={draw, rounded corners=2pt, fill=omDef!10, minimum width=9mm, minimum height=5mm},
+    lf/.style={draw=black!40, fill=black!5, text=black!50, inner sep=1.5pt, font=\tiny},
+    level distance=10mm, level 1/.style={sibling distance=46mm}, level 2/.style={sibling distance=24mm},
+    level 3/.style={sibling distance=12mm}, edge from parent/.style={draw, ptr}]
+\node[n] {189}
+  child {node[n] {65}
+    child {node[lf] {Leaf}}
+    child {node[n] {133}
+      child {node[n] {98}}
+      child {node[lf] {Leaf}}}}
+  child {node[n] {251}
+    child {node[lf] {Leaf}}
+    child {node[n] {412}
+      child {node[n] {320}}
+      child {node[lf] {Leaf}}}};
+\end{tikzpicture}
+\par\smallskip{\small The tree of \cref{out:b2:rust-enums-and-errors:bst}, built by inserting 189, 65, 251, 133, 412,
+98 and 320. Each arrow is a \code{Box}: the node owns its children, and dropping the root frees the whole tree. The
+leaves under 98 and 320 are not drawn.}
+\end{omfigure}
+
+\section{Layout}\label{sec:b2:rust-enums-and-errors:layout}
+
+An enum is stored as a \emph{tag}, a small integer that says which variant, followed by room for the largest
+variant's fields. The compiler may do better when a field type has values that can never occur.
+
+\omcode{code/bachelor-2/07-rust-enums-and-errors/listings/sizes.rs}{11}{25}{The sizes of a few
+types}\label{lst:b2:rust-enums-and-errors:sizes}
+
+\omoutput{code/bachelor-2/07-rust-enums-and-errors/outputs/sizes.txt}{Bytes per value; the target has 8-byte
+pointers.}\label{out:b2:rust-enums-and-errors:sizes}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=3.7mm]
+\foreach \name/\y/\cells in {
+  {Option<u32>}/0/{{4/tag/black!8},{4/u32/omDef!10}},
+  {Shape}/-1/{{8/tag, padding/black!8},{8/f64/omDef!10},{8/f64/omDef!10},{8/f64/omDef!10}},
+  {Option<\&u32>}/-2/{{8/address; None = 0/omThm!10}}} {
+  \node[anchor=east, font=\scriptsize\ttfamily] at (-0.3,\y) {\name};
+  \def\xx{0}
+  \foreach \w/\lab/\col in \cells {
+    \draw[fill=\col] (\xx,\y-0.3) rectangle ++(\w,0.6);
+    \node[font=\tiny] at (\xx+\w/2,\y) {\lab};
+    \pgfmathparse{\xx+\w}\xdef\xx{\pgfmathresult}
+  }
+}
+\foreach \b in {0,8,16,24,32} \node[text=black!50, font=\tiny] at (\b,-2.6) {\b};
+\node[text=black!50, font=\tiny, anchor=west] at (33,-2.6) {bytes};
+\end{tikzpicture}
+\par\smallskip{\small Three layouts from \cref{out:b2:rust-enums-and-errors:sizes}. \code{Option<u32>} needs a tag,
+since all $2^{32}$ bit \omterm{def:b2:rust-enums-and-errors:matching}{patterns} of a \code{u32} are values; padded to the alignment of the \code{u32}, 8 bytes.
+\code{Shape} holds a tag and its largest variant, the triangle's three sides. \code{Option<&u32>} needs no tag: a
+reference is never null, so the address 0 is free to mean \code{None}.}
+\end{omfigure}
+
+% ledger: b2:option-npo
+The last layout is a guarantee, not an accident: the standard library documents that \code{Option<T>} has the same
+size as \code{T} when \code{T} is a reference, a \code{Box}, a function pointer or a non-zero integer, with
+\code{None} represented by all zero bits. An optional reference therefore costs exactly what a C pointer that may be
+\code{NULL} costs, and the check the C programmer may forget is required by the type. The same reasoning gives
+\code{Option<bool>} one byte: a \code{bool} uses 2 of the 256 \omterm{def:b2:rust-enums-and-errors:matching}{patterns} of its byte, and \code{None} takes a third.
+
+\begin{inpractice}[Error types in practice]
+Give each module its own error enum, with one variant per failure the caller may want to distinguish, and data (a
+line number, a file name) for the message. Implement \code{std::fmt::Display} for the message and \code{From} for the
+errors of the lower layers, so that \code{?} converts them. Keep \code{unwrap} and \code{expect} for conditions that
+are bugs if false, and say why in the \code{expect} message.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b2:rust-enums-and-errors:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-enums-and-errors:1}
+Predict the five lines, then check them in the solution. What changes if the arm \code{0 => "zero"} is moved just
+after \code{1..=9}? And if it is moved after the wildcard \code{_}?
+\omcode{code/bachelor-2/07-rust-enums-and-errors/listings/exo_match.rs}{2}{21}{\omterm{def:b2:rust-enums-and-errors:matching}{Patterns}, guards and tuples}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-enums-and-errors:2}
+The library added the variant \code{Lost} to \code{LoanState}, and the program no longer compiles. Fix
+\code{fine_cents} (a lost book costs 2000 cents). Then explain what would have happened if the last arm had been
+\code{_ => 0}.
+\omcode{code/bachelor-2/07-rust-enums-and-errors/listings/exo_new_variant.rs}{3}{16}{A match written before
+\code{Lost}}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-enums-and-errors:3}
+Write \code{checked_div(a: i32, b: i32) -> Option<i32>}, which returns \code{None} when the quotient does not exist
+or does not fit, and \code{mean(xs: &[f64]) -> Option<f64>}. In which two cases does \code{a / b} \omterm{def:b2:rust-enums-and-errors:panic}{panic}
+in Rust?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-enums-and-errors:4}
+Using \cref{prop:b2:rust-enums-and-errors:counting}, count the values of: \code{(bool, bool, u8)};
+\code{Option<Option<bool>>}; \code{Result<bool, Option<u8>>}; an enum with the variants \code{Red}, \code{Amber},
+\code{Green} and \code{Flashing(bool)}; and \code{[bool; 2]}. Which of them could share the same set of values, up to
+renaming?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-enums-and-errors:5}
+For each of the three calls, say where \code{total} returns and which lines are printed, then check against the
+output in the solution.
+\omcode{code/bachelor-2/07-rust-enums-and-errors/listings/exo_question.rs}{2}{21}{Two \code{?} in a row}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-enums-and-errors:6}
+The program stops at the third line. Explain the message, and rewrite the loop so that a bad line is reported with
+its number and skipped, using \code{Option} and \code{Result} instead of \code{unwrap}.
+\omcode{code/bachelor-2/07-rust-enums-and-errors/listings/exo_unwrap.rs}{8}{16}{Two \code{unwrap}s}
+\omoutput[2-6]{code/bachelor-2/07-rust-enums-and-errors/outputs/exo_unwrap.txt}{The \omterm{def:b2:rust-enums-and-errors:panic}{panic}.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-enums-and-errors:7}
+Write an enum \code{Json} for JSON-like values (null, booleans, numbers, strings, arrays, objects with keys in
+order) and a method \code{to_text} that prints a value on one line, escaping \code{"}, the backslash and the newline
+in strings. Test it on a book record whose title contains quotation marks.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-enums-and-errors:8}
+The mirror image of a tree swaps the left and right subtrees of every node. Define \code{mirror} on the \code{Tree}
+of \cref{lst:b2:rust-enums-and-errors:bst} and prove by structural induction that \code{mirror(mirror(t)) == t} for
+every tree. Prove also that the in-order walk of \code{mirror(t)} is the in-order walk of \code{t} reversed.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-enums-and-errors:9}
+Write \code{enum List<T> { Nil, Cons(T, Box<List<T>>) }} with \code{from_vec}, \code{len}, \code{rev} and
+\code{map}. Write \code{len} and \code{rev} with loops: why does \code{rev} need no clone of the elements? Test that
+\code{l.rev().rev() == l}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:rust-enums-and-errors:10}
+Extend the expression type to \code{f64} with \code{Sin} and \code{Cos}, and write \code{derive}, which returns the
+derivative by the sum, product and chain rules, and \code{simplify}. Test \code{derive} on 500 random expressions
+against the central difference $(f(x + h) - f(x - h)) / 2h$, with a tolerance you justify, and check that
+simplification never makes an expression larger.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:rust-enums-and-errors:11}
+(a) Prove that \code{eval} terminates on every expression with \cref{prop:b2:rust-enums-and-errors:structural}, and
+bound the number of calls by the number of nodes. (b) Complete the proof of
+\cref{thm:b2:rust-enums-and-errors:simplify}: the \code{Mul} case, arm by arm. (c) Which arm would break the theorem
+if the values were \code{f64}? Give an expression.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:rust-enums-and-errors:12}
+A configuration file has lines \code{key = value}, comments after a hash sign, and blank lines. Write
+\code{parse(text) -> Result<BTreeMap<String, String>, ConfigError>}, where \code{ConfigError} carries the line number
+and a \code{Kind}: no \code{=}, empty key, a key set twice, a value that starts like a number but is not one. Implement
+\code{Display} so that \code{e.to_string()} gives messages such as \code{line 3: a set twice}.
+\end{exercise}
+
+\section{Problem: Reading the weather station logs}\label{sec:b2:rust-enums-and-errors:problem}
+
+\begin{problem}[{Weekend problem --- Reading the weather station logs}]\label{pb:b2:rust-enums-and-errors:1}
+The town's two stations, Hilltop and Riverside, log a line a day each for 2025. The log is known to hold defects: some
+temperatures are missing, some are the stations' code $-99.0$ for \emph{no measurement}, and a line may be repeated.
+This problem reads it with the types of this chapter and checks that no defect is accepted silently.
+
+\medskip\noindent\textbf{Part I --- Types for readings.}\par\nopagebreak
+\begin{enumerate}[beginpenalty=10000]
+\item Why is \code{Station} an enum rather than a \code{String}? What does deriving \code{PartialOrd} and \code{Ord} give it?
+\item \code{Reading} is a product of five fields. Why is \code{temp_c} an \code{f64} and not an
+\code{Option<f64>}?
+\item List the variants of \code{LineError} and the line defect each one describes.
+\item How many values has \code{Station}? And \code{Option<Station>}? How many bytes would you expect for each?
+\item Why is \code{-99.0} detected in \code{number} rather than by the caller?
+\item What would a C version of \code{parse_line} return, and how would the caller tell the five errors apart?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Parsing with \code{Result}.}\par\nopagebreak
+\omcodes{code/bachelor-2/07-rust-enums-and-errors/listings/weather.rs}{58-68,76-93}{The file-level errors and
+\code{read_log}}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item In \code{parse_line}, which fields are still read when \code{temp_c} is missing?
+\item \code{read_to_string(path)?} returns a \code{std::io::Error}, yet \code{read_log} returns \code{LogError}. Which
+line makes this compile?
+\item Why does \code{read_log} use \code{match} on \code{parse_line} instead of \code{?}?
+\item The first \code{Ok} arm has a guard. Explain it, and why its order with the second \code{Ok} arm matters.
+\item Which line of \cref{out:b2:rust-enums-and-errors:weather} comes from \code{LogError::Io}, and through how many
+functions did the error travel?
+\item Add a variant for a date that is not of the form \code{YYYY-MM-DD}. Which \code{match}es must change?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- A tree of monthly aggregates.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Store, for each pair (station, month), the number of readings, their sum, minimum and maximum, in a
+\code{BTreeMap<(Station, u32), Agg>}. Why does a tuple key with a derived order give the months of Hilltop first?
+\item Use the \code{entry} API, \code{and_modify} and \code{or_insert}, to update the tree in one lookup per reading.
+\item How many keys does the tree have, and how many readings in all?
+\item Riverside has 31 lines in June 2025. How many readings does its June aggregate count, and why?
+\item Which months lose a reading to a missing temperature or an error code?
+\item Why must the mean be computed from the sum and the count rather than kept as a running mean?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Every defect accounted for.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Check that the counts of \cref{out:b2:rust-enums-and-errors:weather} add up to the 731 lines of data.
+\item Which test in \code{tests/enums} would fail if a missing temperature were read as 0.0?
+\item How would the C function of the opening treat the two error codes? And the missing fields?
+\item The duplicate is identical to the earlier line. Should it be rejected or merged? Justify.
+\item A new defect type appears next year: a temperature written with a comma, \code{3,9}. What happens to such a
+line with the current code, and is it accepted silently?
+\item State the result of the problem: every planted defect found, with its count, and none accepted silently.
+\end{enumerate}
+\end{problem}

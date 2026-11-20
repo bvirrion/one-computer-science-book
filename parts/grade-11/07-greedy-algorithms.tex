@@ -1,0 +1,328 @@
+% Provenance (never printed): NSI premiere "Algorithmique: algorithmes gloutons (rendu de monnaie, sac a dos,
+% choix d'activites)". See sources/book2/BRIEFS.md.
+\chapter{Greedy Algorithms}\label{ch:g11:greedy-algorithms}
+
+A shopkeeper owes $87$ in change and has coins of $1$, $2$, $5$, $10$, $20$ and $50$. Without thinking she hands over
+the largest coin that fits, $50$, then again the largest that fits what is left, $20$, then $10$, $5$, $2$: five
+coins, and no way of giving fewer. Her rule never looks back and never looks ahead, and here it is the best possible.
+
+Rules of this kind are called greedy. They are fast and easy to write, and they are often right, but not always: with
+other coins the same shopkeeper gives one coin too many. This chapter writes greedy rules for three problems, proves
+when they are right, and lets a program find where they go wrong.
+
+\begin{recall}
+\code{sorted(t, key=f)} sorts by the values of \code{f} (chapter \ref{ch:g10:data-tables}). The cost
+of an algorithm counts its \omterm{def:g11:cost-of-an-algorithm:elementary}{elementary operations} (chapter \ref{ch:g11:cost-of-an-algorithm}); an invariant is kept by
+each turn of a loop (chapter \ref{ch:g11:proving-algorithms-correct}).
+\end{recall}
+
+\section{Optimisation problems}\label{sec:g11:greedy-algorithms:optimisation}
+
+\begin{definition}[Optimisation problem, objective, optimal solution]\label{def:g11:greedy-algorithms:optimisation}
+An \emph{optimisation problem}\index{optimisation problem} asks, among the feasible solutions of a problem, for one
+that makes a number as small or as large as possible. That number is the \emph{objective}\index{objective}. A
+feasible solution with the best possible objective is an \emph{optimal solution}\index{optimal solution}.
+\end{definition}
+
+For change, a feasible solution is a set of coins that adds up to the amount, and the \omterm{def:g11:greedy-algorithms:optimisation}{objective} is the number of
+coins, to be made as small as possible. On a small amount, a program can try every combination and keep the best.
+That is slow, but surely right, and it serves as a reference.
+
+\omcode{code/grade-11/07-greedy-algorithms/listings/change_exhaustive.py}{1}{25}{The fewest coins, by trying every
+combination.}\label{lst:g11:greedy-algorithms:exhaustive}
+
+\omoutput{code/grade-11/07-greedy-algorithms/outputs/change_exhaustive.txt}{$20$ needs $4$ coins of $1$, $2$ and $5$,
+found among $29$ combinations; with six coins, greedy matches the fewest on every amount
+checked.}\label{out:g11:greedy-algorithms:exhaustive}
+
+\section{The greedy choice}\label{sec:g11:greedy-algorithms:greedy}
+
+\begin{definition}[Greedy algorithm]\label{def:g11:greedy-algorithms:greedy}
+A \emph{greedy algorithm}\index{greedy algorithm} builds a solution one piece at a time, each time taking the piece
+that looks best at that moment, by a fixed rule, and never going back on a choice.
+\end{definition}
+
+\begin{method}[Designing a greedy algorithm]
+\begin{enumerate}
+  \item Choose the rule: the order in which candidates are looked at, often a sort by a well-chosen key.
+  \item Take each candidate that keeps the solution feasible.
+  \item Prove that the result is optimal, often by exchange: take any \omterm{def:g11:greedy-algorithms:optimisation}{optimal solution}, and change it, step by step,
+    into the greedy one without making it worse.
+  \item If there is no proof, look for a counter-example with a program that compares greedy with an exhaustive
+    search on small inputs.
+\end{enumerate}
+\end{method}
+
+\omcode{code/grade-11/07-greedy-algorithms/listings/change_greedy.py}{1}{15}{Greedy change: the largest coin that
+fits, again and again.}\label{lst:g11:greedy-algorithms:change-greedy}
+
+\omoutput{code/grade-11/07-greedy-algorithms/outputs/change_greedy.txt}{Three amounts with the coins $1$, $2$, $5$,
+$10$, $20$, $50$.}\label{out:g11:greedy-algorithms:change-greedy}
+
+With the coins $1$, $2$, $5$ an exchange argument proves greedy right. Take a way of paying with the fewest coins. It
+uses at most one coin of $1$, since two could become one $2$; at most two coins of $2$, since three could become a $5$
+and a $1$; and never two $2$ with a $1$, which could become a $5$. So the coins of $1$ and $2$ add up to at most $4$,
+and every $5$ that fits is used, exactly as greedy does; what remains, $0$ to $4$, has only one way with these rules:
+$0$, $1$, $2$, $2 + 1$, $2 + 2$, again greedy's way. Greedy and an \omterm{def:g11:greedy-algorithms:optimisation}{optimal solution} are the same.
+
+For six coins a full case argument is long. A theorem does the work instead.
+
+\begin{theorem}[Kozen and Zaks]\label{thm:g11:greedy-algorithms:kozen-zaks}
+Let a system of coins have the values $1 = c_1 < c_2 < \dots < c_m$, with $m \ge 3$. If greedy change gives more
+coins than necessary for some amount, then it does so already for some amount $x$ with $c_3 + 1 < x < c_m + c_{m-1}$.
+\end{theorem}
+\admitted
+% ledger: g11:kozen-zaks
+
+For $1$, $2$, $5$, $10$, $20$, $50$, it is enough to check every amount below $50 + 20 = 70$, which the output above
+did: no failure there, so none anywhere. A system for which greedy change is always optimal has a name.
+
+\begin{definition}[Canonical coin system]\label{def:g11:greedy-algorithms:canonical}
+A coin system is \emph{canonical}\index{canonical coin system} if, for every amount, greedy change uses the fewest
+coins possible.
+\end{definition}
+
+\section{Choosing activities}\label{sec:g11:greedy-algorithms:activities}
+
+One room, twelve requests, each a start and an end hour; two bookings that overlap cannot both be kept. The goal is to
+keep as many as possible. Several greedy rules come to mind: shortest first, earliest start first, earliest end first.
+Only the last is always right.
+
+\omcode{code/grade-11/07-greedy-algorithms/listings/activities.py}{1}{22}{Earliest end first: keep a request when it
+starts after the last one kept ends.}\label{lst:g11:greedy-algorithms:activities}
+
+\omoutput{code/grade-11/07-greedy-algorithms/outputs/activities.txt}{The requests sorted by end hour, and the four
+kept.}\label{out:g11:greedy-algorithms:activities}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=0.75cm, y=0.42cm, font=\footnotesize]
+  \foreach \h in {8,...,21} {
+    \draw[black!20] (\h,0.4) -- (\h,-12.4);
+    \node[above] at (\h,0.4) {\h};
+  }
+  \foreach \n/\s/\e/\k [count=\r] in {G/10/11/1, I/10/11/0, D/11/12/1, B/15/17/1, H/15/17/0, A/15/18/0,
+      E/16/18/0, C/16/19/0, J/16/19/0, K/18/19/1, L/17/19/0, F/18/21/0} {
+    \ifnum\k=1 \def\fillc{omDef!45}\else\def\fillc{black!8}\fi
+    \draw[fill=\fillc, draw=black!60] (\s,-\r+0.3) rectangle (\e,-\r-0.3);
+    \node[left] at (8,-\r) {\n};
+  }
+\end{tikzpicture}
+
+{\small The twelve requests, from the run, in order of end hour. In blue, the four that earliest end first keeps:
+each starts after the previous blue one ends.}
+\end{omfigure}
+
+Why is it optimal? Let $g_1, g_2, \dots$ be the bookings greedy keeps, in order, and $o_1, o_2, \dots$ those of an
+optimal choice, in order. Greedy ``stays ahead'': $g_1$ ends no later than $o_1$, since greedy took the request that
+ends first. If $g_k$ ends no later than $o_k$, then $o_{k+1}$, which starts after $o_k$ ends, starts after $g_k$ ends
+too; so it was still available to greedy, which took a request ending no later, and $g_{k+1}$ ends no later than
+$o_{k+1}$. Greedy can therefore never run out before the optimal choice does: it keeps at least as many bookings.
+
+\begin{omfigure}
+\begin{tikzpicture}[x=0.8cm, y=0.6cm, font=\footnotesize]
+  \node[left] at (0,0) {optimal}; \node[left] at (0,-1.4) {greedy};
+  \foreach \s/\e/\l in {0.5/2.5/{$o_1$}, 3/5.5/{$o_2$}, 6.5/8.5/{$o_3$}}
+    \draw[fill=black!8] (\s,0.3) rectangle node {\l} (\e,-0.3);
+  \foreach \s/\e/\l in {0.2/2/{$g_1$}, 2.5/4.6/{$g_2$}, 5/7/{$g_3$}}
+    \draw[fill=omDef!40] (\s,-1.1) rectangle node {\l} (\e,-1.7);
+  \draw[dashed, omThm] (2,-2) -- (2,0.7); \draw[dashed, omThm] (2.5,-2) -- (2.5,0.7);
+  \draw[->, thick, omThm] (2,-2.3) -- node[below, font=\scriptsize] {ends no later} (2.5,-2.3);
+\end{tikzpicture}
+
+{\small Greedy stays ahead. Each $g_k$ ends no later than $o_k$, so $o_{k+1}$ was still free for greedy, and
+replacing $o_k$ by $g_k$ in the optimal choice keeps it feasible.}
+\end{omfigure}
+
+\section{Filling a knapsack}\label{sec:g11:greedy-algorithms:knapsack}
+
+A trader's sack holds $15$~kg. Goods can be cut: half a sack of rice is worth half its price. The greedy rule takes the
+goods in order of value per kilogram, as much as fits.
+
+\omcode{code/grade-11/07-greedy-algorithms/listings/knapsack_fractional.py}{1}{21}{The fractional knapsack: the best
+value per kilogram first.}\label{lst:g11:greedy-algorithms:fractional}
+
+\omoutput{code/grade-11/07-greedy-algorithms/outputs/knapsack_fractional.txt}{Three goods whole, then $3$~kg of rice
+fill the sack.}\label{out:g11:greedy-algorithms:fractional}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=0.4cm, y=0.12cm, font=\footnotesize]
+  \draw[->] (0,0) -- (31,0) node[below left] {kg};
+  \draw[->] (0,0) -- (0,33) node[above] {value per kg};
+  \foreach \x/\w/\d/\n in {0/2/25/spices, 2/4/15/tea, 6/6/12/coffee, 12/10/4/rice, 22/8/2/flour} {
+    \pgfmathsetmacro{\e}{min(\x+\w, 15)}
+    \draw[fill=black!8] (\x,0) rectangle (\x+\w,\d);
+    \ifdim \x pt<15pt \draw[fill=omDef!45] (\x,0) rectangle (\e,\d); \fi
+    \node[above, font=\scriptsize] at (\x+\w/2,\d) {\n};
+  }
+  \draw[thick, omThm] (15,0) -- (15,26) node[above, font=\scriptsize] {sack full: 15 kg};
+\end{tikzpicture}
+
+{\small The goods as bars, widths in kilograms, heights in value per kilogram, best first. The sack takes everything
+left of the line; the value is the blue area, $194$.}
+\end{omfigure}
+
+Here greedy is optimal: any kilogram in the sack that is not among the best ones could be swapped for a better one
+left out, which raises the value. Now suppose the objects cannot be cut: a lamp is taken whole or not at all.
+
+\omcode{code/grade-11/07-greedy-algorithms/listings/knapsack_01_greedy_fails.py}{1}{18}{Whole objects: the same rule,
+and every subset as a reference.}\label{lst:g11:greedy-algorithms:knapsack-01}
+
+\omoutput{code/grade-11/07-greedy-algorithms/outputs/knapsack_01_greedy_fails.txt}{The densest object takes $6$~kg of
+the $10$ and leaves room for nothing else.}\label{out:g11:greedy-algorithms:knapsack-01}
+
+No greedy rule is known to solve the knapsack with whole objects; the grade-12 chapter on dynamic programming solves it
+exactly by a different method.
+
+\section{When greedy fails}\label{sec:g11:greedy-algorithms:fails}
+
+With coins of $1$, $3$ and $4$, greedy pays $6$ as $4 + 1 + 1$, three coins, while $3 + 3$ needs two. The program below
+looks, among all systems of three coins up to $8$, for those that are not \omterm{def:g11:greedy-algorithms:canonical}{canonical}, and for the first amount each
+gets wrong; the theorem says to look only below the sum of the two largest coins.
+
+\omcode{code/grade-11/07-greedy-algorithms/listings/smallest_counterexample.py}{1}{13}{Every system of three coins up to
+$8$ where greedy fails.}\label{lst:g11:greedy-algorithms:smallest}
+
+\omoutput{code/grade-11/07-greedy-algorithms/outputs/smallest_counterexample.txt}{The smallest system that fails is
+$1$, $3$, $4$, first at $6$.}\label{out:g11:greedy-algorithms:smallest}
+
+\begin{omfigure}
+\begin{tikzpicture}[coin/.style={circle, draw, thick, minimum size=9mm, font=\small}]
+  \node[left] at (-0.4,0) {greedy};
+  \node[coin, fill=omThm!20] at (0.5,0) {4};
+  \node[coin, fill=omMeth!20] at (1.6,0) {1};
+  \node[coin, fill=omMeth!20] at (2.7,0) {1};
+  \node[right] at (3.4,0) {$3$ coins};
+  \node[left] at (-0.4,-1.3) {fewest};
+  \node[coin, fill=omDef!20] at (0.5,-1.3) {3};
+  \node[coin, fill=omDef!20] at (1.6,-1.3) {3};
+  \node[right] at (3.4,-1.3) {$2$ coins};
+\end{tikzpicture}
+
+{\small The amount $6$ with coins $1$, $3$, $4$. Taking $4$ first leaves $2$, which only coins of $1$ can pay.}
+\end{omfigure}
+
+\section{Exercises}\label{sec:g11:greedy-algorithms:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g11:greedy-algorithms:1}
+Give greedy change for $87$ with coins $1$, $2$, $5$, $10$, $20$, $50$, without the program.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:greedy-algorithms:2}
+With coins $1$, $3$, $4$, how many coins does greedy give for $6$? How many are needed?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:greedy-algorithms:3}
+Four requests: P from $8$h to $12$h, S from $11$h to $13$h, Q from $12$h to $16$h, R from $13$h to $14$h. Which does
+earliest end first keep?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:greedy-algorithms:4}
+With the goods of the chapter and a sack of $8$~kg, what does the fractional greedy take, and for what value?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:greedy-algorithms:5}
+Write \code{greedy_change(amount, coins)} with \code{divmod}, one division per coin value.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:greedy-algorithms:6}
+A student sorts the requests by start time instead of end time. Find four requests on which this keeps one booking
+when three are possible.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:greedy-algorithms:7}
+Write \code{max_activities(requests)}, each request being a triple \code{(name, start, end)}, that returns the names
+kept by earliest end first.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:greedy-algorithms:8}
+How many combinations does \code{fewest(20, [1, 2, 5])} try? Count them by hand, by the number of coins of $5$, then of
+$2$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:greedy-algorithms:9}
+With a sack of $10$~kg, compare the fractional greedy by value per kilogram with a greedy that takes the most valuable
+goods first. Which is better here, and why?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:greedy-algorithms:10}
+Objects that cannot be cut: X of $5$~kg worth $40$, Y and Z of $4$~kg worth $28$ each; the sack holds $8$~kg. What does
+greedy by value per kilogram keep, and what is optimal?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:greedy-algorithms:11}
+Write \code{is_canonical_upto(coins, m)} that compares greedy with \code{fewest} on every amount from $1$ to $m$. With
+the theorem, which $m$ makes it a full test?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:greedy-algorithms:12}
+Write out in full the proof that earliest end first keeps as many bookings as possible, with the ``stays ahead''
+statement as an invariant of its loop.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:greedy-algorithms:13}
+Prove that greedy change is optimal for the coins $1$, $2$, $5$ by treating the amounts left after the coins of $5$:
+$0$, $1$, $2$, $3$ and $4$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:greedy-algorithms:14}
+All the requests must now be kept, in as few rooms as possible. Taking the requests by start time, give each the first
+room free at its start, opening a new room if none is. Write \code{rooms_needed(requests)} and check that it equals the
+largest number of requests going on at the same hour.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:greedy-algorithms:15}
+Find three requests on which ``shortest first'' keeps fewer bookings than possible.
+\end{exercise}
+
+\section{Problem: The Coins of Brenmoor}\label{sec:g11:greedy-algorithms:problem}
+
+\begin{problem}[{Weekend problem --- the amounts greedy gets wrong}]\label{pb:g11:greedy-algorithms:1}
+The town of Brenmoor, invented for this problem, mints coins of $1$, $2$, $5$, $12$, $25$ and $40$. Its shopkeepers give
+change greedily. The program compares greedy with the exhaustive search on every amount up to $100$, then tries every
+way of changing one coin.
+
+\omcode{code/grade-11/07-greedy-algorithms/listings/brenmoor.py}{1}{24}{Greedy against the fewest coins in Brenmoor, and
+the systems one coin away.}\label{lst:g11:greedy-algorithms:brenmoor}
+
+\omoutput{code/grade-11/07-greedy-algorithms/outputs/brenmoor.txt}{The failures, and four ways to remove them all by
+changing one coin.}\label{out:g11:greedy-algorithms:brenmoor}
+
+\medskip\noindent\textbf{Part I --- The coins.}
+\begin{enumerate}
+  \item Give greedy change for $24$, $30$ and $37$.
+  \item Why must a coin system contain a coin of $1$ for greedy to pay every amount?
+  \item By the theorem, below which amount must a failure appear, if there is one?
+  \item Why does the program still check up to $100$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Greedy against the fewest.}
+\begin{enumerate}[resume]
+  \item Give greedy change for $36$, and a way with fewer coins.
+  \item By the theorem's lower bound, which amounts cannot be the first failure? Which amounts did the program have to
+    examine before finding $36$?
+  \item For $49$ and $50$, give greedy's change and a better one.
+  \item The exhaustive search tries $3687$ combinations for $100$. Why does greedy need only a few steps?
+  \item Is the system \omterm{def:g11:greedy-algorithms:canonical}{canonical}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The failures.}
+\begin{enumerate}[resume]
+  \item What do $36$, $61$ and $76$ have in common in their best change?
+  \item For $60$, $61$, $62$ and $63$, give greedy's change and a way with fewer coins.
+  \item How many coins too many does greedy give for $100$? Find a way with only four.
+  \item How many of the amounts $1$ to $100$ fail?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Changing one coin.}
+\begin{enumerate}[resume]
+  \item Replacing $12$ by $10$ gives a \omterm{def:g11:greedy-algorithms:canonical}{canonical} system. Up to which amount did the program have to check, and why is
+    that enough?
+  \item Check by hand that $36$ no longer fails with $1$, $2$, $5$, $10$, $25$, $40$.
+  \item Replacing $25$ by $26$ also works. Check $36$ and $50$ in that system.
+  \item Why does the program skip replacements that give a coin already in the system?
+  \item Brenmoor prefers to keep its $12$ and its $40$. Which replacements allow it?
+  \item Name an advantage for the town of a \omterm{def:g11:greedy-algorithms:canonical}{canonical} system.
+  \item State the result: the smallest amount greedy gets wrong in Brenmoor, and how many amounts up to $100$ it gets
+    wrong.
+\end{enumerate}
+\end{problem}

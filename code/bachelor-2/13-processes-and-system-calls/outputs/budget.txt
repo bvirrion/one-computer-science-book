@@ -1,0 +1,34 @@
+$ gcc -o minish minish.c minish_parse.c
+$ echo 'echo hi' > one.txt
+$ PATH=/usr/bin strace -f -c -S name -o summary.txt ./minish < one.txt > /dev/null
+$ awk '$1 !~ /^(%|-)/ { printf "%5d %4s  %s\n", $4, NF == 6 ? $5 : "", $NF }' summary.txt
+    2    2  access
+    4    2  arch_prctl
+    6       brk
+    1       clone
+   21       close
+    2       execve
+    1       futex
+    2       getrandom
+    3    3  ioctl
+   29       mmap
+    8       mprotect
+    2       munmap
+   22       newfstatat
+   32   13  openat
+    8       pread64
+    2       prlimit64
+    6       read
+    2       rseq
+    3       set_robust_list
+    2       set_tid_address
+    1       wait4
+    3       write
+  162   20  total
+$ : > none.txt
+$ PATH=/usr/bin strace -f -c -o empty.txt ./minish < none.txt > /dev/null
+$ awk '$NF == "total" { print $4, "calls for an empty script" }' empty.txt
+41 calls for an empty script
+$ PATH=/usr/bin strace -f -c -o alone.txt echo hi > /dev/null
+$ awk '$NF == "total" { print $4, "calls for echo run alone" }' alone.txt
+115 calls for echo run alone

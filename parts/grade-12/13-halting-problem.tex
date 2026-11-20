@@ -1,0 +1,370 @@
+% Provenance (never printed): NSI terminale "Langages et programmation: notion de programme en tant que donnee;
+% calculabilite, decidabilite (probleme de l'arret, demonstration par l'absurde); un meme algorithme dans plusieurs
+% langages". See sources/book2/BRIEFS.md.
+\chapter{What Programs Cannot Do: The Halting Problem}\label{ch:g12:halting-problem}
+
+Every programmer has waited in front of a program that does not answer, wondering whether it is still computing or
+caught in a loop for ever. A tool that read any program, with its input, and said for certain whether it would ever
+stop would catch a whole family of bugs before they happen. Such a tool cannot exist. Not because nobody has been
+clever enough yet: there is a proof, short enough for a page, that every attempt must fail on some program.
+
+The proof rests on one idea that this book has used since the toy machine: a program is data. A program can read
+another program, run it, or change it, and nothing prevents a program from reading itself. The chapter starts there,
+proves the theorem, then measures what it leaves possible, on a machine small enough to be decided completely.
+
+\begin{recall}
+A von Neumann machine keeps the program and its data in the same memory, and \omterm{def:g11:von-neumann-machine:assembly}{assembly language} names the
+instructions of the processor (chapter \ref{ch:g11:von-neumann-machine}). The toy machine has $256$ cells of one byte,
+four registers, a program counter, a \omterm{def:g11:von-neumann-machine:subroutine}{stack pointer} and three flags, and the grade~11 project built its \omterm{def:g11:von-neumann-machine:assembly}{assembler} and
+simulator (chapter \ref{ch:g11:project-toy-machine}). A \omterm{def:g12:recursion:recursion}{recursive function} calls itself on a smaller case (chapter
+\ref{ch:g12:recursion}).
+\end{recall}
+
+\section{A program is data}\label{sec:g12:halting-problem:data}
+
+The text of a Python program is a string. Python's own module \code{ast} turns that string into a tree of the
+program's parts, which another program can walk and count.
+
+\omcode{code/grade-12/13-halting-problem/listings/read_program.py}{1}{14}{A program that reads another program's
+text.}\label{lst:g12:halting-problem:read}
+
+\omoutput{code/grade-12/13-halting-problem/outputs/read_program.txt}{The program \code{euclid.py} of the last section,
+seen as data.}\label{out:g12:halting-problem:read}
+
+A toy-machine program is even more plainly data: after assembly, it is $256$ numbers. The simulator reads them as
+instructions only when it runs them, and a single changed byte changes what the program does.
+
+\omcode{code/grade-12/13-halting-problem/listings/toy_interpreter_use.py}{1}{20}{A program in a string, assembled,
+run, changed, run again.}\label{lst:g12:halting-problem:toy}
+
+\omoutput{code/grade-12/13-halting-problem/outputs/toy_interpreter_use.txt}{Byte $1$ is the operand of the first
+\code{LOADI}: the starting count.}\label{out:g12:halting-problem:toy}
+
+\begin{definition}[Compiler]\label{def:g12:halting-problem:compiler}
+A \emph{compiler}\index{compiler} is a program that reads a program written in one language and writes an equivalent
+program in another, usually the machine code of a processor, without running it. An \emph{interpreter} reads a program
+and carries out its instructions itself, as the toy machine's simulator does.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, b/.style={draw, rounded corners, align=center, inner sep=5pt, fill=omDef!10},
+    t/.style={draw, align=left, font=\ttfamily\scriptsize, fill=black!4, inner sep=4pt}]
+  \node[t] (src) at (0,0) {def gcd(a, b):\\\ \ while b > 0:\\\ \ \ \ a, b = b, a \% b\\\ \ return a};
+  \node[b, fill=omMeth!15] (p) at (5.4,0) {a program\\ \code{read_program.py}\\ an interpreter, a compiler};
+  \node[b] (out) at (9.8,0) {an answer:\\ ``1 while loop'',\\ the output, machine code};
+  \draw[->, thick] (src) -- node[above, font=\scriptsize] {its input} (p);
+  \draw[->, thick] (p) -- (out);
+  \node[font=\scriptsize, below=2pt of src] {a program, as text};
+\end{tikzpicture}
+
+{\small A program whose input is another program. Counting its loops, running it and translating it are all
+computations on its text.}
+\end{omfigure}
+
+Programs that read programs are everywhere: the Python interpreter, \omterm{def:g12:halting-problem:compiler}{compilers}, the checker \code{ruff} that this book
+runs on every listing, and the browser that runs the scripts of a web page. Whether one of them could also tell, for
+every program, whether it stops, is the question of this chapter.
+
+\section{Decidable problems}\label{sec:g12:halting-problem:decidable}
+
+\begin{definition}[Decision problem, decidable problem]\label{def:g12:halting-problem:decidable}
+A \emph{decision problem}\index{decision problem} is a question with a yes-or-no answer about an input: ``is this
+number prime?'', ``does this \omterm{def:g10:graphs-first-look:graph}{graph} have a cycle?''. It is \emph{decidable}\index{decidable problem} when some
+algorithm answers it correctly for every input, always stopping after a finite number of steps.
+\end{definition}
+
+Primality is \omterm{def:g12:halting-problem:decidable}{decidable}: trying every divisor up to the square root always ends. So is a bounded version of the
+question of this chapter: ``does this toy program halt within $k$ steps?''. Run it for at most $k$ steps, and look.
+
+\omcode{code/grade-12/13-halting-problem/listings/halts_within.py}{1}{17}{Halting within $k$ steps, decided by
+running.}\label{lst:g12:halting-problem:within}
+
+\omcode{code/grade-12/13-halting-problem/listings/programs.py}{1}{22}{The toy programs of the
+chapter.}\label{lst:g12:halting-problem:programs}
+
+\omoutput{code/grade-12/13-halting-problem/outputs/halts_within.txt}{``Has not halted'' is a correct answer to the
+bounded question, and no answer to the real one: \code{WRAP} needed $513$
+steps.}\label{out:g12:halting-problem:within}
+
+Running and watching gives a yes when the program stops. When it has not stopped yet, it gives nothing: the program
+may stop at the next step, or never. The real question has no $k$.
+
+\begin{definition}[Computable function]\label{def:g12:halting-problem:computable}
+A function from inputs to outputs is \emph{computable}\index{computable function} when some program computes it: for
+every input, the program stops and gives the function's value. A \omterm{def:g12:halting-problem:decidable}{decision problem} is \omterm{def:g12:halting-problem:decidable}{decidable} exactly when its
+yes-or-no function is computable.
+\end{definition}
+
+\section{The halting problem}\label{sec:g12:halting-problem:halting}
+
+The \emph{halting problem} asks, for a program $P$ and an input $x$: does $P$, run on $x$, ever stop?
+
+\begin{theorem}[Undecidability of the halting problem]\label{thm:g12:halting-problem:halting}
+No program decides the halting problem\index{halting problem}: for every program \code{halts(program, data)} that
+always stops and answers yes or no, there is a program and an input on which its answer is wrong.
+\end{theorem}
+
+\begin{proof}
+Take any function \code{halts} that always stops with \code{True} or \code{False}. Build from it the program below,
+\code{contrarian}: on an input \code{program}, it asks \code{halts} whether \code{program} stops when given itself as
+its input, and then does the opposite.
+
+\omcode{code/grade-12/13-halting-problem/listings/contrarian.py}{1}{14}{The program of the
+proof.}\label{lst:g12:halting-problem:contrarian}
+
+Now run \code{contrarian} on itself, and call $c$ that run. Since \code{halts} always stops, \code{contrarian} reaches
+its \code{if}, and there are two cases.
+\begin{itemize}
+  \item If \code{halts(contrarian, contrarian)} is \code{True}, the claim is ``$c$ stops''. But then $c$ enters
+    \code{while True} and never stops: the claim was wrong.
+  \item If it is \code{False}, the claim is ``$c$ never stops''. But then $c$ returns at once: wrong again.
+\end{itemize}
+Either way \code{halts} is wrong on the program \code{contrarian} with the input \code{contrarian}. Since
+\code{halts} was any function, none decides halting.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, b/.style={draw, rounded corners, align=center, inner sep=4pt, fill=omDef!10}]
+  \node[b, fill=omMeth!15] (q) at (0,0) {$c$ = \code{contrarian(contrarian)}\\ asks \code{halts(contrarian, contrarian)}};
+  \node[b] (y) at (-3.6,-2) {answer \code{True}:\\ ``$c$ stops''};
+  \node[b] (n) at (3.6,-2) {answer \code{False}:\\ ``$c$ never stops''};
+  \node[b, fill=omThm!12] (y2) at (-3.6,-4) {$c$ runs \code{while True}:\\ it never stops};
+  \node[b, fill=omThm!12] (n2) at (3.6,-4) {$c$ returns at once:\\ it stops};
+  \draw[->, thick] (q) -- (y); \draw[->, thick] (q) -- (n);
+  \draw[->, thick] (y) -- (y2); \draw[->, thick] (n) -- (n2);
+  \node[omThm, font=\scriptsize\bfseries] at (-3.6,-5) {the answer was wrong};
+  \node[omThm, font=\scriptsize\bfseries] at (3.6,-5) {the answer was wrong};
+\end{tikzpicture}
+
+{\small The two cases of the proof. Whatever \code{halts} answers about $c$, the program $c$ reads that answer and
+does the other thing.}
+\end{omfigure}
+
+The argument can be tried on real candidates. Each of the three below is a function that always answers; each one is
+built into its own contrarian, and the contrarian is run under a watch that gives up after $100\,000$ lines of
+Python.
+
+\omcode{code/grade-12/13-halting-problem/listings/try_contrarian.py}{1}{30}{Running a function under a watch that
+stops it after a budget of lines.}\label{lst:g12:halting-problem:try-run}
+
+\omcode{code/grade-12/13-halting-problem/listings/try_contrarian.py}{33}{50}{Three would-be deciders, each against
+its own contrarian.}\label{lst:g12:halting-problem:try}
+
+\omoutput{code/grade-12/13-halting-problem/outputs/try_contrarian.txt}{Each candidate is wrong about its own
+contrarian, as the proof says it must be.}\label{out:g12:halting-problem:try}
+
+The proof is a \emph{diagonal} argument. Imagine a table with one row per program and one column per input, a tick
+where the program stops on that input. The contrarian's row differs from every row of the table: on the input of row
+$i$, it does the opposite of what program $i$ does on that same input, on the diagonal. So its row is in no place of
+the table, although the table was supposed to list every program.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, x=1.25cm, y=-0.6cm]
+  \foreach \j/\n in {1/$P_1$, 2/$P_2$, 3/$P_3$, 4/$P_4$} \node at (\j,0) {\n};
+  \node[anchor=east] at (0.4,0) {input:};
+  \foreach \i/\n in {1/$P_1$, 2/$P_2$, 3/$P_3$, 4/$P_4$} \node[anchor=east] at (0.4,\i) {program \n};
+  \foreach \i/\row in {1/{stops,loops,stops,stops}, 2/{loops,loops,stops,loops},
+      3/{stops,stops,stops,loops}, 4/{loops,stops,loops,stops}}
+    \foreach \v [count=\j] in \row \node[font=\scriptsize] at (\j,\i) {\v};
+  \foreach \k in {1,2,3,4} \draw[omThm, thick] (\k,\k) circle[x radius=0.5, y radius=0.38];
+  \node[anchor=east, omThm] at (0.4,5.2) {contrarian};
+  \foreach \v [count=\j] in {loops,stops,loops,loops} \node[font=\scriptsize\bfseries, omThm] at (\j,5.2) {\v};
+  \draw[black!40] (0.5,0.5) -- (4.6,0.5); \draw[black!40] (0.5,4.6) -- (4.6,4.6);
+\end{tikzpicture}
+
+{\small The diagonal. The contrarian does the opposite of each circled entry, so its row differs from row $i$ in
+column $i$: it is none of the programs listed.}
+\end{omfigure}
+
+\begin{history}[Church and Turing, 1936]
+In April 1936 Alonzo Church published, in the \emph{American Journal of Mathematics}, ``An unsolvable problem of
+elementary number theory''. Alan Turing's ``On \omterm{def:g12:halting-problem:computable}{computable} numbers, with an application to the
+Entscheidungsproblem'', in the \emph{Proceedings of the London Mathematical Society} (volume dated 1937), described
+an imaginary machine that reads and writes symbols on a tape, and showed that some questions about such machines
+cannot be answered by any machine. The two works reached the same limit by different routes.
+% ledger: g12:church-1936, g12:turing-1936
+\end{history}
+
+\section{What else cannot be decided, and what is too slow}\label{sec:g12:halting-problem:more}
+
+The same argument, or a reduction to halting, shows that many questions about what programs do are undecidable: does
+this program ever print a given line? Do these two programs give the same output for every input? Is this line of
+the program ever reached? A general statement covers them all: any question about the \emph{behaviour} of programs,
+what they compute rather than how their text looks, that is true for some programs and false for others, is
+undecidable. This book states it without proof. Checkers like \code{ruff} are useful because they answer questions
+about the text, or answer ``maybe'' when unsure.
+
+\omterm{def:g12:halting-problem:decidable}{Decidable} does not mean feasible. The bounded question of section \ref{sec:g12:halting-problem:decidable} is decided
+by running $k$ steps, and $k$ can be huge. A search through every subset of $n$ objects always ends, after $2^n$
+tries: for $n = 100$, about $10^{30}$, far beyond any machine. The problem of this chapter meets a \omterm{def:g12:halting-problem:decidable}{decidable} question
+whose algorithm would need more steps than that by hundreds of orders of magnitude.
+
+\section{One algorithm, several languages}\label{sec:g12:halting-problem:languages}
+
+What a program can compute does not depend on the language it is written in. Euclid's algorithm, for instance, runs
+in Python, in toy assembly with only subtraction, and in \omterm{def:g12:relational-databases-sql:sql}{SQL} with a recursive query.
+
+\omcode{code/grade-12/13-halting-problem/listings/euclid.py}{1}{10}{Euclid in
+Python.}\label{lst:g12:halting-problem:euclid-py}
+
+\omoutput{code/grade-12/13-halting-problem/outputs/euclid.txt}{The greatest common divisor of $252$ and
+$198$.}\label{out:g12:halting-problem:euclid-py}
+
+\omcode{code/grade-12/13-halting-problem/listings/euclid_asm.toy}{1}{15}{Euclid on the toy machine, which has no
+division: subtract the smaller from the larger until they are equal.}\label{lst:g12:halting-problem:euclid-toy}
+
+\omoutput{code/grade-12/13-halting-problem/outputs/euclid_asm.txt}{The same answer, in $60$ steps of the
+machine.}\label{out:g12:halting-problem:euclid-toy}
+
+A recursive query starts from one row, then computes new rows from the last ones until no new row comes.
+% ledger: g12:sqlite-with-recursive
+
+\omoutput{code/grade-12/13-halting-problem/outputs/euclid_sql.txt}{Euclid as a recursive query: each row is the next
+pair, and the last row holds the answer.}\label{out:g12:halting-problem:euclid-sql}
+
+\begin{omfigure}
+\small
+\begin{tabular}{p{3.2cm}p{4.0cm}p{5.4cm}}
+  \textbf{Python} & \textbf{toy assembly} & \textbf{\omterm{def:g12:relational-databases-sql:sql}{SQL}} \\ \hline
+  \texttt{while b > 0:} & \texttt{loop: CMP R0, R1} & \texttt{WHERE b > 0} \\
+  & \texttt{JZ done} & (stops when no row comes) \\
+  \texttt{a, b = b, a \% b} & \texttt{SUB R0, R1} (or swap) & \texttt{SELECT b, a \% b FROM pairs} \\
+  \texttt{return a} & \texttt{done: OUT R0} & the row where \texttt{b = 0} \\ \hline
+  $4$ turns of the loop & $6$ subtractions, $3$ swaps & $5$ rows
+\end{tabular}
+
+\medskip
+{\small The same algorithm read in three languages. The step is the same idea everywhere: replace the pair by a
+smaller pair with the same common divisors.}
+\end{omfigure}
+
+Every general-purpose language can compute what the others compute, given enough memory and time; the languages
+differ in convenience and speed. The halting problem is undecidable in all of them for the same reason.
+
+\section{Exercises}\label{sec:g12:halting-problem:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g12:halting-problem:1}
+What does \code{halts_within(WRAP, 512)} return? And \code{halts_within(WRAP, 513)}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:halting-problem:2}
+How many steps does \code{COUNTDOWN} make when its first line is \code{LOADI R0, 5}? Give a formula for
+\code{LOADI R0, n}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:halting-problem:3}
+What would \code{read_program.py} print for a file that contains only \code{for i in range(3): print(i)}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:halting-problem:4}
+Three programs and three inputs give the table ``stops, loops, stops'' / ``stops, stops, stops'' / ``loops, loops,
+loops'' (row $i$ is program $i$). Write the contrarian's row and check that it differs from each row.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:halting-problem:5}
+Write \code{count_functions(path)}, which counts the functions defined in a Python file, methods and nested functions
+included.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:halting-problem:6}
+Explain why ``does program $P$ halt on input $x$ within $k$ steps?'' is \omterm{def:g12:halting-problem:decidable}{decidable}, although the halting problem is
+not.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:halting-problem:7}
+A would-be decider runs \code{program(data)} and answers \code{True} when it returns. What does it answer on a program
+that never stops? Why does it escape the theorem only in appearance?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:halting-problem:8}
+Write \code{first_repeat(text)}, which runs a toy program without \code{IN} and returns the step at which a state
+comes back and the length of the cycle, or \code{None} if the program halts. Apply it to \code{SPIN} and
+\code{FOREVER}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:halting-problem:9}
+A tiny machine has $16$ cells of one byte, two registers of one byte, a program counter of $4$ bits and one flag. How
+many states can it be in?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:halting-problem:10}
+The candidate \code{short_is_stopping} says that a program stops when its source has fewer than $200$ characters. The
+source of \code{contrarian} has $265$. What does \code{try_contrarian.py} print for it?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:halting-problem:11}
+Argue that ``does this program ever print anything?'' is undecidable: from a decider for it, build a decider for
+halting.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:halting-problem:12}
+Write the proof of the theorem in your own words, and say exactly where it uses that \code{halts} always stops.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:halting-problem:13}
+Prove that a machine with $S$ possible states, whose next state depends only on its current one, either halts within
+$S$ steps or never halts.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:halting-problem:14}
+Write a toy program that reads $a$ and $b$ with \code{IN} and prints $a \times b$ by repeated addition. Test it from
+Python on several pairs, including $b = 0$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:halting-problem:15}
+Why is a running Python program not a machine with finitely many states, so that the repeat detector of the problem
+cannot decide its halting?
+\end{exercise}
+
+\section{Problem: A Machine That Can Be Decided}\label{sec:g12:halting-problem:problem}
+
+\begin{problem}[{Weekend problem --- deciding the toy machine}]\label{pb:g12:halting-problem:1}
+The theorem is about programs that may use as much memory as they like. The toy machine has $256$ bytes. This problem
+shows that for its programs without \code{IN}, halting is \omterm{def:g12:halting-problem:decidable}{decidable}, and measures the price.
+
+\omcode{code/grade-12/13-halting-problem/listings/repeat_detector.py}{1}{26}{Deciding halting by watching for a
+repeated state.}\label{lst:g12:halting-problem:repeat}
+
+\omoutput{code/grade-12/13-halting-problem/outputs/repeat_detector.txt}{Four programs, four
+verdicts.}\label{out:g12:halting-problem:repeat}
+
+\medskip\noindent\textbf{Part I --- The state of the machine.}
+\begin{enumerate}
+  \item List what \code{state} records. Why do the outputs printed so far not belong to it?
+  \item Why must a program without \code{IN} behave the same way each time it is in the same state?
+  \item How many bytes and bits make up a state? Count memory, registers, \code{PC}, \code{SP} and flags.
+  \item How many different states can the machine be in?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The bound.}
+\begin{enumerate}[resume]
+  \item Show that a run of more steps than there are states meets some state twice.
+  \item Show that a run that meets a state twice never halts.
+  \item Conclude: every toy program without input halts or repeats a state within how many steps?
+  \item Write that number as a power of ten.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The detector.}
+\begin{enumerate}[resume]
+  \item Why does \code{decide} always stop?
+  \item Why does it decide \code{FOREVER} after one step?
+  \item Explain the $513$ steps of \code{SPIN}: what repeats, and when?
+  \item \code{WRAP} and \code{SPIN} both take $513$ steps. Why do they get different verdicts?
+  \item Each stored state takes about $260$ bytes. How much memory would the detector need for a program that runs
+    $10^9$ steps before repeating?
+  \item The detector stores every state. Describe a way to detect a repeat while keeping only two machines (one
+    stepping once, the other twice).
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Why it fails for Python.}
+\begin{enumerate}[resume]
+  \item What does \code{IN} change in Part I?
+  \item Why does the proof of the theorem not apply to the toy machine without input?
+  \item Could \code{contrarian} be written as a toy program without input that takes another toy program as data?
+    What stops it?
+  \item Why is the bound of question 7 useless in practice?
+  \item Why does nothing like this bound exist for Python programs?
+  \item State the result: what is \omterm{def:g12:halting-problem:decidable}{decidable} for the toy machine without input, within what bound, and why it does
+    not contradict the theorem.
+\end{enumerate}
+\end{problem}

@@ -1,0 +1,179 @@
+% Solutions of Book 4, chapter 9 (functional-programming).
+\section*{Chapter \ref{ch:b2:functional-programming} --- Functional Programming}
+
+\begin{solution}{exo:b2:functional-programming:1}
+\omoutput{code/bachelor-2/09-functional-programming/outputs/exo_lazy_order.txt}{The order.}
+Nothing runs before \code{sum}. Then 1 goes through both \code{inspect}s, becomes 10 and is refused by the \omterm{def:b2:functional-programming:fold}{filter}; 2
+becomes 20, passes, and \code{take(1)} has its element and stops asking. Two elements of \code{v} are read, and 3 and 4
+never.
+\end{solution}
+
+\begin{solution}{exo:b2:functional-programming:2}
+\omoutput[2-6,15-16]{code/bachelor-2/09-functional-programming/outputs/exo_fnmut.txt}{The error, shortened.}
+The \omterm{def:b2:functional-programming:closure}{closure} adds to \code{late}, so it implements \code{FnMut} only. The parameter becomes \code{mut f: impl FnMut(u32)}. \code{Fn} promises that the \omterm{def:b2:functional-programming:closure}{closure} can be called through a shared reference,
+possibly from several places at once; a \omterm{def:b2:functional-programming:closure}{closure} that modifies a captured variable needs exclusive access during
+each call, which only \code{FnMut} (called through \code{&mut}) gives. The program then prints \code{3 late}.
+\end{solution}
+
+\begin{solution}{exo:b2:functional-programming:3}
+\omcode{code/bachelor-2/09-functional-programming/exercises/compose.rs}{2}{9}{Composition}
+The \omterm{def:b2:functional-programming:closure}{closure} returned by \code{compose} must own \code{f} and \code{g}, hence \code{move}. \code{compose_all} \omterm{def:b2:functional-programming:fold}{folds}
+over the functions from the last to the first, so \code{compose_all(vec![f, g, h])(x)} is $f(g(h(x)))$; the test
+checks $((2 + 1)^2) - 3 = 6$.
+\end{solution}
+
+\begin{solution}{exo:b2:functional-programming:4}
+\omoutput{code/bachelor-2/09-functional-programming/outputs/exo_sizes.txt}{Sizes, then values.}
+\code{a} captures nothing: 0 bytes, like a plain function. \code{b} reads \code{rate} and \code{title} and captures
+them by reference: two pointers, 16 bytes. \code{c} moves in the array of four \code{u64} (32 bytes) and the
+\code{u32}, 36 bytes, padded to 40 for the alignment of the \code{u64}s.
+\end{solution}
+
+\begin{solution}{exo:b2:functional-programming:5}
+\omoutput{code/bachelor-2/09-functional-programming/outputs/exo_folds.txt}{The four values.}
+\code{a} reads the digits in order, 31415; \code{b} in reverse, 51413; \code{c} inserts each element at the front,
+reversing the list; \code{d} keeps the minimum and maximum, \code{(1, 5)}. A left \omterm{def:b2:functional-programming:fold}{fold} over the reversed list is a right
+\omterm{def:b2:functional-programming:fold}{fold} with the arguments swapped, so \code{b} is the right \omterm{def:b2:functional-programming:fold}{fold} of \code{a}'s function. Only \code{d} gives the same
+result from either side, because \code{min} and \code{max} are associative and commutative; the right \omterm{def:b2:functional-programming:fold}{fold} of
+\code{c}'s function rebuilds the list in its original order.
+\end{solution}
+
+\begin{solution}{exo:b2:functional-programming:6}
+\omoutput[2-9]{code/bachelor-2/09-functional-programming/outputs/exo_twice.txt}{The error, shortened.}
+\code{count} takes the iterator by value and runs it to the end, so \code{long} no longer exists for the loop; an
+iterator is a cursor, not a collection. Fix 1: a \omterm{def:b2:functional-programming:closure}{closure} that builds it, \code{let long = || titles.iter().filter(|t|
+t.len() > 13);}, then \code{long().count()} and \code{for t in long()}; the \omterm{def:b2:functional-programming:fold}{filter} runs twice. Fix 2:
+\code{let long: Vec<_> = ... .collect();}, then \code{long.len()} and \code{for t in &long}; the \omterm{def:b2:functional-programming:fold}{filter} runs once, at
+the cost of a vector.
+\end{solution}
+
+\begin{solution}{exo:b2:functional-programming:7}
+\omcode{code/bachelor-2/09-functional-programming/exercises/word_freq.rs}{4}{19}{Frequencies by one \omterm{def:b2:functional-programming:fold}{fold}}
+The \omterm{def:b2:functional-programming:fold}{fold}'s accumulator is the map itself, \omterm{def:b2:rust-ownership:move}{moved from} step to step. \code{then_with} breaks ties in the count by
+the word. The test checks a sentence in which \emph{the} appears four times in three spellings.
+\end{solution}
+
+\begin{solution}{exo:b2:functional-programming:8}
+For $[\,]$: $\mathrm{foldr}\,(:)\,[\,]\,[\,] = [\,]$. For $x : xs$: $\mathrm{foldr}\,(:)\,[\,]\,(x : xs) = x :
+\mathrm{foldr}\,(:)\,[\,]\,xs = x : xs$, by the hypothesis. The left \omterm{def:b2:functional-programming:fold}{fold} of $(\lambda acc\,x.\ x : acc)$ from
+$[\,]$ puts each element in front of the previous ones: it reverses the list (\code{c} of
+\cref{exo:b2:functional-programming:5}). The crate checks the first law on 500 lists.
+\end{solution}
+
+\begin{solution}{exo:b2:functional-programming:9}
+\omcode{code/bachelor-2/09-functional-programming/exercises/queue.rs}{32}{50}{Push, and pop with a reversal}
+The back list holds the most recent element first, so the front list is its reversal. \code{pop} returns, besides
+the element and the new queue, the number of nodes copied by a reversal, which the tests and
+\cref{exo:b2:functional-programming:12} use.
+\end{solution}
+
+\begin{solution}{exo:b2:functional-programming:10}
+\omterm{def:b2:functional-programming:fold}{Filter} fusion, by induction on $xs$. For $[\,]$ both sides are $[\,]$. For $x : xs$: if $q\,x$ is false, the inner
+\omterm{def:b2:functional-programming:fold}{filter} drops $x$ and the left side is $\mathrm{filter}\,p\,(\mathrm{filter}\,q\,xs)$; the right side drops $x$ too,
+since $q\,x \wedge p\,x$ is false, and the hypothesis closes the case. If $q\,x$ is true, the left side is
+$\mathrm{filter}\,p\,(x : \mathrm{filter}\,q\,xs)$, which keeps $x$ exactly when $p\,x$, as the right side does, and
+the tails agree by the hypothesis. The second law: if $p\,(f\,x)$, the left side is $f\,x : \mathrm{map}\,f\,
+(\mathrm{filter}\,(p \circ f)\,xs)$ and the right side $\mathrm{filter}\,p\,(f\,x : \mathrm{map}\,f\,xs) = f\,x :
+\mathrm{filter}\,p\,(\mathrm{map}\,f\,xs)$; otherwise both drop the element; the hypothesis gives the tails. With \omterm{def:b2:functional-programming:pure}{side
+effects} the laws fail as programs: the left side of the first calls $p$ only on elements that pass $q$, and the second
+law calls $f$ once or twice per element depending on the side.
+\end{solution}
+
+\begin{solution}{exo:b2:functional-programming:11}
+\omcode{code/bachelor-2/09-functional-programming/exercises/pmap.rs}{23}{39}{Insertion that replaces in the copy}
+Each step copies the node it passes through, sharing the untouched child; at the key, the copy takes the new value,
+and the old node keeps the old one. The test inserts 1000 pairs over 100 keys and compares every 37th version, key by
+key, with the \code{BTreeMap} snapshot of the same step.
+\end{solution}
+
+\begin{solution}{exo:b2:functional-programming:12}
+Push $n$ elements into an empty queue: all are in the back list, the front is empty; call this version $q$. Now pop
+$q$, keep the element, throw away the new queue, and pop $q$ again, $m$ times: each pop finds the front of $q$ empty
+and reverses its back list of $n$ nodes, $n$ steps, since $q$ itself never changes. Total $mn$; the test checks two
+pops of an old version costing 11 each. The amortised argument charges each element's move to the push that brought
+it, and assumes that a move, once paid, is never needed again; with persistence the same old version, with its
+unpaid reversal, can be used any number of times.
+\end{solution}
+
+\begin{solution}{pb:b2:functional-programming:1}
+\textbf{1.} \code{Rc<dyn Fn(&Sheet) -> f64>}. The sheet is a parameter so that the formula reads the version it is
+evaluated in: a captured sheet would be one fixed version, and the sheet would contain a formula owning the sheet, a
+cycle of \code{Rc} that is never freed.
+
+\textbf{2.} \code{set} clones the cell of every node it copies (\code{n.cell.clone()}). A \code{Box<dyn Fn>} cannot be
+cloned; an \code{Rc} clones by incrementing a count, sharing the \omterm{def:b2:functional-programming:closure}{closure}.
+
+\textbf{3.} \code{Fn}: a formula is called any number of times, through shared references, from any version.
+\code{FnMut} would need exclusive access to the formula; \code{FnOnce} allows a single call.
+
+\textbf{4.} The column number \code{c}, by value. \code{c} is the loop variable and dies at the end of each turn of
+the loop; the \omterm{def:b2:functional-programming:closure}{closure} lives in the sheet, so it must own its copy.
+
+\textbf{5.} Yes: its result depends only on the cells of the sheet it is given. A formula that modified a captured
+variable would give results that depend on how often and in which order cells were evaluated, which laziness makes
+unpredictable; \code{Fn} forbids it anyway.
+
+\textbf{6.} It calls \code{value} on its own cell, which calls the formula again: an infinite recursion, ended by a
+stack overflow. A real sheet detects cycles before evaluating.
+
+\textbf{7.} None: \emph{formulas run: 0}.
+
+\textbf{8.} One formula; it reads nine cells, \code{5, 15, ..., 85}.
+
+\textbf{9.} \code{value} takes \code{&self}, a shared reference, yet must change the counter; \code{Cell} allows a
+change through a shared reference (for a \code{Copy} value, by \code{get} and \code{set}). The \code{Rc} shares one
+counter among all versions.
+
+\textbf{10.} Version 0 still holds its original cells, whose column total is 27. Version 1000 holds the values written
+by the edits; the formula, the same \omterm{def:b2:functional-programming:closure}{closure}, reads those.
+
+\textbf{11.} Store, with each formula node, the value computed for a given version. Since a version never changes, a
+value cached for a version stays valid forever for it; it is valid in a later version too if every cell the formula
+reads is the same node in both (a pointer comparison), which \omterm{def:b2:functional-programming:persistent}{path copying} makes cheap to check.
+
+\textbf{12.} Building a version costs $O(\log n)$ whatever its formulas; a version that is never displayed never runs
+them.
+
+\textbf{13.} The key exists at depth $d$, so the path from the root to it has $d + 1$ nodes, and each is copied once;
+the node of the cell is replaced by a copy holding the new cell. $d + 1$ new nodes, as in
+\cref{prop:b2:functional-programming:path-copy}, and nothing is added to the tree.
+
+\textbf{14.} Let $L(n)$ be the number of levels for $n$ keys. $L(1) = 1$, and for $n \ge 2$ the larger part has
+$\lfloor n/2 \rfloor$ keys, so $L(n) = 1 + L(\lfloor n/2 \rfloor)$. By induction, $L(n) \le 1 + \lfloor \log_2 \lfloor
+n/2 \rfloor \rfloor + 1 = \lfloor \log_2 n \rfloor + 1$, since $\lfloor \log_2 \lfloor n/2 \rfloor \rfloor =
+\lfloor \log_2 n \rfloor - 1$ for $n \ge 2$.
+
+\textbf{15.} A \code{Num} copies 16 bytes (the cell); a \code{Formula} copies a \omterm{def:b2:rust-traits-and-generics:trait-object}{fat pointer} and increments the
+\code{Rc} count: no \omterm{def:b2:functional-programming:closure}{closure} is copied.
+
+\textbf{16.} \code{seen.insert} returns \code{false} for a node already counted, and the walk stops there, so each
+distinct node is entered once and each version costs one more step for its root.
+
+\textbf{17.} Exactly the nodes none of whose descendants is an edited cell: every number cell is edited (question
+18), so a node is shared only if its whole subtree holds formula cells, keys 90 to 99. For this tree there are 7 such
+nodes; all others were copied at least once between the two versions.
+
+\textbf{18.} 37 and 90 have no common divisor, so $i \mapsto 37i \bmod 90$ runs through all 90 residues every 90
+edits. $1000 = 11 \cdot 90 + 10$: 10 cells are edited 12 times, the other 80 cells 11 times.
+
+\textbf{19.} The initial tree has $n$ nodes. By question 13, an edit at depth $d$ creates $d + 1$ nodes, and by
+question 14, $d + 1 \le \lfloor \log_2 n \rfloor + 1 \le \lceil \log_2 n \rceil + 1$ (edits never change the shape).
+So $k$ edits create at most $k(\lceil \log_2 n \rceil + 1)$ nodes, and all versions together hold at most $n + k(\lceil
+\log_2 n \rceil + 1)$ distinct nodes.
+
+\textbf{20.} 5891 against 8100. The bound charges every edit for the deepest path, 8 levels by the formula, while
+the tree has 7, and only 37 of its 100 nodes are on the last level; the average edit creates about
+5.8 nodes.
+
+\textbf{21.} $100100 / 5891 \approx 17$. Full copies grow as $kn$, the \omterm{def:b2:functional-programming:persistent}{persistent} versions as $k \log_2 n$: the ratio
+grows like $n / \log_2 n$.
+
+\textbf{22.} $5891 \times 40 = 235{,}640$ bytes, about 230\,KiB. The 40 bytes are the \code{Node}; each
+\code{Rc} allocation also holds a strong and a weak count, 16 more bytes, so about 330\,KB in all, against about
+5.6\,MB for full copies of the nodes at the same size.
+
+\textbf{23.} \code{versions.push(edited)}: the vector owns every version, so no root's count reaches zero.
+
+\textbf{24.} $k$ versions of an $n$-cell sheet in at most $n + k(\lceil \log_2 n \rceil + 1)$ nodes: for 100 cells
+and 1000 edits, 5891 distinct nodes, under the bound of 8100, against 100100 for full copies.
+\end{solution}

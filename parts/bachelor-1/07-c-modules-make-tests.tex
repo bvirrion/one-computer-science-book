@@ -1,0 +1,474 @@
+% Book 3, Year 1, chapter 7 -- modular programs, makefiles and tests.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 7.
+% ledger: b1:make-origin, b1:gcc-mmd, b1:gcov, b1:ndebug
+\chapter{Modular Programs, Makefiles and Tests}\label{ch:b1:c-modules-make-tests}
+
+The town library's loan checker started as a hundred lines in one file. Three years later it is six hundred lines,
+still in one file: dates, parsing, fines and reports mixed together. Every change recompiles everything; every
+function can touch every \omterm{def:b1:c-functions-and-stack:lifetime}{global variable}; nobody knows which part a change may break, and nobody dares to touch
+it. This chapter gives a C program the structure that makes change safe: modules with an \omterm{def:b1:c-modules-make-tests:interface}{interface}, a build that
+recompiles only what a change affects, and tests that say, after each change, whether the program still does what
+it did.
+
+\begin{recall}
+A module groups the functions that serve one purpose behind an \omterm{def:b1:c-modules-make-tests:interface}{interface}, the part its users rely on; the rest
+can change. A specification states what a function must do; a test runs it on a chosen input and compares the result
+with the expected one, and a set of tests is run after every change.
+\end{recall}
+
+\section{Headers and implementation files}\label{sec:b1:c-modules-make-tests:headers}
+
+A C module is two files. The \code{.h} file declares what users may call; the \code{.c} file defines it. Users
+write \texttt{\#include "ratio.h"}, which the \omterm{def:b1:compilation-pipeline:source-file}{preprocessor} replaces by the text of the header
+(\cref{ch:b1:compilation-pipeline}); the \omterm{def:b1:compilation-pipeline:compiler}{compiler} then knows the names and types it needs to check their calls, and the
+\omterm{def:b1:compilation-pipeline:compiler}{linker} later joins the calls to the definitions.
+
+\begin{definition}[Header file, include guard]\label{def:b1:c-modules-make-tests:header}
+A \emph{header file}\index{header file} is a file of declarations (types, function \omterm{def:b1:c-functions-and-stack:declaration}{prototypes}, constants) meant to be
+included by other files. An \emph{include guard}\index{include guard} is the pair \texttt{\#ifndef NAME},
+\texttt{\#define NAME} at its start and \texttt{\#endif} at its end, which makes a second inclusion of the header in the same
+file expand to nothing.
+\end{definition}
+
+\begin{definition}[Interface, implementation]\label{def:b1:c-modules-make-tests:interface}
+The \emph{interface}\index{interface (of a module)} of a module is what its users may rely on: in C, the declarations of
+its header and the comments that state their contracts. Its \emph{implementation}\index{implementation (of a module)}
+is everything else: the definitions in its \code{.c} file, which may change without any user changing.
+\end{definition}
+
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/ratio.h}{2}{17}{The \omterm{def:b1:c-modules-make-tests:interface}{interface} of a module of exact
+fractions}\label{lst:b1:c-modules-make-tests:ratio-h}
+
+\begin{definition}[Opaque type]\label{def:b1:c-modules-make-tests:opaque}
+An \emph{opaque type}\index{opaque type} is a type that the \omterm{def:b1:c-modules-make-tests:interface}{interface} declares without defining it, such as
+\code{struct ratio;} in a header whose fields appear only in the \omterm{def:b1:c-modules-make-tests:interface}{implementation} file. Users can hold and pass \omterm{def:b1:pointers-and-arrays:pointer}{pointers}
+to it, but cannot read its fields, create one on the stack, or know its size: everything goes through the module's
+functions.
+\end{definition}
+
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/ratio.c}{2}{40}{The \omterm{def:b1:c-modules-make-tests:interface}{implementation}: the fields, a private
+helper, the constructor}\label{lst:b1:c-modules-make-tests:ratio-c}
+
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/ratio_demo.c}{3}{18}{A user that knows only the
+\omterm{def:b1:c-modules-make-tests:interface}{interface}}\label{lst:b1:c-modules-make-tests:demo}
+
+\omoutput{code/bachelor-1/07-c-modules-make-tests/outputs/ratio_demo.txt}{Fractions kept in lowest terms; a zero
+denominator refused.}
+
+The function \code{gcd} is \code{static}: its name is visible only inside \code{ratio.c}
+(\cref{ch:b1:c-functions-and-stack}), so another module may have its own \code{gcd} without a clash at link time, and
+no user can come to depend on it. Because the type is opaque, the module can change its representation (keep fractions
+unreduced, store them in \code{long long}, cache a floating value) and \code{ratio_demo.c} needs no change; it only needs
+recompiling against the new \omterm{def:b1:compilation-pipeline:compiler}{object file}, if even that. The price is one heap block per fraction and a function call
+per field read, which is why the C library's own \code{FILE} is opaque but small structures such as a point usually
+are not.
+
+\section{Separate compilation and make}\label{sec:b1:c-modules-make-tests:make}
+
+\begin{definition}[Separate compilation]\label{def:b1:c-modules-make-tests:separate}
+\emph{Separate compilation}\index{separate compilation} is the compiling of each \code{.c} file of a program on its own
+into an \omterm{def:b1:compilation-pipeline:compiler}{object file} (\code{gcc -c ratio.c} writes \code{ratio.o}), the \omterm{def:b1:compilation-pipeline:compiler}{object files} being linked into the executable
+in a last step. After a change, only the \omterm{def:b1:compilation-pipeline:compiler}{object files} whose sources (or included headers) changed must be compiled
+again.
+\end{definition}
+
+A program's files form a graph: each \omterm{def:b1:compilation-pipeline:compiler}{object file} depends on its \code{.c} file and on the headers it includes; each
+executable on its \omterm{def:b1:compilation-pipeline:compiler}{object files}. Deciding by hand what to recompile is error-prone; the program \code{make} does it from
+a description of that graph.
+
+\begin{history}[\code{make}]
+\code{make} was written by Stuart Feldman at Bell Laboratories. His description of it, dated August 1978, shipped
+with the Seventh Edition of Unix and starts from the problem of this chapter: in a large program, ``a change to a
+declaration can obsolete a dozen other files''. Its rules, a \omterm{def:b1:c-modules-make-tests:makefile}{target}, the files it depends on and the commands that
+make it, are still those of every \code{make} in use.
+\end{history}
+
+\begin{definition}[Makefile, target, prerequisite, recipe]\label{def:b1:c-modules-make-tests:makefile}
+A \emph{makefile}\index{makefile} is a file of rules read by \code{make}. Each rule names a
+\emph{target}\index{target (of a rule)}, usually a file to build; its \emph{prerequisites}\index{prerequisite}, the
+files it is built from; and a \emph{recipe}\index{recipe}, the shell commands that build it, each line starting with a
+tab character. \code{make} builds a target when it does not exist or when one of its prerequisites, after being brought
+up to date itself, was modified more recently than the target.
+\end{definition}
+
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/Makefile}{2}{26}{A \omterm{def:b1:c-modules-make-tests:makefile}{makefile} for the module, a demo and
+its tests}\label{lst:b1:c-modules-make-tests:makefile}
+
+\code{CC} and \code{CFLAGS} are variables, used as \code{$(CC)}. The pattern rule \texttt{\%.o: \%.c} says how to make
+any \omterm{def:b1:compilation-pipeline:compiler}{object file} from the \code{.c} file of the same name; in its \omterm{def:b1:c-modules-make-tests:makefile}{recipe} \code{$<} is the first \omterm{def:b1:c-modules-make-tests:makefile}{prerequisite} and, in the
+\omterm{def:b1:compilation-pipeline:compiler}{linking} rules, \code{$@} is the \omterm{def:b1:c-modules-make-tests:makefile}{target} and \code{$^} all the \omterm{def:b1:c-modules-make-tests:makefile}{prerequisites}. The lines \code{ratio.o: ratio.h} add
+\omterm{def:b1:c-modules-make-tests:makefile}{prerequisites} without a \omterm{def:b1:c-modules-make-tests:makefile}{recipe}: the headers each \omterm{def:b1:compilation-pipeline:compiler}{object file} includes. \code{all}, \code{test} and \code{clean} name no
+file; \code{.PHONY} says so, so that \code{make} runs them even if a file of that name exists.
+
+\omoutput{code/bachelor-1/07-c-modules-make-tests/outputs/make.txt}{Five commands, then none, then two, then all five:
+\code{make} follows the timestamps.}\label{out:b1:c-modules-make-tests:make}
+
+\begin{omfigure}
+\begin{tikzpicture}[f/.style={draw, rounded corners=2pt, font=\small\ttfamily, minimum height=6mm, inner sep=3pt},
+                    >={Stealth[length=2mm]}, x=2.6cm, y=1.25cm]
+\node[f, fill=omCode!8] (h) at (1.6,1.0) {ratio.h};
+\node[f] (dc) at (0,0) {ratio\_demo.c};
+\node[f] (rc) at (1.38,0) {ratio.c};
+\node[f, fill=omCode!8] (k) at (2.9,0) {check.h};
+\node[f] (tc) at (3.9,0) {ratio\_test.c};
+\node[f, fill=omDef!10] (do) at (0.3,-1.3) {ratio\_demo.o};
+\node[f, fill=omDef!10] (ro) at (1.9,-1.3) {ratio.o};
+\node[f, fill=omDef!10] (to) at (3.3,-1.3) {ratio\_test.o};
+\node[f, fill=omThm!15] (de) at (1.0,-2.5) {ratio\_demo};
+\node[f, fill=omThm!15] (te) at (2.7,-2.5) {ratio\_test};
+\foreach \a/\b in {dc/do, h/do, rc/ro, h/ro, tc/to, h/to, k/to, do/de, ro/de, ro/te, to/te}
+  {\draw[->] (\a) -- (\b);}
+\node[font=\scriptsize, anchor=west] at (4.4,-1.3) {object files};
+\node[font=\scriptsize, anchor=west] at (4.4,-2.5) {executables};
+\node[font=\scriptsize, align=left, anchor=west] at (4.4,0.5) {sources and\\headers};
+\end{tikzpicture}
+\par\smallskip{\small The dependency graph that \cref{lst:b1:c-modules-make-tests:makefile} describes, arrows from
+\omterm{def:b1:c-modules-make-tests:makefile}{prerequisite} to \omterm{def:b1:c-modules-make-tests:makefile}{target}. A change to a file must reach every file downstream of it, and only those.}
+\end{omfigure}
+
+\begin{omfigure}
+\begin{tikzpicture}[f/.style={draw, rounded corners=2pt, font=\small\ttfamily, minimum height=6mm, inner sep=3pt,
+                    align=center}, >={Stealth[length=2mm]}, x=3.3cm, y=1.45cm]
+\node[f, fill=omThm!20] (dc) at (0,0) {ratio\_demo.c\\\scriptsize touched: newest};
+\node[f] (h) at (1,0) {ratio.h};
+\node[f] (rc) at (2,0) {ratio.c};
+\node[f, fill=omThm!20] (do) at (0.5,-1.2) {ratio\_demo.o\\\scriptsize older than a prerequisite};
+\node[f] (ro) at (1.9,-1.2) {ratio.o\\\scriptsize newer than both};
+\node[f, fill=omThm!20] (de) at (1,-2.4) {ratio\_demo\\\scriptsize older than ratio\_demo.o};
+\foreach \a/\b in {dc/do, h/do, rc/ro, h/ro, do/de, ro/de} {\draw[->] (\a) -- (\b);}
+\end{tikzpicture}
+\par\smallskip{\small \code{make} after \code{touch ratio_demo.c}. Visiting the graph from the \omterm{def:b1:c-modules-make-tests:makefile}{target} down, it finds
+\code{ratio_demo.o} older than one of its \omterm{def:b1:c-modules-make-tests:makefile}{prerequisites} and rebuilds it; \code{ratio_demo}, now older than that new
+\omterm{def:b1:compilation-pipeline:compiler}{object file}, is linked again; \code{ratio.o} is left alone. Shaded: the two commands of the third run.}
+\end{omfigure}
+
+The \omterm{def:b1:c-modules-make-tests:makefile}{prerequisites} \code{ratio.o: ratio.h} are written by hand, and a forgotten one is a classic bug: the \omterm{def:b1:compilation-pipeline:compiler}{object file} is
+not rebuilt after a header changes, and the program silently runs with old values
+(\cref{exo:b1:c-modules-make-tests:5}). The \omterm{def:b1:compilation-pipeline:compiler}{compiler} can write these lines itself: with \code{-MMD}, compiling
+\code{loans.c} also writes \code{loans.d}, a \omterm{def:b1:c-modules-make-tests:makefile}{makefile} fragment listing the headers \code{loans.c} included, which the
+\omterm{def:b1:c-modules-make-tests:makefile}{makefile} includes (\cref{exo:b1:c-modules-make-tests:11}).
+
+\section{Unit tests in C}\label{sec:b1:c-modules-make-tests:unit-tests}
+
+\begin{definition}[Unit test, test suite]\label{def:b1:c-modules-make-tests:unit-test}
+A \emph{unit test}\index{unit test} checks one function or one module on its own, through its \omterm{def:b1:c-modules-make-tests:interface}{interface}, on chosen
+inputs, against expected results. A \emph{test suite}\index{test suite} is the set of tests of a program, run as a
+whole after every change; a single failure means the change is not ready.
+\end{definition}
+
+C has no test framework in its library. A \omterm{def:b1:compilation-pipeline:source-file}{macro} of a few lines is enough to start: it counts the checks, prints each
+failure with its file, line and the text of the condition (\texttt{\#cond} turns the \omterm{def:b1:compilation-pipeline:source-file}{macro}'s argument into a string), and
+goes on, so that one run reports every failure.
+
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/check.h}{2}{20}{A check that counts and goes
+on}\label{lst:b1:c-modules-make-tests:check}
+
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/ratio_test.c}{4}{35}{The tests of the ratio
+module}\label{lst:b1:c-modules-make-tests:ratio-test}
+
+\omoutput{code/bachelor-1/07-c-modules-make-tests/outputs/ratio_test.txt}{Nine checks.}
+
+The test program returns a nonzero exit status when a check fails, so that \code{make test} and any script that runs
+it stop there. A failing test is the best bug report: it gives the input, the expected result and the place. When a bug
+is found, write the test that shows it first, watch it fail, then fix the code and watch it pass: the test then guards
+against the bug's return. Tests are compiled with \code{-Werror}, which turns every warning into an error.
+
+\section{Designing tests}\label{sec:b1:c-modules-make-tests:design}
+
+A \omterm{def:b1:c-modules-make-tests:unit-test}{test suite} cannot try every input: \code{classify} below has $2^{96}$ possible triples. The inputs are chosen so
+that every behaviour of the function is tried at least once, and every place where its behaviour changes is tried on
+both sides.
+
+\begin{definition}[Input class, boundary value]\label{def:b1:c-modules-make-tests:input-class}
+An \emph{input class}\index{input class} is a set of inputs that the specification treats the same way, so that one
+test of the class stands for all of them; the classes of a function form a partition of its domain. A \emph{boundary
+value}\index{boundary value} is an input at the edge of a class, next to an input of another class, where off-by-one
+errors live.
+\end{definition}
+
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/classify.c}{2}{15}{The kind of a triangle with sides $a$, $b$
+and $c$}\label{lst:b1:c-modules-make-tests:classify}
+
+The classes of \code{classify} follow from its specification: a nonpositive side; positive sides that break the
+triangle inequality (the longest side as $a$, as $b$, as $c$); an equilateral triangle; isosceles with the equal pair in
+each of three places; scalene. The boundaries: a side equal to 0; the flat triple \code{1 2 3}, where $a + b = c$
+exactly. The second kind of guidance comes from the code itself.
+
+\begin{definition}[Control-flow graph, feasible path]\label{def:b1:c-modules-make-tests:cfg}
+The \emph{control-flow graph}\index{control-flow graph} of a function has a node for each block of statements executed
+in sequence, and an arc from a block to each block that can run next; a node with two outgoing arcs is a decision. A
+\emph{path} runs from the entry to an exit; it is \emph{feasible}\index{feasible path} if some input makes the function
+follow it.
+\end{definition}
+
+\begin{definition}[Statement, branch and path coverage]\label{def:b1:c-modules-make-tests:coverage}
+A \omterm{def:b1:c-modules-make-tests:unit-test}{test suite} reaches \emph{statement coverage}\index{statement coverage} of a function if its tests together execute
+every statement; \emph{branch coverage}\index{branch coverage} if they take every arc of every decision, both the
+true and the false one; \emph{path coverage}\index{path coverage} if they follow every \omterm{def:b1:c-modules-make-tests:cfg}{feasible path}.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[d/.style={draw, diamond, aspect=2.6, font=\scriptsize, inner sep=1pt},
+                    s/.style={draw, rounded corners=2pt, font=\scriptsize, inner sep=3pt, minimum height=5mm},
+                    >={Stealth[length=1.8mm]}, y=1.15cm]
+\node[d] (d1) at (0,0) {a,b,c $>$ 0?};
+\node[d] (d2) at (0,-1.2) {inequality holds?};
+\node[d] (d3) at (0,-2.4) {a=b=c?};
+\node[d] (d4) at (0,-3.6) {two equal?};
+\node[s] (s5) at (0,-4.8) {return SCALENE};
+\node[s] (n1) at (4.2,0) {return NOT (line 7)};
+\node[s] (n2) at (4.2,-1.2) {return NOT (line 9)};
+\node[s] (e) at (4.2,-2.4) {return EQUILATERAL};
+\node[s] (i) at (4.2,-3.6) {return ISOSCELES (line 13)};
+\draw[->] (d1) -- node[left, font=\scriptsize] {yes} (d2);
+\draw[->] (d2) -- node[left, font=\scriptsize] {yes} (d3);
+\draw[->] (d3) -- node[left, font=\scriptsize] {no} (d4);
+\draw[->] (d4) -- node[left, font=\scriptsize] {no} (s5);
+\draw[->, dashed, omThm, thick] (d1) -- node[above, font=\scriptsize] {no} (n1);
+\draw[->] (d2) -- node[above, font=\scriptsize] {no} (n2);
+\draw[->] (d3) -- node[above, font=\scriptsize] {yes} (e);
+\draw[->, dashed, omThm, thick] (d4) -- node[above, font=\scriptsize] {yes} (i);
+\node[font=\scriptsize, align=left, anchor=west] at (-5.9,-1.2) {\code{3 3 3}: yes, yes, yes\\\code{3 4 5}: yes, yes,
+no, no\\\code{1 2 8}: yes, no};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b1:c-modules-make-tests:cfg}{control-flow graph} of \code{classify}, each compound condition drawn as one decision. The three
+tests of the first run follow three paths; the dashed arcs are taken by none of them, so lines 7 and 13 never run.}
+\end{omfigure}
+
+\texttt{gcc -{}-{}coverage} adds counters to the compiled code; the program writes them to a file when it ends, and
+\code{gcov} turns them into a copy of the source with each line's count, \texttt{\#\#\#\#\#} marking a line never run;
+\code{-b} adds the branches.
+
+\omoutput{code/bachelor-1/07-c-modules-make-tests/outputs/coverage.txt}{Three tests, then twelve: 80\,\% of the lines and
+59\,\% of the branches, then all of them.}\label{out:b1:c-modules-make-tests:coverage}
+
+\code{gcov} counts 22 branches for 4 decisions: it sees each atomic condition of \code{a <= 0 || b <= 0 || c <= 0} as
+a decision of its own, because \code{||} evaluates its operands one at a time and stops at the first true one. Its
+\omterm{def:b1:c-modules-make-tests:coverage}{branch coverage} is therefore finer than that of the graph above: to take all six arcs of line 6, each of the three
+conditions must be true in some test where the earlier ones are false, which is what the tests \code{0 4 4},
+\code{4 -1 4} and \code{4 4 0} of the second run do. Full coverage says that every part of the code ran, not that its
+results were right: a coverage figure measures the tests, never the program.
+
+\section{Assertions, defensive programming and the debugger}\label{sec:b1:c-modules-make-tests:assert}
+
+\begin{definition}[Assertion]\label{def:b1:c-modules-make-tests:assertion}
+An \emph{assertion}\index{assertion} is a condition that the programmer states must hold at a point of the program.
+In C, \code{assert(cond)} from \code{<assert.h>} evaluates \code{cond}; if it is false, it prints the condition, the file,
+the line and the function on standard error and stops the program with \code{abort}. If the \omterm{def:b1:compilation-pipeline:source-file}{macro} \code{NDEBUG} is
+defined, every \code{assert} expands to nothing.
+\end{definition}
+
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/assert_demo.c}{2}{20}{A precondition stated as an
+\omterm{def:b1:c-modules-make-tests:assertion}{assertion}}\label{lst:b1:c-modules-make-tests:assert}
+
+\omoutput{code/bachelor-1/07-c-modules-make-tests/outputs/assert.txt}{With the check, a clear stop; without it,
+\code{NaN} printed as a mean.}\label{out:b1:c-modules-make-tests:assert}
+
+Exit status 134 is $128 + 6$, the number of the signal sent by \code{abort}. Built with \code{-DNDEBUG}, the program
+divides 0 by 0 and prints \code{-nan}, ``not a number'', the floating-point result of $0/0$, as if it were a mean.
+
+\begin{definition}[Defensive programming]\label{def:b1:c-modules-make-tests:defensive}
+\emph{Defensive programming}\index{defensive programming} is writing each function so that it detects the
+situations it was not designed for, instead of computing garbage from them: it checks what it receives from outside
+the program and returns an error, and it asserts what its callers must guarantee.
+\end{definition}
+
+\begin{method}[Assertion or error return]\label{met:b1:c-modules-make-tests:assert-or-error}
+\begin{enumerate}
+\item If the situation can happen in a correct program (a file that does not exist, a line badly typed by a person, a
+\code{malloc} that fails), return an error and let the caller decide: \code{date_parse} returns $-1$.
+\item If it can happen only through a bug of the program (a month 13 passed to \code{days_in_month} after the date was
+validated, a mean of no values), assert it: the program stops at the bug, with its location, instead of propagating a
+wrong value.
+\item Never put in an \omterm{def:b1:c-modules-make-tests:assertion}{assertion} an expression whose effect the program needs, such as \code{assert(p = malloc(n))}:
+with \code{NDEBUG}, the call disappears.
+\end{enumerate}
+\end{method}
+
+When a program crashes, the first question is where. Compiled with \code{-g}, the program carries the line numbers of
+its source, and the address sanitizer prints the chain of calls that led to the faulty access, its backtrace.
+
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/crash.c}{2}{27}{A search that does not stop at the end of the
+list}\label{lst:b1:c-modules-make-tests:crash}
+
+\omoutput{code/bachelor-1/07-c-modules-make-tests/outputs/backtrace.txt}{The crash, the access, and the two frames that
+matter.}\label{out:b1:c-modules-make-tests:backtrace}
+
+\begin{definition}[Debugger, breakpoint]\label{def:b1:c-modules-make-tests:debugger}
+A \emph{debugger}\index{debugger} is a program that runs another program under its control: it can stop it, execute it
+one line at a time, show and change its variables, and print the chain of active calls. A \emph{breakpoint}\index{breakpoint}
+is a place in the program, usually a line, where the debugger stops it before executing that place.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[st/.style={draw, rounded corners=2pt, font=\scriptsize, align=left, inner sep=3pt, text width=31mm,
+                    minimum height=15mm}, >={Stealth[length=2mm]}]
+\node[st, fill=omCode!8] (a) at (0,0) {\textbf{1. breakpoint}\\on line 13 of \code{crash.c}, then start the
+program};
+\node[st, fill=omCode!8] (b) at (3.6,0) {\textbf{2. stop}\\before line 13; show \code{s->name}:
+\code{"Hilltop"}};
+\node[st, fill=omCode!8] (c) at (7.2,0) {\textbf{3. step}\\one line at a time; \code{s} becomes the address of
+\code{r}, then \code{NULL}};
+\node[st, fill=omThm!15] (d) at (10.8,0) {\textbf{4. backtrace}\\at the crash: \code{altitude_rank} line 13, called by
+\code{main} line 25};
+\draw[->] (a) -- (b); \draw[->] (b) -- (c); \draw[->] (c) -- (d);
+\end{tikzpicture}
+\par\smallskip{\small A debugging session on \cref{lst:b1:c-modules-make-tests:crash}, as a sequence of commands. The
+program is built with \code{-g -O0}, so that each line of the source maps to machine instructions in order.}
+\end{omfigure}
+
+A typical session on the crash above, with a \omterm{def:b1:c-modules-make-tests:debugger}{debugger} such as the GNU \omterm{def:b1:c-modules-make-tests:debugger}{debugger}: set a \omterm{def:b1:c-modules-make-tests:debugger}{breakpoint} on line 13, start the
+program, and it stops before the first comparison; print \code{s->name} and see \code{Hilltop}; step, and see \code{s}
+move to Riverside, then to the \omterm{def:b1:pointers-and-arrays:null}{null pointer}; at the next step the program receives its signal, and the backtrace command
+prints the two frames of the sanitizer's report. A \omterm{def:b1:c-modules-make-tests:debugger}{debugger} answers questions that a crash report cannot: what a
+variable held three lines before, which branch was taken. No \omterm{def:b1:c-modules-make-tests:debugger}{debugger} is installed on the machine that ran this
+book's programs, so this one is told, not shown; the sanitizer's backtrace above is available wherever the \omterm{def:b1:compilation-pipeline:compiler}{compiler} is.
+
+\begin{safety}
+Keep \omterm{def:b1:c-modules-make-tests:assertion}{assertions} on in tests and in development builds. Give every module its own test file, run the whole suite
+before every change is kept, and add a test for each bug fixed. Build with \code{-Wall -Wextra -Werror}, with the address
+sanitizer for tests, and with \code{-g} whenever a crash must be located.
+\end{safety}
+
+\section{Exercises}\label{sec:b1:c-modules-make-tests:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-modules-make-tests:1}
+With the \omterm{def:b1:c-modules-make-tests:makefile}{makefile} of \cref{lst:b1:c-modules-make-tests:makefile}, after a full build, which commands does \code{make}
+run after editing \code{check.h}? After editing \code{ratio.c}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-modules-make-tests:2}
+Does the test set $\{(4, 0), (70, 0)\}$ reach \omterm{def:b1:c-modules-make-tests:coverage}{statement coverage} of \code{fare}? Which single test makes it reach
+\omterm{def:b1:c-modules-make-tests:coverage}{statement coverage}, and does the set then reach \omterm{def:b1:c-modules-make-tests:coverage}{branch coverage}?
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/exo_fare.c}{2}{12}{A bus fare}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-modules-make-tests:3}
+What does this program print, on which stream, and with which exit status? What if it is compiled with
+\code{-DNDEBUG}?
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/exo_assert.c}{2}{16}{A precondition}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-modules-make-tests:4}
+\code{point.h} has no \omterm{def:b1:c-modules-make-tests:header}{include guard}. Explain the \omterm{def:b1:compilation-pipeline:compiler}{compiler}'s error, and add the guard.
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/segment.h}{2}{6}{\code{segment.h} includes \code{point.h}}
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/exo_guard.c}{2}{10}{So does the program}
+\omoutput[2-3]{code/bachelor-1/07-c-modules-make-tests/outputs/exo_guard.txt}{The error.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-modules-make-tests:5}
+A colleague raised the limit in \code{config.h} from 3 to 5, ran \code{make}, and the program still says 3. Find the
+missing line of the \omterm{def:b1:c-modules-make-tests:makefile}{makefile}.
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/stale.Makefile}{2}{6}{A \omterm{def:b1:c-modules-make-tests:makefile}{makefile} with a missing
+\omterm{def:b1:c-modules-make-tests:makefile}{prerequisite}}
+\omoutput{code/bachelor-1/07-c-modules-make-tests/outputs/exo_stale.txt}{A stale build.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-modules-make-tests:6}
+The function \code{max3} has a bug, and its four tests pass. Find the bug, a test that reveals it, and what is wrong
+with the four tests.
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/exo_max3.c}{2}{21}{A green report}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-modules-make-tests:7}
+Write a module \code{stack} of \code{int}: an opaque \code{struct stack}, \code{stack_new}, \code{stack_free},
+\code{stack_push}, \code{stack_pop} (which reports an empty stack) and \code{stack_size}, with its header and a test
+file that covers the empty stack and a stack that grows past its first capacity.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-modules-make-tests:8}
+Give a set of tests that reaches \omterm{def:b1:c-modules-make-tests:coverage}{branch coverage} of \code{late_fee}, counting each atomic condition of \code{&&} as a
+decision, and add the boundary of ``more than 30 days''.
+\omcode{code/bachelor-1/07-c-modules-make-tests/exercises/late_fee.c}{4}{14}{A late fee, in cents}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-modules-make-tests:9}
+A decision is \code{c1 && c2 && ... && ck}. How many tests try every combination of the $k$ conditions? Show
+that $k + 1$ tests suffice for each condition to be shown, by a pair of tests differing only in that condition, to
+change the outcome on its own. (This criterion, a form of modified condition/decision coverage, is told here, not
+developed.)
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-modules-make-tests:10}
+In the \omterm{def:b1:c-modules-make-tests:makefile}{makefile} of the weekend problem, compute, for each of the seven \omterm{def:b1:compilation-pipeline:source-file}{source files}, the set of \omterm{def:b1:c-modules-make-tests:makefile}{targets} that
+\code{make} rebuilds after an edit to that file, using only the graph of the rules. Explain why the answer is the set of
+\omterm{def:b1:c-modules-make-tests:makefile}{targets} reachable from the edited file.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-modules-make-tests:11}
+Write a \omterm{def:b1:c-modules-make-tests:makefile}{makefile} for the four modules of the weekend problem with a single pattern rule, a variable listing the
+sources, and header dependencies written by the \omterm{def:b1:compilation-pipeline:compiler}{compiler} with \code{-MMD -MP}. Show that touching \code{csv.h} rebuilds
+exactly \code{csv.o} and \code{loans.o}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-modules-make-tests:12}
+Suppose that every statement of a function lies on some \omterm{def:b1:c-modules-make-tests:cfg}{feasible path}, and that every decision has two outgoing arcs.
+Prove that a test set reaching \omterm{def:b1:c-modules-make-tests:coverage}{branch coverage} reaches \omterm{def:b1:c-modules-make-tests:coverage}{statement coverage}. Give a function and a test set that reach
+\omterm{def:b1:c-modules-make-tests:coverage}{statement coverage} but not \omterm{def:b1:c-modules-make-tests:coverage}{branch coverage}.
+\end{exercise}
+
+\section{Problem: Taming a one-file program}\label{sec:b1:c-modules-make-tests:problem}
+
+\begin{problem}[{Weekend problem --- Taming a one-file program}]\label{pb:b1:c-modules-make-tests:1}
+The library's loan checker has been split into four modules: \code{date} (calendar arithmetic), \code{csv} (splitting a
+line), \code{loans} (a loan and its delay) and \code{loans_main.c} (the program). It reads the town's \code{loans.csv}
+and a date, and reports the loans that were or are late at that date. The tests of the date module were written from
+input classes; the date module's first version, \code{date_v0.c}, differs from the current one in one line of code.
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/date.h}{2}{14}{The date module's \omterm{def:b1:c-modules-make-tests:interface}{interface}}\label{lst:b1:c-modules-make-tests:date-h}
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/date.c}{6}{43}{Its \omterm{def:b1:c-modules-make-tests:interface}{implementation}}\label{lst:b1:c-modules-make-tests:date-c}
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/loans.h}{2}{15}{The loans module's \omterm{def:b1:c-modules-make-tests:interface}{interface}}
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/library.Makefile}{2}{24}{The \omterm{def:b1:c-modules-make-tests:makefile}{makefile}}\label{lst:b1:c-modules-make-tests:library-mk}
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/date_test.c}{6}{36}{The tests of the date module}\label{lst:b1:c-modules-make-tests:date-test}
+\omoutput{code/bachelor-1/07-c-modules-make-tests/outputs/problem.txt}{Building, running, counting the \omterm{def:b1:compilation-pipeline:compiler}{compiler} runs after
+an edit to each file, testing, measuring coverage, and testing the first version.}\label{out:b1:c-modules-make-tests:problem}
+
+\medskip\noindent\textbf{Part I --- Modules and interfaces.}
+\begin{enumerate}
+\item Draw the dependency graph of the checker: the seven \omterm{def:b1:compilation-pipeline:source-file}{source files}, the four \omterm{def:b1:compilation-pipeline:compiler}{object files} and the executable.
+\item \code{loans.h} includes \code{date.h}. Why must it, and why does \code{loans.h} not include \code{csv.h}?
+\item \code{days_since_1970} is \code{static} and absent from \code{date.h}. Give two reasons.
+\item \code{struct date} is not opaque, unlike \code{struct ratio}. What would making it opaque cost the users of the
+module, and what would it gain?
+\item Which modules could be reused, unchanged, by a program that reads the weather file?
+\item The comment of \code{csv_split} states its contract. Which part of it tells a caller that an empty last field
+(a loan not returned) produces a field, and why does that matter to \code{loan_parse}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The makefile and the rebuilds it saves.}
+\begin{enumerate}[resume]
+\item The first build runs five commands. Which are \omterm{def:b1:compilation-pipeline:compiler}{compilations} and which is a link?
+\item Explain each of the seven counts printed by the loop, from the graph of question 1.
+\item Without \code{make}, a safe rebuild compiles the four \code{.c} files after any edit. Over one edit to each of the
+seven files, how many \omterm{def:b1:compilation-pipeline:compiler}{compilations} is that, and how many did \code{make} perform?
+\item The rule \code{loans_main.o: loans.h date.h} lists \code{date.h}, which \code{loans_main.c} does not include
+itself. Is the line wrong?
+\item Remove \code{date.h} from the rule of \code{loans.o}. Which edit would then produce a stale build, and what could
+the stale program do wrong?
+\item \code{date_test} is not part of the default \omterm{def:b1:c-modules-make-tests:makefile}{target}. What does that change in the counts of question 8?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Tests from classes and boundaries.}
+\begin{enumerate}[resume]
+\item List the input classes of \code{is_leap} implied by the Gregorian rule, with one year of each from the tests.
+\item Which tests of \code{date_parse} are \omterm{def:b1:c-modules-make-tests:input-class}{boundary values}? Name the boundary of each.
+\item Recompute \code{between("1970-01-01", "2000-01-01") == 10957}.
+\item The coverage run reaches every line and 30 of the 32 branches. Which two branches are never taken, and why can no
+correct caller take them?
+\item The checker reports 400 loans, 22 still out, 109 late and 5285 late days at 2025-12-31. Which of these numbers does
+the \omterm{def:b1:c-modules-make-tests:unit-test}{test suite} check?
+\item The date tests were written before the checker existed. Name one way in which they could still pass while the
+checker gives a wrong total.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Defensive checks and a bug found by a test.}
+\begin{enumerate}[resume]
+\item The first version fails two checks. Which line of \code{date_v0.c} differs, and why do both failures come from it?
+\item On the town's file, which covers 2025 only, does the first version give a different report? Why was the bug found
+anyway?
+\item \code{days_in_month} asserts that the month lies in 1 to 12, but \code{date_parse} returns $-1$ for month 13.
+Explain this division of labour with the method of the chapter.
+\item \code{loans_main.c} rejects a member number of 1000 or more. Is that a check or an \omterm{def:b1:c-modules-make-tests:assertion}{assertion}, and why?
+\item What does the checker print, and with what exit status, if the date argument is \code{2025-02-29}?
+\item State the named result of the problem, \emph{the rebuild saving}.
+\end{enumerate}
+\end{problem}

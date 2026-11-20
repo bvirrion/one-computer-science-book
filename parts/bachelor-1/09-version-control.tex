@@ -1,0 +1,411 @@
+% Book 3, Year 1, chapter 9 -- version control with Git.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 9.
+% ledger: b1:git-origin, b1:git-object-ids, b1:git-bisect
+\chapter{Version Control with Git}\label{ch:b1:version-control}
+
+Yesterday the library's catalogue program worked; today its test fails, and forty edits were made in between, some
+by you, some by a colleague. Which one broke it? Copies named \code{catalogue_old.py} and \code{catalogue_final2.py}
+do not answer. A \omterm{def:b1:version-control:repository}{version control system} does: it keeps every recorded state of the project, says who changed what and
+why, \omterm{def:b1:version-control:merge}{merges} the work of several people, and can search its own history for the change that broke a test, in six
+runs of that test where forty would seem needed. This chapter teaches the one used almost everywhere, Git, through
+sessions run on a small catalogue.
+
+\begin{recall}
+A file holds bytes and is named by a path in a tree of folders. A test runs a piece of a program on chosen inputs and
+compares the result with the expected one; its \omterm{def:b1:the-shell:exit-status}{exit status} says whether it passed (\cref{ch:b1:the-shell}).
+\end{recall}
+
+\section{Snapshots and commits}\label{sec:b1:version-control:commits}
+
+\begin{definition}[Version control system, repository]\label{def:b1:version-control:repository}
+A \emph{version control system}\index{version control system} records the successive states of the files of a project,
+with their authors, dates and reasons, and can restore or compare any of them. The recorded history of a project is
+its \emph{repository}\index{repository}; with Git it is kept in a hidden folder \code{.git} at the top of the project.
+\end{definition}
+
+\begin{definition}[Commit, snapshot]\label{def:b1:version-control:commit}
+A \emph{commit}\index{commit (Git)} is one recorded state of the project: a \emph{snapshot}\index{snapshot} of every
+tracked file as it was when the commit was made, together with an author, a date, a message, and the identifiers of
+its \emph{parent} commits, the commits it was made from: none for the first commit, one usually, two for a \omterm{def:b1:version-control:merge}{merge}.
+\end{definition}
+
+\begin{history}[Git]
+Git was born in 2005 in the community that develops the Linux kernel. The kernel had used a proprietary system for
+three years, whose free licence was then withdrawn; its developers, Linus Torvalds in particular, wrote their own. Its
+aims were speed, a simple design, thousands of parallel \omterm{def:b1:version-control:branch}{branches}, and full distribution: every copy holds the whole
+history.
+\end{history}
+
+\omoutput{code/bachelor-1/09-version-control/outputs/first_commits.txt}{A \omterm{def:b1:version-control:repository}{repository}, two \omterm{def:b1:version-control:commit}{commits}, and its
+history.}\label{out:b1:version-control:first}
+
+The session pins the author, \code{Ada Lovelace}, and the date, so that it reruns identically; in daily use Git takes
+both from the configuration and the clock. \code{git add} chooses what goes into the next \omterm{def:b1:version-control:commit}{commit}, \code{git commit}
+records it, \code{-a} adding every tracked file that changed. The long hexadecimal number after \code{commit} is the
+\omterm{def:b1:version-control:commit}{commit}'s identifier, which \texttt{-{}-{}oneline} abbreviates to its first seven digits.
+
+Git stores the project as objects of three kinds: a \emph{blob} holds the content of a file, a \emph{tree} lists the
+names of a folder with the objects they stand for, and a \omterm{def:b1:version-control:commit}{commit} points to the tree of the top folder. Each object is
+named by a hash of its content: a 40-digit hexadecimal number computed from the type, the length and the bytes of the
+object, by the function SHA-1 (a newer format uses SHA-256 and 64 digits; hash functions are studied in the Year~3
+volume).
+
+\omoutput{code/bachelor-1/09-version-control/outputs/objects.txt}{Inside the last \omterm{def:b1:version-control:commit}{commit}: its tree, the blob of
+\code{books.csv}, and the blob's name computed by hand.}\label{out:b1:version-control:objects}
+
+Two consequences follow from naming by content. Identical files are stored once, under one name. And a \omterm{def:b1:version-control:commit}{commit} names
+its parent by the parent's hash, so changing anything in an old \omterm{def:b1:version-control:commit}{commit}, a single byte of a file or of a message,
+changes its name, then the name of every \omterm{def:b1:version-control:commit}{commit} after it: a history cannot be altered without the change showing.
+
+\section{The staging area}\label{sec:b1:version-control:staging}
+
+\begin{definition}[Working tree, staging area]\label{def:b1:version-control:staging}
+The \emph{working tree}\index{working tree} is the folder of the project, the files as you edit them. The
+\emph{staging area}\index{staging area} (also called the \emph{index}\index{index (Git)}) holds the \omterm{def:b1:version-control:commit}{snapshot} that the next
+\omterm{def:b1:version-control:commit}{commit} will record; \code{git add} copies a file of the working tree into it, and \code{git commit} records it in the
+\omterm{def:b1:version-control:repository}{repository}.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[a/.style={draw, rounded corners=3pt, minimum width=30mm, minimum height=16mm, align=center,
+                    font=\small}, >={Stealth[length=2mm]}]
+\node[a, fill=black!5] (w) at (0,0) {working tree\\{\scriptsize the files you edit}};
+\node[a, fill=omDef!12] (s) at (5.6,0) {staging area\\{\scriptsize the next snapshot}};
+\node[a, fill=omCode!10] (r) at (11.2,0) {repository\\{\scriptsize the commits}};
+\draw[->, thick] ([yshift=4mm]w.east) -- node[above, font=\scriptsize\ttfamily] {git add} ([yshift=4mm]s.west);
+\draw[->, thick] ([yshift=4mm]s.east) -- node[above, font=\scriptsize\ttfamily] {git commit} ([yshift=4mm]r.west);
+\draw[<-, thick, omThm] ([yshift=-4mm]w.east) -- node[below, font=\scriptsize\ttfamily] {git restore}
+  ([yshift=-4mm]s.west);
+\draw[<-, thick, omThm] ([yshift=-4mm]s.east) -- node[below, font=\scriptsize\ttfamily, align=center]
+  {git restore\\-{}-staged}
+  ([yshift=-4mm]r.west);
+\draw[<->, dashed] (w.south) -- ++(0,-0.7) -| node[pos=0.25, below, font=\scriptsize\ttfamily] {git diff} (s.south);
+\draw[<->, dashed] ([xshift=3mm]s.south) -- ++(0,-1.2) -| node[pos=0.25, below, font=\scriptsize\ttfamily]
+  {git diff --staged} (r.south);
+\end{tikzpicture}
+\par\smallskip{\small The three places a file lives in. \code{git add} and \code{git commit} move changes to the right;
+\code{git restore} brings a file back from the \omterm{def:b1:version-control:staging}{staging area}, and \texttt{git restore -{}-{}staged} unstages it. Each
+\code{diff} compares two neighbouring places.}
+\end{omfigure}
+
+\omoutput{code/bachelor-1/09-version-control/outputs/staging.txt}{Two changes, one staged: \code{status},
+\code{diff} and \texttt{diff -{}-{}staged} each see a different part.}\label{out:b1:version-control:staging}
+
+In \texttt{git status -{}-{}short}, the first column describes the \omterm{def:b1:version-control:staging}{staging area} against the last \omterm{def:b1:version-control:commit}{commit} and the second the
+\omterm{def:b1:version-control:staging}{working tree} against the \omterm{def:b1:version-control:staging}{staging area}: \code{A} added, \code{M} modified, \code{??} untracked. A
+\emph{diff}\index{diff} shows changed lines with \code{-} and \code{+} and a few lines of context around them; the header
+\code{@@ -1,3 +1,4 @@} says that lines 1 to 3 of the old version became lines 1 to 4 of the new. The last
+\code{git restore} threw the unstaged line away: a change that was never committed cannot be recovered, which is why
+Git has the \omterm{def:b1:version-control:staging}{staging area} and no ``undo'' for the \omterm{def:b1:version-control:staging}{working tree}.
+
+\begin{method}[A good commit]\label{met:b1:version-control:good-commit}
+\begin{enumerate}
+\item One change per \omterm{def:b1:version-control:commit}{commit}: a fix, a feature, a rename, not three of them mixed. Stage the files, or the parts of
+files, that belong to it, and leave the rest for the next \omterm{def:b1:version-control:commit}{commit}.
+\item The tests pass at every \omterm{def:b1:version-control:commit}{commit}, so that any \omterm{def:b1:version-control:commit}{commit} can be checked out and used.
+\item A message whose first line says what the \omterm{def:b1:version-control:commit}{commit} does, in fewer than 60 characters, and whose body says why.
+\item Nothing generated: compiled files, outputs and temporary files are listed in a file \code{.gitignore} and never
+committed.
+\end{enumerate}
+\end{method}
+
+\section{Branches and merges}\label{sec:b1:version-control:branches}
+
+\begin{definition}[Commit graph, ancestor]\label{def:b1:version-control:commit-graph}
+The \omterm{def:b1:version-control:commit}{commits} of a \omterm{def:b1:version-control:repository}{repository} and the links from each \omterm{def:b1:version-control:commit}{commit} to its parents form the \emph{commit
+graph}\index{commit graph}. A \omterm{def:b1:version-control:commit}{commit} $a$ is an \emph{ancestor}\index{ancestor (of a commit)} of a \omterm{def:b1:version-control:commit}{commit} $c$ if $a$ can
+be reached from $c$ by following parent links, $c$ itself included. No \omterm{def:b1:version-control:commit}{commit} is its own ancestor through one link or
+more, since a \omterm{def:b1:version-control:commit}{commit}'s name depends on its parents' names, which must exist before it: the graph has no cycle (graphs
+are studied in \cref{ch:b1:graph-traversals}).
+\end{definition}
+
+\begin{definition}[Branch]\label{def:b1:version-control:branch}
+A \emph{branch}\index{branch (Git)} is a name that points to a \omterm{def:b1:version-control:commit}{commit}, its \emph{tip}. Committing on a branch makes a new
+\omterm{def:b1:version-control:commit}{commit} whose parent is the tip and moves the name to it. \code{HEAD} names the current branch. A branch contains
+the \omterm{def:b1:version-control:commit}{commits} that are \omterm{def:b1:version-control:commit-graph}{ancestors} of its tip.
+\end{definition}
+
+\begin{definition}[Merge, merge base]\label{def:b1:version-control:merge}
+To \emph{merge} a \omterm{def:b1:version-control:branch}{branch} $b$ into the current \omterm{def:b1:version-control:branch}{branch} $a$ is to make $a$ contain the \omterm{def:b1:version-control:commit}{commits} of $b$. The \emph{merge
+base}\index{merge base} of two \omterm{def:b1:version-control:commit}{commits} is their best common \omterm{def:b1:version-control:commit-graph}{ancestor}: a common \omterm{def:b1:version-control:commit-graph}{ancestor} of which no other common
+\omterm{def:b1:version-control:commit-graph}{ancestor} is a descendant. If the tip of $a$ is itself the merge base, $a$ is simply moved to the tip of $b$: a
+\emph{fast-forward merge}\index{fast-forward merge}. Otherwise Git makes a \emph{three-way merge}\index{three-way
+merge}: it compares each file in the merge base, in $a$ and in $b$, keeps every change made on either side, and records
+the result in a merge \omterm{def:b1:version-control:commit}{commit} with two parents.
+\end{definition}
+
+\omoutput{code/bachelor-1/09-version-control/outputs/branches.txt}{A fast-forward, then a \omterm{def:b1:version-control:merge}{three-way merge}, and the
+graph drawn by \texttt{log -{}-{}graph}.}\label{out:b1:version-control:branches}
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={circle, draw, fill=omCode!10, minimum size=7mm, inner sep=0pt, font=\tiny\ttfamily},
+                    n/.style={draw, fill=black!6, rounded corners=2pt, font=\scriptsize\ttfamily, inner sep=2pt},
+                    >={Stealth[length=2mm]}]
+\node[c] (c1) at (0,0) {3e49};
+\node[c] (c2) at (1.6,0) {8da0};
+\node[c, fill=omDef!25, thick] (c3) at (3.2,0) {9fdd};
+\node[c] (c4) at (5.0,0.9) {88f4};
+\node[c] (c5) at (5.0,-0.9) {346e};
+\node[c, fill=omThm!15] (c6) at (6.8,0) {58e3};
+\foreach \x/\y in {c2/c1, c3/c2, c4/c3, c5/c3, c6/c4, c6/c5} {\draw[->, thick] (\x) -- (\y);}
+\node[n] (m) at (8.4,0) {main};
+\node[n] (g) at (3.2,-1.0) {genres};
+\node[n] (s) at (6.8,-1.6) {sort-by-year};
+\draw[->] (m) -- (c6); \draw[->] (g) -- (c3); \draw[->] (s) -- (c5);
+\node[font=\scriptsize, align=center] at (3.2,0.85) {merge base};
+\node[font=\scriptsize, align=center] at (6.8,0.75) {merge commit};
+\node[font=\scriptsize, align=left, anchor=west] at (-0.3,-1.85) {\code{merge genres}: \code{main} moved\\from 8da0
+to 9fdd (fast-forward)};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b1:version-control:commit-graph}{commit graph} of \cref{out:b1:version-control:branches}, each arrow going from a \omterm{def:b1:version-control:commit}{commit} to its
+parent. The fast-forward only moved the name \code{main}; the \omterm{def:b1:version-control:merge}{three-way merge} made \omterm{def:b1:version-control:commit}{commit} 58e3, whose two parents are
+the tips of the two \omterm{def:b1:version-control:branch}{branches}, and whose content combines both changes made since the \omterm{def:b1:version-control:merge}{merge base} 9fdd.}
+\end{omfigure}
+
+The \omterm{def:b1:version-control:merge}{three-way merge} kept the order of \code{sort-by-year} and the line added on \code{main}: each side changed a
+different part of the file. Comparing with the \omterm{def:b1:version-control:merge}{merge base} is what makes this possible: a line that differs between the
+two tips is taken from the side that changed it since the base. Another way to combine \omterm{def:b1:version-control:branch}{branches}, \emph{rebasing}, replays
+the \omterm{def:b1:version-control:commit}{commits} of one \omterm{def:b1:version-control:branch}{branch} on top of the other, producing new \omterm{def:b1:version-control:commit}{commits} with new names and a straight history; it should
+not be used on \omterm{def:b1:version-control:commit}{commits} that others already have.
+
+\section{Conflicts and remotes}\label{sec:b1:version-control:remotes}
+
+\begin{definition}[Merge conflict]\label{def:b1:version-control:conflict}
+A \emph{merge conflict}\index{merge conflict} arises when both sides of a \omterm{def:b1:version-control:merge}{three-way merge} changed the same lines of a
+file differently since the \omterm{def:b1:version-control:merge}{merge base}. Git then stops before committing, writes both versions into the file between
+the markers \code{<<<<<<<}, \code{=======} and \code{>>>>>>>}, and waits for a person to write the right result, stage
+it with \code{git add} and \omterm{def:b1:version-control:commit}{commit}.
+\end{definition}
+
+\omoutput{code/bachelor-1/09-version-control/outputs/conflict.txt}{Two changes to the same line: the conflict, its
+markers, and a resolution that keeps both changes.}\label{out:b1:version-control:conflict}
+
+\begin{omfigure}
+\begin{tikzpicture}[v/.style={draw, rounded corners=2pt, font=\scriptsize\ttfamily, align=left, inner sep=4pt},
+                    >={Stealth[length=2mm]}]
+\node[v, fill=black!5] (b) at (0,0) {The Paper Forest,1996};
+\node[font=\scriptsize\bfseries, above=1mm of b] {merge base};
+\node[v, fill=omCode!10] (o) at (-3.6,-1.8) {The Paper Forest,1997};
+\node[font=\scriptsize\bfseries, above=1mm of o] {ours (\code{main})};
+\node[v, fill=omDef!12] (t) at (3.6,-1.8) {The Paper Forest (2nd ed.),1996};
+\node[font=\scriptsize\bfseries, above=1mm of t] {theirs (\code{rename})};
+\draw[->, thick] (b) -- node[left, font=\scriptsize, pos=0.4] {year fixed} (o);
+\draw[->, thick] (b) -- node[right, font=\scriptsize, pos=0.4] {title changed} (t);
+\node[v, fill=omThm!10] (f) at (0,-4.0) {The Silent Code,2002\\<<<<<<< HEAD\\The Paper Forest,1997\\=======\\The Paper
+Forest (2nd ed.),1996\\>>>>>>> rename\\Harbour Lights,2011};
+\draw[->, thick] (o) -- (f); \draw[->, thick] (t) -- (f);
+\node[font=\scriptsize, align=left, anchor=west] at (2.6,-4.0) {both sides changed line 2:\\Git cannot choose, and
+writes both;\\the person writes\\\code{The Paper Forest (2nd ed.),1997}};
+\end{tikzpicture}
+\par\smallskip{\small A conflict. Each side changed line 2 of the \omterm{def:b1:version-control:merge}{merge base}, in a different way; the lines that only
+one side changed, or neither, are merged without a question.}
+\end{omfigure}
+
+A conflict is not an error of Git: it is a question only a person can answer, since Git cannot know that the two
+changes are compatible. Small, frequent \omterm{def:b1:version-control:merge}{merges} keep conflicts small.
+
+\begin{definition}[Remote repository, clone]\label{def:b1:version-control:remote}
+A \emph{remote repository}\index{remote repository} is another \omterm{def:b1:version-control:repository}{repository} of the same project, named in the local one
+(usually \code{origin}). A \emph{clone}\index{clone (Git)} is a complete copy of a \omterm{def:b1:version-control:repository}{repository}, history included, made by
+\code{git clone}. \code{git push} sends local \omterm{def:b1:version-control:commit}{commits} to a remote and moves its \omterm{def:b1:version-control:branch}{branch}; \code{git fetch} brings the
+remote's new \omterm{def:b1:version-control:commit}{commits} without merging them; \code{git pull} fetches and \omterm{def:b1:version-control:merge}{merges}.
+\end{definition}
+
+\omoutput{code/bachelor-1/09-version-control/outputs/remote.txt}{A shared \omterm{def:b1:version-control:repository}{repository} on the same disk, two \omterm{def:b1:version-control:remote}{clones}, and
+a change travelling from one to the other.}\label{out:b1:version-control:remote}
+
+The shared \omterm{def:b1:version-control:repository}{repository} here is \emph{bare}, a \omterm{def:b1:version-control:repository}{repository} with no \omterm{def:b1:version-control:staging}{working tree}, as on a server: nobody edits in it, all
+push to it. In a team, the shared \omterm{def:b1:version-control:repository}{repository} lives on a server reached through the network, but the commands are the
+same; nothing in this session left the machine. A push that would lose \omterm{def:b1:version-control:commit}{commits} on the remote, because someone pushed
+first, is refused: the pusher must pull, \omterm{def:b1:version-control:merge}{merge}, and push again.
+
+\omimg{book3/ai/b1-version-control-team.jpg}{0.55\linewidth}{Four people changing the same program at the same
+time, each in a \omterm{def:b1:version-control:remote}{clone} of the \omterm{def:b1:version-control:repository}{repository}: their \omterm{def:b1:version-control:commit}{commits} meet only when they push and pull, and most \omterm{def:b1:version-control:merge}{merges} then need
+no one.}
+
+\section{Searching history}\label{sec:b1:version-control:history}
+
+\omoutput{code/bachelor-1/09-version-control/outputs/history_search.txt}{\code{log -S} lists the \omterm{def:b1:version-control:commit}{commits} that changed
+the number of occurrences of a string; \code{blame} shows, for each line, the last \omterm{def:b1:version-control:commit}{commit} that changed
+it.}\label{out:b1:version-control:search}
+
+These commands answer ``when did this text appear or disappear'' and ``who last touched this line''. They do not answer
+``which \omterm{def:b1:version-control:commit}{commit} broke the test'', since the \omterm{def:b1:version-control:commit}{commit} that breaks a program may change lines far from where the failure
+shows. That question has a better answer.
+
+\begin{definition}[Bisection of a history]\label{def:b1:version-control:bisection}
+Given a \omterm{def:b1:version-control:commit}{commit} known to be \emph{good} (a test passes) and a later one known to be \emph{bad} (it fails), the
+\emph{bisection}\index{bisection (of a history)} of the history between them tests a \omterm{def:b1:version-control:commit}{commit} near the middle of the
+candidates, those that are \omterm{def:b1:version-control:commit-graph}{ancestors} of the bad \omterm{def:b1:version-control:commit}{commit} and not of the good one; if it is bad, the culprit is among its
+\omterm{def:b1:version-control:commit-graph}{ancestors}; if good, among the others. It repeats until a single \omterm{def:b1:version-control:commit}{commit} remains: the first bad \omterm{def:b1:version-control:commit}{commit}, whose parents are
+all good. \code{git bisect run} automates it with a test command whose \omterm{def:b1:the-shell:exit-status}{exit status} is the verdict: 0 for good, 1 to 127
+for bad, except 125, which means ``cannot test this \omterm{def:b1:version-control:commit}{commit}, skip it''.
+\end{definition}
+
+The session below generates a history of 64 \omterm{def:b1:version-control:commit}{commits} of the catalogue (\cref{lst:b1:version-control:make-history}, in the
+problem), on two \omterm{def:b1:version-control:branch}{branches} merged at the end. The test \code{check.py} of the last \omterm{def:b1:version-control:commit}{commit} fails. \omterm{def:b1:version-control:bisection}{Bisection} finds why.
+
+\omoutput{code/bachelor-1/09-version-control/outputs/bisect.txt}{\omterm{def:b1:version-control:bisection}{Bisection} over 64 \omterm{def:b1:version-control:commit}{commits}: six runs of the test, and
+the culprit.}\label{out:b1:version-control:bisect}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1.6mm, y=6mm]
+\foreach \lo/\hi/\t/\row in {0/63/32/0, 32/63/48/1, 32/47/40/2, 32/39/36/3, 36/39/38/4, 38/39/39/5} {
+  \fill[omCode!12] (\lo,-\row) rectangle (\hi,-\row-0.6);
+  \draw (0,-\row) rectangle (63,-\row-0.6);
+  \draw[line width=1.6pt, omThm] (\t,-\row+0.1) -- (\t,-\row-0.7);
+  \node[font=\scriptsize, anchor=west] at (64,-\row-0.3) {test~\the\numexpr\row+1\relax};
+}
+\node[font=\scriptsize, anchor=east] at (-0.5,-0.3) {good};
+\node[font=\scriptsize, anchor=east] at (63,0.4) {bad};
+\draw[->, thick] (39,-6.2) -- (39,-5.7);
+\node[font=\scriptsize] at (39,-6.5) {first bad commit};
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b1:version-control:bisection}{Bisection} on a linear history of 64 \omterm{def:b1:version-control:commit}{commits}, the first known good, the last known bad. The shaded
+interval holds the \omterm{def:b1:version-control:commit}{commits} that may still be the first bad one; each test (red line) halves it, so that six tests
+leave one \omterm{def:b1:version-control:commit}{commit}, where testing all of them in turn could take 62.}
+\end{omfigure}
+
+Each test at least halves the number of candidates, so $n$ candidates need at most $\lceil \log_2 n \rceil$ tests on a
+linear history (\cref{exo:b1:version-control:10}): six for 63 candidates, ten for a thousand, twenty for a million.
+The method needs a test that decides automatically and a history whose \omterm{def:b1:version-control:commit}{commits} each build and run, which is one more
+reason for the good \omterm{def:b1:version-control:commit}{commits} of \cref{met:b1:version-control:good-commit}.
+
+\begin{safety}
+A \omterm{def:b1:version-control:repository}{repository} is a history, not a backup unless it is copied elsewhere: push to a second machine. Never \omterm{def:b1:version-control:commit}{commit}
+passwords or keys: removing them in a later \omterm{def:b1:version-control:commit}{commit} leaves them in the history, readable by anyone with a \omterm{def:b1:version-control:remote}{clone}.
+Commands that rewrite history (\code{rebase}, \texttt{reset -{}-{}hard}, \texttt{push -{}-{}force}) can lose work; use them only on
+\omterm{def:b1:version-control:commit}{commits} nobody else has.
+\end{safety}
+
+\section{Exercises}\label{sec:b1:version-control:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:version-control:1}
+In the catalogue of \cref{out:b1:version-control:first}, with nothing changed since the last \omterm{def:b1:version-control:commit}{commit}, the commands below
+are run. What does \texttt{git status -{}-{}short} print?
+\omcode{code/bachelor-1/09-version-control/listings/exo_status.sh}{6}{10}{Edits and adds}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:version-control:2}
+In the graph of \cref{out:b1:version-control:branches}, list the \omterm{def:b1:version-control:commit}{commits} that the \omterm{def:b1:version-control:branch}{branch} \code{sort-by-year}
+contains, those that \code{genres} contains, and those that \code{main} contains after the \omterm{def:b1:version-control:merge}{merge}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:version-control:3}
+Does each \omterm{def:b1:version-control:merge}{merge} fast-forward? (a) \code{main} at \omterm{def:b1:version-control:commit}{commit} $X$, \omterm{def:b1:version-control:branch}{branch} \code{fix} made from $X$ with two \omterm{def:b1:version-control:commit}{commits}, nothing
+committed on \code{main} since; \code{git merge fix} on \code{main}. (b) The same after one \omterm{def:b1:version-control:commit}{commit} on \code{main}.
+(c) \code{git merge main} on \code{fix} in case (a). Justify with the \omterm{def:b1:version-control:merge}{merge base}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:version-control:4}
+After the commands below, run on the catalogue of \cref{out:b1:version-control:first}, which change does
+\texttt{git diff -{}-{}staged} show, and which does \code{git diff} show? What would \code{git commit} record?
+\omcode{code/bachelor-1/09-version-control/listings/exo_staged.sh}{6}{8}{A staged change and another one}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:version-control:5}
+The \omterm{def:b1:version-control:staging}{working tree} holds two unrelated changes to the same file: a corrected year and a new book. Using only commands of
+this chapter and of the \omterm{def:b1:the-shell:shell}{shell}, without an editor, make two \omterm{def:b1:version-control:commit}{commits}, one per change.
+\omoutput[1-11]{code/bachelor-1/09-version-control/outputs/exo_split.txt}{The two changes.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:version-control:6}
+In the conflict of \cref{out:b1:version-control:conflict}, a hurried colleague types \code{git commit -am "Merge rename"}
+right after \code{git merge rename}. Does Git accept it? What does the \omterm{def:b1:version-control:commit}{commit} contain, which problems does it cause, and
+how can such a \omterm{def:b1:version-control:commit}{commit} be detected?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:version-control:7}
+Write a test script \code{bisect_test.sh} for \code{git bisect run} on the catalogue: exit 0 if \code{check.py} passes,
+1 if it fails, and 125 if the \omterm{def:b1:version-control:commit}{commit} cannot be tested because \code{catalogue.py} does not even parse. Why is 125 needed,
+when a Python program that does not parse stops with an \omterm{def:b1:the-shell:exit-status}{exit status} of 1 anyway?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:version-control:8}
+A history has \omterm{def:b1:version-control:commit}{commits} $A$ to $H$. $A$ is the first; $B$'s parent is $A$, $C$'s is $B$, $D$'s is $C$, $E$'s is $C$, $F$'s
+is $E$; $G$ is a \omterm{def:b1:version-control:merge}{merge} with parents $D$ and $F$; $H$'s parent is $E$. Give the \omterm{def:b1:version-control:merge}{merge base} of $G$ and $H$, and of $D$ and
+$H$. Which \omterm{def:b1:version-control:commit}{commits} would a \omterm{def:b1:version-control:merge}{merge} of $H$ into $G$ compare?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:version-control:9}
+From the catalogue of \cref{out:b1:version-control:first}, three \omterm{def:b1:version-control:branch}{branches} are made from its last \omterm{def:b1:version-control:commit}{commit}: on \code{a},
+one \omterm{def:b1:version-control:commit}{commit} A1; on \code{b}, one \omterm{def:b1:version-control:commit}{commit} B1; on \code{main}, one \omterm{def:b1:version-control:commit}{commit} M1. Then, on \code{main}, \code{git merge a} and
+\code{git merge b}. Draw the \omterm{def:b1:version-control:commit-graph}{commit graph}, with its \omterm{def:b1:version-control:merge}{merge} \omterm{def:b1:version-control:commit}{commits} and their parents.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:version-control:10}
+A linear history has $n + 1$ \omterm{def:b1:version-control:commit}{commits} $c_0, \dots, c_n$, $c_0$ good and $c_n$ bad, and once a \omterm{def:b1:version-control:commit}{commit} is bad all later ones
+are. Prove that \omterm{def:b1:version-control:bisection}{bisection}, testing the middle candidate each time, finds the first bad \omterm{def:b1:version-control:commit}{commit} in at most $\lceil \log_2
+n \rceil$ tests, and that no method that only tests \omterm{def:b1:version-control:commit}{commits} can do better in the worst case.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:version-control:11}
+In a history with \omterm{def:b1:version-control:merge}{merges}, a test of a \omterm{def:b1:version-control:commit}{commit} $x$ that says ``bad'' keeps as candidates the \omterm{def:b1:version-control:commit-graph}{ancestors} of $x$, and one that
+says ``good'' removes $x$ and its \omterm{def:b1:version-control:commit-graph}{ancestors}. Show that \omterm{def:b1:version-control:bisection}{bisection} still ends. Then take a good \omterm{def:b1:version-control:commit}{commit} $R$, $k$ \omterm{def:b1:version-control:branch}{branches}
+of one \omterm{def:b1:version-control:commit}{commit} each, $C_1, \dots, C_k$, all made from $R$, and one \omterm{def:b1:version-control:merge}{merge} $M$ of all of them, bad. How many tests are needed
+in the worst case? Compare with $\lceil \log_2 (k + 1) \rceil$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:version-control:12}
+Write a script \code{touch_count.sh [REPO]} that prints, for each file of a \omterm{def:b1:version-control:repository}{repository}, the number of \omterm{def:b1:version-control:commit}{commits} that
+changed it, the most changed first, \omterm{def:b1:version-control:merge}{merge} \omterm{def:b1:version-control:commit}{commits} excluded. Run it on the generated history of the problem: which
+counts can you predict from the generator alone?
+\end{exercise}
+
+\section{Problem: Who broke the catalogue?}\label{sec:b1:version-control:problem}
+
+\begin{problem}[{Weekend problem --- Who broke the catalogue?}]\label{pb:b1:version-control:1}
+The program below writes the history of a small catalogue program: 40 \omterm{def:b1:version-control:commit}{commits} on \code{main}, a \omterm{def:b1:version-control:branch}{branch} \code{covers}
+made after the twentieth with 23 \omterm{def:b1:version-control:commit}{commits} of its own, and a \omterm{def:b1:version-control:merge}{merge}. One \omterm{def:b1:version-control:commit}{commit} of \code{main} breaks the function
+\code{oldest}, which then returns the newest book; the test \code{check.py} detects it. The session reads the graph;
+\cref{out:b1:version-control:bisect} bisected the same history.
+\omcodes{code/bachelor-1/09-version-control/listings/make_history.py}{44-49,80-104}{The history generator
+(excerpt)}\label{lst:b1:version-control:make-history}
+\omoutput{code/bachelor-1/09-version-control/outputs/problem.txt}{Reading the generated history; the
+\code{sed} keeps a few lines of the long graph.}\label{out:b1:version-control:problem}
+
+\medskip\noindent\textbf{Part I --- Reading the graph.}
+\begin{enumerate}
+\item How many \omterm{def:b1:version-control:commit}{commits} does the history hold? Check the number against the generator.
+\item Which \omterm{def:b1:version-control:commit}{commit} has two parents? How does \texttt{log -{}-{}graph} show where the \omterm{def:b1:version-control:branch}{branch} starts and where it is merged?
+\item \texttt{rev-{}list -{}-{}count -{}-{}first-{}parent HEAD} prints 41. Which \omterm{def:b1:version-control:commit}{commits} does it count?
+\item Why does \texttt{rev-{}list -{}-{}count covers} print 43?
+\item Is the \omterm{def:b1:version-control:commit}{commit} ``Tidy the catalogue functions'' an \omterm{def:b1:version-control:commit-graph}{ancestor} of the tip of \code{covers}? Of \code{HEAD}?
+\item The generator dates its \omterm{def:b1:version-control:commit}{commits} a minute apart. If it gave them all the same date, would the history still be
+well defined? Would the identifiers change from run to run?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Merge base and merge.}
+\begin{enumerate}[resume]
+\item Which \omterm{def:b1:version-control:commit}{commit} is the \omterm{def:b1:version-control:merge}{merge base} of the two parents of the \omterm{def:b1:version-control:merge}{merge}? Which line of the generator decides it?
+\item \texttt{rev-{}list -{}-{}count HEAD \textasciicircum{}covers} prints 21. Which \omterm{def:b1:version-control:commit}{commits} are they?
+\item \texttt{rev-{}list -{}-{}count covers \textasciicircum{}HEAD\textasciicircum{}1} prints 23. What does that number say about the \omterm{def:b1:version-control:merge}{merge}?
+\item For each of \code{catalogue.py}, \code{books.csv} and \code{covers.csv}, say which sides changed the file since the
+\omterm{def:b1:version-control:merge}{merge base}, and what the \omterm{def:b1:version-control:merge}{three-way merge} kept.
+\item Why did the \omterm{def:b1:version-control:merge}{merge} produce no conflict?
+\item Does the tip of \code{covers} pass the test? Does the \omterm{def:b1:version-control:merge}{merge}? Why?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Finding the culprit.}
+\begin{enumerate}[resume]
+\item The last \omterm{def:b1:version-control:commit}{commit} that changed \code{catalogue.py} is the culprit here. Why can \texttt{log -{}-{} catalogue.py} not
+replace \omterm{def:b1:version-control:bisection}{bisection} in general?
+\item Explain, from the diff, what the bad \omterm{def:b1:version-control:commit}{commit} changed, and why the test prints \code{Harbour Lights}.
+\item \code{git bisect start HEAD} followed by the first \omterm{def:b1:version-control:commit}{commit} says what? How many \omterm{def:b1:version-control:commit}{commits} are candidates?
+\item In \cref{out:b1:version-control:bisect}, list the six verdicts and the number of candidates left after each test.
+\item The covers \omterm{def:b1:version-control:commit}{commits} are candidates at the start, yet none was tested. Why?
+\item Had \code{catalogue.py} failed to parse at some \omterm{def:b1:version-control:commit}{commit} of the \omterm{def:b1:version-control:branch}{branch}, how would \code{check.py} have exited, and
+what would \omterm{def:b1:version-control:bisection}{bisection} have concluded? What does \code{bisect_test.sh} (\cref{exo:b1:version-control:7}) change?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The logarithmic bound.}
+\begin{enumerate}[resume]
+\item Show that after $k$ tests that each halve the candidates, at most $\lceil n / 2^k \rceil$ remain.
+\item Deduce the number of tests needed for $n = 63$ candidates.
+\item Testing the \omterm{def:b1:version-control:commit}{commits} one by one, from the oldest, how many tests would find this culprit? In the worst case?
+\item Git announced ``roughly 5 steps'' after choosing the first \omterm{def:b1:version-control:commit}{commit} to test, then ran the test six times. Explain
+both numbers.
+\item The history has a \omterm{def:b1:version-control:merge}{merge}. Why did the bound still hold in this run? Use \cref{exo:b1:version-control:11}.
+\item State the named result of the problem, \emph{\omterm{def:b1:version-control:bisection}{bisection} finds the culprit among 64 \omterm{def:b1:version-control:commit}{commits} in at most 6 tests}.
+\end{enumerate}
+\end{problem}

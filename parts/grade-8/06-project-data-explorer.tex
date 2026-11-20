@@ -1,0 +1,309 @@
+% Provenance (never printed): see sources/outline_sources.md and sources/book1/BRIEFS.md (g8/06).
+\chapter{Project: A Data Explorer}\label{ch:g8:project-data-explorer}
+
+The librarian of Brenmoor has two tables, the books and the loans of 2025,
+and many questions. This chapter builds, in five versions, a \omterm{def:g4:programs-and-operating-system:program}{program} that
+answers them. Each version runs, each is tested, and each adds one thing to
+the one before. Here is what the finished \omterm{def:g4:programs-and-operating-system:program}{program} must do:
+
+\begin{quote}
+\itshape The explorer loads the library's books and loans and offers a \omterm{def:g2:using-a-computer:menu}{menu}.
+It can count the loans of each genre, \omterm{def:g7:lists:list}{list} the ten most borrowed books, \omterm{def:g7:lists:list}{list}
+the books never borrowed, and count the loans still out on a date that the
+user types. It answers each question, and saves the last answer to a report
+\omterm{def:g3:files-and-folders:file}{file}.
+\end{quote}
+
+\begin{recall}
+A \omterm{def:g8:files-and-data-tables:table}{CSV file} keeps a \omterm{def:g8:files-and-data-tables:table}{data table} as text, and \code{csv.DictReader} turns it into
+a \omterm{def:g7:lists:list}{list} of records (\cref{ch:g8:files-and-data-tables}). A \omterm{def:g8:dictionaries:dictionary}{dictionary} gives
+the \omterm{def:g6:variables-and-input:value}{value} of a key, and counts things with \code{get}
+(\cref{ch:g8:dictionaries}). \code{sorted} returns a \omterm{def:g8:searching-and-sorting:sorted}{sorted} copy of a \omterm{def:g7:lists:list}{list}
+(\cref{ch:g8:searching-and-sorting}). A project grows in versions, each one
+tested (\cref{ch:g7:project-quiz-game}).
+\end{recall}
+
+\section{What must it do?}
+
+The paragraph above, turned into checks small enough to test:
+
+\begin{enumerate}
+  \item A \omterm{def:g2:using-a-computer:menu}{menu} shows the four questions and a choice to quit; any other
+    choice gets a polite message, and the \omterm{def:g2:using-a-computer:menu}{menu} goes on until the user quits.
+  \item The two tables are loaded, and the \omterm{def:g4:programs-and-operating-system:program}{program} checks that it has as many
+    records as the \omterm{def:g3:files-and-folders:file}{files} have lines after their \omterm{def:g8:files-and-data-tables:table}{header rows}.
+  \item The loans of each genre add up to the number of loans.
+  \item The top ten is \omterm{def:g8:searching-and-sorting:sorted}{sorted} from the most borrowed; two books with as many
+    loans are in the order of their titles.
+  \item A date that is not written \code{YYYY-MM-DD} is refused with a
+    message.
+  \item After each answer, \code{report.txt} holds that answer.
+\end{enumerate}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, node distance=0.85cm,
+    box/.style={draw=black!60, rounded corners=2pt, align=center, minimum height=0.9cm, text width=1.6cm}]
+  \node[box, fill=ocYellow!25] (csv) {\code{books.csv}\\ \code{loans.csv}};
+  \node[box, fill=ocBlue!12, right=of csv] (rec) {lists of\\ records};
+  \node[box, fill=ocBlue!12, right=of rec] (dic) {dictionaries\\ of counts};
+  \node[box, fill=ocMint!25, right=of dic] (ans) {answer\\ lines};
+  \node[box, fill=ocYellow!25, right=of ans] (rep) {\code{report.txt}};
+  \draw[-{Stealth[length=2mm]}, thick] (csv) -- node[above, font=\tiny] {load} (rec);
+  \draw[-{Stealth[length=2mm]}, thick] (rec) -- node[above, font=\tiny] {count} (dic);
+  \draw[-{Stealth[length=2mm]}, thick] (dic) -- node[above, font=\tiny] {sort} (ans);
+  \draw[-{Stealth[length=2mm]}, thick] (ans) -- node[above, font=\tiny] {save} (rep);
+  \node[below=0.3cm of ans, font=\tiny] {printed on the screen too};
+\end{tikzpicture}
+
+{\small The path of the data through the explorer: from two \omterm{def:g3:files-and-folders:file}{files} to an
+answer on the screen and in a report \omterm{def:g3:files-and-folders:file}{file}.}
+\end{omfigure}
+
+\section{The menu and its loop}
+
+Version 1 has no data yet: only the \omterm{def:g2:using-a-computer:menu}{menu}, the \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop} that reads the choices,
+and a way out.
+
+\omcode{code/grade-8/06-project-data-explorer/listings/explorer_v1.py}{1}{21}{Version
+1: the \omterm{def:g2:using-a-computer:menu}{menu}.}\label{lst:g8:project-data-explorer:v1}
+
+\omoutput{code/grade-8/06-project-data-explorer/outputs/explorer_v1.txt}{A session:
+a question, a wrong choice, then quit.}\label{out:g8:project-data-explorer:v1}
+
+The three quotes \code{"""} open a \omterm{def:g7:strings:string}{string} that goes on over several lines.
+The \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop} goes on while the choice is not \code{"0"}; the test
+\code{choice in ["1", "2", "3", "4"]} checks that the choice is one of the
+\omterm{def:g7:lists:list}{list}.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, node distance=0.45cm,
+    st/.style={draw=black!60, rounded corners=2pt, fill=ocBlue!10, align=center, minimum height=0.6cm},
+    dc/.style={draw=black!60, diamond, aspect=2.4, fill=ocYellow!25, inner sep=1pt, align=center}]
+  \node[st] (menu) {print the menu};
+  \node[st, below=of menu] (read) {read a choice};
+  \node[dc, below=of read] (zero) {\code{"0"}?};
+  \node[dc, below=0.6cm of zero] (ok) {1 to 4?};
+  \node[st, right=1.4cm of ok] (ans) {answer it};
+  \node[st, left=1.4cm of ok] (msg) {``type a number\\ from 0 to 4''};
+  \node[st, right=1.4cm of zero] (bye) {goodbye};
+  \draw[-{Stealth[length=1.5mm]}] (menu) -- (read);
+  \draw[-{Stealth[length=1.5mm]}] (read) -- (zero);
+  \draw[-{Stealth[length=1.5mm]}] (zero) -- node[above] {yes} (bye);
+  \draw[-{Stealth[length=1.5mm]}] (zero) -- node[right] {no} (ok);
+  \draw[-{Stealth[length=1.5mm]}] (ok) -- node[above] {yes} (ans);
+  \draw[-{Stealth[length=1.5mm]}] (ok) -- node[above] {no} (msg);
+  \draw[-{Stealth[length=1.5mm]}] (ans.south) -- ++(0,-0.4) -| ($(msg.south)+(-1.4,-0.4)$) |- (read.west);
+  \draw (msg.south) -- ++(0,-0.4);
+\end{tikzpicture}
+
+{\small The \omterm{def:g2:using-a-computer:menu}{menu} \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop}: read a choice, stop on \code{0}, answer a question,
+or ask again.}
+\end{omfigure}
+
+\section{Loading the two tables}
+
+Version 2 loads the tables before the \omterm{def:g2:using-a-computer:menu}{menu}. Two new \omterm{def:g7:functions:function}{functions} do it:
+
+\omcode{code/grade-8/06-project-data-explorer/listings/explorer_v2.py}{10}{27}{Version
+2: loading and checking the tables (the start of
+\code{main}).}\label{lst:g8:project-data-explorer:v2}
+
+\Needspace*{12\baselineskip}
+\omoutput{code/grade-8/06-project-data-explorer/outputs/explorer_v2.txt}{80 books
+and 400 loans, then quit at once.}\label{out:g8:project-data-explorer:v2}
+
+\code{assert} followed by a \omterm{def:g4:algorithms-repeat-and-decide:condition}{condition} stops the \omterm{def:g4:programs-and-operating-system:program}{program} with an error if the
+\omterm{def:g4:algorithms-repeat-and-decide:condition}{condition} is false, and does nothing otherwise: a check written into the
+\omterm{def:g4:programs-and-operating-system:program}{program}. Here it compares the number of records with the number of lines of
+the \omterm{def:g3:files-and-folders:file}{file}, so the 80 and the 400 are read from the data, never typed by hand.
+If someone adds a book to the \omterm{def:g3:files-and-folders:file}{file}, the \omterm{def:g4:programs-and-operating-system:program}{program} still agrees with it.
+
+\section{Filtering and counting}
+
+Each loan names its book only by a number, \code{book_id}. To count the loans
+of each genre, the \omterm{def:g4:programs-and-operating-system:program}{program} looks up the book of each loan. A \omterm{def:g8:dictionaries:dictionary}{dictionary}
+from \code{book_id} to the book's record makes each look-up a single step,
+instead of a search through the 80 books.
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1.3cm, y=0.5cm, font=\scriptsize]
+  \node[anchor=south west, font=\footnotesize\bfseries] at (0,1.1) {loans};
+  \foreach \l/\b [count=\i from 1] in {1/59, 2/73, 3/28, 4/54} {
+    \draw[black!60, fill=white] (0,-\i) rectangle ++(0.8,1); \node at (0.4,-\i+0.5) {\l};
+    \draw[black!60, fill=ocYellow!30] (0.8,-\i) rectangle ++(0.9,1); \node at (1.25,-\i+0.5) {\b};
+  }
+  \node[font=\tiny] at (0.4,0.6) {loan\_id};
+  \node[font=\tiny] at (1.25,0.6) {book\_id};
+  \node[anchor=south west, font=\footnotesize\bfseries] at (5,1.1) {books};
+  \foreach \b/\g [count=\i from 1] in {28/comics, 54/sport, 59/mystery, 73/adventure} {
+    \draw[black!60, fill=ocYellow!30] (5,-\i) rectangle ++(0.9,1); \node at (5.45,-\i+0.5) {\b};
+    \draw[black!60, fill=white] (5.9,-\i) rectangle ++(1.6,1); \node at (6.7,-\i+0.5) {\g};
+  }
+  \node[font=\tiny] at (5.45,0.6) {book\_id};
+  \node[font=\tiny] at (6.7,0.6) {genre};
+  \foreach \a/\b in {1/3, 2/4, 3/1, 4/2} {
+    \draw[-{Stealth[length=1.5mm]}, ocBlue] (1.7,-\a+0.5) -- (5,-\b+0.5);
+  }
+\end{tikzpicture}
+
+{\small Looking up the book of each loan: the \code{book_id} of a loan leads
+to the row of its book, and so to its genre.}
+\end{omfigure}
+
+\omcode{code/grade-8/06-project-data-explorer/listings/explorer_v3.py}{22}{49}{Version
+3: looking up books, loans per genre, books never
+borrowed.}\label{lst:g8:project-data-explorer:v3}
+
+The \omterm{def:g2:using-a-computer:menu}{menu} \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop} now calls a \omterm{def:g7:functions:function}{function} \code{answer}, which builds the lines of an
+answer:
+
+\omcode{code/grade-8/06-project-data-explorer/listings/explorer_v3.py}{52}{67}{Version
+3: the answers as lines.}\label{lst:g8:project-data-explorer:v3-answer}
+
+\omoutput[1-2,8-20]{code/grade-8/06-project-data-explorer/outputs/explorer_v3.txt}{Questions
+1 and 3.}\label{out:g8:project-data-explorer:v3}
+
+\code{answer} returns its lines instead of printing them: the last version
+will both print them and save them. Question 3 has an empty answer: every
+book of the library went out at least once in 2025. Saying so is better than
+printing nothing, which would look like a \omterm{def:g7:finding-and-fixing-bugs:bug}{bug}.
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[width=10cm, height=4.8cm, ybar, bar width=0.5cm, ymin=0,
+      symbolic x coords={adventure,comics,history,mystery,nature,poetry,science,sport},
+      xtick=data, x tick label style={font=\scriptsize, rotate=30, anchor=north east},
+      nodes near coords, nodes near coords style={font=\scriptsize},
+      ylabel={loans}, label style={font=\footnotesize}, tick label style={font=\footnotesize},
+      axis x line*=bottom, axis y line*=left, enlarge x limits=0.08]
+    \addplot[fill=ocBlue!60, draw=ocBlue] table[x=genre, y=loans] {code/grade-8/06-project-data-explorer/figures/out/genres.dat};
+  \end{axis}
+\end{tikzpicture}
+
+{\small The loans of 2025 by genre, counted by the explorer's own \omterm{def:g7:functions:function}{function}
+\code{loans_by_genre}.}
+\end{omfigure}
+
+\section{Sorting and the top ten}
+
+The ten most borrowed books need the books \omterm{def:g8:searching-and-sorting:sorted}{sorted} by their number of loans,
+from the most. \code{sorted} can take a \code{key}: a \omterm{def:g7:functions:function}{function} that it calls
+on each \omterm{def:g7:lists:list}{item}, and whose results it compares instead of the \omterm{def:g7:lists:list}{items}. Here the
+key of a row is the \omterm{def:g7:lists:list}{list} \code{[-loans, title]}. \omterm{def:g7:lists:list}{Lists} are compared \omterm{def:g7:lists:list}{item} by
+\omterm{def:g7:lists:list}{item}, like the \omterm{def:g7:strings:string}{characters} of a text (\cref{ch:g8:files-and-data-tables}): the
+first \omterm{def:g7:lists:list}{items} decide, and only when they are equal do the second ones. The minus
+sign puts the largest numbers of loans first; the title breaks the ties.
+
+\omcode{code/grade-8/06-project-data-explorer/listings/explorer_v4.py}{52}{65}{Version
+4: the sort key and the top ten.}\label{lst:g8:project-data-explorer:v4}
+
+\omoutput[1,8-20]{code/grade-8/06-project-data-explorer/outputs/explorer_v4.txt}{The
+top ten.}\label{out:g8:project-data-explorer:v4}
+
+The key is a named \omterm{def:g7:functions:function}{function}, given to \code{sorted} without brackets:
+\code{key=most_borrowed_first} hands over the \omterm{def:g7:functions:function}{function} itself, for
+\code{sorted} to call; \code{most_borrowed_first()} would call it at once.
+\code{[:10]} keeps the first ten rows of the \omterm{def:g8:searching-and-sorting:sorted}{sorted list}. Four books have 9
+loans: they come in the alphabetical order of their titles.
+
+\section{Dates and the report}
+
+The last version adds question 4 and the report. Dates in the loans table are
+written \code{YYYY-MM-DD}, so they can be compared as text
+(\cref{ch:g8:files-and-data-tables}); a date typed by the user is checked
+first, so that it is written the same way.
+
+\omcode{code/grade-8/06-project-data-explorer/listings/explorer_v5.py}{69}{90}{Version
+5: checking a date, the loans still out, and the
+report.}\label{lst:g8:project-data-explorer:v5}
+
+\omcode{code/grade-8/06-project-data-explorer/listings/explorer_v5.py}{121}{145}{Version
+5: the \omterm{def:g2:using-a-computer:menu}{menu} \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop} now saves each answer.}\label{lst:g8:project-data-explorer:v5-main}
+
+\omoutput[1-2,8-22]{code/grade-8/06-project-data-explorer/outputs/explorer_v5.txt}{Two
+dates and one refused; the report keeps the last answer.}\label{out:g8:project-data-explorer:v5}
+
+A loan is still out on a date if it went out on or before that date and had
+not come back by then: either it never came back, or it came back later. On 31
+December, 24 loans are out; 22 of them never came back, and 2 came back in
+2026. The \omterm{def:g4:programs-and-operating-system:program}{program} checks the date before using it, and the \omterm{def:g6:variables-and-input:value}{variable}
+\code{saved} makes sure that \code{report.txt} is only read once something has
+been written to it.
+
+The tests of the chapter check each \omterm{def:g7:functions:function}{function} on the tables: that the genre
+counts add up to 400, that the top ten is in order, that each version's
+session prints what it should, and that the \omterm{def:g4:programs-and-operating-system:program}{program}'s copies of the two
+tables are exactly the town's \omterm{def:g3:files-and-folders:file}{files}.
+
+\section{Exercises}
+
+\begin{exercise}[$\star$]\label{exo:g8:project-data-explorer:1}
+Version 1 is given the choices \code{5}, \code{1}, then \code{0}. What does it
+print after the \omterm{def:g2:using-a-computer:menu}{menu}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g8:project-data-explorer:2}
+A toy library has three books, Ash (\code{book_id} 1), Birch (2) and Cedar
+(3), and five loans, of the books 2, 3, 2, 1 and 3. What are the first three
+rows of \code{top_ten}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g8:project-data-explorer:3}
+Write a \omterm{def:g7:functions:function}{function} \code{books_by(books, author)} that returns the titles of
+the books written by one author.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g8:project-data-explorer:4}
+This version of \code{top_ten} prints The Clockwork Engine in first and second
+place. Why? Fix it.
+
+\omcode{code/grade-8/06-project-data-explorer/exercises/top_ten_bug.py}{5}{16}{A top
+ten that repeats books.}\label{lst:g8:project-data-explorer:top-bug}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g8:project-data-explorer:5}
+Write a \omterm{def:g7:functions:function}{function} \code{busiest_month(loans)} that returns the month in which
+the most loans went out, and their number.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g8:project-data-explorer:6}
+Without \code{is_date}, version 5 answers \code{22 loans still out on
+30/6/2025}. Explain this number, by comparing \code{"30/6/2025"} with the
+dates of the table as text.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g8:project-data-explorer:7}
+The town also has a members table, \code{members.csv}, with a
+\code{member_id} column. Write a \omterm{def:g7:functions:function}{function} \code{never_borrowers(members,
+loans)} that returns the members who never borrowed a book.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g8:project-data-explorer:8}
+For 80 books and 400 loans, how many times does \code{loans_by_genre} read
+or write the dictionaries \code{finder} and \code{counts}? Count the steps of
+\code{book_finder} too.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g8:project-data-explorer:9}
+Write a \omterm{def:g7:functions:function}{function} \code{save_csv(rows, filename)} that saves the top ten as a
+\omterm{def:g8:files-and-data-tables:table}{CSV file}, with the \omterm{def:g8:files-and-data-tables:table}{header row} \code{title,loans}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g8:project-data-explorer:10}
+The module \code{datetime} of Python knows the calendar: after
+\code{from datetime import date}, the call
+\code{date.fromisoformat("2025-01-03")} turns a text into a date, and the
+difference of two dates has a number of days, \code{.days}. Write a \omterm{def:g7:functions:function}{function}
+\code{average_length(loans)} that returns the average number of days a book
+stays out, over the loans that came back.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g8:project-data-explorer:11}
+Explain why \code{top_ten} gives the same ten rows, in the same order,
+whatever the order of the lines of \code{loans.csv}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g8:project-data-explorer:12}
+Write a \omterm{def:g7:functions:function}{function} \code{best_pair(loans)} that finds the pair of books
+borrowed by the largest number of the same members, and that number.
+\end{exercise}

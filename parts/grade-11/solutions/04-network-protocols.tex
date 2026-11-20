@@ -1,0 +1,210 @@
+\section*{Chapter \ref{ch:g11:network-protocols} --- Network Layers and Protocols}
+
+\begin{solution}{exo:g11:network-protocols:1}
+The \omterm{def:g10:machine-integers:mask}{mask} \code{255.255.255.0} keeps the first three bytes and clears the last: \code{192.168.10.0}.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:2}
+$32 - 26 = 6$ bits for the machines: $2^6 = 64$ addresses. Without the first (the network) and the last (all the
+machines at once), $62$ machines.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:3}
+\code{198.51.100.130} is in \code{198.51.100.0/24} and in \code{198.51.100.128/25}, which holds \code{.128} to
+\code{.255}; the /25 is longer: router C. \code{198.51.100.127} is only in the /24: router B.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:4}
+The link header, then the network header, then the transport header, then the data. A router reads the link header,
+which brought the frame to it, and the network header, to choose the \omterm{def:g11:network-protocols:routing-table}{next hop}; it replaces the link header with one
+for the next link, and in the network header it only lowers the time to live. It does not read the transport header.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:5}
+\smallskip\noindent\hspace*{2em}\code{def same_network(a, b, prefix):}
+
+\noindent\hspace*{4em}\code{m = (2**32 - 1) ^ (2**(32 - prefix) - 1)}
+
+\noindent\hspace*{4em}\code{x = int(ipaddress.ip_address(a))}
+
+\noindent\hspace*{4em}\code{y = int(ipaddress.ip_address(b))}
+
+\noindent\hspace*{4em}\code{return x & m == y & m}
+
+\smallskip\noindent The module only turns the dotted strings into numbers; \code{to_int} of the chapter would do as
+well. The precedence of \code{&} is higher than that of \code{==}, so no brackets are needed.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:6}
+An OR with $1$ gives $1$, an OR with $0$ leaves the bit: the $26$ ones of the \omterm{def:g10:machine-integers:mask}{mask} became ones, and the last $6$ bits
+of the address stayed. $37 = 100101$ in binary, so the last byte is $11100101 = 229$ and the first three are $255$.
+The result keeps the machine's part and loses the network's, exactly the opposite of what was wanted.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:7}
+\smallskip\noindent\hspace*{2em}\code{def lookup(table, address):}
+
+\noindent\hspace*{4em}\code{a = ipaddress.ip_address(address)}
+
+\noindent\hspace*{4em}\code{fits = [(ipaddress.ip_network(d), hop) for d, hop in table}
+
+\noindent\hspace*{6em}\code{if a in ipaddress.ip_network(d)]}
+
+\noindent\hspace*{4em}\code{if not fits:}
+
+\noindent\hspace*{6em}\code{return None}
+
+\noindent\hspace*{4em}\code{return max(fits, key=lambda f: f[0].prefixlen)[1]}
+
+\smallskip\noindent The tests check that it agrees with the chapter's \code{lookup} on its four addresses, and that it
+returns \code{None} once the \omterm{def:g11:network-protocols:routing-table}{default route} is removed.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:8}
+$100 + 20 + 20 + 14 = 154$ bytes: $20$ of \omterm{def:g11:network-protocols:tcp-udp}{TCP}, $20$ of IPv4, $14$ of Ethernet. The headers are $54 / 154$, about
+$35$ percent. Small messages pay a high share of headers.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:9}
+\smallskip\noindent\hspace*{2em}\code{send (0, x)  lost; timeout}
+
+\noindent\hspace*{2em}\code{send (0, x)  delivered  ack 0}
+
+\noindent\hspace*{2em}\code{send (1, y)  delivered  ack lost; timeout}
+
+\noindent\hspace*{2em}\code{send (1, y)  duplicate dropped  ack 1}
+
+\smallskip\noindent Four sends for two messages.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:10}
+The packet \code{(0, a)} arrives and is kept; its \omterm{def:g11:network-protocols:ack}{acknowledgement} is lost. The sender's \omterm{def:g11:network-protocols:ack}{timeout} sends \code{(0, a)}
+again, and this receiver keeps it too: the application receives \code{a} twice, as the function \code{receiver}
+of \code{exercises/net_ex.py} shows when called with \code{check_bit=False}.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:11}
+$T = 8000 / 10^7 = 0.8$~ms. The busy share is $0.8 / (0.8 + 3.2) = 0.2$, that is $20$ percent, and the useful rate is
+$0.2 \times 10 = 2$~Mbit/s.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:12}
+Write $b_k$ for the bit of message $k$: $0$ when $k$ is odd, $1$ when it is even, so $b_{k+1} = b_{k-1}$. We show that
+the following holds each time the sender starts on message $k$: the receiver has kept $m_1, \dots, m_{k-1}$ and
+nothing else, it expects the bit $b_k$, and everything still on its way, in either direction, carries the bit
+$b_{k-1}$. It holds for $k = 1$, with nothing on the way.
+
+While the sender sends $m_k$, the data channel holds, in this order, some old copies of $m_{k-1}$ and then copies of
+$m_k$; since the channel never reorders, every old copy arrives, or is lost, before any copy of $m_k$. The old copies
+have the bit $b_{k-1}$, not the one expected: they are dropped, and only acknowledged with $b_{k-1}$. The first copy
+of $m_k$ that arrives has the expected bit: $m_k$ is kept, once, and the receiver now expects $b_{k+1} = b_{k-1}$;
+later copies of $m_k$ have the bit $b_k$ and are dropped. On the way back, the sender ignores the \omterm{def:g11:network-protocols:ack}{acknowledgements}
+$b_{k-1}$. An \omterm{def:g11:network-protocols:ack}{acknowledgement} $b_k$ is sent only after a copy of $m_k$ arrived, so when the first one reaches the
+sender, $m_k$ has been kept; the sender moves on to $m_{k+1}$. At that moment every \omterm{def:g11:network-protocols:ack}{acknowledgement} sent earlier,
+with $b_{k-1}$, has arrived or been lost, and every old copy of $m_{k-1}$ too: what remains on the way carries $b_k$.
+The statement holds for $k + 1$.
+
+So each message is kept exactly once, in order, as long as each packet, sent again and again, eventually gets
+through.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:13}
+\smallskip\noindent\hspace*{2em}\code{def window_time(n, w, rtt):}
+
+\noindent\hspace*{4em}\code{acks, tick, sent = [], 0, 0}
+
+\noindent\hspace*{4em}\code{while sent < n:}
+
+\noindent\hspace*{6em}\code{acks = [a for a in acks if a > tick]}
+
+\noindent\hspace*{6em}\code{if len(acks) < w:}
+
+\noindent\hspace*{8em}\code{acks.append(tick + 1 + rtt)}
+
+\noindent\hspace*{8em}\code{sent += 1}
+
+\noindent\hspace*{6em}\code{tick += 1}
+
+\noindent\hspace*{4em}\code{return max(acks)}
+
+\smallskip\noindent The list holds the arrival ticks of the \omterm{def:g11:network-protocols:ack}{acknowledgements} still awaited. For $n = 10$ and
+$\mathit{rtt} = 4$: $50$ ticks with $w = 1$, each packet taking $5$; $26$ with $w = 2$; $14$ with $w = 5$, which is
+$n + \mathit{rtt}$: with $5$ packets in flight, the \omterm{def:g11:network-protocols:ack}{acknowledgement} of the first comes back just when the sender
+wants to send the sixth, and the sender never waits.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:14}
+The sender sends \code{(0, a)}, which the channel holds back. The \omterm{def:g11:network-protocols:ack}{timeout} sends \code{(0, a)} again; this copy
+arrives, is kept and acknowledged. The sender sends \code{(1, b)}, which is kept and acknowledged, then \code{(0, c)}.
+The old copy of \code{(0, a)} now arrives before \code{(0, c)}: its bit is the one expected, so the receiver keeps
+\code{a} a second time and acknowledges it with $0$. Then \code{(0, c)} arrives with a bit that is no longer expected
+and is dropped as a copy; the sender, seeing an \omterm{def:g11:network-protocols:ack}{acknowledgement} $0$, believes \code{c} arrived and goes on. The
+receiver has kept \code{a}, \code{b}, \code{a}, and \code{c} is lost.
+\end{solution}
+
+\begin{solution}{exo:g11:network-protocols:15}
+Four networks need $2$ more bits of \omterm{def:g11:network-protocols:ip-address}{prefix}: four /26, each of $64$ addresses and $62$ machines.
+\begin{itemize}
+  \item \code{192.0.2.0/26}, from \code{.0} to \code{.63};
+  \item \code{192.0.2.64/26}, from \code{.64} to \code{.127};
+  \item \code{192.0.2.128/26}, from \code{.128} to \code{.191};
+  \item \code{192.0.2.192/26}, from \code{.192} to \code{.255}.
+\end{itemize}
+\end{solution}
+
+\begin{solution}{pb:g11:network-protocols:1}
+\textbf{1.} $1500 \times 8 = 12\,000$ bits at $10^9$ bit/s: $T = 12$~\textmu s.
+
+\textbf{2.} $6 \times 10^6 / (2 \times 10^8) = 0.03$~s, so $30$~ms one way and $R = 60$~ms there and back.
+
+\textbf{3.} An \omterm{def:g11:network-protocols:ack}{acknowledgement} of a few tens of bytes takes well under a microsecond to send, nothing beside $60$~ms.
+
+\textbf{4.} $10^9 \times 0.03 = 3 \times 10^7$ bits, $30$~Mbit, or $2500$ packets.
+
+\textbf{5.} $T + R = 60.012$~ms: the packet is sent, crosses, and the \omterm{def:g11:network-protocols:ack}{acknowledgement} comes back.
+
+\textbf{6.} $1 / 0.060012 \approx 16.66$ packets per second, so about $16.66 \times 12\,000 \approx 199\,960$ bit/s:
+$0.2$~Mbit/s.
+
+\textbf{7.} $8 \times 10^9 / 199\,960 \approx 40\,008$~s, about $11$ hours, on a line that could do it in $8$ seconds.
+
+\textbf{8.} The line \code{window 1} prints a busy share of $0.0200$ percent and $0.20$~Mbit/s.
+
+\textbf{9.} In each cycle of length $T + R$, the line is busy only during the $T$ it takes to send the packet; it is
+idle while the packet crosses and while the \omterm{def:g11:network-protocols:ack}{acknowledgement} comes back.
+
+\textbf{10.} $12 / 60\,012 \approx 0.0002$, that is $0.0200$ percent, or one moment in $60\,012 / 12 = 5001$.
+
+\textbf{11.} $T$ falls to $1.2$~\textmu s, so the busy share falls to $1.2 / 60\,001.2$, about $0.002$ percent, and the
+useful rate stays at $12\,000 / 0.0600012 \approx 0.2$~Mbit/s. The round trip, not the line's rate, is the limit.
+
+\textbf{12.} Larger packets, or a shorter round trip. The distance and the speed of the signal are fixed, and a packet
+ten times larger would only make the rate ten times larger, still a fraction of a percent of the line; a lost large
+packet also costs more to send again.
+
+\textbf{13.} The sender sends $w$ packets one after the other, which takes $wT$. The first \omterm{def:g11:network-protocols:ack}{acknowledgement} comes back
+$T + R$ after the start, and each following one a time $T$ later, freeing a place for one more packet. If
+$wT \ge T + R$, the next \omterm{def:g11:network-protocols:ack}{acknowledgement} always arrives before the window is used up and the line never rests;
+otherwise it works $wT$ in each cycle of $T + R$.
+
+\textbf{14.} $1000 \times 12 / 60\,012 \approx 0.19996$, so $19.996$ percent and $199.96$~Mbit/s, as printed.
+
+\textbf{15.} $w \ge (T + R) / T = 60\,012 / 12 = 5001$: the smallest window is $5001$ packets. The program finds the
+same, with $5000$ giving $99.98$ percent.
+
+\textbf{16.} $10^9 \times 0.06 = 6 \times 10^7$ bits, $7.5$~MB, about $5000$ packets. Any of them may be lost, and
+until its \omterm{def:g11:network-protocols:ack}{acknowledgement} arrives, the sender cannot know; it must be able to send it again.
+
+\textbf{17.} With thousands of packets in flight, a single bit cannot tell which packet an \omterm{def:g11:network-protocols:ack}{acknowledgement} is for, nor
+tell a copy from one of the many new packets: the numbers must be large enough to tell apart all the packets in
+flight.
+
+\textbf{18.} At full rate, $10^9 / 12\,000 \approx 83\,333$ packets per second: about $83$ losses per second, each one to
+detect and repair while the rest flows on.
+
+\textbf{19.} $65\,535 / 1500 \approx 43.7$, so $43$ full packets. Busy share $43 \times 12 / 60\,012 \approx 0.0086$,
+under $1$ percent, about $8.6$~Mbit/s. On such a line the extension is needed.
+
+\textbf{20.} On this cable, stop and wait keeps the line busy \textbf{$0.0200$ percent of the time}, one moment in
+$5001$, for $0.2$~Mbit/s out of $1$~Gbit/s; a \textbf{window of $5001$ packets}, $7.5$~MB in flight, fills it.
+\end{solution}

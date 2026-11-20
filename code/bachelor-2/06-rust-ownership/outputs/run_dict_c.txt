@@ -1,0 +1,143 @@
+$ cut -d, -f2 books.csv | tail -n +2 > titles.txt
+$ gcc -std=c17 -O0 -g -fsanitize=address dict.c -o dict && ./dict < titles.txt
+34 different words; most frequent: The (42)
+$ gcc -std=c17 -O0 -g -fsanitize=address -DBUG=1 dict.c -o dict1 && ./dict1 < titles.txt
+=================================================================
+==1000==ERROR: AddressSanitizer: heap-use-after-free on address 0x50c000000088 at pc 0x55555555611f bp 0x7fffffffeb90 sp 0x7fffffffeb80
+READ of size 4 at 0x50c000000088 thread T0
+    #0 0x55555555611e in main ~/session/dict.c:18
+    #1 0x7ffff7029d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+    #2 0x7ffff7029e3f in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29e3f)
+    #3 0x555555555344 in _start (~/session/dict1+0x1344)
+
+0x50c000000088 is located 72 bytes inside of 128-byte region [0x50c000000040,0x50c0000000c0)
+freed by thread T0 here:
+    #0 0x7ffff74b4537 in __interceptor_free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:127
+    #1 0x55555555594e in grow ~/session/dict.h:36
+    #2 0x555555555ced in dict_count ~/session/dict.h:54
+    #3 0x5555555560a6 in main ~/session/dict.c:17
+    #4 0x7ffff7029d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+
+previously allocated by thread T0 here:
+    #0 0x7ffff74b4a57 in __interceptor_calloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:154
+    #1 0x5555555554ef in dict_init ~/session/dict.h:19
+    #2 0x555555555fcd in main ~/session/dict.c:10
+    #3 0x7ffff7029d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+
+SUMMARY: AddressSanitizer: heap-use-after-free ~/session/dict.c:18 in main
+Shadow bytes around the buggy address:
+  0x0a187fff7fc0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0a187fff7fd0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0a187fff7fe0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0a187fff7ff0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0a187fff8000: fa fa fa fa fa fa fa fa fd fd fd fd fd fd fd fd
+=>0x0a187fff8010: fd[fd]fd fd fd fd fd fd fa fa fa fa fa fa fa fa
+  0x0a187fff8020: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 fa
+  0x0a187fff8030: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a187fff8040: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a187fff8050: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a187fff8060: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+  Shadow gap:              cc
+==1000==ABORTING
+$ gcc -std=c17 -O0 -g -fsanitize=address -DBUG=2 dict.c -o dict2 && ./dict2 < titles.txt
+34 different words; most frequent: The (42)
+=================================================================
+==1000==ERROR: AddressSanitizer: attempting double-free on 0x502000000010 in thread T0:
+    #0 0x7ffff74b4537 in __interceptor_free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:127
+    #1 0x555555555e58 in dict_free ~/session/dict.h:73
+    #2 0x555555556369 in main ~/session/dict.c:35
+    #3 0x7ffff7029d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+    #4 0x7ffff7029e3f in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29e3f)
+    #5 0x555555555344 in _start (~/session/dict2+0x1344)
+
+0x502000000010 is located 0 bytes inside of 4-byte region [0x502000000010,0x502000000014)
+freed by thread T0 here:
+    #0 0x7ffff74b4537 in __interceptor_free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:127
+    #1 0x55555555635d in main ~/session/dict.c:33
+    #2 0x7ffff7029d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+
+previously allocated by thread T0 here:
+    #0 0x7ffff745b9a7 in __interceptor_strdup ../../../../src/libsanitizer/asan/asan_interceptors.cpp:454
+    #1 0x555555555d44 in dict_count ~/session/dict.h:60
+    #2 0x555555556086 in main ~/session/dict.c:20
+    #3 0x7ffff7029d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+
+SUMMARY: AddressSanitizer: double-free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:127 in __interceptor_free
+==1000==ABORTING
+$ gcc -std=c17 -O0 -g -fsanitize=address -DBUG=3 dict.c -o dict3 && ./dict3 < titles.txt
+=================================================================
+==1000==ERROR: AddressSanitizer: heap-use-after-free on address 0x50c000000100 at pc 0x7ffff745df89 bp 0x7fffffffea60 sp 0x7fffffffe1d8
+READ of size 2 at 0x50c000000100 thread T0
+    #0 0x7ffff745df88 in printf_common ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors_format.inc:553
+    #1 0x7ffff745e6cc in __interceptor_vprintf ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors.inc:1660
+    #2 0x7ffff745e7c6 in __interceptor_printf ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors.inc:1718
+    #3 0x5555555562bb in main ~/session/dict.c:31
+    #4 0x7ffff7029d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+    #5 0x7ffff7029e3f in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29e3f)
+    #6 0x555555555324 in _start (~/session/dict3+0x1324)
+
+0x50c000000100 is located 0 bytes inside of 120-byte region [0x50c000000100,0x50c000000178)
+freed by thread T0 here:
+    #0 0x7ffff74b4537 in __interceptor_free ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:127
+    #1 0x5555555560d4 in main ~/session/dict.c:23
+    #2 0x7ffff7029d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+
+previously allocated by thread T0 here:
+    #0 0x7ffff74b4887 in __interceptor_malloc ../../../../src/libsanitizer/asan/asan_malloc_linux.cpp:145
+    #1 0x7ffff7080072 in __getdelim (/lib/x86_64-linux-gnu/libc.so.6+0x80072)
+    #2 0x7ffff75e83df  (/lib/x86_64-linux-gnu/libasan.so.6+0x1e83df)
+
+SUMMARY: AddressSanitizer: heap-use-after-free ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors_format.inc:553 in printf_common
+Shadow bytes around the buggy address:
+  0x0a187fff7fd0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0a187fff7fe0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0a187fff7ff0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0a187fff8000: fa fa fa fa fa fa fa fa fd fd fd fd fd fd fd fd
+  0x0a187fff8010: fd fd fd fd fd fd fd fd fa fa fa fa fa fa fa fa
+=>0x0a187fff8020:[fd]fd fd fd fd fd fd fd fd fd fd fd fd fd fd fa
+  0x0a187fff8030: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a187fff8040: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a187fff8050: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a187fff8060: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a187fff8070: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+  Shadow gap:              cc
+==1000==ABORTING
+[exit status 1]

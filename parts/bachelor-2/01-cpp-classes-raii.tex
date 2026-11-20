@@ -1,0 +1,587 @@
+% Book 4, Year 2, chapter 1 -- From C to C++: classes and resource management.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 1.
+\chapter{From C to C++: Classes and Resource Management}\label{ch:b2:cpp-classes-raii}
+
+The weather station of Brenmoor writes its readings to log files whose first line says \code{LOG v2}. A C
+function that checks this header opens the file, reads one line and gives up early when the line is wrong. The
+program below calls it once on a good log and ten times on a bad one, and before and after it counts the files the
+system holds open for the program (\code{open_files}, not shown, asks the system about each file number from 0 to 255;
+\cref{ch:b2:files-pipes-signals} explains these numbers).
+
+\omcodes{code/bachelor-2/01-cpp-classes-raii/listings/early_return.c}{6-20,32-40}{A header check with two
+early returns}\label{lst:b2:cpp-classes-raii:early-return}
+
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/early_return.txt}{Ten calls, ten files left
+open.}\label{out:b2:cpp-classes-raii:early-return}
+
+The three files open at the start are the standard input, output and error. Each call on the bad log returned
+through one of the two early \code{return}s, and neither of them calls \code{fclose}: ten calls left ten files open.
+A long-running server that did this a few thousand times would be refused its next \code{fopen}. The bug is not
+in a hard line; it is in a missing one, on a path the author did not think about. This chapter moves to C++, whose
+\omterm{def:b2:cpp-classes-raii:class}{objects} release what they hold when they die, on every path out of a function, including the paths an error
+takes.
+
+\begin{recall}
+In C, a variable declared in a block is \emph{automatic}: it lives from its declaration to the end of the block,
+in the frame of the running function, and disappears when the function returns. Memory taken with \code{malloc}
+lives until \code{free}; a block nobody frees any more is a \emph{leak}, and freeing a block twice is undefined
+behaviour. Who frees what is a convention written in comments, which the compiler cannot check. A \emph{\omterm{def:b2:cpp-classes-raii:class}{class}}
+(the school volumes, in Python) groups data and the methods that use them, and its \omterm{def:b2:cpp-classes-raii:constructor}{constructor} builds each new
+instance.
+\end{recall}
+
+\section{C++ as a better C}\label{sec:b2:cpp-classes-raii:better-c}
+
+C++ grew out of C, and most C programs are also C++ programs. Its compiler here is \code{g++}, used with the
+standard of 2020 (\code{-std=c++20}). This part of the book uses what C++ adds to C to write the same kind of
+systems code more safely; the next four chapters go on to copies and moves, polymorphism, templates and the
+standard library.
+
+\begin{history}[C with Classes]
+% ledger: b2:cwc-1979
+% ledger: b2:cpp20-published
+Bjarne Stroustrup began the work that became C++ in 1979, under the name ``C with Classes'': he
+wanted to write efficient systems programs in the style of the Simula language, with its classes. The first version called C++ was used inside
+AT\&T in August 1983, and the name C++ (C, incremented) appeared late that year. The language has been an ISO
+standard since 1998; the edition used in this book, C++20, was published in December 2020.
+\end{history}
+
+\begin{definition}[Reference]\label{def:b2:cpp-classes-raii:reference}
+A \emph{reference}\index{reference (C++)} of type \code{T &} is another name for an existing \omterm{def:b2:cpp-classes-raii:class}{object} of type
+\code{T}. It is bound once, when it is declared, and never rebound; reading or assigning the reference reads or
+assigns the \omterm{def:b2:cpp-classes-raii:class}{object} it names. A reference cannot be null. A \emph{const reference} \code{const T &} names the \omterm{def:b2:cpp-classes-raii:class}{object}
+but allows only reading it.
+\end{definition}
+
+A \omterm{def:b2:cpp-classes-raii:reference}{reference} does what a pointer does in C, without the \code{*} and \code{&} at every use and without the null
+case. Passed as a parameter, \code{T &} lets the function change the caller's variable, and \code{const T &} lets
+it read a large \omterm{def:b2:cpp-classes-raii:class}{object} without copying it.
+
+\begin{definition}[Namespace]\label{def:b2:cpp-classes-raii:namespace}
+A \emph{namespace}\index{namespace} is a named region of declarations. A name \code{n} declared in the namespace
+\code{ns} is written \code{ns::n} outside it, so that two libraries may both declare an \code{area} without a clash.
+The standard library declares everything in the namespace \code{std}.
+\end{definition}
+
+C++ also allows \emph{overloading}: two functions may share a name if their parameter lists differ, and the
+compiler picks the one whose parameters match the arguments of each call. The library types \code{std::string}
+(a string that owns its characters and grows as needed) and \code{std::vector<T>} (an array of \code{T} that grows
+as needed) are used in this chapter as black boxes; \cref{ch:b2:cpp-standard-library} opens them. Output goes
+through \code{std::cout <<}, which is overloaded for every type it can print.
+
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/references.cpp}{6}{38}{\omterm{def:b2:cpp-classes-raii:reference}{References}, overloading, a \omterm{def:b2:cpp-classes-raii:namespace}{namespace},
+strings and vectors}\label{lst:b2:cpp-classes-raii:references}
+
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/references.txt}{The swap went through the
+\omterm{def:b2:cpp-classes-raii:reference}{references}.}\label{out:b2:cpp-classes-raii:references}
+
+\begin{example}[Following the references]\label{ex:b2:cpp-classes-raii:references}
+The line \code{int &r = x;} makes \code{r} a second name of \code{x}, so \code{r = 10} sets \code{x} to 10. In
+\code{swap_ints(x, y)}, the parameters \code{a} and \code{b} are bound to \code{x} and \code{y} themselves: the
+function exchanges the caller's values and \code{main} prints \code{x = 2, y = 10}. The two \code{area} calls go to
+two different functions, $3 \times 3$ and $2 \times 4.5$, both 9. In \code{total_length}, the parameter
+\code{const std::vector<std::string> &words} reads the caller's vector without copying its four strings, whose
+lengths $9 + 12 + 14 + 7$ make 42.
+\end{example}
+
+A \code{const} \omterm{def:b2:cpp-classes-raii:reference}{reference} promises that the function will not change the \omterm{def:b2:cpp-classes-raii:class}{object}. The promise is checked by the
+compiler, so breaking it is an error, not a run-time surprise.
+
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/const_error.cpp}{4}{14}{Writing through a const \omterm{def:b2:cpp-classes-raii:reference}{reference}
+(an error on purpose)}\label{lst:b2:cpp-classes-raii:const-error}
+
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/const_error.txt}{The compiler refuses, and names the line
+and the \omterm{def:b2:cpp-classes-raii:reference}{reference}.}\label{out:b2:cpp-classes-raii:const-error}
+
+\section{Classes}\label{sec:b2:cpp-classes-raii:classes}
+
+A C structure groups data, and any function may change its fields. A C++ \omterm{def:b2:cpp-classes-raii:class}{class} groups data and the functions
+allowed to touch them, and decides who may call what.
+
+\begin{definition}[Class, object, member]\label{def:b2:cpp-classes-raii:class}
+A \emph{class}\index{class (C++)} is a type declared with \code{class} or \code{struct} that groups
+\emph{data members}\index{data member} (its fields) and \emph{member functions}\index{member function} (functions
+declared inside it). An \emph{object}\index{object (C++)} of a class is a region of memory holding one value of each
+data member; a member function is called on an object, \code{obj.f(args)}, and inside it the names of the members
+refer to that object's members (the object itself is \code{*this}).
+\end{definition}
+
+\begin{definition}[Access specifier]\label{def:b2:cpp-classes-raii:access}
+The \emph{access specifiers}\index{access specifier} \code{public:} and \code{private:} divide a \omterm{def:b2:cpp-classes-raii:class}{class}'s
+declarations into those any code may use and those only the \omterm{def:b2:cpp-classes-raii:class}{class}'s own \omterm{def:b2:cpp-classes-raii:class}{member functions} may use. A
+\code{class} starts private, a \code{struct} public; otherwise the two keywords are the same.
+\end{definition}
+
+\begin{definition}[Constructor, destructor]\label{def:b2:cpp-classes-raii:constructor}
+A \emph{constructor}\index{constructor (C++)} of a \omterm{def:b2:cpp-classes-raii:class}{class} \code{C} is a \omterm{def:b2:cpp-classes-raii:class}{member function} named \code{C}, without a
+return type, that the compiler calls each time an \omterm{def:b2:cpp-classes-raii:class}{object} of \code{C} is created; its \emph{member initialiser
+list} (after the \code{:}) gives each \omterm{def:b2:cpp-classes-raii:class}{data member} its first value. The \emph{destructor}\index{destructor}
+\code{~C()} is the \omterm{def:b2:cpp-classes-raii:class}{member function} the compiler calls when the \omterm{def:b2:cpp-classes-raii:class}{object}'s lifetime ends; a \omterm{def:b2:cpp-classes-raii:class}{class} has exactly one.
+\end{definition}
+
+The \omterm{def:b2:cpp-classes-raii:constructor}{constructor} is the only way in: there is no \omterm{def:b2:cpp-classes-raii:class}{object} of \code{C} that a \omterm{def:b2:cpp-classes-raii:constructor}{constructor} did not finish building. That
+is what makes the following definition useful.
+
+\begin{definition}[Class invariant]\label{def:b2:cpp-classes-raii:class-invariant}
+A \emph{class invariant}\index{class invariant} is a property of the \omterm{def:b2:cpp-classes-raii:class}{data members} that every \omterm{def:b2:cpp-classes-raii:constructor}{constructor}
+establishes and every public \omterm{def:b2:cpp-classes-raii:class}{member function} preserves. A \omterm{def:b2:cpp-classes-raii:constructor}{constructor} that cannot establish it does not return:
+it reports the failure (\cref{sec:b2:cpp-classes-raii:exceptions}), and no \omterm{def:b2:cpp-classes-raii:class}{object} exists.
+\end{definition}
+
+If the \omterm{def:b2:cpp-classes-raii:class}{data members} are private, only the \omterm{def:b2:cpp-classes-raii:class}{class}'s own functions can break the invariant, so checking it is a matter
+of reading one \omterm{def:b2:cpp-classes-raii:class}{class}, not the whole program. The \omterm{def:b2:cpp-classes-raii:class}{class} below keeps a fraction in lowest terms with a positive
+denominator, so that two equal fractions have equal members.
+
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/fraction.hpp}{6}{38}{A fraction that is always in lowest
+terms}\label{lst:b2:cpp-classes-raii:fraction}
+
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/fraction_demo.cpp}{11}{27}{Using it; the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} refuses a
+zero denominator}\label{lst:b2:cpp-classes-raii:fraction-demo}
+
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/fraction_demo.txt}{Every printed fraction satisfies the
+invariant.}\label{out:b2:cpp-classes-raii:fraction-demo}
+
+\begin{example}[Building $6/(-8)$]\label{ex:b2:cpp-classes-raii:fraction}
+The initialiser list sets \code{num_ = 6}, \code{den_ = -8}. The body finds \code{den_} nonzero and negative, so it
+negates both, $-6/8$, then divides both by $\gcd(-6, 8) = 2$ (\code{std::gcd} returns a non-negative result):
+$-3/4$. The sum \code{a + b} is built by the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} too, from $(-3)\cdot 4 + 1 \cdot 4 = -8$ over $16$, and
+comes out as $-1/2$. The expression \code{a + 1} works because \code{Fraction(long whole)} is a \omterm{def:b2:cpp-classes-raii:constructor}{constructor} with one
+argument: the compiler uses it to convert \code{1} into $1/1$. The defaulted \code{operator==} compares the members
+one by one, which is correct only because the invariant makes the representation unique.
+\end{example}
+
+\begin{definition}[Const member function, const-correctness]\label{def:b2:cpp-classes-raii:const}
+A \omterm{def:b2:cpp-classes-raii:class}{member function} declared with \code{const} after its parameter list is a \emph{const member
+function}\index{const member function}: it may not change the \omterm{def:b2:cpp-classes-raii:class}{object}'s \omterm{def:b2:cpp-classes-raii:class}{data members}, and it is the only kind of
+\omterm{def:b2:cpp-classes-raii:class}{member function} that can be called on a \code{const} \omterm{def:b2:cpp-classes-raii:class}{object} or through a \code{const} \omterm{def:b2:cpp-classes-raii:reference}{reference}. A program is
+\emph{const-correct}\index{const-correctness} when every function that does not change an \omterm{def:b2:cpp-classes-raii:class}{object} takes it as
+\code{const}, and every \omterm{def:b2:cpp-classes-raii:class}{member function} that does not change its \omterm{def:b2:cpp-classes-raii:class}{object} is \code{const}.
+\end{definition}
+
+In \cref{lst:b2:cpp-classes-raii:fraction}, \code{num()}, \code{den()}, \code{operator+} and \code{operator*} are
+const: they read \code{*this} and build a new fraction. A function that takes a \code{const Fraction &} can call
+them and nothing else. \omterm{def:b2:cpp-classes-raii:const}{Const-correctness} spreads: once \code{operator<<} takes its fraction by \code{const} \omterm{def:b2:cpp-classes-raii:reference}{reference},
+the accessors it calls must be const.
+
+\section{Resource acquisition is initialisation}\label{sec:b2:cpp-classes-raii:raii}
+
+An automatic \omterm{def:b2:cpp-classes-raii:class}{object} of a \omterm{def:b2:cpp-classes-raii:class}{class} lives from its declaration to the end of its block, as a C variable does; the
+difference is that the compiler calls its \omterm{def:b2:cpp-classes-raii:constructor}{destructor} at that end. The \omterm{def:b2:cpp-classes-raii:class}{class} \code{Noisy} prints a line in its
+\omterm{def:b2:cpp-classes-raii:constructor}{constructor} and one in its \omterm{def:b2:cpp-classes-raii:constructor}{destructor}, so that a run shows every lifetime.
+
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/noisy.hpp}{6}{18}{An \omterm{def:b2:cpp-classes-raii:class}{object} that reports its birth and its
+death}\label{lst:b2:cpp-classes-raii:noisy}
+
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/lifetimes.cpp}{5}{26}{Nested scopes and a
+loop}\label{lst:b2:cpp-classes-raii:lifetimes}
+
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/lifetimes.txt}{Each scope destroys its \omterm{def:b2:cpp-classes-raii:class}{objects} when it ends,
+the last made first.}\label{out:b2:cpp-classes-raii:lifetimes}
+
+The language fixes the order: when a block ends, its automatic \omterm{def:b2:cpp-classes-raii:class}{objects} are destroyed in the reverse order of their
+construction, and an \omterm{def:b2:cpp-classes-raii:class}{object}'s members are destroyed after its \omterm{def:b2:cpp-classes-raii:constructor}{destructor}'s body, in the reverse order of their
+declaration.
+% ledger: b2:cpp-dtor-order
+\omterm{def:b2:cpp-classes-raii:class}{Objects} declared outside every function (global \omterm{def:b2:cpp-classes-raii:class}{objects}) are built before \code{main} starts and destroyed after
+it returns, also in reverse order.
+
+\begin{proposition}[Lifetimes nest]\label{prop:b2:cpp-classes-raii:reverse-order}
+Let $a$ and $b$ be automatic \omterm{def:b2:cpp-classes-raii:class}{objects} of one thread, with $a$ constructed before $b$ and both alive at some moment.
+Then $b$ is destroyed before $a$. In other words, the lifetimes of automatic \omterm{def:b2:cpp-classes-raii:class}{objects} are nested intervals: two of
+them are either disjoint or one contains the other.
+\end{proposition}
+
+\begin{proof}
+Let $A$ and $B$ be the blocks that declare $a$ and $b$. Blocks are entered and left in a nested way: a block is left
+only after every block entered inside it has been left (this is how a function's calls and its braces work). At
+the moment $b$ is constructed, $a$ is alive, so $A$ is still active. Either $B = A$: then $b$ was declared after $a$
+in the same block, and the block destroys them in reverse order, $b$ first. Or $B \neq A$: then $B$ was entered
+after $A$ and while $A$ was active, so $B$ is left first, and $b$ dies when $B$ is left, while $a$ waits for $A$.
+In both cases $b$ dies first.
+\end{proof}
+
+The output above is this proposition at work: \code{c} is born and dies inside \code{visit}, \code{b2} dies before
+\code{b1}, and \code{a}, born first, dies last. The drawing below puts each lifetime on a time axis.
+
+\begin{omfigure}
+\begin{tikzpicture}[x=0.62cm, y=0.52cm, font=\footnotesize]
+\draw[->, black!60] (0,0) -- (17.4,0) node[right] {time (output line)};
+\foreach \t in {1,...,16} \draw[black!40] (\t,0.12) -- (\t,-0.12) node[below, font=\tiny] {\t};
+\foreach \name/\s/\e/\row/\col in {a/2/16/1/omDef, b1/3/10/2/omThm, b2/4/9/3/omThm,
+                                     c/5/7/4/omMeth, d0/11/12/3/omExo, d1/13/14/3/omExo} {
+  \fill[\col!25] (\s,\row) rectangle (\e,\row+0.6);
+  \draw[\col!80!black] (\s,\row) rectangle (\e,\row+0.6);
+  \node[anchor=east] at (\s-0.1,\row+0.3) {\texttt{\name}};
+}
+\draw[dashed, black!50] (4.5,5.2) -- (4.5,4.9) node[above, pos=0] {\scriptsize enter \texttt{visit}};
+\draw[dashed, black!50] (8.5,4.4) -- (8.5,0.2);
+\node[font=\scriptsize, black!60, anchor=south] at (8.5,4.4) {inner scope ends};
+\end{tikzpicture}
+\par\smallskip{\small The six \omterm{def:b2:cpp-classes-raii:class}{objects} of \cref{lst:b2:cpp-classes-raii:lifetimes}, each drawn from the output line
+that makes it to the line that drops it. Any two bars are either disjoint (\texttt{d0} and \texttt{d1}, born in
+two iterations of the loop) or nested (\texttt{c} inside \texttt{b2} inside \texttt{b1} inside \texttt{a}).}
+\end{omfigure}
+
+A \omterm{def:b2:cpp-classes-raii:constructor}{destructor} that runs at a known moment, on every way out of a block, is exactly what the header check of the
+opening lacked. The idea gets a name.
+
+\begin{definition}[Resource, RAII]\label{def:b2:cpp-classes-raii:raii}
+A \emph{resource}\index{resource} is anything a program acquires and must give back: a block of heap memory, an
+open file, a lock, a network connection. \emph{Resource acquisition is initialisation}\index{resource acquisition is
+initialisation (RAII)} (RAII) is the rule that every resource is acquired by the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} of an \omterm{def:b2:cpp-classes-raii:class}{object} that owns
+it, and released by that \omterm{def:b2:cpp-classes-raii:class}{object}'s \omterm{def:b2:cpp-classes-raii:constructor}{destructor}.
+\end{definition}
+
+\begin{method}[Owning a resource with an object]\label{met:b2:cpp-classes-raii:raii}
+To make a \omterm{def:b2:cpp-classes-raii:raii}{resource} safe:
+\begin{enumerate}
+\item write a \omterm{def:b2:cpp-classes-raii:class}{class} whose \omterm{def:b2:cpp-classes-raii:constructor}{constructor} acquires the \omterm{def:b2:cpp-classes-raii:raii}{resource} and fails (throws, \cref{sec:b2:cpp-classes-raii:exceptions})
+if it cannot, so that every \omterm{def:b2:cpp-classes-raii:class}{object} of the \omterm{def:b2:cpp-classes-raii:class}{class} holds a \omterm{def:b2:cpp-classes-raii:raii}{resource};
+\item release the \omterm{def:b2:cpp-classes-raii:raii}{resource} in the \omterm{def:b2:cpp-classes-raii:constructor}{destructor}, and nowhere else;
+\item forbid copying (\code{= delete}), so that one \omterm{def:b2:cpp-classes-raii:raii}{resource} has one owner (\cref{ch:b2:cpp-copy-move} shows how
+ownership can move instead);
+\item give the \omterm{def:b2:cpp-classes-raii:class}{class} the operations the program needs, and use it as an automatic \omterm{def:b2:cpp-classes-raii:class}{object} or a \omterm{def:b2:cpp-classes-raii:class}{data member}, never
+with a raw \code{fopen}, \code{malloc} or \code{new} in the code that uses it.
+\end{enumerate}
+\end{method}
+
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/file_handle.hpp}{8}{42}{A file owned by an
+\omterm{def:b2:cpp-classes-raii:class}{object}}\label{lst:b2:cpp-classes-raii:file}
+
+The \omterm{def:b2:cpp-classes-raii:class}{class} follows the four steps: the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} opens or throws, the \omterm{def:b2:cpp-classes-raii:constructor}{destructor} closes, the two lines with
+\code{= delete} remove the copy operations, and \code{read_line}, \code{write} and \code{flush} are the operations.
+\code{std::optional<std::string>} holds either a string or nothing, which is how \code{read_line} says ``end of
+file'' without a special string. Here is the header check again, with the file owned by a \code{File}.
+
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/file_demo.cpp}{7}{14}{The header check with RAII; \code{main}
+is the C version's, plus a missing file}\label{lst:b2:cpp-classes-raii:file-demo}
+
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/file_demo.txt}{Three files open before, three
+after.}\label{out:b2:cpp-classes-raii:file-demo}
+
+The function has the same two exits as the C version, but neither calls \code{fclose}: leaving the function ends
+\code{f}'s lifetime, and the \omterm{def:b2:cpp-classes-raii:constructor}{destructor} closes the file on whichever path is taken. A missing file is no longer a
+return value to check: the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} throws, \code{main} catches, and no \code{File} without a file ever exists.
+The drawing shows what \code{f} is in memory.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, node distance=4mm]
+\node[frame box, minimum width=4.4cm, minimum height=2.3cm, label={[font=\scriptsize]above:frame of \texttt{header\_version}}] (fr) at (0,0) {};
+\node[cell, minimum width=2.6cm, anchor=north] (fobj) at (0,0.6) {\texttt{File f}};
+\node[cell, minimum width=2.6cm, below=0mm of fobj] (fptr) {\texttt{f\_} $\bullet$};
+\node[frame box, minimum width=4.4cm, minimum height=1.2cm, below=9mm of fr, label={[font=\scriptsize]below:frame of \texttt{main}}] (mainfr) {\texttt{int i} (the loop counter)};
+\node[draw, rounded corners=2pt, fill=omThm!8, align=center, minimum width=3.2cm, minimum height=1.6cm] (FILE) at (6.2,0.2)
+  {\texttt{FILE} (heap)\\[1pt] buffer, position,\\ file number 3};
+\node[draw, rounded corners=2pt, fill=black!5, align=center, minimum width=2.8cm] (os) at (6.2,-2.3)
+  {open file \texttt{good.log}\\ (kept by the system)};
+\draw[ptr] ([xshift=6mm]fptr.center) -- (FILE.west);
+\draw[ptr, black!60] (FILE.south) -- (os.north);
+\node[align=left, font=\scriptsize, text=omMeth!80!black] at (6.2,1.75) {\texttt{\textasciitilde File()} calls \texttt{fclose}:\\ frees the \texttt{FILE}, closes number 3};
+\end{tikzpicture}
+\par\smallskip{\small A \texttt{File} is one pointer in the frame of the function that declares it. The
+\texttt{FILE} it points to lives on the heap and refers to a file the operating system keeps open. When the frame
+is popped, the \omterm{def:b2:cpp-classes-raii:constructor}{destructor} releases both; the opening's C code popped the frame and kept them.}
+\end{omfigure}
+
+\begin{proposition}[Release on every path]\label{prop:b2:cpp-classes-raii:every-path}
+In a function whose \omterm{def:b2:cpp-classes-raii:raii}{resources} are all owned by automatic RAII \omterm{def:b2:cpp-classes-raii:class}{objects} (or by members of such \omterm{def:b2:cpp-classes-raii:class}{objects}), each \omterm{def:b2:cpp-classes-raii:raii}{resource}
+that was acquired is released exactly once, whatever path the function leaves by: a \code{return}, the end of the
+body, or an \omterm{def:b2:cpp-classes-raii:exception}{exception} (\cref{sec:b2:cpp-classes-raii:exceptions}).
+\end{proposition}
+
+\begin{proof}
+By induction on the depth of nesting of the blocks. Consider a block whose inner blocks satisfy the claim, and a
+\omterm{def:b2:cpp-classes-raii:raii}{resource} it acquires directly: by the method, the acquisition is the construction of an \omterm{def:b2:cpp-classes-raii:class}{object} $o$ declared in the
+block. If the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} fails, $o$ never existed and nothing was acquired, so nothing must be released. If it
+succeeds, $o$ is alive until the block is left; every way of leaving it (falling off its end, \code{return},
+\code{break}, \code{continue}, \code{goto} out of it, an \omterm{def:b2:cpp-classes-raii:exception}{exception} crossing it) ends $o$'s lifetime, and the compiler
+then calls the \omterm{def:b2:cpp-classes-raii:constructor}{destructor} once, which releases the \omterm{def:b2:cpp-classes-raii:raii}{resource} once. Copies are deleted, so no second \omterm{def:b2:cpp-classes-raii:class}{object} releases
+it. \omterm{def:b2:cpp-classes-raii:raii}{Resources} acquired in inner blocks are released by the induction hypothesis, before the block is left, and
+\omterm{def:b2:cpp-classes-raii:raii}{resources} held by members of $o$ are released when $o$'s members are destroyed. The outermost block is the
+function body, which gives the claim.
+\end{proof}
+
+\section{Exceptions}\label{sec:b2:cpp-classes-raii:exceptions}
+
+A \omterm{def:b2:cpp-classes-raii:constructor}{constructor} has no return value through which to report a failure, and a deep chain of calls makes a return code
+travel through every level, each of which must remember to check it. C++ reports errors with \omterm{def:b2:cpp-classes-raii:exception}{exceptions}.
+
+\begin{definition}[Exception, throw, handler]\label{def:b2:cpp-classes-raii:exception}
+An \emph{exception}\index{exception (C++)} is an \omterm{def:b2:cpp-classes-raii:class}{object} that reports an error. A \emph{throw
+expression}\index{throw expression} \code{throw e;} stops the current function and starts the search for a handler.
+A \code{try} block is followed by one or more \emph{handlers}\index{handler (exception)}
+\code{catch (const T &x) {body}}: the first handler, in order, whose type \code{T} is the type of the exception or
+one of its base classes catches it. \code{catch (...)} catches anything, and \code{throw;} inside a handler throws
+the same exception again. If no handler catches it, the program ends.
+\end{definition}
+
+The library's \omterm{def:b2:cpp-classes-raii:exception}{exceptions} are classes derived from \code{std::exception}, whose member \code{what()} returns the
+message. Two families matter here: \code{std::logic_error}, with \code{std::invalid_argument},
+\code{std::domain_error}, \code{std::length_error} and \code{std::out_of_range}, for errors a program could have
+avoided; and \code{std::runtime_error}, for errors only a run can reveal, such as a missing file.
+% ledger: b2:cpp-logic-error
+A handler for \code{const std::logic_error &} therefore also catches an \code{std::out_of_range};
+\cref{ch:b2:cpp-polymorphism} explains derived classes.
+
+\begin{definition}[Stack unwinding]\label{def:b2:cpp-classes-raii:unwinding}
+Between a \code{throw} and the handler that catches it, the program leaves every block and every function in
+between. \emph{Stack unwinding}\index{stack unwinding} is this departure: each frame left is popped, and each automatic
+\omterm{def:b2:cpp-classes-raii:class}{object} of each block left is destroyed, in the reverse order of construction, as if its block had ended.
+\end{definition}
+
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/unwind.cpp}{6}{26}{A throw three calls
+deep}\label{lst:b2:cpp-classes-raii:unwind}
+
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/unwind.txt}{The \omterm{def:b2:cpp-classes-raii:constructor}{destructors} run before the \omterm{def:b2:cpp-classes-raii:exception}{handlers}
+do.}\label{out:b2:cpp-classes-raii:unwind}
+
+Neither \code{never printed} line appeared: \code{parse(3)} threw, \code{parse(2)} and \code{parse(1)} were left
+in the middle of their bodies, and on the way each frame destroyed its \code{Noisy}. The \code{t} of the
+\code{try} block went too, since the block was left; \code{m}, declared outside the \code{try}, survived until
+\code{main} returned. \Cref{prop:b2:cpp-classes-raii:every-path} is why this matters: an \omterm{def:b2:cpp-classes-raii:exception}{exception} is one more way
+out of a block, and the \omterm{def:b2:cpp-classes-raii:constructor}{destructors} take it as well.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, y=0.9cm]
+\foreach \i/\name/\obj in {0/{main, outside try}/m, 1/{main, try block}/t, 2/{parse(1)}/p1, 3/{parse(2)}/p2,
+                          4/{parse(3)}/p3} {
+  \node[frame box, minimum width=4.8cm, minimum height=0.7cm, anchor=west] (f\i) at (0,\i) {};
+  \node[anchor=west] at (0.1,\i) {\texttt{\name}};
+  \node[cell small, minimum width=0.9cm] at (4.3,\i) {\obj};
+}
+\node[omThm, font=\footnotesize\bfseries, anchor=west] (thr) at (5.2,4) {\texttt{throw}};
+\draw[->, thick, omThm] (5.6,3.75) -- (5.6,1.25) node[midway, right, align=left, font=\scriptsize]
+  {unwinding:\\ drop p3, p2, p1, t\\ (three frames popped,\\ the try block left)};
+\node[omMeth!80!black, anchor=west, font=\footnotesize\bfseries] at (5.2,0.95) {\texttt{catch} runs};
+\node[anchor=west, font=\scriptsize, black!60] at (5.2,0) {\texttt{m} lives on to the end of \texttt{main}};
+\draw[->, black!40] (-0.4,-0.3) -- (-0.4,4.4) node[above, font=\scriptsize] {calls};
+\end{tikzpicture}
+\par\smallskip{\small The frames of \cref{lst:b2:cpp-classes-raii:unwind} when \code{parse(3)} throws, the newest
+on top. Unwinding pops frames downward to the frame whose \texttt{try} block has a matching handler, destroying
+each \omterm{def:b2:cpp-classes-raii:class}{object} it passes, then runs the handler.}
+\end{omfigure}
+
+An \omterm{def:b2:cpp-classes-raii:exception}{exception} may interrupt an operation half way. What the operation promises about that case is part of its
+specification, in one of three standard forms.
+
+\begin{definition}[Exception-safety guarantees]\label{def:b2:cpp-classes-raii:guarantee}
+An operation gives the \emph{basic guarantee}\index{exception-safety guarantee} if, when it throws, no \omterm{def:b2:cpp-classes-raii:raii}{resource} is
+leaked and every \omterm{def:b2:cpp-classes-raii:class}{object} it touched still satisfies its invariant, though its value may have changed. It gives the
+\emph{strong guarantee} if, when it throws, the state is exactly as before the call (``commit or roll back''). It
+gives the \emph{no-throw guarantee} if it never throws; a function declares it with \code{noexcept}.
+\end{definition}
+
+If an \omterm{def:b2:cpp-classes-raii:exception}{exception} tries to leave a \code{noexcept} function, the program is ended by \code{std::terminate}; \omterm{def:b2:cpp-classes-raii:constructor}{destructors}
+are \code{noexcept} unless declared otherwise, which is why a \omterm{def:b2:cpp-classes-raii:constructor}{destructor} must never let an \omterm{def:b2:cpp-classes-raii:exception}{exception} out.
+% ledger: b2:cpp-noexcept-terminate
+The two \omterm{def:b2:cpp-classes-raii:class}{member functions} below add a batch of names to a roster that holds Ada and Brendan, and fail on an empty
+name. The program (its \code{main} is not shown) gives both versions the batch Cora, Dev, the empty name, Emil, and
+prints the size of each roster after the failure.
+
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/guarantee.cpp}{7}{33}{The same operation with the basic and
+with the strong guarantee}\label{lst:b2:cpp-classes-raii:guarantee}
+
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/guarantee.txt}{The basic version kept two of the four new
+names; the strong one kept none.}\label{out:b2:cpp-classes-raii:guarantee}
+
+Both versions leak nothing (the vectors and strings own their memory) and leave a valid roster, so both give the
+\omterm{def:b2:cpp-classes-raii:guarantee}{basic guarantee}. The second also gives the strong one: it works on a copy, and the only operation on the real
+roster, \code{swap}, exchanges two vectors' internal pointers and cannot throw. The pattern is general: do the work
+that may fail on the side, then commit with operations that cannot fail. Its price is the copy.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, x=1cm, y=0.8cm]
+\node[anchor=west, font=\footnotesize\bfseries] at (0,3) {before};
+\foreach \n/\x in {Ada/0, Brendan/1.5} \node[cell, minimum width=1.45cm, anchor=west] at (\x,2.2) {\scriptsize \n};
+\node[anchor=west, font=\footnotesize\bfseries] at (4.2,3) {after the throw};
+\node[anchor=west] at (4.2,2.2) {basic:};
+\foreach \n/\x in {Ada/5.6, Brendan/7.1, Cora/8.6, Dev/10.1} \node[cell, minimum width=1.45cm, anchor=west] at (\x,2.2) {\scriptsize \n};
+\node[anchor=west] at (4.2,1.0) {strong:};
+\foreach \n/\x in {Ada/5.6, Brendan/7.1} \node[cell, minimum width=1.45cm, anchor=west] at (\x,1.0) {\scriptsize \n};
+\node[anchor=west] at (4.2,-0.2) {no-throw:};
+\node[anchor=west, font=\scriptsize, black!70] at (5.9,-0.2) {cannot fail: there is no ``after the throw''};
+\draw[->, thick, omThm] (3.0,2.2) -- (4.1,2.2);
+\node[font=\scriptsize, omThm, align=center] at (3.5,2.75) {empty\\ name};
+\end{tikzpicture}
+\par\smallskip{\small The roster of \cref{lst:b2:cpp-classes-raii:guarantee} before the call and after a call
+throws on the empty name. The \omterm{def:b2:cpp-classes-raii:guarantee}{basic guarantee} leaves some valid state, here with \texttt{Cora} and \texttt{Dev}
+added; the strong guarantee leaves the state of before.}
+\end{omfigure}
+
+A thrown \omterm{def:b2:cpp-classes-raii:exception}{exception} is not free. The program below times a million calls of a function that fails, once reporting
+the failure by a return value and once by a throw caught one call up, and the same calls when nothing fails.
+
+\omcodes{code/bachelor-2/01-cpp-classes-raii/listings/exception_cost.cpp}{6-12,27-33}{Timing failures reported
+two ways (\code{ns_per_call} times a million calls of its argument)}\label{lst:b2:cpp-classes-raii:cost}
+
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/exception_cost.txt}{One run on the author's laptop; the digits
+change from run to run.}\label{out:b2:cpp-classes-raii:cost}
+
+The success path costs the same whether the function may throw or not: with this compiler, the code that handles an
+\omterm{def:b2:cpp-classes-raii:exception}{exception} is kept apart from the normal path and runs only when something is thrown. A throw, on the other hand,
+costs hundreds of nanoseconds: the \omterm{def:b2:cpp-classes-raii:exception}{exception} \omterm{def:b2:cpp-classes-raii:class}{object} is allocated, the frames are searched for a handler, and the
+stack is unwound. \omterm{def:b2:cpp-classes-raii:exception}{Exceptions} are therefore meant for the exceptional, not for an outcome that occurs on every
+other call.
+
+\begin{inpractice}[Errors: exceptions or values]
+Throw when a failure is rare and the code that can handle it is far from the code that detects it: a \omterm{def:b2:cpp-classes-raii:constructor}{constructor}
+that cannot establish its invariant, a missing configuration file, a full disk. Return a value (a boolean, an
+\code{std::optional}, an error code) when the failure is a normal outcome that the immediate caller decides on, such
+as a search that finds nothing or a parse of user input that fails often. In both cases, own every \omterm{def:b2:cpp-classes-raii:raii}{resource} with an
+\omterm{def:b2:cpp-classes-raii:class}{object}, so that either way out is safe.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b2:cpp-classes-raii:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-classes-raii:1}
+Predict every line printed by the program below (\code{Noisy} is \cref{lst:b2:cpp-classes-raii:noisy}).
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/exo_order.cpp}{5}{22}{Who is made and dropped, and when}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-classes-raii:2}
+The function \code{longer} should return the longer of two names. The compiler warns, and the run prints nothing
+at all, not even a newline. Explain the warning, why the program's behaviour is undefined, and fix the function in
+the simplest way.
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/exo_dangling.cpp}{5}{16}{The longer name}
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/exo_dangling.txt}{The warning; the run that follows prints
+nothing: it is killed by signal 11, a segmentation fault, which the capture tool records as status $-11$.}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-classes-raii:3}
+Write a \omterm{def:b2:cpp-classes-raii:class}{class} \code{IntArray} that owns a heap array of \code{n} ints, zero-filled, given to its \omterm{def:b2:cpp-classes-raii:constructor}{constructor}:
+\code{size()}, \code{at(i)} returning a \omterm{def:b2:cpp-classes-raii:reference}{reference} (with a const version for const arrays), throwing
+\code{std::out_of_range} when $i \geq n$, and no copies. Which step of \cref{met:b2:cpp-classes-raii:raii} does each
+part of your \omterm{def:b2:cpp-classes-raii:class}{class} implement?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-classes-raii:4}
+A function contains $n$ nested blocks, and block $j$ (for $j = 1, \dots, n$, from the outermost) declares $m$
+\code{Noisy} \omterm{def:b2:cpp-classes-raii:class}{objects} named \code{j.1}, \dots, \code{j.m} before it opens block $j+1$. How many lines does a call
+print? Give the first three and the last three \code{drop} lines, and prove your answer with
+\cref{prop:b2:cpp-classes-raii:reverse-order}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-classes-raii:5}
+Predict the output of the program below, which throws a different \omterm{def:b2:cpp-classes-raii:exception}{exception} for each $k$ through three levels of
+\omterm{def:b2:cpp-classes-raii:exception}{handlers}. Name, for each $k$, the handler that catches and the rule that decides it.
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/exo_handlers.cpp}{5}{37}{Three levels of \omterm{def:b2:cpp-classes-raii:exception}{handlers}}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-classes-raii:6}
+The \omterm{def:b2:cpp-classes-raii:class}{class} \code{Merger} opens two files in its \omterm{def:b2:cpp-classes-raii:constructor}{constructor} and closes them in its \omterm{def:b2:cpp-classes-raii:constructor}{destructor}. Explain the output,
+then fix the \omterm{def:b2:cpp-classes-raii:class}{class} with \cref{met:b2:cpp-classes-raii:raii}, without writing a \omterm{def:b2:cpp-classes-raii:constructor}{destructor}.
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/exo_two_files.cpp}{7}{24}{A \omterm{def:b2:cpp-classes-raii:constructor}{constructor} that acquires two
+\omterm{def:b2:cpp-classes-raii:raii}{resources}}
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/exo_two_files.txt}{Five failures.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-classes-raii:7}
+Write a \omterm{def:b2:cpp-classes-raii:class}{class} template \code{ScopeGuard<F>} whose \omterm{def:b2:cpp-classes-raii:constructor}{constructor} takes a callable \code{action} and whose \omterm{def:b2:cpp-classes-raii:constructor}{destructor}
+calls it when the guard's scope ends, unless \code{dismiss()} was called first. The guard cannot be copied. Show how
+it gives a C-style function (two \code{malloc}s, an \code{fopen}) one cleanup on every path, and why
+\code{dismiss} is needed when the function succeeds and hands the \omterm{def:b2:cpp-classes-raii:raii}{resources} to its caller. (Write
+\code{ScopeGuard g([&] {free(p);});}: C++17 deduces \code{F}.)
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-classes-raii:8}
+A function acquires $r$ \omterm{def:b2:cpp-classes-raii:raii}{resources}, in order, and contains $k$ checks, check $i$ coming after the first $a_i$
+acquisitions ($0 \le a_1 \le \dots \le a_k \le r$), each of which returns early. Show that it has $k + 1$ exit paths
+by return. Written in C, how many release calls must its author write so that nothing leaks? Written with one
+RAII \omterm{def:b2:cpp-classes-raii:class}{object} per \omterm{def:b2:cpp-classes-raii:raii}{resource}, how many, and why does \cref{prop:b2:cpp-classes-raii:every-path} make this count right?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-classes-raii:9}
+Write \code{BoundedStack<T, N>}, a stack of at most $N$ elements of type \code{T} with \code{push}, \code{pop},
+\code{top} and \code{size}. \code{push} on a full stack throws \code{std::length_error}; \code{push} must give the
+strong guarantee even when copying a \code{T} throws. Explain why your implementation does.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-classes-raii:10}
+Write a \omterm{def:b2:cpp-classes-raii:class}{class} \code{TxnFile}, a file that appears whole or not at all: the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} creates \code{path.tmp},
+\code{write} appends to it, \code{commit()} closes it and renames it to \code{path}. If the \omterm{def:b2:cpp-classes-raii:class}{object} dies without a
+commit (in particular during unwinding), the temporary file is removed and \code{path} is untouched. Which
+guarantee does a function that writes a report through a \code{TxnFile} give? What can still go wrong between the
+close and the rename, and why must the \omterm{def:b2:cpp-classes-raii:constructor}{destructor} not throw?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-classes-raii:11}
+A function nests $n$ blocks; block $j$ acquires \omterm{def:b2:cpp-classes-raii:raii}{resource} $R_j$ by constructing an RAII \omterm{def:b2:cpp-classes-raii:class}{object} $o_j$, then opens block
+$j+1$. The \omterm{def:b2:cpp-classes-raii:constructor}{constructor} of $o_k$ throws, for some $1 \le k \le n$, and a handler outside the function catches it. Prove
+which \omterm{def:b2:cpp-classes-raii:raii}{resources} are released, in which order, and how many \omterm{def:b2:cpp-classes-raii:constructor}{destructor} calls run. What changes if instead the
+\omterm{def:b2:cpp-classes-raii:exception}{exception} is thrown after $o_n$ is built, inside block $n$?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-classes-raii:12}
+Write a \omterm{def:b2:cpp-classes-raii:class}{class} \code{Matrix} of \code{double}s with $r \geq 1$ rows and $c \geq 1$ columns stored row by row in a
+\code{std::vector<double>}, whose invariant is \code{data.size() == rows * cols}. Give it a checked access
+\code{m(i, j)} in a const and a non-const version, \code{transposed()} and a product that throws
+\code{std::invalid_argument} on mismatched sizes. Prove that no public function can break the invariant.
+\end{exercise}
+
+\section{Problem: A logger that never loses a line}\label{sec:b2:cpp-classes-raii:problem}
+
+\begin{problem}[{Weekend problem --- A logger that never loses a line}]\label{pb:b2:cpp-classes-raii:1}
+The weather station appends each batch of readings to its log with \code{append_readings}. The C version checks
+four things and returns early on each failure. Its C++ rewrite owns everything with \omterm{def:b2:cpp-classes-raii:class}{objects} and throws. Both were
+run on the same four cases: a log in a directory that does not exist, a batch containing the error code
+$-99.0$, a good batch, and a write to \code{/dev/full}, a Linux device on which every write fails as on a full disk.
+
+\omcodes{code/bachelor-2/01-cpp-classes-raii/listings/logger.c}{6-25,35-45}{The C
+version}\label{lst:b2:cpp-classes-raii:logger-c}
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/logger.txt}{The C version on the four
+cases.}\label{out:b2:cpp-classes-raii:logger-c}
+\omcode{code/bachelor-2/01-cpp-classes-raii/listings/raii_logger.cpp}{10}{23}{The C++ version; its \code{main}
+runs the same four cases and catches \code{std::exception}}\label{lst:b2:cpp-classes-raii:logger-cpp}
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/raii_logger.txt}{The C++ version on the same
+cases.}\label{out:b2:cpp-classes-raii:logger-cpp}
+
+\medskip\noindent\textbf{Part I --- The C version.}\par\nopagebreak
+\begin{enumerate}[beginpenalty=10000]
+\item How many exit paths by \code{return} does the C \code{append_readings} have?
+\item For each \code{return}, list the \omterm{def:b2:cpp-classes-raii:raii}{resources} held at that moment and those released.
+\item Explain the four counts of open files in \cref{out:b2:cpp-classes-raii:logger-c}.
+\item How many bytes of heap memory did the four cases request and never free?
+\item Rewrite the end of the C function so that it has one exit point, with \code{goto} to cleanup labels. How many
+labels are needed, and in what order are they placed?
+\item With the notation of \cref{exo:b2:cpp-classes-raii:8}, give $r$, $k$ and $a_1, \dots, a_k$ for this function,
+and the number of release calls its author should have written. How many did they write?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The C++ version.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Which \omterm{def:b2:cpp-classes-raii:class}{objects} of the C++ \code{append_readings} own a \omterm{def:b2:cpp-classes-raii:raii}{resource}, and which \omterm{def:b2:cpp-classes-raii:raii}{resource}?
+\item Why does every count of open files in \cref{out:b2:cpp-classes-raii:logger-cpp} stay at 3?
+\item The C++ version checks every reading before it opens the file, and writes the batch with one \code{write}.
+What could the log contain after the second case if it wrote each reading as soon as it was checked?
+\item List the ways out of the C++ function: the normal return and each throw, with the line that throws.
+\item How many release calls (\code{fclose}, \code{free}, \code{delete}) appear in the C++ \code{append_readings}?
+Where are the releases written?
+\item When \code{flush} throws on \code{/dev/full}, which \omterm{def:b2:cpp-classes-raii:constructor}{destructors} run, and in which order?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Guarantees.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Which \omterm{def:b2:cpp-classes-raii:guarantee}{exception-safety guarantee} does the C++ \code{append_readings} give when the batch contains $-99.0$?
+\item Which guarantee does it give when the flush fails? Consider a disk that fills up after half a batch.
+\item \code{~File} ignores the result of \code{fclose}. Why may it not throw, and why does the \omterm{def:b2:cpp-classes-raii:class}{class} offer
+\code{flush} for that reason?
+\item Make the function strong in all cases with the \code{TxnFile} of \cref{exo:b2:cpp-classes-raii:10}: describe
+the steps, given that the log must be appended to, not replaced.
+\item For a log of $L$ bytes and a batch of $b$ bytes, how many bytes does each version write?
+\item The station's log holds 731 daily lines of 5 bytes each (such as \code{18.5} and a newline); a batch is 3
+lines. How many times more bytes does the strong version write? Is it worth it once a day?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The price of a throw.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item In \cref{out:b2:cpp-classes-raii:cost}, compare the success path with and without \omterm{def:b2:cpp-classes-raii:exception}{exceptions}.
+\item Compare the failure path. How many failed return codes cost as much as one throw, in that run?
+\item The station appends a batch every minute and 1\,\% of the batches fail. Estimate the time spent throwing in a
+year, with one microsecond per throw.
+\item A validator of $10^8$ fields, 30\,\% of them invalid, throws once per invalid field. Estimate the time spent on
+throws, and compare with returning an error value.
+\item Which of the two programs should use \omterm{def:b2:cpp-classes-raii:exception}{exceptions} for its failures, following the ``in practice'' box?
+\item State the result of the problem: the number of exit paths of a function with $k$ checks, the number of
+releases on each with RAII and how many are written by hand, and the measured price of a throw.
+\end{enumerate}
+\end{problem}

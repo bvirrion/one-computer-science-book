@@ -1,0 +1,191 @@
+\section*{Chapter \ref{ch:g11:k-nearest-neighbours} --- Classifying by Neighbours: the k-NN Algorithm}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:1}
+$\sqrt{(5 - 2)^2 + (34 - 30)^2} = \sqrt{9 + 16} = 5$.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:2}
+Distances from $(4, 4)$: B $(4, 3)$ and B $(5, 4)$ at $1$, A $(3, 2)$ at $\sqrt{5} \approx 2.24$, A $(2, 1)$ at
+$\sqrt{13}$, A $(1, 1)$ at $\sqrt{18}$. The three nearest are B, B, A: \omterm{def:g11:k-nearest-neighbours:example}{class} B.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:3}
+$(4, 3)$ at $0.5$; $(3, 2)$ at $\sqrt{1.25} \approx 1.12$; $(5, 4)$ at $\sqrt{3.25} \approx 1.80$; $(2, 1)$ at
+$\sqrt{6.25} = 2.5$; $(1, 1)$ at $\sqrt{10.25} \approx 3.20$.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:4}
+$60$ items in all; the diagonal, $25 + 17 + 14 = 56$, is right; $4$ errors: $4/60 \approx 6.7\,\%$.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:5}
+\smallskip\noindent\hspace*{2em}\code{def distance(a, b):}
+
+\noindent\hspace*{4em}\code{return math.sqrt(sum((x - y) ** 2 for x, y in zip(a[:-1], b[:-1])))}
+
+\smallskip\noindent \code{a[:-1]} drops the label; \code{zip} pairs the \omterm{def:g11:k-nearest-neighbours:example}{features} in order.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:6}
+Each item is among the examples it is predicted from: its nearest neighbour is itself, at distance $0$, and votes for
+its own \omterm{def:g11:k-nearest-neighbours:example}{class}. The item must be left out: predict \code{x = items[i]} from \code{items[:i] + items[i + 1:]}, as in
+exercise \ref{exo:g11:k-nearest-neighbours:13}.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:7}
+\smallskip\noindent\hspace*{2em}\code{def knn_predict(train, x, k):}
+
+\noindent\hspace*{4em}\code{near = sorted(train, key=lambda e: distance(e, x))[:k]}
+
+\noindent\hspace*{4em}\code{count = Counter(e[-1] for e in near)}
+
+\noindent\hspace*{4em}\code{best = max(count.values())}
+
+\noindent\hspace*{4em}\code{return next(e[-1] for e in near if count[e[-1]] == best)}
+
+\smallskip\noindent \code{near} is in order of distance, so the first label reaching the best count belongs to the
+nearest of the tied classes. The tests compare it with the chapter's \code{predict} on $100$ random sets.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:8}
+Without \omterm{def:g11:k-nearest-neighbours:scaling}{scaling}: to $(5.3, 159)$, $\sqrt{6.7^2 + 9^2} \approx 11.2$; to $(13.9, 133)$, $\sqrt{1.9^2 + 17^2} \approx
+17.1$: the first is nearer. With \omterm{def:g11:k-nearest-neighbours:scaling}{scaling}, the differences are divided by $84.2$ and $1226$: to $(5.3, 159)$,
+$\sqrt{0.0796^2 + 0.0073^2} \approx 0.080$; to $(13.9, 133)$, $\sqrt{0.0226^2 + 0.0139^2} \approx 0.026$: the second is
+nearer, as the output of \code{scale.py} shows. Without \omterm{def:g11:k-nearest-neighbours:scaling}{scaling}, $9$~g weigh more than $6.7$~mm; with it, $6.7$~mm
+are a large part of the thickness range.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:9}
+On a tie, several labels have the same count, and \code{max} keeps the first one met. The order of a set of strings is
+not fixed: Python mixes a random value into the hash of strings at each start of the program, so the order, and the
+answer, may change from run to run. A fixed rule, such as the \omterm{def:g11:k-nearest-neighbours:example}{class} of the nearest tied neighbour, removes the
+problem.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:10}
+Each training example is its own nearest neighbour, at distance $0$, and its \omterm{def:g11:k-nearest-neighbours:example}{class} is its own answer. It can differ
+from $0$ if two examples have the same \omterm{def:g11:k-nearest-neighbours:example}{features} and different classes: the sort may put the other one first. (With
+$k = 2$ the output also shows $0$: the second neighbour can only tie, and the tie goes to the nearest.)
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:11}
+\smallskip\noindent\hspace*{2em}\code{def minmax(train):}
+
+\noindent\hspace*{4em}\code{d = len(train[0]) - 1}
+
+\noindent\hspace*{4em}\code{lo = [min(e[i] for e in train) for i in range(d)]}
+
+\noindent\hspace*{4em}\code{hi = [max(e[i] for e in train) for i in range(d)]}
+
+\noindent\hspace*{4em}\code{def scale(e):}
+
+\noindent\hspace*{6em}\code{return tuple((e[i] - lo[i]) / (hi[i] - lo[i])}
+
+\noindent\hspace*{10em}\code{for i in range(d)) + (e[-1],)}
+
+\noindent\hspace*{4em}\code{return scale}
+
+\smallskip\noindent The function returned remembers \code{lo} and \code{hi}. A \omterm{def:g11:k-nearest-neighbours:example}{feature} with the same value everywhere
+would divide by $0$; it can simply be dropped, since it never separates two examples.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:12}
+Each of the $m$ predictions computes $n$ distances of about $3d$ operations each (a subtraction, a square and an
+addition per \omterm{def:g11:k-nearest-neighbours:example}{feature}): $3mnd$, which grows like $m \times n \times d$. Each prediction then sorts $n$ distances, about
+$n \cdot h(n)$ comparisons with a good sort, where $h(n)$ is the \omterm{def:g11:cost-of-an-algorithm:halvings}{number of halvings} of $n$: in all about
+$m(3nd + n \cdot h(n))$. With $k$ scans for the smallest remaining distance, each scan makes about $n$ comparisons:
+$kn$ per prediction instead of $n \cdot h(n)$, better when $k$ is smaller than $h(n)$, as it is for $k = 5$ and
+$n = 180$ ($h(180) = 7$).
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:13}
+\smallskip\noindent\hspace*{2em}\code{def loo_error(items, k):}
+
+\noindent\hspace*{4em}\code{wrong = 0}
+
+\noindent\hspace*{4em}\code{for i, x in enumerate(items):}
+
+\noindent\hspace*{6em}\code{others = items[:i] + items[i + 1:]}
+
+\noindent\hspace*{6em}\code{wrong += knn_predict(others, x, k) != x[-1]}
+
+\noindent\hspace*{4em}\code{return wrong / len(items)}
+
+\smallskip\noindent \code{True} counts as $1$ in a sum. On the scaled \omterm{def:g11:k-nearest-neighbours:training-set}{training set} it gives, for $k = 1$ to $15$, from
+$14$ to $20$ errors out of $180$, between $8$ and $11\,\%$: an estimate of the error that uses every example both for
+learning and for checking, never at the same time.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:14}
+All $n$ examples are neighbours, whatever $x$: the vote always gives the most common \omterm{def:g11:k-nearest-neighbours:example}{class} of the \omterm{def:g11:k-nearest-neighbours:training-set}{training set}. The
+method becomes the baseline, here always ``packet'', with a validation error of $33/60 = 55\,\%$.
+\end{solution}
+
+\begin{solution}{exo:g11:k-nearest-neighbours:15}
+\smallskip\noindent\hspace*{2em}\code{def weighted_predict(train, x, k):}
+
+\noindent\hspace*{4em}\code{score = Counter()}
+
+\noindent\hspace*{4em}\code{for e in sorted(train, key=lambda e: distance(e, x))[:k]:}
+
+\noindent\hspace*{6em}\code{score[e[-1]] += 1 / (distance(e, x) + 1e-9)}
+
+\noindent\hspace*{4em}\code{return score.most_common(1)[0][0]}
+
+\smallskip\noindent The small \code{1e-9} avoids a division by $0$ when $x$ is an example. The weighted vote lets a
+very near neighbour outvote several far ones: it behaves more like a small $k$ when one neighbour is very close, and
+the far neighbours added by a larger $k$ change it less. Hence it makes fewer errors over a wide range of large $k$,
+but not at every $k$: on $60$ items, a difference of two errors is too small to prefer one vote for good.
+\end{solution}
+
+\begin{solution}{pb:g11:k-nearest-neighbours:1}
+\textbf{1.} The \omterm{def:g11:k-nearest-neighbours:example}{features} are the thickness in millimetres and the mass in grams; the \omterm{def:g11:k-nearest-neighbours:example}{class} is letter, packet or
+parcel.
+
+\textbf{2.} So that every run, and every reader, gets the same items and the same numbers, and no real data need be
+collected.
+
+\textbf{3.} Packet, the most common.
+
+\textbf{4.} $60 - 27 = 33$ wrong: $33/60 = 55\,\%$.
+
+\textbf{5.} $60 - 19 = 41$ wrong: $41/60 \approx 68.3\,\%$. The two sets are different random samples, with fewer
+packets in the \omterm{def:g11:k-nearest-neighbours:training-set}{test set}.
+
+\textbf{6.} $11.7\,\%$, for $k = 1$, $2$ and $4$.
+
+\textbf{7.} $0.2 \times 60 = 12$ items.
+
+\textbf{8.} Without \omterm{def:g11:k-nearest-neighbours:scaling}{scaling} the mass decides almost alone. Packets and parcels overlap much more in mass than in
+thickness, so as $k$ grows, the neighbours by mass bring more items of the wrong \omterm{def:g11:k-nearest-neighbours:example}{class}.
+
+\textbf{9.} Yes: at worst $21.7\,\%$, against $55\,\%$.
+
+\textbf{10.} $k = 5$, $7$, $8$, $9$ and $11$, at $5\,\%$.
+
+\textbf{11.} $k = 5$.
+
+\textbf{12.} The validation and test items must be treated exactly as a new item will be, by a rule fixed before
+they are seen; their values must not shape the rule that judges them.
+
+\textbf{13.} With $k = 1$, every isolated example of a \omterm{def:g11:k-nearest-neighbours:example}{class} inside another \omterm{def:g11:k-nearest-neighbours:example}{class}'s region makes an island, and new
+items near it are misclassified; with $k = 5$ such an example is outvoted, and the frontier is smoother.
+
+\textbf{14.} $15\,\%$ is $9$ errors, $5\,\%$ is $3$: six fewer.
+
+\textbf{15.} $6.7\,\%$: $4$ items out of $60$.
+
+\textbf{16.} The \omterm{def:g11:k-nearest-neighbours:training-set}{test set} must stay untouched by every choice: choosing $k$ by its error would make that error an
+optimistic estimate. A difference of one item out of $60$ is also within what chance alone produces.
+
+\textbf{17.} Each lies in the region of another \omterm{def:g11:k-nearest-neighbours:example}{class}: a parcel as thin and light as a packet, a packet as thin as a
+letter, a packet of only $5$~g, a parcel among the packets. Their neighbours are mostly of the other \omterm{def:g11:k-nearest-neighbours:example}{class}.
+
+\textbf{18.} $5000 \times 180 = 900\,000$ distances.
+
+\textbf{19.} With more \omterm{def:g11:k-nearest-neighbours:example}{labelled examples}, or with one more \omterm{def:g11:k-nearest-neighbours:example}{feature} that separates the classes, such as the length or
+width of the item.
+
+\textbf{20.} With \omterm{def:g11:k-nearest-neighbours:scaling}{scaling}, the office \textbf{chooses $k = 5$, whose error on the untouched \omterm{def:g11:k-nearest-neighbours:training-set}{test set} is $6.7\,\%$}
+($4$ items out of $60$), \textbf{against $68.3\,\%$ for the baseline} that always answers ``packet''.
+\end{solution}

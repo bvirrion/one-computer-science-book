@@ -1,0 +1,35 @@
+$ python sqlrun.py nested.sql
+sql> SELECT title FROM books
+...> WHERE book_id IN (SELECT book_id FROM loans WHERE return_date IS NULL)
+...>   AND genre = 'science';
++--------------------+
+| title              |
++--------------------+
+| The Last Engine    |
+| The Paper Bridge   |
+| The Hidden Library |
++--------------------+
+(3 rows)
+
+sql> SELECT b.title, b.genre, b.pages FROM books AS b
+...> WHERE b.pages > (SELECT 1.7 * avg(pages) FROM books AS c WHERE c.genre = b.genre);
++-----------------------+---------+-------+
+| title                 | genre   | pages |
++-----------------------+---------+-------+
+| Seven Library         | comics  | 346   |
+| The Last Engine       | science | 499   |
+| A Year by the Harbour | science | 506   |
+| The Paper River       | mystery | 513   |
++-----------------------+---------+-------+
+(4 rows)
+
+sql> SELECT count(*) FROM members AS m
+...> WHERE EXISTS (SELECT * FROM loans AS l
+...>               WHERE l.member_id = m.member_id AND l.return_date IS NULL);
++----------+
+| count(*) |
++----------+
+| 17       |
++----------+
+(1 row)
+

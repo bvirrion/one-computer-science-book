@@ -1,0 +1,179 @@
+% Solutions of Book 4, chapter 18 (the network layer).
+\section*{Chapter \ref{ch:b2:network-layer} --- The Network Layer: IP and Routing}
+
+\begin{solution}{exo:b2:network-layer:1}
+\code{198.51.100.77/27}: mask 255.255.255.224; $77 = 64 + 13$ and a \code{/27} block has 32 addresses, so the network
+is 198.51.100.64, the broadcast 198.51.100.95, and $32 - 2 = 30$ hosts. \code{192.0.2.130/25}: mask 255.255.255.128,
+network 192.0.2.128, broadcast 192.0.2.255, 126 hosts.
+\end{solution}
+
+\begin{solution}{exo:b2:network-layer:2}
+The shift is by $32 - p + 1$ instead of $32 - p$, so the mask has $p - 1$ ones: for \code{/26} it is the mask of a
+\code{/25}, 255.255.255.128, and the network comes out as 203.0.113.0. The membership test answers for that
+\code{/25}: 203.0.113.10 is in 203.0.113.0/25, hence \code{True}, but it is not in 203.0.113.64/26. The answer is
+wrong, and looks plausible because both \omterm{def:b2:network-layer:prefix}{prefixes} start alike. Testing against \code{ipaddress}, as \code{cidr.py}
+does, catches it on the first address.
+\end{solution}
+
+\begin{solution}{exo:b2:network-layer:3}
+\omcode{code/bachelor-2/18-network-layer/exercises/contains.py}{5}{8}{Membership in a \omterm{def:b2:network-layer:prefix}{prefix}}
+Masking both sides makes the function correct even for a \omterm{def:b2:network-layer:prefix}{prefix} written with host bits set, such as
+\code{203.0.113.77/26}. The test compares it with \code{ipaddress} on random addresses and lengths, 0 and 32
+included.
+\end{solution}
+
+\begin{solution}{exo:b2:network-layer:4}
+A \code{/26} holds $2^6 - 2 = 62$ machines. The offices need $s$ with $2^s - 2$ at least 50, 20, 10 and 2: $s = 6, 5,
+4, 2$, that is a \code{/26}, a \code{/27}, a \code{/28} and a \code{/30}. Placing the largest first keeps each block
+aligned on its size: 203.0.113.0/26, 203.0.113.64/27, 203.0.113.96/28 and 203.0.113.112/30, which leaves
+203.0.113.116 to 203.0.113.255 free.
+\end{solution}
+
+\begin{solution}{exo:b2:network-layer:5}
+\code{198.51.100.70} is in the \code{/24} and the \code{/26} (64 to 127), not in the \code{/27} (96 to 127): Y.
+\code{198.51.100.100} is in all three: Z, the longest. \code{198.51.100.130} is only in the \code{/24}: X.
+\code{192.0.2.1} matches only the default route: W.
+\end{solution}
+
+\begin{solution}{exo:b2:network-layer:6}
+The new \omterm{def:b2:link-layer:edc}{checksum} is the complement of a sum that includes the old \omterm{def:b2:link-layer:edc}{checksum}, so it is not the complement of the sum of
+the other words. The next \omterm{def:b2:network-layer:routing}{router} adds all ten words and gets \code{2b75} instead of \code{ffff}: it takes the header
+for damaged and drops the packet. Every packet through this \omterm{def:b2:network-layer:routing}{router} is lost, which makes the bug obvious in practice,
+and the output shows why: the receiver's sum is the check. Clearing the field first, as \code{forward} does, fixes it.
+\end{solution}
+
+\begin{solution}{exo:b2:network-layer:7}
+\omcode{code/bachelor-2/18-network-layer/exercises/aggregate.py}{5}{23}{Aggregating \omterm{def:b2:network-layer:prefix}{prefixes}}
+Two rules are applied until neither applies: a \omterm{def:b2:network-layer:prefix}{prefix} inside a shorter one of the set is dropped; two \omterm{def:b2:network-layer:prefix}{prefixes} of the
+same length that differ only in their last bit, the two halves of a \omterm{def:b2:network-layer:prefix}{prefix} one bit shorter, are replaced by it. The
+result covers the same addresses, and it is the fewest \omterm{def:b2:network-layer:prefix}{prefixes}: in the final set no \omterm{def:b2:network-layer:prefix}{prefix} is inside another and no
+two are siblings, which is exactly the shape of the unique minimal cover. The test compares it with
+\code{ipaddress.collapse_addresses} on random sets.
+\end{solution}
+
+\begin{solution}{exo:b2:network-layer:8}
+Write $D_k(u, d)$ for the least cost of a path from $u$ to $d$ with at most $k$ links (infinite if there is none), and
+assume that the value taken as infinity exceeds every distance. We show by induction on $k$ that after round $k$, the
+table of $u$ gives $D_k(u, d)$ for every $d$, a destination being absent when the value is infinite.
+
+For $k = 0$, the only path with no link is the empty path from $u$ to itself: $D_0(u, u) = 0$, and the initial table
+holds exactly that. Suppose the claim holds after round $k$. A path from $u$ to $d \ne u$ with at most $k + 1$ links
+starts with a link to some neighbour $v$, followed by a path from $v$ to $d$ with at most $k$ links; so
+$D_{k+1}(u, d) = \min_v \bigl(c(u, v) + D_k(v, d)\bigr)$, and $D_{k+1}(u, u) = 0$ since costs are positive. Round $k +
+1$ computes exactly this minimum from the neighbours' tables of round $k$, which by hypothesis hold $D_k(v, d)$.
+
+With positive costs a shortest path visits no \omterm{def:b2:network-layer:routing}{router} twice, so it has at most $n - 1$ links: $D_{n-1}(u, d)$ is the
+shortest distance, and $D_k = D_{n-1}$ for every $k \ge n - 1$. The distances therefore stop changing after at most
+$n - 1$ rounds; the next hops, chosen by the same rule from the same values, stop with them.
+\end{solution}
+
+\begin{solution}{exo:b2:network-layer:9}
+\omcode{code/bachelor-2/18-network-layer/listings/fragment.py}{4}{12}{\omterm{def:b2:network-layer:fragmentation}{Fragmentation}}
+With an \omterm{def:b2:network-layer:fragmentation}{MTU} of 1006, each fragment carries at most $(1006 - 20)$ rounded down to a multiple of 8, that is 984 bytes:
+fragments of 984, 984, 984 and 48 bytes, at offsets 0, 123, 246 and 369 (in units of 8 bytes), the flag MF set on all
+but the last. The \omterm{def:b2:caches:fields}{offset field} has 13 bits and counts 8-byte units, so it reaches $2^{13} \times 8 = 65\,536$ bytes,
+the largest packet; this saves 3 bits of header, and requires every fragment but the last to end on a multiple of 8.
+\end{solution}
+
+\begin{solution}{exo:b2:network-layer:10}
+\omoutput{code/bachelor-2/18-network-layer/outputs/poison.txt}{Plain and poisoned, after the
+failure.}
+The change is one line in \code{dv_round}: when $v$'s route to $d$ goes through $u$, $u$ reads it as infinite
+(\code{poison=True}). On the line, A routes to C through B, so it tells B ``infinity''; B, having lost its link, has
+no route left and says so at once, and both reach 16 in 2 rounds. In the triangle, after C--D fails, A and B both
+route to D through C, so each poisons only its announcement to C, and C has no route left. But A still tells B ``D
+at 2'': A's route goes through C, not through B, so nothing is poisoned. In round 2, A and B each take D at 3 through
+the other. In round 3 they poison each other and drop to 16, but C hears A's 3, which does not go through C, and
+takes D at 4 through A; in round 4, B takes 5 through C. The stale route travels round the triangle, one hop and one
+unit per round. Poisoning only stops a \omterm{def:b2:network-layer:routing}{router} from echoing a route back to its own next hop, a loop of two; this loop
+has three, and the \omterm{def:b2:network-layer:routing}{routers} count to infinity in 15 rounds, as without it.
+\end{solution}
+
+\begin{solution}{exo:b2:network-layer:11}
+A linear table costs one test per \omterm{def:b2:network-layer:prefix}{prefix}: $n$ tests, as the printed times show (about 0.9 µs per \omterm{def:b2:network-layer:prefix}{prefix}, four times
+the time for four times the \omterm{def:b2:network-layer:prefix}{prefixes}). A trie costs one step per bit of the longest matching path, at most 32,
+whatever $n$; its time rises a little with $n$ only because more \omterm{def:b2:network-layer:prefix}{prefixes} make longer paths. Binary search does not
+work directly on nested \omterm{def:b2:network-layer:prefix}{prefixes}, since the longest match need not be next to the address in sorted order. Each
+\omterm{def:b2:network-layer:prefix}{prefix} is a range of addresses; the $n$ ranges cut the address space into at most $2n + 1$ intervals, each labelled
+with the longest \omterm{def:b2:network-layer:prefix}{prefix} that contains it. A binary search among these intervals costs $\log_2(2n + 1)$ steps, about
+13 for 4000 \omterm{def:b2:network-layer:prefix}{prefixes}, but an update may relabel many intervals, while a trie changes one node.
+\end{solution}
+
+\begin{solution}{exo:b2:network-layer:12}
+\omcode{code/bachelor-2/18-network-layer/exercises/ipv6_compress.py}{4}{22}{The recommended text form}
+The loop finds the longest run of zero groups, taking a run only if it is strictly longer than the best so far, so the
+first of two equal runs wins and a run of one group (the initial \code{best_len} is 1) is never shortened. The
+groups are written in lowercase hexadecimal without leading zeros. The test draws addresses whose groups are often 0,
+so that ties and runs at either end occur, and compares with \code{str(ipaddress.IPv6Address(...))}.
+\end{solution}
+
+\begin{solution}{pb:b2:network-layer:1}
+\textbf{1.} $256 - 30 = 226$ addresses, two of which (\code{.0} and \code{.255}) are the network and broadcast
+addresses if the whole block is one network.
+
+\textbf{2.} Five machines plus the network and broadcast addresses need 7 addresses: a \code{/29} (8 addresses, 6
+machines). A \code{/24} holds $2^{29-24} = 32$ of them.
+
+\textbf{3.} No. The \omterm{def:b2:network-layer:routing}{router} addresses 1 to 30 fall in the first four \code{/29}s (0 to 31), which leaves 28 for 30
+networks.
+
+\textbf{4.} Place $k$ gets $8k$ to $8k + 7$; for $k = 30$ that is 240 to 247, inside the block, and the 30 ranges do
+not overlap. Place 12: \code{203.0.113.96/29}.
+
+\textbf{5.} Network 203.0.113.96, broadcast 203.0.113.103.
+
+\textbf{6.} The place number is the last byte of an address divided by 8: an address tells at once where it is.
+
+\textbf{7.} The Library's \omterm{def:b2:network-layer:routing}{router}, \code{198.51.100.3}, the first hop.
+
+\textbf{8.} 30 entries, one per place, plus a default route. Seen from outside, the whole town is one entry,
+\code{203.0.113.0/24}: aggregation hides the 30 \omterm{def:b2:network-layer:prefix}{prefixes}.
+
+\textbf{9.} \code{203.0.113.0/24} (and the \omterm{def:b2:network-layer:routing}{routers}' \code{198.51.100.0/24}) towards the inside, and \code{0.0.0.0/0}
+towards the provider.
+
+\textbf{10.} $97 = 8 \times 12 + 1$: place 12.
+
+\textbf{11.} 29 steps: the walk follows the address's bits to the node of \code{203.0.113.96/29} at depth 29, which
+has no children.
+
+\textbf{12.} The \omterm{def:b2:network-layer:ttl}{time to live} must exceed the length of any path a packet may need, anywhere on the Internet, not just
+in town; 64 leaves a wide margin while still killing a looping packet quickly.
+
+\textbf{13.} At most $n - 1 = 29$ rounds. The tables stop changing once every shortest path is known, so 8 is the
+largest number of links on a shortest path (choosing, for each pair, the shortest path with fewest links).
+
+\textbf{14.} With hop counts the shortest paths are those with fewest links, and the longest of them has 7 links; with
+lengths, the shortest path may take more, shorter, links.
+
+\textbf{15.} Each \omterm{def:b2:network-layer:routing}{router} sends its table to each neighbour: $2 \times 53 = 106$ messages per round.
+
+\textbf{16.} The whole map: the 53 links (each described by both of its \omterm{def:b2:network-layer:routing}{routers}, 106 descriptions).
+
+\textbf{17.} With a heap, about $(n + m)\log_2 n \approx (30 + 106) \times 5 \approx 700$ elementary steps: nothing for
+a \omterm{def:b2:network-layer:routing}{router}.
+
+\textbf{18.} Link state: the map is small, each \omterm{def:b2:network-layer:routing}{router} computes its routes in an instant, and a failure costs one
+flood and one recomputation instead of a count to infinity.
+
+\textbf{19.} Distance vector has no message that says ``this \omterm{def:b2:network-layer:routing}{router} is gone''. The café's neighbours lose their links
+to it, but still hear the other neighbours announce routes to it, routes which went through the café's own link and
+are now stale.
+
+\textbf{20.} The nearest \omterm{def:b2:network-layer:routing}{routers} were at 1, directly linked. After the failure their best offer comes from another
+former neighbour, which announced 1 in the previous round: 2. In the next round every offer is at least 2, so the
+least distance is 3, and so on: the least distance grows by one link per round, since every route now passes through
+another \omterm{def:b2:network-layer:routing}{router} that believes in an older, shorter one.
+
+\textbf{21.} After round $r$, the least distance is $r + 1$ (by the argument of question 20), so all reach 16 when $r
++ 1 = 16$, at round 15, whatever the distances were before: the \omterm{def:b2:network-layer:routing}{routers} that were far simply reach 16 sooner.
+
+\textbf{22.} $15 \times 30$~s, seven and a half minutes, during which packets for the café circle until their \omterm{def:b2:network-layer:ttl}{time to
+live} runs out.
+
+\textbf{23.} The café's neighbours flood the loss of their links; each \omterm{def:b2:network-layer:routing}{router} removes them from its map and runs
+Dijkstra once, finding the café unreachable. It takes the time of one flood, a fraction of a second.
+
+\textbf{24.} Count to infinity: 15 rounds to reach the limit 16 on the town's network, against one recomputation per
+\omterm{def:b2:network-layer:routing}{router} in link state.
+\end{solution}

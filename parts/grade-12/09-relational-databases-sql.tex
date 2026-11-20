@@ -1,0 +1,395 @@
+% Provenance (never printed): NSI terminale "Bases de donnees: modele relationnel (relation, attribut, domaine,
+% cle primaire, cle etrangere, schema relationnel); contraintes d'integrite (domaine, relation, reference);
+% redondance et anomalies; services d'un SGBD; langage SQL (SELECT, FROM, WHERE, JOIN, DISTINCT, ORDER BY, fonctions
+% d'agregation sans GROUP BY; INSERT, UPDATE, DELETE)". See sources/book2/BRIEFS.md.
+\chapter{Relational Databases and SQL}\label{ch:g12:relational-databases-sql}
+
+The town library once kept its loans in one wide spreadsheet: a row per loan, with the title and the author of the
+book, the name of the member, the street and the postcode. It was easy to read. Then a member moved, and her new
+address had to be typed into eight \omterm{def:g12:relational-databases-sql:relation}{rows}; one was missed, and the library had two addresses for her. A book whose
+loans were all deleted at the end of the year disappeared from the catalogue with them.
+
+This chapter splits such a table into several, linked by keys, so that each fact is written once. The tables and
+their rules form a relational \omterm{def:g12:relational-databases-sql:database}{database}, and a language, \omterm{def:g12:relational-databases-sql:sql}{SQL}, asks it questions and changes it. A \omterm{def:g12:relational-databases-sql:database}{database} system
+then keeps the tables safe on disk, lets several programs use them at once, and refuses changes that break the rules.
+
+\begin{recall}
+A data table is a list of records with the same fields, its columns named by descriptors; the \emph{domain} of a
+column is the set of values it may take (chapter \ref{ch:g10:data-tables}). A join combines two tables on a shared
+field, and a \omterm{def:g10:data-tables:missing}{missing value} is an empty cell (the same chapter). The town of Brenmoor has its people, streets, books,
+members and loans in tables (Book 1, grade 8).
+\end{recall}
+
+\section{Why one wide table fails}\label{sec:g12:relational-databases-sql:flat}
+
+The program rebuilds the wide table from the town's tables, and looks at what changing it would cost.
+
+\omcode{code/grade-12/09-relational-databases-sql/listings/flat_table.py}{1}{30}{The library as one wide table: one
+row per loan.}\label{lst:g12:relational-databases-sql:flat}
+
+\omoutput{code/grade-12/09-relational-databases-sql/outputs/flat_table.txt}{One fact written many times, and three
+kinds of trouble.}\label{out:g12:relational-databases-sql:flat}
+
+\begin{definition}[Redundancy, anomalies]\label{def:g12:relational-databases-sql:anomaly}
+A table has \emph{redundancy}\index{redundancy} when the same fact is stored in several places. It then suffers
+\emph{anomalies}\index{anomaly (insertion, deletion, update)}: an \emph{update anomaly}, when changing one fact
+requires changing several \omterm{def:g12:relational-databases-sql:relation}{rows}, and missing one leaves the table contradicting itself; a \emph{deletion anomaly},
+when deleting some \omterm{def:g12:relational-databases-sql:relation}{rows} loses a fact that had nothing to do with them; an \emph{insertion anomaly}, when a fact cannot
+be stored until some unrelated fact exists.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=1mm, y=-5mm, cell/.style={draw=black!30, minimum height=5mm, inner sep=1.5pt,
+    anchor=west}]
+  \foreach \h/\x/\w in {loan/0/10, title/10/30, author/40/24, member/64/26, street/90/22, postcode/112/16}
+    \node[cell, minimum width=\w mm, fill=black!8, font=\scriptsize\bfseries] at (\x,0) {\h};
+  \foreach \l/\t/\a/\m/\s/\p/\fb/\fm [count=\r] in {
+      2/Seven Forest/Elif Ashworth/Bea Stoneford/Bridge Road/B-100/omThm!12/omDef!14,
+      53/The Silent Forest/Nils Mossham/Bea Stoneford/Bridge Road/B-100/white/omDef!14,
+      63/Seven Forest/Elif Ashworth/Hana Brookwick/Market Road/B-110/omThm!12/white,
+      117/The Silent Machine/Zoe Stoneton/Bea Stoneford/Bridge Road/B-100/white/omDef!14} {
+    \node[cell, minimum width=10mm] at (0,\r) {\l};
+    \node[cell, minimum width=30mm, fill=\fb] at (10,\r) {\t};
+    \node[cell, minimum width=24mm, fill=\fb] at (40,\r) {\a};
+    \node[cell, minimum width=26mm, fill=\fm] at (64,\r) {\m};
+    \node[cell, minimum width=22mm, fill=\fm] at (90,\r) {\s};
+    \node[cell, minimum width=16mm, fill=\fm] at (112,\r) {\p};
+  }
+\end{tikzpicture}
+
+{\small Four \omterm{def:g12:relational-databases-sql:relation}{rows} of the wide table built by \code{flat_table.py}. The shaded cells repeat a fact written in
+another row: the author of \emph{Seven Forest} twice here (nine times in the whole table), the address of Bea
+Stoneford three times here (eight in all). Each repetition is a place where an update can be forgotten.}
+\end{omfigure}
+
+The cure is to write each fact once, in a table about that kind of thing, and to let the loans point to books and
+members instead of copying them.
+
+\section{The relational model}\label{sec:g12:relational-databases-sql:model}
+
+\begin{definition}[Database, database management system]\label{def:g12:relational-databases-sql:database}
+A \emph{database}\index{database} is a collection of data organised to be stored, queried and changed by programs. A
+\emph{database management system}\index{database management system} is the program that stores a database, answers
+the queries of other programs, and applies their changes.
+\end{definition}
+
+\begin{definition}[Relation, attribute, row]\label{def:g12:relational-databases-sql:relation}
+In the relational model, a \emph{relation}\index{relation} is a table: a set of \emph{rows}\index{row (relation)}, all
+with the same \emph{attributes}\index{attribute (relation)}, the named columns. Each attribute has a domain. A relation
+is a set: its rows have no order, and no two rows are equal.
+\end{definition}
+
+\begin{definition}[Primary key, foreign key]\label{def:g12:relational-databases-sql:keys}
+A \emph{primary key}\index{primary key} of a \omterm{def:g12:relational-databases-sql:relation}{relation} is an attribute, or a group of \omterm{def:g12:relational-databases-sql:relation}{attributes}, whose values are
+different in every row and chosen to identify the \omterm{def:g12:relational-databases-sql:relation}{rows}. A \emph{foreign key}\index{foreign key} is an attribute whose
+values must be values of the primary key of another \omterm{def:g12:relational-databases-sql:relation}{relation}: it points to a row of that \omterm{def:g12:relational-databases-sql:relation}{relation}.
+\end{definition}
+
+\begin{definition}[Relational schema, integrity constraint]\label{def:g12:relational-databases-sql:schema}
+The \emph{relational schema}\index{relational schema} of a \omterm{def:g12:relational-databases-sql:database}{database} lists its \omterm{def:g12:relational-databases-sql:relation}{relations}, with for each one its
+\omterm{def:g12:relational-databases-sql:relation}{attributes}, their domains, its \omterm{def:g12:relational-databases-sql:keys}{primary key} and its \omterm{def:g12:relational-databases-sql:keys}{foreign keys}. An \emph{integrity constraint}\index{integrity
+constraint} is a rule every state of the \omterm{def:g12:relational-databases-sql:database}{database} must satisfy. Three kinds come with the schema: \emph{domain}
+constraints (each value lies in its attribute's domain), \emph{\omterm{def:g12:relational-databases-sql:relation}{relation}} constraints (no two \omterm{def:g12:relational-databases-sql:relation}{rows} share a \omterm{def:g12:relational-databases-sql:keys}{primary
+key}) and \emph{reference} constraints (each \omterm{def:g12:relational-databases-sql:keys}{foreign key} points to a row that exists).
+\end{definition}
+
+The schema is the \emph{structure} of the \omterm{def:g12:relational-databases-sql:database}{database}; the \omterm{def:g12:relational-databases-sql:relation}{rows} present at a given moment are its \emph{content}. The
+structure changes rarely, by design; the content changes with every loan.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=1cm, y=-0.42cm,
+    att/.style={draw=black!40, minimum width=22mm, minimum height=0.42cm, inner sep=1pt, anchor=center},
+    head/.style={att, fill=omDef!18, font=\scriptsize\bfseries}]
+  \foreach \t/\x/\list in {streets/0/{street_id,name,postcode},
+      people/3.1/{person_id,first_name,last_name,birth_year,street_id},
+      members/6.2/{member_id,person_id,joined},
+      loans/9.3/{loan_id,book_id,member_id,out_date,due_date,return_date},
+      books/12.4/{book_id,title,author,year,genre,pages}} {
+    \node[head] at (\x,0) {\t};
+    \foreach \a [count=\k] in \list {
+      \ifnum\k=1 \node[att] (\t-\k) at (\x,\k) {\underline{\detokenize\expandafter{\a}}};
+      \else \node[att] (\t-\k) at (\x,\k) {\detokenize\expandafter{\a}}; \fi
+    }
+  }
+  \draw[->, thick, omThm] (people-5.west) -- ++(-0.2,0) |- (streets-1.east);
+  \draw[->, thick, omThm] (members-2.west) -- ++(-0.2,0) |- (people-1.east);
+  \draw[->, thick, omThm] (loans-3.west) -- ++(-0.2,0) |- (members-1.east);
+  \draw[->, thick, omThm] (loans-2.east) -- ++(0.2,0) |- (books-1.west);
+\end{tikzpicture}
+
+{\small Part of the town's schema. \omterm{def:g12:relational-databases-sql:keys}{Primary keys} are underlined; each arrow goes from a \omterm{def:g12:relational-databases-sql:keys}{foreign key} to the \omterm{def:g12:relational-databases-sql:relation}{relation}
+whose \omterm{def:g12:relational-databases-sql:keys}{primary key} it names: a loan points to a book and to a member, a member to a person, a person to a street.
+Each fact now has one place: an address in \code{streets}, an author in \code{books}.}
+\end{omfigure}
+
+In \omterm{def:g12:relational-databases-sql:sql}{SQL}, the schema is written as \code{CREATE TABLE} statements. The small library below declares its constraints;
+the runner turns on the checking of \omterm{def:g12:relational-databases-sql:keys}{foreign keys}, which SQLite leaves off unless asked.
+
+\omcode{code/grade-12/09-relational-databases-sql/listings/schema.sql}{1}{24}{A small library: keys, \omterm{def:g12:relational-databases-sql:keys}{foreign keys},
+and two domain checks.}\label{lst:g12:relational-databases-sql:schema}
+
+\omoutput{code/grade-12/09-relational-databases-sql/outputs/create.txt}{Four \omterm{def:g12:relational-databases-sql:relation}{rows} accepted, then one change refused
+for each kind of constraint: domain, \omterm{def:g12:relational-databases-sql:relation}{relation}, reference twice.}\label{out:g12:relational-databases-sql:create}
+
+\section{Querying}\label{sec:g12:relational-databases-sql:query}
+
+\begin{definition}[Query, SQL]\label{def:g12:relational-databases-sql:sql}
+A \emph{query}\index{query} is a request for data, answered with a \omterm{def:g12:relational-databases-sql:relation}{relation}. \emph{SQL}\index{SQL} (Structured Query
+Language) is the language in which relational \omterm{def:g12:relational-databases-sql:database}{databases} are queried and changed. A query names the columns wanted,
+the \omterm{def:g12:relational-databases-sql:relation}{relations} they come from and a condition on the \omterm{def:g12:relational-databases-sql:relation}{rows}:
+\code{SELECT columns FROM relation WHERE condition}.
+\end{definition}
+
+The files below are run by the book's runner, \code{sqlrun.py}, which loads the town's tables (\code{-- load: town}),
+prints each statement after \code{sql>}, and then its answer.
+
+\omoutput{code/grade-12/09-relational-databases-sql/outputs/select_where.txt}{Selecting \omterm{def:g12:relational-databases-sql:relation}{rows} with \code{WHERE}:
+comparisons, \code{AND}, and \code{LIKE} with \texttt{\%} for any
+letters.}\label{out:g12:relational-databases-sql:select}
+
+\code{DISTINCT} removes repeated \omterm{def:g12:relational-databases-sql:relation}{rows} from an answer; \code{ORDER BY} sorts it, by several columns if needed,
+\code{DESC} for decreasing order; \code{LIMIT} keeps the first \omterm{def:g12:relational-databases-sql:relation}{rows}.
+
+\omoutput{code/grade-12/09-relational-databases-sql/outputs/distinct_order.txt}{The eight genres, one author's books
+from the newest, and the three longest books.}\label{out:g12:relational-databases-sql:order}
+
+An aggregate function turns a whole selection into one value: \code{COUNT}, \code{SUM}, \code{AVG}, \code{MIN},
+\code{MAX}. \code{COUNT(*)} counts \omterm{def:g12:relational-databases-sql:relation}{rows}; \code{COUNT(column)} counts the values that are not missing.
+
+\omoutput{code/grade-12/09-relational-databases-sql/outputs/aggregates.txt}{One row per \omterm{def:g12:relational-databases-sql:sql}{query}: $400$ loans, of which
+$378$ have a return date.}\label{out:g12:relational-databases-sql:aggregates}
+
+A \omterm{def:g10:data-tables:missing}{missing value} is written \code{NULL} in \omterm{def:g12:relational-databases-sql:sql}{SQL}. It is not a value like the others: any comparison with it, even
+\code{NULL = NULL}, is neither true nor false, so a \code{WHERE} keeps no row on it. The test is \code{IS NULL}.
+
+\omoutput{code/grade-12/09-relational-databases-sql/outputs/still_out.txt}{$22$ loans still out; the comparison
+\code{= NULL} finds none.}\label{out:g12:relational-databases-sql:null}
+
+The titles of the books are in \code{books}, the dates in \code{loans}. A join puts together each loan and the book its
+\code{book_id} points to. Long names are shortened by \code{AS}.
+
+\omoutput{code/grade-12/09-relational-databases-sql/outputs/joins.txt}{A join of two \omterm{def:g12:relational-databases-sql:relation}{relations}, then of four: the
+oldest loans still out, with the names of the borrowers.}\label{out:g12:relational-databases-sql:joins}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=1mm, y=-5mm, cell/.style={draw=black!40, minimum height=5mm, inner sep=1.5pt,
+    anchor=west}]
+  \node[font=\footnotesize\bfseries] at (14,-1.2) {loans};
+  \node[font=\footnotesize\bfseries] at (79,-1.2) {books};
+  \foreach \h/\x/\w in {loan\_id/0/12, book\_id/12/14} \node[cell, minimum width=\w mm, fill=black!8] at (\x,0) {\h};
+  \foreach \l/\b [count=\r] in {1/59, 2/73, 3/28} {
+    \node[cell, minimum width=12mm] at (0,\r) {\l};
+    \node[cell, minimum width=14mm, fill=omThm!12] (lb\r) at (12,\r) {\b};
+  }
+  \foreach \h/\x/\w in {book\_id/60/14, title/74/30} \node[cell, minimum width=\w mm, fill=black!8] at (\x,0) {\h};
+  \foreach \b/\t [count=\r] in {28/Under the Bridge, 59/The Hidden Valley, 73/Seven Forest} {
+    \node[cell, minimum width=14mm, fill=omThm!12] (bb\b) at (60,\r) {\b};
+    \node[cell, minimum width=30mm] at (74,\r) {\t};
+  }
+  \draw[omThm, thick, ->] (lb1.east) -- (bb59.west);
+  \draw[omThm, thick, ->] (lb2.east) -- (bb73.west);
+  \draw[omThm, thick, ->] (lb3.east) -- (bb28.west);
+\end{tikzpicture}
+
+{\small \code{loans JOIN books ON loans.book_id = books.book_id}: each loan is matched with the row of \code{books}
+whose key equals its \code{book_id}, and the two \omterm{def:g12:relational-databases-sql:relation}{rows} are written side by side as one row of the answer. Without the
+\code{ON} condition, every loan would be paired with every book.}
+\end{omfigure}
+
+\section{Changing the data}\label{sec:g12:relational-databases-sql:changes}
+
+\code{INSERT INTO} adds \omterm{def:g12:relational-databases-sql:relation}{rows}, \code{UPDATE ... SET ... WHERE} changes the \omterm{def:g12:relational-databases-sql:relation}{rows} that satisfy a condition, and
+\code{DELETE FROM ... WHERE} removes them. The \omterm{def:g12:relational-databases-sql:database}{database} system checks every change against the constraints and refuses
+the ones that would break them.
+
+\omoutput{code/grade-12/09-relational-databases-sql/outputs/changes.txt}{A book added and removed, a due date moved,
+eight books changed at once; deleting a member who has loans, and a loan of a book that does not exist, are
+refused.}\label{out:g12:relational-databases-sql:changes}
+
+An \code{UPDATE} or a \code{DELETE} without \code{WHERE} applies to every row of the \omterm{def:g12:relational-databases-sql:relation}{relation}. That is rarely what was
+meant, and a \omterm{def:g12:relational-databases-sql:database}{database} system does not ask for confirmation.
+
+\section{What a database system guarantees}\label{sec:g12:relational-databases-sql:dbms}
+
+A \omterm{def:g12:relational-databases-sql:database}{database management system} offers more than a place to keep tables. It gives \emph{persistence}: a change it has
+accepted is on disk and survives a crash or a power cut. It allows \emph{concurrent access}: many programs, on many
+machines, read and change the same \omterm{def:g12:relational-databases-sql:database}{database} at once, and each change is applied entirely or not at all, never half.
+It answers queries \emph{efficiently}: it keeps indexes, sorted structures over chosen columns, and finds \omterm{def:g12:relational-databases-sql:relation}{rows} without
+reading every one. It \emph{controls access}: each user may read or change only what the administrator allowed.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, box/.style={draw, rounded corners=2pt, minimum width=30mm, minimum height=7mm,
+    align=center}]
+  \node[box, fill=omMeth!12] (p) at (0,0) {a program\\ \scriptsize Python, a web server};
+  \node[box, fill=omDef!12] (s) at (0,-1.6) {SQL statements\\ \scriptsize and their answers};
+  \node[box, fill=omThm!12, minimum width=52mm] (d) at (0,-3.2) {database management system\\ \scriptsize checks,
+    indexes, several users, access rights};
+  \node[box, fill=black!6] (f) at (0,-4.8) {files on disk};
+  \draw[<->, thick] (p) -- (s); \draw[<->, thick] (s) -- (d); \draw[<->, thick] (d) -- (f);
+  \node[box, fill=omMeth!12] (q) at (4.2,0) {another program};
+  \draw[<->, thick] (q) |- (s.east);
+\end{tikzpicture}
+
+{\small The layers. Programs never touch the files of the \omterm{def:g12:relational-databases-sql:database}{database}: they send \omterm{def:g12:relational-databases-sql:sql}{SQL} and receive answers. The system in
+between applies the constraints and lets several programs work on the same data.}
+\end{omfigure}
+
+From Python, the module \code{sqlite3} opens a \omterm{def:g12:relational-databases-sql:database}{database}, here in memory, and sends it \omterm{def:g12:relational-databases-sql:sql}{SQL}. The values of a \omterm{def:g12:relational-databases-sql:sql}{query}
+are not pasted into its text: they are passed separately, and each \code{?} of the \omterm{def:g12:relational-databases-sql:sql}{query} takes one.
+
+\omcode{code/grade-12/09-relational-databases-sql/listings/from_python.py}{1}{29}{The town's tables from Python, and
+a \omterm{def:g12:relational-databases-sql:sql}{query} with two parameters.}\label{lst:g12:relational-databases-sql:python}
+
+\omoutput{code/grade-12/09-relational-databases-sql/outputs/from_python.txt}{Two loans since September by members
+named Stoneford.}\label{out:g12:relational-databases-sql:python}
+
+\begin{definition}[SQL injection]\label{def:g12:relational-databases-sql:injection}
+An \emph{SQL injection}\index{SQL injection} is an attack on a program that builds the text of a \omterm{def:g12:relational-databases-sql:sql}{query} by pasting
+text supplied by a user: the text closes the quotation and adds \omterm{def:g12:relational-databases-sql:sql}{SQL} of the attacker's choice, which the \omterm{def:g12:relational-databases-sql:database}{database} runs.
+\end{definition}
+
+\omcode{code/grade-12/09-relational-databases-sql/listings/injection.py}{1}{25}{A \omterm{def:g12:relational-databases-sql:sql}{query} built by pasting, attacked on a
+toy table; then the same \omterm{def:g12:relational-databases-sql:sql}{query} with a parameter.}\label{lst:g12:relational-databases-sql:injection}
+
+\omoutput{code/grade-12/09-relational-databases-sql/outputs/injection.txt}{The attack turns the condition into one
+that is always true and reads every note; with a parameter, it is only a strange
+name.}\label{out:g12:relational-databases-sql:injection}
+
+\begin{safety}
+Never build the text of an \omterm{def:g12:relational-databases-sql:sql}{SQL} \omterm{def:g12:relational-databases-sql:sql}{query} by pasting text that came from outside the program: a form, a file, a web
+address. Pass every value as a parameter. The attack above was run on a table the program had just created in memory;
+trying it on someone else's system is an offence.
+\end{safety}
+
+\begin{history}[Codd, 1970]
+Edgar F.\ Codd proposed the relational model in 1970, in an article of the \emph{Communications of the ACM} titled
+``A relational model of data for large shared data banks''. Programs, he argued, should ask for data by its values,
+not by where it is stored.
+% ledger: g12:codd-1970
+\end{history}
+
+\section{Exercises}\label{sec:g12:relational-databases-sql:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g12:relational-databases-sql:1}
+The \omterm{def:g12:relational-databases-sql:relation}{relation} \code{pets(name, kind, age)} holds the \omterm{def:g12:relational-databases-sql:relation}{rows} (Rex, dog, 4), (Tom, cat, 2), (Kiki, bird, 1),
+(Max, dog, 9). What does \texttt{SELECT name FROM pets WHERE kind = \textquotesingle{}dog\textquotesingle{} AND age > 5} return?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:relational-databases-sql:2}
+A \omterm{def:g12:relational-databases-sql:relation}{relation} \code{seats(train, coach, seat, passenger)} records the seats booked on a day's trains. Which \omterm{def:g12:relational-databases-sql:relation}{attributes}
+form a \omterm{def:g12:relational-databases-sql:keys}{primary key}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:relational-databases-sql:3}
+Write a \omterm{def:g12:relational-databases-sql:sql}{query} that counts the different authors of the town library. (The answer is $23$.)
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:relational-databases-sql:4}
+Write a \omterm{def:g12:relational-databases-sql:sql}{query} that lists the titles and years of the books by Caio Lakeby, oldest first.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:relational-databases-sql:5}
+A student writes \code{SELECT COUNT(*) FROM loans, books}, forgetting the join condition. What does it count?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:relational-databases-sql:6}
+Write a \omterm{def:g12:relational-databases-sql:sql}{query} that lists, once each, the first and last names of the members who have a book still out.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:relational-databases-sql:7}
+How many \omterm{def:g12:relational-databases-sql:relation}{rows} has \code{loans JOIN books ON loans.book_id = books.book_id}? Why exactly that many?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:relational-databases-sql:8}
+Why does \code{WHERE return_date = NULL} keep no row, even for the loans still out? Write the right condition.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:relational-databases-sql:9}
+Write an \code{UPDATE} that gives every loan still out $14$ more days. SQLite's \texttt{date(d, \textquotesingle{}+14 days\textquotesingle{})} adds days to
+a date. How many \omterm{def:g12:relational-databases-sql:relation}{rows} change?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:relational-databases-sql:10}
+With \omterm{def:g12:relational-databases-sql:keys}{foreign keys} checked, which of these are refused on the town's tables, and why: deleting street $1$, loan $1$,
+person $1$, member $1$?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:relational-databases-sql:11}
+A school keeps \code{marks(student, class, teacher, teacher_phone, subject, mark)}, a row per mark. Give an example
+of each of the three \omterm{def:g12:relational-databases-sql:anomaly}{anomalies}, and a schema without them.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:relational-databases-sql:12}
+Write the schema of a school timetable: teachers, rooms, and lessons (day, hour, room, teacher, subject), with keys
+and constraints so that a room holds one lesson at a time, a teacher gives one lesson at a time, and lessons are on
+weekdays between $8$ and $17$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:relational-databases-sql:13}
+Write \code{books_between(conn, first, last)}, which returns the titles of the books published between two years,
+with a parameterised \omterm{def:g12:relational-databases-sql:sql}{query}, and a test for it.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:relational-databases-sql:14}
+Prove that every \omterm{def:g12:relational-databases-sql:relation}{relation} has at least one key: a group of \omterm{def:g12:relational-databases-sql:relation}{attributes} whose values differ in every row.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:relational-databases-sql:15}
+A program runs \texttt{conn.execute(f"DELETE FROM notes WHERE owner = \textquotesingle{}\{name\}\textquotesingle{}")} with a name typed by a user. What name
+deletes every note? Rewrite the line safely.
+\end{exercise}
+
+\section{Problem: The Overdue Books of Brenmoor}\label{sec:g12:relational-databases-sql:problem}
+
+\begin{problem}[{Weekend problem --- which books were late on the first of September?}]\label{pb:g12:relational-databases-sql:1}
+The library wants a picture of its late books on 1 September 2025: which loans were overdue that day, who held them,
+where those members live, and how many days of lateness had piled up.
+
+\omcode{code/grade-12/09-relational-databases-sql/listings/overdue.sql}{1}{22}{Four queries about the loans overdue on
+1 September 2025.}\label{lst:g12:relational-databases-sql:overdue}
+
+\omoutput[1-11,17-40]{code/grade-12/09-relational-databases-sql/outputs/overdue.txt}{The number of loans overdue, then
+the loans themselves (the statements are in the listing).}\label{out:g12:relational-databases-sql:overdue}
+
+\omoutput[49-68,74-80]{code/grade-12/09-relational-databases-sql/outputs/overdue.txt}{The members concerned, with their
+streets, and the days of lateness.}\label{out:g12:relational-databases-sql:overdue-2}
+
+\medskip\noindent\textbf{Part I --- The schema.}
+\begin{enumerate}
+  \item Which \omterm{def:g12:relational-databases-sql:relation}{relations} does the problem need? Draw them with their keys and \omterm{def:g12:relational-databases-sql:keys}{foreign keys}.
+  \item Why is the date of return allowed to be \code{NULL}, but not the date of loan?
+  \item Why does \code{loans} store \code{member_id} and not the member's name?
+  \item What would go wrong in the last \omterm{def:g12:relational-databases-sql:sql}{query} if a member could appear in \code{loans} without existing in
+    \code{members}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Overdue on a given day.}
+\begin{enumerate}[resume]
+  \item Explain each of the three parts of the condition: \code{out_date <= D}, \code{due_date < D}, and the part in
+    brackets.
+  \item Why are the brackets necessary?
+  \item How many loans were overdue on 1 September? How many of them were returned later, and when?
+  \item Why does \code{ORDER BY l.due_date} put the longest-overdue loans first?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Members and streets.}
+\begin{enumerate}[resume]
+  \item The third \omterm{def:g12:relational-databases-sql:sql}{query} joins four \omterm{def:g12:relational-databases-sql:relation}{relations}. Follow the path of the joins from a loan to a street.
+  \item There are $18$ loans but $14$ members. Why fewer, and what does \code{DISTINCT} do here?
+  \item Which streets appear twice, and is that a \omterm{def:g12:relational-databases-sql:anomaly}{redundancy} in the \omterm{def:g12:relational-databases-sql:database}{database}?
+  \item Without \code{DISTINCT}, how many \omterm{def:g12:relational-databases-sql:relation}{rows} would the \omterm{def:g12:relational-databases-sql:sql}{query} return?
+  \item A member moves to another street. How many \omterm{def:g12:relational-databases-sql:relation}{rows} of the \omterm{def:g12:relational-databases-sql:database}{database} change, and how many \omterm{def:g12:relational-databases-sql:relation}{rows} of this answer?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Days of lateness.}
+\begin{enumerate}[resume]
+  \item What does \code{julianday(D) - julianday(due_date)} measure?
+  \item How many days of lateness had piled up on 1 September, in all? The longest single delay?
+  \item Which loan has the longest delay, and when was it due?
+  \item The average delay is not in the output. Compute it from the output, then write the \omterm{def:g12:relational-databases-sql:sql}{query}.
+  \item For the four loans returned in September, how many days late were they on the day they came back?
+  \item The library fines $10$ cents per day late. What did the overdue loans owe on 1 September?
+  \item State the result: the number of loans overdue on 1 September 2025, the members concerned, and the total days
+    of lateness.
+\end{enumerate}
+\end{problem}

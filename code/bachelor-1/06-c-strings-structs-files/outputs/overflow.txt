@@ -1,0 +1,16 @@
+$ gcc -std=c17 -O0 overflow.c -o plain && ./plain
+before: Ann, age 19
+after:  Christabelle, age 0
+$ gcc -std=c17 -O0 -g -fsanitize=address overflow.c -o asan && ./asan
+before: Ann, age 19
+after:  Christabelle, age 0
+$ gcc -std=c17 -O0 -g -fsanitize=address overflow_local.c -o local
+$ { ./local 2>&1 | grep -E "ERROR|WRITE of|#1 |overflows"; } 2>/dev/null
+==1000==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7fffffffec4a at pc 0x7ffff743a2c3 bp 0x7fffffffec10 sp 0x7fffffffe3b8
+WRITE of size 13 at 0x7fffffffec4a thread T0
+    #1 0x5555555552ca in main ~/session/overflow_local.c:8
+    [32, 42) 'name' (line 7) <== Memory access at offset 42 overflows this variable
+$ gcc -std=c17 -O2 overflow.c -o fortified 2>/dev/null
+$ { ./fortified 2>&1; } 2>/dev/null; echo "exit status $?"
+*** buffer overflow detected ***: terminated
+exit status 134

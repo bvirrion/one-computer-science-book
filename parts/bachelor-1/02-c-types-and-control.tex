@@ -1,0 +1,440 @@
+% Book 3, Year 1, chapter 2 -- C types, operators and control flow.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 2.
+\chapter{C: Types, Operators and Control Flow}\label{ch:b1:c-types-and-control}
+
+A countdown from 3 to 0 is four lines of C. The program below prints 3, 2, 1, 0, and then 4294967295, and would
+go on for ever if a guard did not stop it. Nothing is wrong with the processor: the counter was declared
+\code{unsigned}, an unsigned number is never below zero, and one step below zero is the largest unsigned number.
+In Python an integer grows as large as it needs to; in C every number has a fixed \omterm{def:b1:c-types-and-control:integer-type}{width}, and the rules that
+follow from that \omterm{def:b1:c-types-and-control:integer-type}{width} are the subject of this chapter.
+
+\omcode{code/bachelor-1/02-c-types-and-control/listings/countdown.c}{2}{15}{A countdown that never reaches the
+end}\label{lst:b1:c-types-and-control:countdown}
+
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/countdown.txt}{The \omterm{def:b1:compilation-pipeline:compiler}{compiler} warned; the loop went past
+zero.}\label{out:b1:c-types-and-control:countdown}
+
+\begin{recall}
+A machine integer has a fixed number of bits $N$. Read as an unsigned number, the bits stand for a value in
+$[0, 2^N - 1]$; read in two's complement, for a value in $[-2^{N-1}, 2^{N-1} - 1]$, the leading bit having weight
+$-2^{N-1}$. A floating-point number holds a sign, an exponent and a significand, so that $0.1$ is stored rounded.
+The school volumes showed both in Python, which hides the \omterm{def:b1:c-types-and-control:integer-type}{widths}.
+\end{recall}
+
+\section{Integer types and their widths}\label{sec:b1:c-types-and-control:integers}
+% ledger: b1:c-min-widths, b1:c-lp64, b1:c-div-trunc
+
+\begin{definition}[Integer type, width]\label{def:b1:c-types-and-control:integer-type}
+An \emph{integer type}\index{integer type} of C is a set of whole numbers stored in a fixed number of bits, its
+\emph{width}\index{width (of an integer type)}: \code{char}, \code{short}, \code{int}, \code{long} and
+\code{long long}, each \code{signed} (two's complement) or \code{unsigned}. The standard only sets minimum widths
+(8, 16, 16, 32 and 64 bits); each machine chooses the real ones. The header \texttt{<stdint.h>} adds types of an
+exact width: \code{int8_t} to \code{int64_t}, and \code{uint8_t} to \code{uint64_t}.
+\end{definition}
+
+\omcode{code/bachelor-1/02-c-types-and-control/listings/sizes.c}{2}{18}{Asking the machine for its
+\omterm{def:b1:c-types-and-control:integer-type}{widths}}\label{lst:b1:c-types-and-control:sizes}
+
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/sizes.txt}{The \omterm{def:b1:c-types-and-control:integer-type}{widths} on this machine: \code{int} 32
+bits, \code{long} and pointers 64 bits.}\label{out:b1:c-types-and-control:sizes}
+
+This 64-bit Linux machine follows the convention called LP64: \code{long} and pointers are 64 bits, \code{int}
+stays at 32. Another system may differ (on 64-bit Windows, \code{long} is 32 bits), which is why a program that
+needs an exact \omterm{def:b1:c-types-and-control:integer-type}{width} says \code{int32_t} or \code{uint64_t}, and why \code{sizeof}, the operator that gives the
+size of a type in bytes, appears in portable code instead of a constant. On a fixed \omterm{def:b1:c-types-and-control:integer-type}{width}, arithmetic must do
+something with results that do not fit.
+
+\begin{definition}[Integer overflow]\label{def:b1:c-types-and-control:overflow}
+An \emph{integer overflow}\index{integer overflow} happens when the exact result of an operation on integers lies
+outside the range of its type. For unsigned types C defines the result: it is the exact result modulo $2^N$, so
+unsigned arithmetic never overflows in the language's sense, it wraps. For signed types the behaviour is
+undefined (\cref{sec:b1:c-types-and-control:ub}).
+\end{definition}
+
+\omcode{code/bachelor-1/02-c-types-and-control/listings/wrap.c}{2}{18}{Unsigned arithmetic wraps}
+
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/wrap.txt}{Three computations modulo $2^8$ and $2^{32}$.}
+
+\omcode{code/bachelor-1/02-c-types-and-control/listings/overflow.c}{3}{12}{Signed arithmetic does not: built with
+the undefined-behaviour sanitizer}\label{lst:b1:c-types-and-control:overflow}
+
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/overflow.txt}{The sanitizer reports the overflow, then the
+program goes on.}\label{out:b1:c-types-and-control:overflow}
+
+The option \code{-fsanitize=undefined} makes the \omterm{def:b1:compilation-pipeline:compiler}{compiler} add checks around risky operations; at run time each
+check that fails prints a report with the file, line and column. Here the program printed $-2147483648$ afterwards,
+the two's complement wrap, but nothing obliged it to: the next section explains why.
+
+\begin{omfigure}
+\begin{tikzpicture}[>={Stealth[length=2mm]}]
+\draw[thick] (0,0) circle (2.2);
+\foreach \a/\u/\s in {90/0/0, 45/32/32, 0/64/64, -45/96/96, -90/128/{$-128$}, -135/160/{$-96$},
+                      180/192/{$-64$}, 135/224/{$-32$}} {
+  \fill (\a:2.2) circle (1.4pt);
+  \node[font=\footnotesize] at (\a:2.65) {\u};
+  \node[font=\footnotesize, omDef] at (\a:1.75) {\s};
+}
+\draw[->, thick, omThm] (100:2.95) arc[start angle=100, end angle=80, radius=2.95];
+\node[font=\scriptsize, omThm, align=center] at (90:3.45) {unsigned wrap:\\$255 + 1 = 0$};
+\draw[->, thick, omThm] (-80:2.95) arc[start angle=-80, end angle=-100, radius=2.95];
+\node[font=\scriptsize, omThm, align=center] at (-90:3.45) {signed: $127 + 1$ is undefined};
+\node[font=\scriptsize, align=center] at (0,0.35) {outside: unsigned};
+\node[font=\scriptsize, omDef, align=center] at (0,-0.15) {inside: signed};
+\end{tikzpicture}
+\par\smallskip{\small The 256 bit patterns of an 8-bit integer on a circle, adding 1 turning clockwise. Each pattern
+has an unsigned reading (outside) and a two's complement reading (inside). Unsigned arithmetic wraps between 255
+and 0; signed arithmetic has its seam between 127 and $-128$, and crossing it is \omterm{def:b1:c-types-and-control:ub}{undefined behaviour} in C.}
+\end{omfigure}
+
+\section{Floating types and characters}\label{sec:b1:c-types-and-control:floats}
+
+C's \code{double} is the binary64 format seen in the school volume: 53 significant bits, so about 16 decimal
+digits. Every decimal fraction that is not a sum of powers of two is rounded when stored, and the rounding errors
+of an addition do not cancel: \code{0.1 + 0.2} is not \code{0.3}. A program never compares computed floating
+values with \code{==}; it compares with a tolerance, relative to the size of the numbers.
+
+\omcode{code/bachelor-1/02-c-types-and-control/listings/floats.c}{2}{19}{Rounding, a tolerant comparison, and
+characters as numbers}\label{lst:b1:c-types-and-control:floats}
+
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/floats.txt}{The sum differs from $0.3$ in the seventeenth
+digit.}
+
+The last line shows that a \code{char} is a small integer: \code{'A'} is the number 65, its code, and \code{'A' + 2}
+is 67, which \texttt{\%c} prints as \code{C}. The type \code{bool} of \texttt{<stdbool.h>} holds 0 or 1, and in C
+every integer can be tested: zero is false, anything else is true.
+
+\section{Conversions and their traps}\label{sec:b1:c-types-and-control:conversions}
+
+An arithmetic operator of C works on two operands of one type. When the types differ, or are narrower than
+\code{int}, the \omterm{def:b1:compilation-pipeline:compiler}{compiler} converts them first, silently, by fixed rules.
+
+\begin{definition}[Integer promotion, usual arithmetic conversions]\label{def:b1:c-types-and-control:promotion}
+The \emph{integer promotion}\index{integer promotion} converts an operand of a type narrower than \code{int}
+(\code{char}, \code{short}, their unsigned forms, \code{bool}) to \code{int}, since \code{int} can represent all
+their values. The \emph{usual arithmetic conversions}\index{usual arithmetic conversions} then bring both
+operands of a binary operator to a common type: if either is floating, to the wider floating type; otherwise,
+after promotion, to the \omterm{def:b1:c-types-and-control:integer-type}{integer type} of greater rank (\code{int} $<$ \code{long} $<$ \code{long long}), and when
+the two have the same rank and one is unsigned, to the unsigned type. A signed operand converted to an unsigned
+type of \omterm{def:b1:c-types-and-control:integer-type}{width} $N$ takes its value modulo $2^N$.
+\end{definition}
+
+\begin{definition}[Cast]\label{def:b1:c-types-and-control:cast}
+A \emph{cast}\index{cast} is an explicit conversion, written \code{(type)expression}. Converting a floating value
+to an \omterm{def:b1:c-types-and-control:integer-type}{integer type} drops the fractional part (it truncates toward zero); converting an integer to a narrower
+unsigned type keeps it modulo $2^N$.
+\end{definition}
+
+\omcode{code/bachelor-1/02-c-types-and-control/listings/conversions.c}{2}{18}{Mixed signs and
+truncation}\label{lst:b1:c-types-and-control:conversions}
+
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/conversions.txt}{\code{-1 < 1u} is false, as the warning
+foresaw.}\label{out:b1:c-types-and-control:conversions}
+
+\begin{example}[Why \code{-1 < 1u} is false]\label{ex:b1:c-types-and-control:minus-one}
+In \code{minus_one < one}, both operands have rank \code{int} and one is unsigned, so \code{minus_one} is converted
+to \code{unsigned}: $-1 \bmod 2^{32} = 4294967295$, which is not less than 1. In \code{big < one}, \code{big} is a
+\code{long}, of greater rank, and on this machine \code{long} can hold every \code{unsigned} value: \code{one} is
+converted to \code{long}, and $-1 < 1$ is true. The same expression gives the opposite answer on a system where
+\code{long} has 32 bits.
+\end{example}
+
+\begin{omfigure}
+\begin{tikzpicture}[r/.style={draw, rounded corners=2pt, minimum width=24mm, minimum height=7mm,
+                    font=\small\ttfamily}, >={Stealth[length=2mm]}]
+\node[r] (c) at (0,0) {char, short};
+\node[r, fill=omDef!8] (i) at (0,1.3) {int};
+\node[r] (l) at (0,2.6) {long};
+\node[r] (ll) at (0,3.9) {long long};
+\node[r] (u) at (4.2,1.3) {unsigned};
+\node[r] (ul) at (4.2,2.6) {unsigned long};
+\node[r] (ull) at (4.2,3.9) {unsigned long long};
+\node[r] (d) at (9.4,3.9) {double};
+\draw[->, thick, omDef] (c) -- node[right, font=\scriptsize\rmfamily] {promotion} (i);
+\draw[->] (i) -- (l); \draw[->] (l) -- (ll);
+\draw[->] (u) -- (ul); \draw[->] (ul) -- (ull);
+\draw[->] (i) -- node[above, font=\scriptsize\rmfamily] {same rank} (u);
+\draw[->] (l) -- (ul); \draw[->] (ll) -- (ull);
+\draw[->] (ull) -- node[above, font=\scriptsize\rmfamily] {floating} (d);
+\end{tikzpicture}
+\par\smallskip{\small Where the \omterm{def:b1:c-types-and-control:promotion}{usual arithmetic conversions} lead two operands. Narrow types are first promoted to
+\code{int}; then the operand of lower rank moves up its column, and at equal rank a signed operand moves right
+to the unsigned type. A floating operand makes the whole operation floating.}
+\end{omfigure}
+
+C converts without asking because it trusts the programmer; Python refuses \code{"3" + 4} at run time, C would
+accept a pointer added to a character. This is what is meant by C's weak typing: the \omterm{def:b1:compilation-pipeline:compiler}{compiler} checks declarations
+but not the meaning of conversions. The warnings \code{-Wsign-compare} and \code{-Woverflow} of \code{-Wall
+-Wextra} catch the commonest cases, as above.
+
+\section{Operators and order of evaluation}\label{sec:b1:c-types-and-control:operators}
+
+Every expression of C is a tree: each operator is a node whose children are its operands, and the grammar's
+precedence and associativity decide the shape. Three of the rules surprise, as the program below shows: shifts
+bind more loosely than \code{+}, the bitwise \code{&} more loosely than \code{==}, and the logical operators
+evaluate their right operand only when they must.
+
+\omcode{code/bachelor-1/02-c-types-and-control/listings/precedence.c}{2}{15}{Three expressions that group
+unexpectedly}\label{lst:b1:c-types-and-control:precedence}
+
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/precedence.txt}{The \omterm{def:b1:compilation-pipeline:compiler}{compiler} suggests the
+parentheses.}\label{out:b1:c-types-and-control:precedence}
+
+\begin{definition}[Short-circuit evaluation]\label{def:b1:c-types-and-control:short-circuit}
+In \code{a && b} and \code{a || b}, the operand \code{a} is evaluated first; \code{b} is evaluated only when \code{a}
+does not already decide the result (\code{a} true for \code{&&}, false for \code{||}). This is
+\emph{short-circuit evaluation}\index{short-circuit evaluation}. A test such as \code{n != 0 && 10 / n > 1} relies
+on it to avoid dividing by zero.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[level distance=11mm, sibling distance=26mm,
+  every node/.style={tnode, minimum size=8mm, font=\small\ttfamily},
+  level 2/.style={sibling distance=15mm}, level 3/.style={sibling distance=10mm}]
+\node {\&\&}
+  child {node {>}
+    child {node {+} child {node {a}} child {node {*} child {node {b}} child {node {c}}}}
+    child {node {d}}}
+  child {node {!=}
+    child {node {e}} child {node {0}}};
+\end{tikzpicture}
+\par\smallskip{\small The tree of \code{a + b * c > d && e != 0}: \code{*} binds tighter than \code{+}, which binds
+tighter than \code{>}, and \code{&&} is loosest. The left subtree of \code{&&} is evaluated first, and the right one
+only if the left is true.}
+\end{omfigure}
+
+Integer division also has a rule worth stating: since C99, \code{a / b} truncates toward zero, and \texttt{\%} is
+defined so that \texttt{(a / b) * b + a \% b == a}; the remainder therefore takes the sign of \code{a}.
+
+\omcode{code/bachelor-1/02-c-types-and-control/listings/division.c}{2}{12}{Four divisions}
+
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/division.txt}{Truncation toward zero: $-7/2 = -3$, and
+$-7 \bmod 2$ prints as $-1$.}\label{out:b1:c-types-and-control:division}
+
+\begin{definition}[Side effect, sequencing]\label{def:b1:c-types-and-control:side-effect}
+A \emph{side effect}\index{side effect} of an expression is a change of state that its evaluation causes: storing
+into a variable (\code{=}, \code{++}, \code{+=}), writing to a file. C fixes the order of side effects only at
+\emph{sequence points}\index{sequencing}: the end of a full expression, the \code{&&}, \code{||} and comma
+operators, and a function call. Between two of them, two side effects on the same object, or a side effect and an
+unrelated read of the same object, make the behaviour undefined.
+\end{definition}
+
+\omcode{code/bachelor-1/02-c-types-and-control/listings/sequence.c}{2}{10}{Two writes to \code{i} with no order}
+
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/sequence.txt}{The \omterm{def:b1:compilation-pipeline:compiler}{compiler} warns; the printed 2 means
+nothing.}
+
+The variable \code{i} is written by \code{++} and by \code{=}, in no fixed order: is the result 2, or 3? Neither is
+promised, and another \omterm{def:b1:compilation-pipeline:compiler}{compiler} may print the other. Keep each \omterm{def:b1:c-types-and-control:side-effect}{side effect} in its own statement. The qualifier
+\code{const}, finally, declares an object that the program will not modify: \code{const int days = 7;} is checked
+by the \omterm{def:b1:compilation-pipeline:compiler}{compiler}, which refuses an assignment to \code{days}.
+
+\section{Control flow and undefined behaviour}\label{sec:b1:c-types-and-control:ub}
+
+C's statements for control flow are those of Python with different spelling: \code{if}/\code{else},
+\code{while}, \code{for (init; test; step)}, \code{break} and \code{continue}, plus \code{do { } while (test);},
+which tests after the body and so runs it at least once. One statement has no Python twin.
+
+\begin{definition}[Switch statement, fall-through]\label{def:b1:c-types-and-control:switch}
+A \emph{switch statement}\index{switch statement}, written with \code{switch}, evaluates an integer expression and
+jumps to the \code{case} label with that value, or to \code{default}. Execution then continues downwards through the
+following labels until a \code{break}: passing from one case into the next is called
+\emph{fall-through}\index{fall-through}.
+\end{definition}
+
+\omcode{code/bachelor-1/02-c-types-and-control/listings/days.c}{2}{23}{A missing
+\code{break}}\label{lst:b1:c-types-and-control:days}
+
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/days.txt}{April has 31 days, says the
+program.}\label{out:b1:c-types-and-control:days}
+
+The warning names the statement that falls through. A deliberate \omterm{def:b1:c-types-and-control:switch}{fall-through} is marked with a comment
+\code{/* fall through */}, which also silences the warning (\cref{exo:b1:c-types-and-control:8} uses
+one).
+
+\begin{omfigure}
+\begin{tikzpicture}[b/.style={draw, rounded corners=2pt, minimum width=34mm, minimum height=7mm, font=\small\ttfamily,
+                    anchor=west}, >={Stealth[length=2mm]}]
+\node[b, fill=omCode!8] (s) at (0,0) {switch (month)};
+\node[b] (c2) at (4.6,1.1) {case 2: days = 28; break;};
+\node[b] (c4) at (4.6,-0.2) {case 4,6,9,11: days = 30;};
+\node[b] (cd) at (4.6,-1.6) {default: days = 31;};
+\node[b, fill=omThm!8] (end) at (4.6,-2.9) {return days;};
+\draw[->] (s.east) -- ++(0.4,0) |- (c2.west);
+\draw[->] (s.east) -- ++(0.4,0) |- (c4.west);
+\draw[->] (s.east) -- ++(0.4,0) |- (cd.west);
+\draw[->, thick, omThm] ([xshift=10mm]c4.south west) -- node[right, font=\scriptsize\rmfamily] {falls through}
+  ([xshift=10mm]cd.north west);
+\draw[->] ([xshift=10mm]cd.south west) -- ([xshift=10mm]end.north west);
+\draw[->] (c2.east) -- ++(0.5,0) |- (end.east);
+\end{tikzpicture}
+\par\smallskip{\small The \code{switch} of \code{days_in} as jumps. The value of \code{month} selects an entry
+point; without a \code{break} the thirty-day case runs on into \code{default}, which overwrites 30 with 31.}
+\end{omfigure}
+
+The countdown of the opening, and the signed overflow of \cref{lst:b1:c-types-and-control:overflow}, show that some
+programs are legal C and still have no meaning. The standard sorts such situations into three kinds.
+
+\begin{definition}[Undefined, unspecified, implementation-defined behaviour]\label{def:b1:c-types-and-control:ub}
+\emph{Undefined behaviour}\index{undefined behaviour} is the behaviour of a construct for which the standard imposes
+no requirement at all: signed overflow, an access outside an array, two unsequenced \omterm{def:b1:c-types-and-control:side-effect}{side effects} on one object,
+use of an uninitialised variable. \emph{Unspecified behaviour}\index{unspecified behaviour} allows several outcomes
+without saying which: the order in which the two operands of \code{+} are evaluated. \emph{Implementation-defined
+behaviour}\index{implementation-defined behaviour} is unspecified behaviour that each implementation must document:
+the \omterm{def:b1:c-types-and-control:integer-type}{width} of \code{int}, or whether \code{char} is signed.
+\end{definition}
+
+\omterm{def:b1:c-types-and-control:ub}{Undefined behaviour} is not ``the processor does something odd''. Because a correct program never contains it, the
+\omterm{def:b1:compilation-pipeline:compiler}{compiler} is allowed to assume that it never happens, and optimises on that assumption. The function below asks
+whether \code{x + 1 > x}. For a mathematical integer the answer is always yes, and since signed overflow cannot
+happen in a valid program, the \omterm{def:b1:compilation-pipeline:compiler}{compiler} replaces the comparison by 1.
+
+\omcode{code/bachelor-1/02-c-types-and-control/listings/fold.c}{2}{16}{A test that the \omterm{def:b1:compilation-pipeline:compiler}{compiler} answers in
+advance}\label{lst:b1:c-types-and-control:fold}
+
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/fold.txt}{With the standard rules the answer is 1, even for
+$x = 2^{31}-1$; with \code{-fwrapv}, a dialect where signed arithmetic wraps, it is
+0.}\label{out:b1:c-types-and-control:fold}
+
+The wrapped value $x + 1 = -2^{31}$ is smaller than $x$, so a program that wants to detect overflow by testing the
+result after the fact is wrong twice: the overflow has already happened, and the test may have been removed.
+Overflow must be prevented by testing the operands before the operation, as \cref{exo:b1:c-types-and-control:7,exo:b1:c-types-and-control:11}
+do.
+
+\begin{safety}
+Build every program while developing with \code{-Wall -Wextra} and, for tests, with
+\code{-fsanitize=undefined} (and, from \cref{ch:b1:pointers-and-arrays}, \code{-fsanitize=address}). The sanitizers
+report the \omterm{def:b1:c-types-and-control:ub}{undefined behaviour} that a run actually meets; they cannot prove that a program has none.
+\end{safety}
+
+\section{Exercises}\label{sec:b1:c-types-and-control:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-types-and-control:1}
+Predict the four numbers printed by the program below.
+\omcode{code/bachelor-1/02-c-types-and-control/listings/casts.c}{2}{12}{Four conversions}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-types-and-control:2}
+Predict \code{-9 / 4}, \texttt{-9 \% 4}, \code{9 / -4} and \texttt{9 \% -4} in C, and check each pair against the identity
+\texttt{(a / b) * b + a \% b == a}. What does Python print for the same four, and why does it differ?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-types-and-control:3}
+Predict the four values (0 or 1) printed by the program below, naming the conversion that decides each.
+\omcode{code/bachelor-1/02-c-types-and-control/listings/exo_compare.c}{2}{12}{Four mixed comparisons}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-types-and-control:4}
+Trace the program below and predict its line of output.
+\omcode{code/bachelor-1/02-c-types-and-control/listings/exo_dowhile.c}{2}{18}{A \code{do}--\code{while} and a
+\code{while}}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-types-and-control:5}
+The average of the marks 12, 15, 9 and 14 is 12.5, yet the program prints 12.00. Find the bug and fix it with one
+\omterm{def:b1:c-types-and-control:cast}{cast}.
+\omcode{code/bachelor-1/02-c-types-and-control/listings/average.c}{2}{13}{An average that loses its half}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-types-and-control:6}
+A binary search computes the middle of two indices with the function \code{middle} below. Read the sanitizer's
+report, explain the printed value, and rewrite \code{middle} so that it cannot overflow when $0 \leq lo \leq hi$.
+\omcode{code/bachelor-1/02-c-types-and-control/listings/midpoint.c}{3}{15}{The middle of two indices}
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/midpoint.txt}{Built with the sanitizer. The report comes
+first: standard output is held in a buffer until the program ends, its errors are not.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-types-and-control:7}
+Write \code{int32_t sat_add(int32_t a, int32_t b)}, which returns $a + b$ when it fits in \code{int32_t},
+\code{INT32_MAX} when the sum is larger and \code{INT32_MIN} when it is smaller, without ever computing an
+overflowing sum.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-types-and-control:8}
+Predict the three lines printed by this program, whose \omterm{def:b1:c-types-and-control:switch}{fall-throughs} are deliberate.
+\omcode{code/bachelor-1/02-c-types-and-control/listings/exo_switch.c}{2}{21}{Deliberate \omterm{def:b1:c-types-and-control:switch}{fall-through}}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-types-and-control:9}
+Count the values \code{x} of type \code{uint8_t} for which \code{(uint8_t)(x * x) == 1}, and prove your count.
+(Hint: $x^2 - 1 = (x-1)(x+1)$.)
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-types-and-control:10}
+Let \code{x} be an unsigned integer of \omterm{def:b1:c-types-and-control:integer-type}{width} $N$. Prove that \code{x + (~x + 1)} is 0, where \code{~} flips every
+bit. Deduce why, in two's complement, negating a number is ``flip the bits and add one''.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-types-and-control:11}
+Write \code{bool mul_overflows(int64_t a, int64_t b)}, true exactly when the product $ab$ is outside the range of
+\code{int64_t}, using only comparisons and divisions that cannot themselves overflow. Justify each case.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-types-and-control:12}
+For which values of \code{n} (an \code{int}) does the loop \code{for (int i = 0; i <= n; i += 2) total += i;} have
+\omterm{def:b1:c-types-and-control:ub}{undefined behaviour}? Prove your answer, then give a version that is correct for every \code{n}.
+\end{exercise}
+
+\section{Problem: A checksum that works by luck}\label{sec:b1:c-types-and-control:problem}
+
+\begin{problem}[{Weekend problem --- A checksum that works by luck}]\label{pb:b1:c-types-and-control:1}
+The weather service of Brenmoor stores each daily temperature, in tenths of a degree, as a 16-bit two's complement
+number $t_i$. To check that a copy of the file is intact, it computes the checksum
+\[ C = \Bigl(\sum_{i=0}^{n-2} w_i \, w_{i+1}\Bigr) \bmod 2^{32}, \]
+where $w_i \in [0, 2^{16})$ is the 16-bit pattern of $t_i$ read as an unsigned number. Colleague A wrote
+\code{checksum_naive.c}; colleague B, worried by a \omterm{def:b1:compilation-pipeline:warning}{compiler warning} on another project, wrote
+\code{checksum_fixed.c}; a Python version serves as the specification.
+\omcode{code/bachelor-1/02-c-types-and-control/listings/checksum_naive.c}{6}{12}{Colleague A's
+loop}\label{lst:b1:c-types-and-control:naive}
+\omcode{code/bachelor-1/02-c-types-and-control/listings/checksum_fixed.c}{6}{12}{Colleague B's
+loop}\label{lst:b1:c-types-and-control:fixed}
+\omoutput{code/bachelor-1/02-c-types-and-control/outputs/problem.txt}{The four
+computations.}\label{out:b1:c-types-and-control:problem}
+
+\medskip\noindent\textbf{Part I --- Widths and the specification.}
+\begin{enumerate}
+\item What is the range of $t_i$, and how many tenths of a degree does it allow? Is it enough for a town's weather?
+\item Give $w_i$ for $t_i = 25$ (2.5 degrees), $t_i = -1$ and $t_i = -990$ (the error code $-99.0$).
+\item Show that $w_i = t_i \bmod 2^{16}$ for every $t_i$ in the range of \code{int16_t}.
+\item What is the largest possible value of one product $w_i w_{i+1}$? How many bits does it need?
+\item How many bits does the exact sum $\sum w_i w_{i+1}$ need, at most, for $n = 731$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Arithmetic modulo $2^{32}$.}
+\begin{enumerate}[resume]
+\item Prove that $(a + b) \bmod m = \bigl((a \bmod m) + (b \bmod m)\bigr) \bmod m$ for natural numbers $a$, $b$ and
+$m \geq 1$.
+\item Deduce that adding the products one by one into a \code{uint32_t} computes $C$ exactly, provided each product
+itself is computed exactly or modulo $2^{32}$.
+\item Prove the same law for products: $(ab) \bmod m = \bigl((a \bmod m)(b \bmod m)\bigr) \bmod m$.
+\item Why does colleague B's \omterm{def:b1:c-types-and-control:cast}{cast} \code{(uint32_t)w[i]} make the whole product unsigned, and what range of results can
+it produce?
+\item Could B use \code{uint16_t} for the \omterm{def:b1:c-types-and-control:cast}{cast} instead? Explain.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The promotion trap.}
+\begin{enumerate}[resume]
+\item In A's loop, what type do \code{w[i]} and \code{w[i + 1]} have when they are multiplied, and why?
+\item Show that $w_i w_{i+1}$ overflows that type exactly when $w_i w_{i+1} > 2^{31} - 1$.
+\item Find the smallest $a$ such that $a \cdot a$ overflows \code{int}. (Compute $46340^2$ and $46341^2$.)
+\item Which temperatures $t_i$ give $w_i \geq 46341$? Conclude that only products of two such readings can overflow.
+\item The sanitizer reported $65535 \times 65533$. Which two consecutive readings were they?
+\item The Python specification counted 2 products above \code{INT_MAX} among 730. The second involves readings of
+$-2.3$ and $-0.9$ degrees. Give its two words and check that their product exceeds $2^{31} - 1$.
+\item Over all pairs $(a, b) \in [0, 2^{16})^2$, the number of products above $2^{31}-1$ is 658\,928\,599. What
+fraction of all pairs is it, roughly?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Luck, and the fix.}
+\begin{enumerate}[resume]
+\item All four computations printed 73\,402\,730. Explain why A's program printed the right value on this machine,
+although its behaviour is undefined.
+\item Using \cref{out:b1:c-types-and-control:fold}, describe how a \omterm{def:b1:compilation-pipeline:compiler}{compiler} could legally make A's program print
+something else.
+\item Why did the warnings of \code{-Wall -Wextra} not catch A's bug, while the sanitizer did?
+\item Why did the sanitizer report only one of the two overflowing products?
+\item Rewrite A's loop with \code{uint64_t} instead of \code{uint32_t}, and say whether the result can differ.
+\item What is $C$ printed in hexadecimal? (Divide by 65536 to get the upper half.)
+\item State the named result of the problem: the condition under which a product of two \code{uint16_t} is
+undefined in C, the smallest equal operands, and what the data gave.
+\end{enumerate}
+\end{problem}

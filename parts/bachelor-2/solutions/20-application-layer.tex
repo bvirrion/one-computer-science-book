@@ -1,0 +1,180 @@
+% Solutions of Book 4, chapter 20 (the application layer).
+\section*{Chapter \ref{ch:b2:application-layer} --- The Application Layer: DNS, HTTP and TLS}
+
+\begin{solution}{exo:b2:application-layer:1}
+\omoutput{code/bachelor-2/20-application-layer/outputs/exo_header.txt}{The header, field by field.}
+QR is 1: it is an answer, to the query with identifier \code{2a17}. The server is authoritative (AA), the query asked
+for recursion (RD) and the server offers it (RA). RCODE 3 says that the name asked does not exist, which is why there
+are no answers; the question is repeated, as in every answer.
+\end{solution}
+
+\begin{solution}{exo:b2:application-layer:2}
+\omoutput{code/bachelor-2/20-application-layer/outputs/exo_loop.txt}{A pointer that goes back, then one that points
+at its own name.}
+The name starts at 12 with the label \code{www}, and the pointer at 16 sends the reader back to 12: a reader that
+follows every pointer reads \code{www.www.www}\dots\ for ever, and a 6-byte trick stops a careless server. With the
+rule of \cref{prop:b2:application-layer:compression}, each pointer lands strictly before the previous start, so a
+reader follows fewer than $n/2$ pointers (each one starts a stretch of at least two bytes). Without the rule, a reader
+can still stop: on a path without a loop it meets each pointer at most once, and a message of $n$ bytes holds at most
+$n/2$ pointers, so a reader that has followed more than $n/2$ has met a loop and may reject the message. The limit of
+255 bytes on a name does not suffice alone, since \code{c0 0c} at offset 12 loops without adding a byte.
+\end{solution}
+
+\begin{solution}{exo:b2:application-layer:3}
+\omoutput{code/bachelor-2/20-application-layer/outputs/exo_aaaa.txt}{The query, twelve bytes a line.}
+The header: identifier \code{0b 0e}, flags \code{01 00} (only RD), one question, no records. The name: \code{03}
+\code{www}, \code{08} \code{brenmoor}, \code{04} \code{test}, \code{00}; then the type \code{00 1c} (28, AAAA) and the
+class \code{00 01} (Internet): 35 bytes.
+\end{solution}
+
+\begin{solution}{exo:b2:application-layer:4}
+Empty cache: three queries (root, \code{test}, \code{brenmoor.test}). With the referral to \code{brenmoor.test}
+cached: one, to the town's server. With the answer cached: none. The machine waits one round trip to its \omterm{def:b2:application-layer:resolver}{resolver},
+plus the \omterm{def:b2:application-layer:resolver}{resolver}'s queries: in the three cases 1 + 3, 1 + 1 and 1 round trip, of different lengths since the
+\omterm{def:b2:application-layer:resolver}{resolver} is usually much closer than the name servers.
+\end{solution}
+
+\begin{solution}{exo:b2:application-layer:5}
+\omcode{code/bachelor-2/20-application-layer/exercises/chunked.py}{4}{20}{Decoding a chunked body}
+Each chunk is a size line, the data and a line end; the size is read in hexadecimal, and anything after a \code{;} on
+the size line (an extension) is ignored. The last chunk has size 0 and is followed by an empty line. Returning the
+number of bytes used lets the caller read the next response on the same connection. The test feeds it a body with an
+extension and with line ends inside the data, and three cut or lying bodies.
+\end{solution}
+
+\begin{solution}{exo:b2:application-layer:6}
+\omoutput{code/bachelor-2/20-application-layer/outputs/exo_content_length.txt}{The client, with a timeout of 1 s.}
+The client trusts \code{Content-Length} and waits for the two missing bytes. On a \omterm{def:b2:application-layer:persistent}{persistent connection} the server
+keeps the connection open, so nothing tells the client that no more will come: without a timeout it waits for ever.
+Had the server closed the connection, the client would have seen a body shorter than announced and reported an error.
+\end{solution}
+
+\begin{solution}{exo:b2:application-layer:7}
+\omcode{code/bachelor-2/20-application-layer/listings/http_server.py}{27}{33}{Keeping the connection, and
+\code{HEAD}}
+The loop of \cref{lst:b2:application-layer:server} reads the next request on the same connection, and leaves only on
+a close asked by the client (or an HTTP/1.0 request, whose default was to close) or when the client closes. For
+\code{HEAD}, the headers are those of \code{GET}, including the \code{Content-Length} the body would have had, and the
+body is not sent. The test sends \code{GET}, \code{HEAD} and \code{GET} on one connection and checks one connection,
+the lengths and the empty body.
+\end{solution}
+
+\begin{solution}{exo:b2:application-layer:8}
+Cut time into cycles, each starting with a query sent upstream (a miss). The answer is then cached for $T$ seconds, and
+every query in that interval is a hit; the first query after it is the next miss. In a Poisson process the number of
+queries in an interval of length $T$ has mean $rT$, whatever happened before. A cycle therefore holds one miss and on
+average $rT$ hits, and over many cycles the fraction of hits is
+\[
+\frac{rT}{1 + rT}.
+\]
+\cref{out:b2:application-layer:cache} agrees to within 0.0005: with $rT = 1$ (one query a minute, a lifetime of a
+minute), half the queries are hits.
+\end{solution}
+
+\begin{solution}{exo:b2:application-layer:9}
+\omcode{code/bachelor-2/20-application-layer/exercises/caching_resolver.py}{8}{39}{A caching iterative \omterm{def:b2:application-layer:resolver}{resolver}}
+The cache maps a name and a type to records and an expiry time; referrals are kept under the zone's name, as the
+address of its server (the glue). A resolution first looks for the answer, then for the closest enclosing zone whose
+server it knows, and starts there instead of at the root. The test runs it on the toy network with a clock it moves by
+hand: \code{www} costs 3 queries, then 0; \code{mail} costs 1; after 4000 s \code{www} costs 1 again, and after two
+days 3.
+\end{solution}
+
+\begin{solution}{exo:b2:application-layer:10}
+Packet $i$ (from 0 to 31) belongs to page $i \bmod 4$, leaves at $25 + i$ ms and arrives at $50 + i$. Packet 4,
+page 0's second, is lost; packet 7 leaves at 32 ms, so the copy arrives at $32 + 75 = 107$ ms. Each page's last packet
+arrives at 78, 79, 80 and 81 ms. With HTTP/2, TCP delivers bytes in order: nothing after packet 4 reaches the
+application before 107 ms, so all four pages complete at 107. With HTTP/3, each stream waits only for its own
+packets: page 0 completes at 107, pages 1 to 3 at 79, 80 and 81, as without loss. HTTP/1.1 is slowest because each
+page waits for the previous one and for its own request to cross the network: a page takes $25 + 7 + 25 = 57$ ms
+after its request leaves, and page 0 takes until 107 because of the loss, so the others complete at 164, 221 and
+278 ms.
+\end{solution}
+
+\begin{solution}{exo:b2:application-layer:11}
+\omcode{code/bachelor-2/20-application-layer/listings/tls_echo.py}{5}{26}{A TLS echo pair that checks the server's
+name}
+The client's context trusts only the given certificate (\code{cafile}), and \code{server_hostname} makes the module
+check that the certificate names \code{www.brenmoor.test}; \code{create_default_context} turns both checks on. The
+server reads one message and sends it back in capitals: TLS gives it plain bytes, as TCP would.
+\end{solution}
+
+\begin{solution}{exo:b2:application-layer:12}
+\omoutput[8-16]{code/bachelor-2/20-application-layer/outputs/tls_demo.txt}{Bytes on the wire after the
+handshake.}
+Each record adds 22 bytes: the 5-byte header, the 1-byte real content type that TLS 1.3 places inside the encrypted
+part, and a 16-byte authentication tag that lets the receiver detect any change. A record holds at most 16\,384 bytes,
+so 16\,385 bytes take two records and 44 extra bytes. The overhead is $22/23 \approx 96~\%$ of the traffic for a 1-byte
+message, $22/122 \approx 18~\%$ for 100 bytes and $22/16\,406 \approx 0.13~\%$ for 16\,384: small messages should be
+grouped before they are sent.
+\end{solution}
+
+\begin{solution}{pb:b2:application-layer:1}
+\textbf{1.} NS: the zone's server; A: the addresses of \code{ns}, \code{www} and \code{mail}; AAAA: the \omterm{def:b2:network-layer:ipv6}{IPv6 address}
+of \code{www}; MX: the town's mail server, preference 10; TXT: a line of text; CNAME: \code{library} is another name
+of \code{www}.
+
+\textbf{2.} To reach \code{ns.brenmoor.test} a \omterm{def:b2:application-layer:resolver}{resolver} would have to resolve a name inside the zone it is trying to
+reach, a circle. The glue record in the parent zone breaks it.
+
+\textbf{3.} The answer repeats the question and adds one record: a pointer to the name (2 bytes), type, class,
+lifetime and length (10), the preference (2), the label \code{mail} (5) and a pointer to \code{brenmoor.test} (2):
+21 bytes.
+
+\textbf{4.} The CNAME record and the A record of \code{www}, in one answer, so that the \omterm{def:b2:application-layer:resolver}{resolver} needs no second
+query.
+
+\textbf{5.} That the name does not exist at all, for any type; RCODE 0 with no answer means that the name exists
+without records of that type.
+
+\textbf{6.} A loop would keep the server busy for ever on a message of a few bytes; by
+\cref{prop:b2:application-layer:compression}, refusing it makes every read end.
+
+\textbf{7.} 3, then 1 (the referral to \code{brenmoor.test} is cached), then 0.
+
+\textbf{8.} 3: every record has expired, the longest-lived (the referral to \code{test}) after 172\,800 s, two days.
+
+\textbf{9.} $r = 1000/86\,400$ per second and $rT \approx 41.7$, so a fraction $1/(1 + rT) \approx 2.3~\%$ of one
+\omterm{def:b2:application-layer:resolver}{resolver}'s lookups reach the town's server; each \omterm{def:b2:application-layer:resolver}{resolver} has its own cache.
+
+\textbf{10.} For up to the record's lifetime, an hour. The town lowers the lifetime (to a minute, say) at least an
+hour before the move, then moves, then raises it again.
+
+\textbf{11.} The records of an answer belong together (an alias and its target's address, a referral and its glue); a
+part kept after another has expired could point to data the zone no longer holds.
+
+\textbf{12.} One \omterm{def:b2:application-layer:resolver}{resolver} serves many machines, so its cache is shared; a machine waits one round trip to a nearby
+\omterm{def:b2:application-layer:resolver}{resolver}, and needs no code to follow referrals.
+
+\textbf{13.} \code{urllib}: 20; \code{http.client}: 1.
+
+\textbf{14.} 19 handshakes of 80 ms: about 1.5 s.
+
+\textbf{15.} A request's headers end with an empty line, and these requests have no body (a request with one says its
+length). A response's body length is given by \code{Content-Length}.
+
+\textbf{16.} Responses on an HTTP/1.1 connection come in the order of the requests, and nothing in a response says
+which request it answers.
+
+\textbf{17.} All four, which complete at 107 ms instead of 78 to 81: by 29, 28, 27 and 26 ms.
+
+\textbf{18.} TCP delivers one byte stream in order, and holds back all bytes after a lost segment; it knows nothing of
+HTTP's \omterm{def:b2:application-layer:streams}{streams}. QUIC orders the bytes of each stream separately.
+
+\textbf{19.} 370 ms, of which 130 are the name.
+
+\textbf{20.} 240 ms on a new connection, 80 ms on an open one.
+
+\textbf{21.} One round trip per new connection: a cold first visit would take 450 ms.
+
+\textbf{22.} Three TCP and three TLS handshakes, one per server; the 30 requests then cost round trips but no new
+handshakes.
+
+\textbf{23.} TLS hides the pages, the paths, the headers and the data sent. An observer still sees the addresses and
+ports, the times and sizes of the records, the name lookups (in clear by default) and the site's name in the
+ClientHello.
+
+\textbf{24.} A first visit costs the name lookup (one round trip to the \omterm{def:b2:application-layer:resolver}{resolver} plus one per name server it must
+ask) and three round trips: TCP, TLS 1.3 and the request. Here 370 ms; a revisit costs 240 ms on a new connection and
+80 ms on an open one.
+\end{solution}

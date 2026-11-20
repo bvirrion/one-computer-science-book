@@ -1,0 +1,168 @@
+% Solutions of 01-compilation-pipeline.
+\section*{Chapter \ref{ch:b1:compilation-pipeline} --- From Source Code to a Running Program}
+
+\begin{solution}{exo:b1:compilation-pipeline:1}
+(a) The \omterm{def:b1:compilation-pipeline:source-file}{preprocessor}: it cannot open \code{sqare.h} and stops with a fatal error. (b) The \omterm{def:b1:compilation-pipeline:compiler}{compiler}: the text is
+not valid C. (c) The \omterm{def:b1:compilation-pipeline:compiler}{linker}: every file compiled, but no \omterm{def:b1:compilation-pipeline:compiler}{object file} or library defines \code{cube}. (d) None of
+the stages: the program builds, and the division fails while it runs (on Linux, the running program is stopped
+with a ``floating point exception'').
+\end{solution}
+
+\begin{solution}{exo:b1:compilation-pipeline:2}
+\code{calls} (\code{B}): a variable defined here, visible to other files, starting at zero. \code{hypotenuse}
+(\code{T}): a function defined here, visible. \code{last_sign} (\code{b}): a variable defined here but local to
+the file (\code{static}), starting at zero. \code{scale} (\code{D}): a variable defined here, visible, with an
+initial value. \code{sqrt} (\code{U}): used here, defined elsewhere (the mathematics library). The source was:
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/geometry.c}{2}{13}{The module behind the \omterm{def:b1:compilation-pipeline:compiler}{symbols}}
+\end{solution}
+
+\begin{solution}{exo:b1:compilation-pipeline:3}
+(a) The pointer \code{motto}: initialised data, for the whole run. (b) The characters of the literal: read-only
+data next to the code, whole run. (c) \code{table}: zero-initialised data, whole run. (d) \code{limit}:
+initialised data, whole run. (e) \code{depth}: the call stack, while \code{main} runs. (f) The 64 bytes: the
+heap, from \code{malloc} to \code{free}.
+\end{solution}
+
+\begin{solution}{exo:b1:compilation-pipeline:4}
+The \omterm{def:b1:compilation-pipeline:source-file}{macro} is replaced by its text, without regard to the surrounding operators: \code{3 * DOUBLE(2)} becomes
+\code{3 * 2 + 2}, which is 8, and \code{3 * DOUBLE_SAFE(2)} becomes \code{3 * ((2) + (2))}, which is 12.
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/macro_trap.txt}{The two results.}
+\end{solution}
+
+\begin{solution}{exo:b1:compilation-pipeline:5}
+The header is copied into both files, so each \omterm{def:b1:compilation-pipeline:compiler}{object file} defines its own \code{max_users} (a \code{D} \omterm{def:b1:compilation-pipeline:compiler}{symbol});
+the \omterm{def:b1:compilation-pipeline:compiler}{linker} finds two definitions of one global name. A header should only declare:
+\code{extern int max_users;} in the header, and the one definition \code{int max_users = 100;} in
+\code{users.c}. Then \code{admin.o} has a \code{U max_users} that the definition in \code{users.o} fills.
+\end{solution}
+
+\begin{solution}{exo:b1:compilation-pipeline:6}
+An \code{unsigned int} is never negative: \code{-2} and \code{-5} were converted to 4294967294 and 4294967291 when
+the array was initialised, and \code{readings[i] < 0} is false for every value, as the warning says. Declare
+\code{int readings[]}: the program then prints \code{negative readings: 2}.
+\end{solution}
+
+\begin{solution}{exo:b1:compilation-pipeline:7}
+The header (with its guard) and the implementation are in the chapter's \code{exercises/} folder, tested by
+\code{tests/stats_test.c}:
+\omcode{code/bachelor-1/01-compilation-pipeline/exercises/stats.h}{2}{10}{The interface of the module}
+The file \code{stats_main.c} includes \code{"stats.h"} and keeps only \code{main}. The build takes three
+commands: \code{gcc -c stats.c}, then \code{gcc -c stats_main.c}, then \code{gcc stats.o stats_main.o -o stats}.
+\end{solution}
+
+\begin{solution}{exo:b1:compilation-pipeline:8}
+Two copies: one through \code{shapes.h}, one through \code{draw.h}. The \omterm{def:b1:compilation-pipeline:compiler}{compiler} then sees the structure defined
+twice and stops with \code{redefinition of 'struct point'}. With a guard, the second inclusion finds the guard's
+\omterm{def:b1:compilation-pipeline:source-file}{macro} already defined and skips the text: one copy. With $k$ headers: $k$ copies without guards (an error as
+soon as $k \geq 2$), exactly one with them.
+\end{solution}
+
+\begin{solution}{exo:b1:compilation-pipeline:9}
+\code{kept} lives in the \omterm{def:b1:compilation-pipeline:layout}{data segment} and keeps its value from call to call; \code{fresh} is created at each call.
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/calls.txt}{The three calls.}
+\end{solution}
+
+\begin{solution}{exo:b1:compilation-pipeline:10}
+The whole program has $kL = 20\,000$ lines. (a) Separate \omterm{def:b1:compilation-pipeline:compiler}{compilation} recompiles the edited file: 500 lines (then
+links); one file: 20\,000 lines. (b) The header is copied into 12 files, so 12 of them are recompiled:
+$12 \times 500 = 6\,000$ lines, against 20\,000. (c) Separate: $30 \times 500 + 4 \times 6\,000 = 39\,000$ lines;
+one file: $34 \times 20\,000 = 680\,000$ lines; the ratio is $680\,000 / 39\,000 \approx 17$.
+\end{solution}
+
+\begin{solution}{exo:b1:compilation-pipeline:11}
+The tested solution is \code{exercises/region_of.c} (test \code{tests/region_of_test.c}): it takes one marker in
+each region (its own code, a static variable, a block just obtained from \code{malloc}, and the caller's local)
+and returns the region whose marker is nearest to \code{p}.
+\omcode{code/bachelor-1/01-compilation-pipeline/exercises/region_of.c}{11}{25}{Nearest marker wins}
+It works because, on this machine, the regions are far apart compared with their sizes. The C standard only
+defines the comparison of pointers into the same array or object; comparing pointers into different objects, or
+reading their order as integers, says nothing that the language guarantees, and another system may place the
+regions in another order.
+\end{solution}
+
+\begin{solution}{exo:b1:compilation-pipeline:12}
+(a) \code{a.o b.o} fails: \code{b.o} uses \code{emit}, which nobody defines. \code{a.o b.o c.o} fails:
+\code{parse} is defined twice. \code{a.o c.o} fails: \code{total} is undefined. (b) The subsets containing
+\code{a.o} are $\{a\}$, $\{a,b\}$, $\{a,c\}$, $\{a,b,c\}$; $\{a\}$ lacks \code{parse}, and the other three fail as in
+(a): none of the four links. (c) A \code{static} \code{parse} in \code{c.o} is a local \omterm{def:b1:compilation-pipeline:compiler}{symbol}, not matched by the
+\omterm{def:b1:compilation-pipeline:compiler}{linker}; then \code{a.o b.o c.o} links (\code{parse} and \code{total} from \code{b.o}, \code{emit} from \code{c.o}),
+and exactly one subset succeeds.
+\end{solution}
+
+\begin{solution}{pb:b1:compilation-pipeline:1}
+\textbf{1.} \code{count.c}, \code{count.h}, \code{<ctype.h>} and the system headers that \code{<ctype.h>} includes;
+their declarations make up most of the 328 lines.
+
+\textbf{2.} The text \code{3}: the \omterm{def:b1:compilation-pipeline:compiler}{compiler} receives \code{if (reports >= 3)} and never sees the name.
+
+\textbf{3.} Yes, \code{count.h} declares \code{report}; it does not matter, since \code{count.c} never calls it and
+a declaration produces no code.
+
+\textbf{4.} No. The header holds \omterm{def:b1:compilation-pipeline:source-file}{macros} (an identical redefinition is allowed), \code{extern} declarations and
+prototypes, which may all be repeated; and each file includes it only once. Guards become necessary when a header
+defines a type.
+
+\textbf{5.} \code{if (reports >= 3;)}: a syntax error; \code{report.c} no longer compiles.
+
+\textbf{6.} Defined: \code{feed} (\code{T}), \code{lines} and \code{words} (\code{B}), \code{in_word} (\code{b}).
+Used: \code{__ctype_b_loc}, from the C library; \code{isspace} expands into a lookup in a table the library
+provides.
+
+\textbf{7.} \code{in_word} is \code{static} at file level: local to \code{count.c}, invisible to the \omterm{def:b1:compilation-pipeline:compiler}{linker}.
+\code{lines} is global.
+
+\textbf{8.} \code{reports} is a static local of \code{report}: it lives in the \omterm{def:b1:compilation-pipeline:layout}{data segment} but its name belongs
+to the function, so the \omterm{def:b1:compilation-pipeline:compiler}{compiler} gives it a file-local name with a suffix, \code{reports.0}.
+
+\textbf{9.} The 8 bytes are a pointer: the address of the string. Its six bytes (\code{w o r d s} and the final
+zero byte) are read-only data, counted by \code{size} in the \code{text} column.
+
+\textbf{10.} \code{count.o}: $8 + 8 + 4 = 20$ bytes for \code{lines}, \code{words}, \code{in_word};
+\code{report.o}: 4 bytes for \code{reports}. Zero-initialised objects take no room in the file: only their total
+size is recorded, and the loader fills the region with zeros. An explicit \code{= 0} is the same thing.
+
+\textbf{11.} \code{feed} (in \code{count.o}) and \code{report} (in \code{report.o}); \code{free}, \code{getchar},
+\code{malloc}, \code{snprintf} come from the C library.
+
+\textbf{12.} \code{lines} and \code{words} (used by \code{report.o}): defined once, in \code{count.o}. \code{feed}
+(used by \code{wcmain.o}): \code{count.o}. \code{report} (used by \code{wcmain.o}): \code{report.o}. The global
+definitions \code{feed}, \code{lines}, \code{words}, \code{report}, \code{unit}, \code{main} are pairwise distinct.
+The condition holds.
+
+\textbf{13.} \code{undefined reference to `report'}, from \code{wcmain.o}; it is the only one.
+
+\textbf{14.} \code{long words;} at file level is a definition: the link fails with \code{multiple definition of
+`words'}. With \code{static}, it is a separate local variable that stays 0; the link succeeds and the counts are
+unaffected.
+
+\textbf{15.} An \omterm{def:b1:compilation-pipeline:compiler}{object file} records names, not dates: the \omterm{def:b1:compilation-pipeline:compiler}{linker} matches names. The header guarantees that every
+file was compiled with the same declarations.
+
+\textbf{16.} Two \code{static int in_word}: yes, each file has its own. Two non-static ones: a multiple definition at
+the link.
+
+\textbf{17.} The input is \code{one two}, a newline, \code{three four five}, a newline. A word starts at each
+non-space character that follows a space or the start: at \code{o}, \code{t}, \code{t}, \code{f}, \code{f}, so 5
+words; two newlines, so 2 lines.
+
+\textbf{18.} Code and read-only data: the code of \code{feed}, the code of \code{main}, the characters of
+\code{"words"}. Initialised data: \code{unit}. Zero-initialised data: \code{lines}, \code{words}, \code{in_word},
+\code{reports}. Call stack: \code{c}. Heap: the 16 bytes.
+
+\textbf{19.} The eight objects of the code and data regions: the whole run. \code{c}: from the start of the call
+of \code{main} to its return. The 16 bytes: from \code{malloc} to \code{free}.
+
+\textbf{20.} The eight objects of the code and data regions: \code{lines}, \code{words}, \code{in_word},
+\code{reports} hold 0, \code{unit} holds the address of \code{"words"}.
+
+\textbf{21.} Nothing: \code{reports} is 3, so \code{report} returns at once. A static local lives in the \omterm{def:b1:compilation-pipeline:layout}{data
+segment} for the whole run; an automatic local is created anew at each call and could not count calls.
+
+\textbf{22.} \code{title} is on the call stack (a local of \code{main}); the bytes it points to are on the heap.
+
+\textbf{23.} The 16 bytes no longer exist. The nine others do; \code{title} still exists, but it now holds the
+address of a freed block: it must not be used.
+
+\textbf{24.} \emph{The placement table}: of the ten objects, 3 live in the code region, 1 in initialised data, 4 in
+zero-initialised data, 1 on the heap and 1 on the call stack; eight of them exist for the whole run.
+\end{solution}

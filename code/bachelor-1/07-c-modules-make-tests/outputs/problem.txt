@@ -1,0 +1,35 @@
+$ make -f library.Makefile
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c loans_main.c
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c loans.c
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c csv.c
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c date.c
+gcc -o checker loans_main.o loans.o csv.o date.o
+$ ./checker loans.csv 2025-12-31
+400 loans, 22 still out, 109 late, 5285 late days in all
+member 57 has the most late days: 485
+$ for f in date.h date.c csv.h csv.c loans.h loans.c loans_main.c; do touch $f; echo "$f: $(make -f library.Makefile | grep -c -- " -c ")"; done
+date.h: 3
+date.c: 1
+csv.h: 2
+csv.c: 1
+loans.h: 2
+loans.c: 1
+loans_main.c: 1
+$ make -f library.Makefile test
+gcc -std=c17 -O2 -Wall -Wextra -Werror -c date_test.c
+gcc -o date_test date_test.o date.o
+./date_test
+18 checks, 0 failed
+$ gcc -std=c17 -O0 --coverage -c date.c -o date.o && gcc date_test.c date.o --coverage -o cov_test
+$ ./cov_test && gcov -b date.c | sed -n 2,4p
+18 checks, 0 failed
+Lines executed:100.00% of 21
+Branches executed:100.00% of 32
+Taken at least once:93.75% of 32
+$ cp date_v0.c date.c
+$ make -f library.Makefile test 2>&1 | grep -v "^gcc"
+./date_test
+date_test.c:17: check failed: !is_leap(1900) && !is_leap(2100)
+date_test.c:34: check failed: between("2099-02-28", "2100-03-01") == 366
+18 checks, 2 failed
+make: *** [library.Makefile:22: test] Error 1

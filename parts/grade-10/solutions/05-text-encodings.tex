@@ -1,0 +1,156 @@
+\section*{Chapter \ref{ch:g10:text-encodings} --- Text Encodings: From ASCII to UTF-8}
+
+\begin{solution}{exo:g10:text-encodings:1}
+\code{65}, \code{"a"}, \code{9} (the digits are consecutive from code $48$), and \code{"C"}.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:2}
+In Latin-1 each letter is one byte: \code{E9 74 E9}. In \omterm{def:g10:text-encodings:utf8}{UTF-8}, \textit{t} is \code{74} and \textit{é} is
+\code{C3 A9}, as the figure computes: \code{C3 A9 74 C3 A9}. The listing prints the same bytes.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:3}
+\code{4}, \code{5} and \code{4}. A string counts \omterm{def:g10:text-encodings:code-point}{characters}; \code{bytes} count bytes. \textit{é} takes two bytes in
+\omterm{def:g10:text-encodings:utf8}{UTF-8} and one in Latin-1; the other three letters take one byte in both.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:4}
+\textit{A} is \code{1000001} ($65$) and \textit{a} is \code{1100001} ($97$): they differ only in the bit worth $32$.
+For an \omterm{def:g10:text-encodings:ascii}{ASCII} letter \code{c}, \code{chr(ord(c) ^ 32)} changes its case, \code{chr(ord(c) | 32)} makes it small and
+\code{chr(ord(c) & ~32)} makes it capital.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:5}
+In \code{exercises/is_ascii.py}: for each \omterm{def:g10:text-encodings:code-point}{character} \code{c} of \code{s}, if \code{ord(c) >= 128}, return
+\code{False}; after the loop, return \code{True}. The empty string is \omterm{def:g10:text-encodings:ascii}{ASCII}. The tests compare it with Python's
+\code{s.isascii()}.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:6}
+\code{63} and \code{72} are below \code{80}: \textit{c} and \textit{r}. \code{C3} starts with \code{110}, so it begins a
+two-byte \omterm{def:g10:text-encodings:code-point}{character} with \code{AA}: the free bits are \code{00011} and \code{101010}, that is \code{000 1110 1010} $=$
+\code{EA}, the \omterm{def:g10:text-encodings:code-point}{code point} \code{U+00EA}, \textit{ê}. Then \code{70} is \textit{p} and \code{65} is \textit{e}: the
+word is \textit{crêpe}.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:7}
+Compare with the pattern boundaries: $1$ below \code{0x80}, $2$ below \code{0x800}, $3$ below \code{0x10000}, $4$
+otherwise (\code{exercises/utf8_length.py}). The tests check it on $500$ random \omterm{def:g10:text-encodings:code-point}{code points}.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:8}
+Item 1: \omterm{def:g10:text-encodings:utf8}{UTF-8} bytes read as Latin-1. The program should open the file with \code{encoding="utf-8"}. A string already
+read wrongly is repaired with \code{s.encode("latin-1").decode("utf-8")}, which gives back the bytes of the file and
+decodes them correctly.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:9}
+The text \textit{Caf}, a replacement \omterm{def:g10:text-encodings:code-point}{character}, \textit{~cr}, a replacement \omterm{def:g10:text-encodings:code-point}{character}, \textit{pe} (\code{ascii}
+writes it \texttt{'Caf\textbackslash ufffd cr\textbackslash ufffdpe'}): two replacement \omterm{def:g10:text-encodings:code-point}{characters} \code{U+FFFD}, one for
+each of the bytes \code{E9} and \code{EA}: each starts a three-byte \omterm{def:g10:text-encodings:utf8}{UTF-8} \omterm{def:g10:text-encodings:code-point}{character} but is followed by an \omterm{def:g10:text-encodings:ascii}{ASCII} byte,
+so it is invalid on its own. A program that reads files from many sources must decide what a bad byte does: stop
+(\code{strict}), so that the mistake is noticed, or go on (\code{replace}), so that one bad byte does not lose the
+whole file.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:10}
+$11$ free bits hold $2^{11} = 2048$ values. \omterm{def:g10:text-encodings:code-point}{Code points} below \code{U+0080} must use the one-byte pattern, the
+shortest one (RFC 3629 forbids longer forms; that is why the bytes \code{C0} and \code{C1} never appear), so the
+two-byte pattern serves \code{U+0080} to \code{U+07FF}: $2048 - 128 = 1920$ \omterm{def:g10:text-encodings:code-point}{code points}.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:11}
+The \omterm{def:g10:text-encodings:utf8}{UTF-8} bytes of \textit{Café} are \code{43 61 66 C3 A9}; the first $4$ keep \code{C3} without its continuation
+byte, and decoding stops at an incomplete \omterm{def:g10:text-encodings:code-point}{character}. The function \code{cut} of \code{exercises/cut_bytes.py} keeps the
+first $n$ bytes, walks back over continuation bytes to the first byte of the last \omterm{def:g10:text-encodings:code-point}{character}, and drops that \omterm{def:g10:text-encodings:code-point}{character}
+if its pattern needs more bytes than are left. On \textit{Café} with $n = 4$ it returns \textit{Caf}. The tests check
+it on $300$ random texts.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:12}
+In \code{exercises/utf8_decode.py}: read the first byte \code{b}; if \code{b < 0x80} the \omterm{def:g10:text-encodings:code-point}{character} has one byte and
+its \omterm{def:g10:text-encodings:code-point}{code point} is \code{b}; if \code{b >> 5 == 0b110}, two bytes and the \omterm{def:g10:text-encodings:code-point}{code point} starts with \code{b & 0x1F}; if
+\code{b >> 4 == 0b1110}, three bytes and \code{b & 0x0F}; otherwise four bytes and \code{b & 0x07}. For each
+continuation byte, shift the \omterm{def:g10:text-encodings:code-point}{code point} $6$ places left and add the byte's $6$ low bits, \code{data[i + k] & 0x3F}.
+The tests decode $500$ random \omterm{def:g10:text-encodings:code-point}{code points} and compare with Python.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:13}
+The \omterm{def:g10:text-encodings:encoding}{encoding} of a \omterm{def:g10:text-encodings:code-point}{character} starts with a first byte, which is never a continuation byte; inside the \omterm{def:g10:text-encodings:encoding}{encoding} of a
+longer \omterm{def:g10:text-encodings:code-point}{character}, every byte after the first is a continuation byte. So a match could only start at the first byte of
+the longer \omterm{def:g10:text-encodings:code-point}{character}, and then the two first bytes are equal; but the first byte gives the length, so the two
+\omterm{def:g10:text-encodings:code-point}{characters} would have the same length, a contradiction. A word is a sequence of \omterm{def:g10:text-encodings:code-point}{characters}, so its bytes start with a
+first byte: a match of the word in the text always starts at the first byte of a \omterm{def:g10:text-encodings:code-point}{character} of the text, never in its
+middle.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:14}
+\code{try: return s.encode("latin-1").decode("utf-8")}, and if either step raises an error, \code{return s}
+(\code{exercises/fix_mojibake.py}). \textit{Café} encodes in Latin-1 to \code{43 61 66 E9}, which is not valid \omterm{def:g10:text-encodings:utf8}{UTF-8}
+(\code{E9} is not followed by continuation bytes): decoding fails, and the string is returned unchanged. A correct
+string is left alone, and a string garbled once is repaired.
+\end{solution}
+
+\begin{solution}{exo:g10:text-encodings:15}
+\omterm{def:g10:text-encodings:utf8}{UTF-8}: $9000 \times 1 + 900 \times 2 + 100 \times 3 = 11{,}100$ bytes. UTF-16: $10{,}000 \times 2 = 20{,}000$ bytes.
+A one-byte table: $10{,}000$ bytes. UTF-16 is smaller than \omterm{def:g10:text-encodings:utf8}{UTF-8} when most \omterm{def:g10:text-encodings:code-point}{characters} lie from \code{U+0800} to
+\code{U+FFFF}, where \omterm{def:g10:text-encodings:utf8}{UTF-8} needs $3$ bytes and UTF-16 $2$: Chinese, Japanese or Korean text, for example.
+\end{solution}
+
+\begin{solution}{pb:g10:text-encodings:1}
+\textbf{1.} \textit{Lighthouse Caf}: \code{4c} is \textit{L}, \code{69} \textit{i}, \dots, \code{20} the space,
+\code{43} \textit{C}, \code{61} \textit{a}, \code{66} \textit{f}.
+
+\textbf{2.} \code{c3 a9}. \code{C3} begins a two-byte \omterm{def:g10:text-encodings:code-point}{character}; the free bits \code{00011} and \code{101001} give
+\code{U+00E9}, \textit{é}.
+
+\textbf{3.} \textit{: crêpes today}, with \code{c3 aa} for \textit{ê} (\code{U+00EA}).
+
+\textbf{4.} \textit{Lighthouse Café: crêpes today} has $29$ \omterm{def:g10:text-encodings:code-point}{characters} and $16 + 15 = 31$ bytes: two \omterm{def:g10:text-encodings:code-point}{characters} take
+two bytes.
+
+\textbf{5.} Every byte is a Latin-1 \omterm{def:g10:text-encodings:code-point}{character}, so yes: the board would show \textit{Lighthouse CafÃ©: crÃªpes today}.
+
+\textbf{6.} Bytes \code{c3}, \code{a9} and \code{aa} are above \code{7f}; \omterm{def:g10:text-encodings:ascii}{ASCII} has only $128$ codes.
+
+\textbf{7.} For a Latin-1 text to be valid \omterm{def:g10:text-encodings:utf8}{UTF-8} by chance, every byte from \code{C2} to \code{F4}, that is, almost
+every accented capital letter, would have to be followed by exactly the right number of bytes from \code{80} to
+\code{BF}, which are symbols such as \textit{©} or \textit{«}. Real texts almost never contain such pairs, so valid
+\omterm{def:g10:text-encodings:utf8}{UTF-8} with \omterm{def:g10:text-encodings:ascii}{non-ASCII} bytes is almost certainly \omterm{def:g10:text-encodings:utf8}{UTF-8}.
+
+\textbf{8.} The board decoded with Latin-1 (or a close one-byte table): item 1 of the method.
+
+\textbf{9.} The program prints \texttt{\textbackslash xc3\textbackslash x83\textbackslash xc2\textbackslash xa9} for \textit{é}: the four \omterm{def:g10:text-encodings:code-point}{code points} \code{U+00C3},
+\code{U+0083}, \code{U+00C2}, \code{U+00A9}.
+
+\textbf{10.} After one layer \textit{é} is two \omterm{def:g10:text-encodings:code-point}{characters}, \textit{Ã} and \textit{©}, of two \omterm{def:g10:text-encodings:utf8}{UTF-8} bytes each:
+$4$ bytes. After two layers it is four \omterm{def:g10:text-encodings:code-point}{characters} of two bytes each: $8$ bytes.
+
+\textbf{11.} A \omterm{def:g10:text-encodings:ascii}{non-ASCII} \omterm{def:g10:text-encodings:code-point}{character} takes at least $2$ \omterm{def:g10:text-encodings:utf8}{UTF-8} bytes, all of them $128$ or more. Read as Latin-1, each
+of these bytes becomes one \omterm{def:g10:text-encodings:ascii}{non-ASCII} \omterm{def:g10:text-encodings:code-point}{character}, which in turn takes $2$ \omterm{def:g10:text-encodings:utf8}{UTF-8} bytes. So a \omterm{def:g10:text-encodings:code-point}{character} of $k \ge 2$ bytes
+becomes $k$ \omterm{def:g10:text-encodings:code-point}{characters} of $2$ bytes, $2k$ bytes.
+
+\textbf{12.} At each step, first encode with Latin-1 (which gives back the bytes that were mis-read), then decode with
+\omterm{def:g10:text-encodings:utf8}{UTF-8}; the step is applied twice, undoing the last layer first.
+
+\textbf{13.} They pass unchanged: an \omterm{def:g10:text-encodings:ascii}{ASCII} \omterm{def:g10:text-encodings:code-point}{character} is one byte below $128$ in \omterm{def:g10:text-encodings:utf8}{UTF-8}, and that byte is the same
+\omterm{def:g10:text-encodings:code-point}{character} in Latin-1.
+
+\textbf{14.} $301$ bytes in \omterm{def:g10:text-encodings:utf8}{UTF-8}, $600$ in UTF-16 and $300$ in Latin-1.
+
+\textbf{15.} All $300$ \omterm{def:g10:text-encodings:code-point}{characters} of the names have \omterm{def:g10:text-encodings:code-point}{code points} below \code{U+10000}, and UTF-16 writes each of them in
+two bytes: $2 \times 300 = 600$.
+
+\textbf{16.} Every \omterm{def:g10:text-encodings:code-point}{character} takes one byte in Latin-1. In \omterm{def:g10:text-encodings:utf8}{UTF-8} the same holds for \omterm{def:g10:text-encodings:ascii}{ASCII} \omterm{def:g10:text-encodings:code-point}{characters}, and only
+\textit{é}, in \textit{Lighthouse Café}, takes two.
+
+\textbf{17.} $600 - 301 = 299$ bytes, very nearly half ($299/600 \approx 49.8\,\%$).
+
+\textbf{18.} The name \textit{Lighthouse Café} ($15$ \omterm{def:g10:text-encodings:code-point}{characters}, $16$ bytes in \omterm{def:g10:text-encodings:utf8}{UTF-8}) is replaced by $6$ Greek letters
+of $2$ bytes each in \omterm{def:g10:text-encodings:utf8}{UTF-8} and in UTF-16. \omterm{def:g10:text-encodings:utf8}{UTF-8}: $301 - 16 + 12 = 297$ bytes. UTF-16: $600 - 30 + 12 = 582$ bytes.
+Latin-1 has no Greek letters: the names could no longer be written in it at all.
+
+\textbf{19.} The town's $30$ place names take $301$ bytes in \omterm{def:g10:text-encodings:utf8}{UTF-8}, $600$ in UTF-16 and $300$ in Latin-1: \omterm{def:g10:text-encodings:utf8}{UTF-8}
+saves $299$ bytes over UTF-16, almost half. The rule of the notice board: \omterm{def:g10:text-encodings:utf8}{UTF-8} bytes read as Latin-1 turn every
+\omterm{def:g10:text-encodings:ascii}{non-ASCII} letter into two \omterm{def:g10:text-encodings:code-point}{characters}, and \textit{é}, bytes \code{C3 A9}, becomes \textit{Ã©}.
+\end{solution}

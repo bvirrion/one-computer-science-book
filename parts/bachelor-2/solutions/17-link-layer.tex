@@ -1,0 +1,181 @@
+% Solutions of Book 4, chapter 17 (the link layer).
+\section*{Chapter \ref{ch:b2:link-layer} --- The Link Layer}
+
+\begin{solution}{exo:b2:link-layer:1}
+\code{0x4c} $= 0100\,1100$ has three 1s, so its bit is 1; \code{0x41} $= 0100\,0001$, \code{0x4d} $= 0100\,1101$ and
+\code{0x50} $= 0101\,0000$ have two, four and two, so their bits are 0: \code{[1, 0, 0, 0]}, as printed. One flip in
+each of two bytes is detected, in both bytes; three flips in one byte are detected (an odd number); two flips in one
+byte are missed (\cref{prop:b2:link-layer:parity}).
+\end{solution}
+
+\begin{solution}{exo:b2:link-layer:2}
+The loop adds the words but never \omterm{def:b2:functional-programming:fold}{folds} \code{total}; the final \code{~total & 0xFFFF} then throws the
+carries away instead of adding them back. For \code{LAMP}, $\mathtt{0x4c41} + \mathtt{0x4d50} = \mathtt{0x9991}$:
+no carry, so both versions agree. For \code{ff f0 00 20}, $\mathtt{0xfff0} + \mathtt{0x0020} = \mathtt{0x10010}$; the
+one's complement sum is $\mathtt{0x0010} + 1 = \mathtt{0x0011}$, whose complement is \code{ffee}, while dropping the
+carry leaves \code{0x0010} and \code{ffef}. The bug shows only on data whose sum overflows, which is why a test on
+short text missed it. The fix is the line \code{total = (total & 0xFFFF) + (total >> 16)} in the loop.
+\end{solution}
+
+\begin{solution}{exo:b2:link-layer:3}
+\omcode{code/bachelor-2/17-link-layer/exercises/parity2d.py}{16}{33}{Correcting one flip with a parity grid}
+\code{diff} has a 1 in each column whose parity is wrong. One wrong row and one wrong column: the data bit at their
+crossing flipped, and XOR with \code{diff} puts it back. One wrong row and no wrong column: the row's \omterm{def:b2:link-layer:parity}{parity bit}
+itself flipped, and the data is intact. No wrong row and one wrong column: a bit of the parity byte flipped. Anything
+else needs two flips or more. The test flips each of the 32 data bits, each row bit and each column bit, and checks
+that two flips in different rows give \code{None}.
+\end{solution}
+
+\begin{solution}{exo:b2:link-layer:4}
+Append three zeros and divide, XORing $1011$ under each leading 1:
+\[
+11010011\,000 \to 01100011\,000 \to 00111011\,000 \to 00010111\,000 \to 00000001\,000 \to 00000000\,011 .
+\]
+The check bits are $011$ and the \omterm{def:b2:link-layer:frame}{frame} is $11010011\,011$. Dividing the \omterm{def:b2:link-layer:frame}{frame} repeats the same steps, whose last
+three bits are now $011 + 011 = 000$: the remainder is 0. The test checks the value with \code{remainder}.
+\end{solution}
+
+\begin{solution}{exo:b2:link-layer:5}
+\omoutput{code/bachelor-2/17-link-layer/outputs/exo_switch.txt}{The two tables after six \omterm{def:b2:link-layer:frame}{frames}.}
+$A \to C$: both switches learn $A$ and flood ($s_1$ on ports 2 and 3, $s_2$ on 2 and 3). $C \to A$: $s_2$ learns $C$
+on 2 and forwards on 1; $s_1$ learns $C$ on 3 and forwards on 1. $D \to B$: nobody knows $B$, so $s_2$ floods on 1
+and 2, and $s_1$ on 1 and 2; both learn $D$. $B \to D$, $A \to B$ and $D \to C$ are forwarded, $A \to B$ by $s_1$
+alone. Each switch sees every host behind the other switch on the port of the cable: \code{C:3 D:3} in $s_1$,
+\code{A:1 B:1} in $s_2$. Two \omterm{def:b2:link-layer:frame}{frames} were flooded, by both switches.
+\end{solution}
+
+\begin{solution}{exo:b2:link-layer:6}
+Stuffing sent \code{7e} as \code{7d 5e} and \code{7d} as \code{7d 5d}. The decoder drops each \code{7d} but leaves
+the byte after it as it is, so \code{5e} and \code{5d} come out instead of \code{7e} and \code{7d}. It must XOR the
+byte that follows an escape with \code{0x20}, as \code{unstuff} does. A second bug waits: a payload byte \code{7d}
+would be dropped too, if it ever arrived unescaped from a faulty sender; \code{unstuff} treats it as an escape, which
+at least keeps the rule in one place.
+\end{solution}
+
+\begin{solution}{exo:b2:link-layer:7}
+\omcode{code/bachelor-2/17-link-layer/exercises/crc8.py}{5}{21}{CRC-8, bit by bit and by table}
+With an 8-bit register and the message taken most significant bit first, each byte enters the register whole, so
+\code{TABLE[b]} is the CRC of the single byte $b$ and the table step needs no shift: the state after a byte is the
+table entry of the register XOR the byte. The test checks both against \code{remainder(m, 8n, 0x107)} on 40 random
+messages.
+\end{solution}
+
+\begin{solution}{exo:b2:link-layer:8}
+For a polynomial $P$, $P(1)$ is the sum of its coefficients, so it is the number of its terms modulo 2, and $(PQ)(1) =
+P(1)Q(1)$, since evaluation respects products. Let $E$ be an error that passes the CRC: $g$ divides $E$, and $x + 1$
+divides $g$, so $E = (x + 1)Q$ for some $Q$. Then $E(1) = (1 + 1)Q(1) = 0$: $E$ has an even number of terms, that is,
+an even number of flipped bits. So every error with an odd number of flips is detected.
+\end{solution}
+
+\begin{solution}{exo:b2:link-layer:9}
+\omcode{code/bachelor-2/17-link-layer/listings/backoff_sim.py}{5}{23}{\omterm{prop:b2:link-layer:aloha}{Binary exponential backoff}}
+\omoutput{code/bachelor-2/17-link-layer/outputs/backoff_sim.txt}{2000 runs per value of $k$.}
+A \omterm{def:b2:link-layer:mac-protocol}{collision} costs one slot here, an idealisation of \omterm{def:b2:link-layer:aloha}{CSMA/CD}. The mean delay of a \omterm{def:b2:link-layer:frame}{frame} grows about linearly, close to
+$2.4k$ slots: the stations spread out until the window is about as large as their number, and then go through
+roughly one at a time. The time until the last \omterm{def:b2:link-layer:frame}{frame} grows faster, about 2.5 times per doubling of $k$: the unlucky
+stations have collided many times and wait in windows much larger than needed. That unfairness is the known weakness
+of exponential backoff.
+\end{solution}
+
+\begin{solution}{exo:b2:link-layer:10}
+$\frac{d}{dG}\,G e^{-G} = (1 - G)e^{-G}$, positive for $G < 1$ and negative after: the maximum is at $G = 1$, and it is
+$1/e \approx 0.368$. In pure \omterm{def:b2:link-layer:aloha}{ALOHA}, a \omterm{def:b2:link-layer:frame}{frame} sent at time $t$ survives if no other \omterm{def:b2:link-layer:frame}{frame} starts in $(t - 1, t + 1)$:
+one starting just before overlaps its beginning, one starting just after its end. That interval has length 2 \omterm{def:b2:link-layer:frame}{frame}
+times, so with Poisson attempts no other start falls in it with probability $e^{-2G}$, and the throughput is $G
+e^{-2G}$. Its derivative is $(1 - 2G)e^{-2G}$, so the maximum is at $G = 1/2$ and equals $1/(2e) \approx 0.184$: half
+of slotted \omterm{def:b2:link-layer:aloha}{ALOHA}'s, because slots halve the vulnerable interval.
+\end{solution}
+
+\begin{solution}{exo:b2:link-layer:11}
+The proof of \cref{thm:b2:link-layer:crc-burst} shows that if $g$ divides $x C$ then it divides $C$; conversely, if
+$g$ divides $C$ it divides $xC$. So $g$ divides $x^i B$ exactly when it divides $B$, whatever the position $i$.
+\omoutput{code/bachelor-2/17-link-layer/outputs/burst_fraction.txt}{Every pattern of a \omterm{def:b2:link-layer:burst}{burst}, checked once.}
+A \omterm{def:b2:link-layer:burst}{burst} of length 17 is $B$ of degree 16 with constant term 1. If $g$ divides it, $B = gQ$ with $Q$ of degree 0, so
+$B = g$: one pattern in $2^{15}$. In \cref{out:b2:link-layer:bursts}, that one pattern sits at each of the $48 - 17 + 1
+= 32$ positions, hence 32. For length 18, $Q$ has degree 1 and its constant term must be 1 (as $B(0) = g(0)Q(0)$), so
+$Q = x + 1$: one pattern in $2^{16}$. In general, for \omterm{def:b2:link-layer:burst}{bursts} longer than $r + 1$ the fraction is $2^{-r}$.
+\end{solution}
+
+\begin{solution}{exo:b2:link-layer:12}
+An error pattern on $N$ bits is a polynomial $E$ of degree less than $N$, and it passes when $E = gQ$. Each $Q$ of
+degree less than $N - r$ gives such an $E$, and different $Q$ give different $E$; conversely the quotient of a
+multiple of $g$ of degree less than $N$ has degree less than $N - r$. There are $2^{N-r}$ such $Q$, one of them 0, so
+$2^{N-r} - 1$ nonzero patterns pass out of $2^N - 1$, about $2^{-r}$. If $x + 1$ divides $g$, every multiple of $g$
+has an even number of terms (\cref{exo:b2:link-layer:8}), and the even patterns, $2^{N-1}$ of them (with 0), contain
+all $2^{N-r}$ multiples: a fraction $2^{-(r-1)}$ of them pass, twice the average, while no odd pattern passes.
+\end{solution}
+
+\begin{solution}{pb:b2:link-layer:1}
+\textbf{1.} \code{7e 7d 5d 7d 5e 00 7d 5e 7e}: each \code{7d} and \code{7e} becomes two bytes.
+
+\textbf{2.} $2n$ bytes (plus the two flags), when every byte of the payload is \code{7e} or \code{7d}.
+
+\textbf{3.} Two \omterm{def:b2:link-layer:frame}{frames} run together into one. Its last 16 bits are the second \omterm{def:b2:link-layer:frame}{frame}'s check, computed for the second
+\omterm{def:b2:link-layer:frame}{frame} alone, so the merged \omterm{def:b2:link-layer:frame}{frame} is in effect a \omterm{def:b2:link-layer:frame}{frame} with a large error: it passes with probability about $2^{-16}$,
+and is otherwise dropped. Both commands are lost, but no false command is accepted.
+
+\textbf{4.} The check protects the command, whatever the framing; the receiver removes the stuffing first, then
+checks. The check bytes are stuffed like the payload, so a check that contains \code{7e} cannot end a \omterm{def:b2:link-layer:frame}{frame} early.
+
+\textbf{5.} If the length byte is hit, the receiver reads the wrong number of bytes, takes the wrong place for the
+next length, and every later \omterm{def:b2:link-layer:frame}{frame} is misread until something resynchronises it. A damaged flag costs only the \omterm{def:b2:link-layer:frame}{frames}
+on both sides of it: the next flag is found again.
+
+\textbf{6.} \code{LAMP} is \code{4c 41 4d 50} and its check is \code{2a 56}; none is \code{7e} or \code{7d}, so 6
+bytes plus 2 flags: 8 bytes.
+
+\textbf{7.} \code{4c 41 4d 50 2a 56}. The \omterm{def:b2:link-layer:frame}{frame} is $T = M x^{16} + R$, a multiple of $g$; the receiver's CRC is the
+remainder of $T x^{16}$ by $g$, which is 0.
+
+\textbf{8.} A \omterm{def:b2:link-layer:burst}{burst} often flips an even number of bits, which one \omterm{def:b2:link-layer:parity}{parity bit} never sees.
+
+\textbf{9.} Every \omterm{def:b2:link-layer:burst}{burst} of 16 bits or fewer.
+
+\textbf{10.} Every error with an odd number of flipped bits, since $g(1) = 1 + 1 + 1 + 1 = 0$, so $x + 1$ divides $g$.
+
+\textbf{11.} A \omterm{def:b2:link-layer:burst}{burst} of 17 bits passes only if its pattern is $g$ itself (\cref{exo:b2:link-layer:11}): one pattern
+per position, and there are $48 - 17 + 1 = 32$ positions.
+
+\textbf{12.} $2^{24} \times (2^{32} - 1)/(2^{48} - 1) \approx 2^{24}/2^{16} = 256$. The simulation counted 256, all
+with an even number of flips, as \cref{prop:b2:link-layer:crc-odd} demands. That it is exactly 256 is luck: the
+standard deviation of such a count is about $\sqrt{256} = 16$.
+
+\textbf{13.} Exactly one of the five sends: $5p(1 - p)^4$.
+
+\textbf{14.} The derivative is $5(1 - p)^3(1 - 5p)$, zero at $p = 1/5$, where the value is $(4/5)^4 \approx 0.410$,
+more than $1/e \approx 0.368$: with few stations the useful fraction $S_n = (1 - 1/n)^{n-1}$ at its best is larger,
+and it decreases to $1/e$ as $n$ grows.
+
+\textbf{15.} A radio cannot hear while it sends: its own signal is far stronger than any other at its antenna. And the
+\omterm{def:b2:link-layer:mac-protocol}{collision} that matters happens at the receiver, which the sender may not hear at all.
+
+\textbf{16.} The \omterm{def:b2:link-layer:hidden}{hidden terminal} problem: each finds the channel quiet, both send, and their \omterm{def:b2:link-layer:frame}{frames} collide at the
+harbour, which receives neither; neither sender knows.
+
+\textbf{17.} A sender first sends a short request; the harbour answers with a short ``clear to send'', heard by every
+station near the harbour, the hidden one included, which then keeps quiet for the time announced. \omterm{def:b2:link-layer:mac-protocol}{Collisions} can now
+hit only the short requests. The cost is two short \omterm{def:b2:link-layer:frame}{frames} and their delay for every data \omterm{def:b2:link-layer:frame}{frame}, which pays only for
+long \omterm{def:b2:link-layer:frame}{frames}.
+
+\textbf{18.} Noise and \omterm{def:b2:link-layer:mac-protocol}{collisions} lose far more \omterm{def:b2:link-layer:frame}{frames} on radio than on a cable, and the sender cannot detect a
+\omterm{def:b2:link-layer:mac-protocol}{collision}; an acknowledgement on the \omterm{def:b2:link-layer:frame}{link} lets it resend at once, instead of leaving the loss to the much slower
+layers above.
+
+\textbf{19.} No: \omterm{def:b2:link-layer:burst}{bursts} of 17 to 20 bits each pass with probability about $2^{-15}$ or $2^{-16}$
+(\cref{exo:b2:link-layer:11}). CRC-32 detects every \omterm{def:b2:link-layer:burst}{burst} of up to 32 bits.
+
+\textbf{20.} Two more bytes per \omterm{def:b2:link-layer:frame}{frame}. With tables, the computation is one lookup per byte in both cases; the table
+grows from 512 bytes to 1\,KiB.
+
+\textbf{21.} $2/6 = 1/3$ with CRC-16; $4/8 = 1/2$ with CRC-32.
+
+\textbf{22.} A \omterm{def:b2:link-layer:burst}{burst} of 20 bits passes with probability $2^{-16}$ (its pattern must be $gQ$ with $Q$ of degree 3 and
+constant term 1: 4 patterns of $2^{18}$). Per million \omterm{def:b2:link-layer:frame}{frames}, 1000 have such a \omterm{def:b2:link-layer:burst}{burst}, and $1000 \times 2^{-16}
+\approx 0.015$ pass: about one bad command in 65 million \omterm{def:b2:link-layer:frame}{frames}.
+
+\textbf{23.} A table does in one lookup what takes eight shifts and tests; a hardware shift register with a few XOR
+gates handles each bit as it arrives on the wire, at the speed of the \omterm{def:b2:link-layer:frame}{link}, with no memory at all.
+
+\textbf{24.} Of 1\,114\,111 \omterm{def:b2:link-layer:burst}{bursts} of 1 to 16 bits, none passed CRC-16; of $2^{24} = 16\,777\,216$ random error
+patterns, 256 passed, the predicted $2^{24} \cdot 2^{-16}$, all of them with an even number of flips.
+\end{solution}

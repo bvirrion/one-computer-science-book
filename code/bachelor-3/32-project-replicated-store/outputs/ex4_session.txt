@@ -1,0 +1,17 @@
+$ for n in 1 2 3; do (./store node $n --stagger > node$n.log &); done
+$ ./store wait-leader
+leader: node 1
+$ ./store send 1 SET x 1
+node 1: OK
+$ kill -9 $(cat node2/pid)
+$ ./store send 3 SET y 2
+node 3: REDIRECT 1
+node 1: OK
+$ kill -9 $(cat node3/pid)
+$ ./store send 1 SET z 3
+node 1: no answer
+$ ./store send 1 GET x
+node 1: VALUE 1
+$ ./store send 1 STATUS
+node 1: STATUS leader 1
+$ kill $(cat node1/pid)

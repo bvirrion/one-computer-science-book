@@ -1,0 +1,24 @@
+$ gcc --version | head -n 1
+gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+$ gcc -S -O1 -fno-asynchronous-unwind-tables -fcf-protection=none -o fib.s fib.c
+$ grep -vE '^\s+\.|^[0-9]+:' fib.s | expand -t 8
+fib:
+        movl    %edi, %eax
+        cmpl    $1, %edi
+        jle     .L5
+        pushq   %rbp
+        pushq   %rbx
+        subq    $8, %rsp
+        movl    %edi, %ebx
+        leal    -1(%rdi), %edi
+        call    fib
+        movl    %eax, %ebp
+        leal    -2(%rbx), %edi
+        call    fib
+        addl    %ebp, %eax
+        addq    $8, %rsp
+        popq    %rbx
+        popq    %rbp
+        ret
+.L5:
+        ret

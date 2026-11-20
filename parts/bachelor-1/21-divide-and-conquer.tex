@@ -1,0 +1,432 @@
+% Book 3, Year 1, chapter 21 -- divide and conquer.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 21.
+% ledger: b1:karatsuba, b1:strassen, b1:bfprt, b1:cpython-karatsuba
+\chapter{Divide and Conquer}\label{ch:b1:divide-and-conquer}
+
+Multiplying two numbers of 1000 digits by the method taught at school takes a million products of digits, one for
+each digit of the first number and each digit of the second. For centuries nobody expected to do better: every digit
+of one number must meet every digit of the other, it seems. It does not have to. Cutting each number in two halves and
+combining three products of halves, instead of four, gives a method whose cost grows like $n^{1.585}$, and that is
+how long numbers are multiplied in practice. The idea behind it, cutting a problem into smaller ones of the same kind,
+has already given \omterm{def:b1:sorting:merge-sort}{merge sort}; this chapter turns it into a method and applies it to five problems.
+
+\begin{recall}
+The master theorem (\cref{thm:b1:asymptotic-analysis:master}) solves $T(n) = aT(n/b) + n^k$: $T(n) =
+\Theta(n^k)$ if $a < b^k$, $\Theta(n^k \log n)$ if $a = b^k$, and $\Theta(n^{\log_b a})$ if $a > b^k$; a cost
+$\Theta(n^k)$ in place of $n^k$ gives the same orders. \omterm{def:b1:sorting:merge-sort}{Merge sort} (\cref{def:b1:sorting:merge-sort}) satisfies $T(n) = 2T(n/2) + \Theta(n)$, hence $\Theta(n
+\log n)$. An inversion of a sequence is a pair of positions $i < j$ whose keys are out of order
+(\cref{def:b1:sorting:inversion}).
+\end{recall}
+
+\section{The method and its recurrences}\label{sec:b1:divide-and-conquer:method}
+
+\begin{definition}[Divide and conquer]\label{def:b1:divide-and-conquer:dc}
+A \emph{divide and conquer}\index{divide and conquer} algorithm solves an instance of a problem in three steps:
+\emph{divide} it into smaller instances of the same problem, \emph{solve} each of them by a recursive call (or directly
+when it is small enough), and \emph{combine} their solutions into a solution of the instance.
+\end{definition}
+
+The method was met informally in the second book, on searching a sorted list and sorting by merging. Its analysis is
+always the same: if an instance of size $n$ is cut into $a$ instances of size $n/b$, and dividing plus combining cost
+$f(n)$, the cost is $T(n) = aT(n/b) + f(n)$, and the master theorem gives its order. The work lies in finding a cheap
+combine step, or in making $a$ small.
+
+Counting inversions shows the three steps at their simplest. The inversions of a list are those inside its left half,
+those inside its right half, and those with one key on each side. The recursive calls count the first two kinds; the
+third kind is counted while merging the two sorted halves: when a key is taken from the right half, every key still
+waiting in the left half is larger and comes before it.
+
+\omcode{code/bachelor-1/21-divide-and-conquer/listings/inversions.py}{4}{19}{Counting inversions while
+sorting}\label{lst:b1:divide-and-conquer:inversions}
+
+\omoutput[2-2]{code/bachelor-1/21-divide-and-conquer/outputs/inversions.txt}{The sorted list and its 8
+inversions.}\label{out:b1:divide-and-conquer:inversions}
+
+The combine step costs $\Theta(n)$, so $T(n) = 2T(n/2) + \Theta(n) = \Theta(n \log n)$, against $\Theta(n^2)$ for
+testing every pair. Sorting was not asked for, but it makes the combine step cheap: a \omterm{def:b1:divide-and-conquer:dc}{divide and conquer} algorithm
+often returns more than the question, to make the next combination easy.
+
+\section{Karatsuba's multiplication}\label{sec:b1:divide-and-conquer:karatsuba}
+
+A number of $n$ digits is a list of digits, least significant first. The school method adds the product of digit $i$
+of $a$ and digit $j$ of $b$ into cell $i + j$ of the result, then propagates the carries.
+
+\omcodes{code/bachelor-1/21-divide-and-conquer/listings/digits.py}{16-33}{Carries, and the school method with its
+counter of digit products}\label{lst:b1:divide-and-conquer:school}
+
+Cut each number in two halves of $m = n/2$ digits: $a = a_1 10^m + a_0$ and $b = b_1 10^m + b_0$. Then
+\[ ab = a_1 b_1 10^{2m} + (a_1 b_0 + a_0 b_1) 10^m + a_0 b_0, \]
+four products of halves, and $T(n) = 4T(n/2) + \Theta(n)$ is $\Theta(n^2)$ again: cutting alone gains nothing. But
+the middle term is a combination of the two others and of a single new product:
+\[ a_1 b_0 + a_0 b_1 = a_1 b_1 + a_0 b_0 - (a_1 - a_0)(b_1 - b_0). \]
+
+\begin{method}[Karatsuba's algorithm]\label{met:b1:divide-and-conquer:karatsuba}
+To multiply two numbers of $n = 2m$ digits, compute recursively $z_2 = a_1 b_1$, $z_0 = a_0 b_0$ and $z_1 = |a_1 -
+a_0| \cdot |b_1 - b_0|$, with $s$ the sign of $(a_1 - a_0)(b_1 - b_0)$, and return $z_2 10^{2m} + (z_2 + z_0 - s z_1)
+10^m + z_0$. Numbers of one digit are multiplied directly.
+\end{method}
+
+The differences $|a_1 - a_0|$ and $|b_1 - b_0|$ are less than $10^m$: they have $m$ digits, like the halves, so that
+the three recursive calls are on numbers of $m$ digits exactly. \index{Karatsuba's algorithm}
+
+\omcodes{code/bachelor-1/21-divide-and-conquer/listings/karatsuba.py}{7-36}{The difference of two halves, and
+Karatsuba's multiplication}\label{lst:b1:divide-and-conquer:karatsuba}
+
+The combine loop adds and subtracts into cells that may go negative; \code{normalise} takes them back to digits with
+floor division, and its \omterm{def:b1:c-modules-make-tests:assertion}{assertion} checks that the result fits in $2n$ digits, as the product of two $n$-digit numbers
+must.
+
+\begin{omfigure}
+\begin{tikzpicture}[n/.style={draw, rounded corners=2pt, font=\scriptsize, inner sep=2pt, minimum width=7mm},
+  level distance=12mm, level 1/.style={sibling distance=33mm}, level 2/.style={sibling distance=10mm}]
+\node[n] (r) at (0,0) {$n$}
+  child {node[n] {$n/2$} child {node[n] {$n/4$}} child {node[n] {$n/4$}} child {node[n] {$n/4$}}}
+  child {node[n] {$n/2$} child {node[n] {$n/4$}} child {node[n] {$n/4$}} child {node[n] {$n/4$}}}
+  child {node[n] {$n/2$} child {node[n] {$n/4$}} child {node[n] {$n/4$}} child {node[n] {$n/4$}}};
+\node[font=\small] at (0,-3.4) {$\vdots$};
+\node[font=\small] at (0,-4.0) {$3^k$ products of one digit};
+\begin{scope}[font=\scriptsize, anchor=west]
+\node at (5.0, 0) {1 call, $\Theta(n)$ to combine};
+\node at (5.0,-1.2) {3 calls of $n/2$ \textcolor{omThm}{(4 with four products)}};
+\node at (5.0,-2.4) {9 calls of $n/4$ \textcolor{omThm}{(16)}};
+\node at (5.0,-4.0) {level $k = \log_2 n$ \textcolor{omThm}{($4^k = n^2$)}};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b1:asymptotic-analysis:recurrence}{recursion tree} of \omterm{met:b1:divide-and-conquer:karatsuba}{Karatsuba's algorithm} on $n = 2^k$ digits: three children per node. Level
+$i$ holds $3^i$ calls on $n/2^i$ digits, and the combine work of the level is $(3/2)^i \Theta(n)$, growing to the
+leaves. The same cut with four products (in red) has $4^i$ calls at level $i$.}
+\end{omfigure}
+
+The recurrence is now $T(n) = 3T(n/2) + \Theta(n)$, and $3 > 2^1$: the master theorem gives $\Theta(n^{\log_2 3})$,
+with $\log_2 3 \approx 1.585$. The program counts the products exactly.
+
+\omoutput{code/bachelor-1/21-divide-and-conquer/outputs/karatsuba.txt}{Digit products of the two methods, on the
+hook's small example and on $n$ nines times $n$ nines.}\label{out:b1:divide-and-conquer:karatsuba}
+
+Fewer products do not mean less time: each call also pays for two differences, a combine loop and its carries, and a
+call costs much more than a product of digits. Below some size, the school method wins. A \emph{cutoff} makes
+Karatsuba's method fall back on the school method for numbers of at most that many digits.
+
+\omoutput{code/bachelor-1/21-divide-and-conquer/outputs/karatsuba_timing.txt}{Microseconds per product of two random
+$n$-digit numbers, on the author's laptop, for the school method and Karatsuba's with three
+cutoffs.}\label{out:b1:divide-and-conquer:timing}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{loglogaxis}[width=7.2cm, height=5.6cm, xlabel={digits $n$}, ylabel={digit products}, log basis x=2,
+  legend pos=north west, legend style={font=\scriptsize}, tick label style={font=\scriptsize}]
+\addplot[thick, omThm, mark=*, mark size=1.2pt] table[x=n, y=school]
+  {code/bachelor-1/21-divide-and-conquer/figures/products.dat}; \addlegendentry{school, $n^2$}
+\addplot[thick, omDef, mark=square*, mark size=1.2pt] table[x=n, y=karatsuba]
+  {code/bachelor-1/21-divide-and-conquer/figures/products.dat}; \addlegendentry{Karatsuba, $n^{1.585}$}
+\end{loglogaxis}
+\end{tikzpicture}\hfill
+\begin{tikzpicture}
+\begin{loglogaxis}[width=7.2cm, height=5.6cm, xlabel={digits $n$}, ylabel={microseconds}, log basis x=2,
+  legend pos=north west, legend style={font=\scriptsize}, tick label style={font=\scriptsize}]
+\addplot[thick, omThm, mark=*, mark size=1.2pt] table[x=n, y=school]
+  {code/bachelor-1/21-divide-and-conquer/figures/times.dat}; \addlegendentry{school}
+\addplot[thick, black, dashed, mark=triangle*, mark size=1.2pt] table[x=n, y=c1]
+  {code/bachelor-1/21-divide-and-conquer/figures/times.dat}; \addlegendentry{cutoff 1}
+\addplot[thick, omDef, mark=square*, mark size=1.2pt] table[x=n, y=c32]
+  {code/bachelor-1/21-divide-and-conquer/figures/times.dat}; \addlegendentry{cutoff 32}
+\end{loglogaxis}
+\end{tikzpicture}
+\par\smallskip{\small Left: digit products counted in \cref{out:b1:divide-and-conquer:karatsuba}; the slopes are 2 and
+$\log_2 3$. Right: the measured times of \cref{out:b1:divide-and-conquer:timing}; without a cutoff, Karatsuba's method
+is still slower at 2048 digits, with a cutoff of 32 it is faster from 64 digits on.}
+\end{omfigure}
+
+\begin{history}[Three products instead of four]
+The method was published by Karatsuba and Ofman in 1962. In 1969, Strassen applied the same idea to matrices: two $2
+\times 2$ block matrices can be multiplied with 7 block products instead of 8, which gives $\Theta(n^{\log_2 7})$,
+about $n^{2.81}$ operations, for $n \times n$ matrices.
+\end{history}
+
+\begin{dated}{2026}
+CPython multiplies its integers by the school method unless both have more than 70 internal digits, of 30 bits each,
+about 630 decimal digits; above that it uses Karatsuba's method. This is read in its source code, and such thresholds
+change between versions.
+\end{dated}
+
+\section{The closest pair of points}\label{sec:b1:divide-and-conquer:closest}
+
+\begin{definition}[Closest-pair problem]\label{def:b1:divide-and-conquer:closest}
+The \emph{closest-pair problem}\index{closest-pair problem} asks, for $n \geq 2$ distinct points of the plane, for the
+smallest distance between two of them.
+\end{definition}
+
+Comparing every pair takes $n(n - 1)/2$ distances. \omterm{def:b1:divide-and-conquer:dc}{Divide and conquer} sorts the points by $x$, cuts them by a vertical
+line through the median $x$, and solves both halves: $\delta$ is the smaller of the two answers. A closer pair can only
+have one point on each side, both within $\delta$ of the line: in the \emph{strip} of width $2\delta$ around it.
+
+\begin{proposition}[Seven neighbours suffice]\label{prop:b1:divide-and-conquer:seven}
+Sort the points of the strip by $y$. If two of them, $p$ before $q$, are less than $\delta$ apart, then $q$ is one of
+the seven points that follow $p$.
+\end{proposition}
+
+\begin{proof}
+All the points that follow $p$ and are within $\delta$ of it lie in the rectangle of width $2\delta$ and height $\delta$
+whose bottom edge passes through $p$, centred on the line. Cut this rectangle into eight squares of side $\delta/2$,
+four on each side of the line. Two points in one square are at most $\delta/\sqrt{2} < \delta$ apart, and on one side
+of the line, which contradicts the definition of $\delta$: each square holds at most one point. With $p$ itself, the
+rectangle holds at most eight points, so at most seven points come after $p$ before the first one with $y \geq p_y +
+\delta$.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[scale=1.1]
+\fill[omDef!10] (-2,0) rectangle (2,2);
+\draw[dashed] (0,-0.6) -- (0,2.7) node[above, font=\scriptsize] {dividing line};
+\draw[thin, gray] (-2,-0.6) -- (-2,2.7) (2,-0.6) -- (2,2.7);
+\foreach \i in {-2,-1,0,1} \foreach \j in {0,1} \draw[omDef] (\i,\j) rectangle (\i+1,\j+1);
+\fill[omThm] (-0.6,0) circle (2pt) node[below, font=\scriptsize] {$p$};
+\fill (0.2,0.3) circle (1.5pt) (1.9,2) circle (1.5pt) (-1.9,1.9) circle (1.5pt);
+\draw[<->] (-2,-0.45) -- (0,-0.45) node[midway, below, font=\scriptsize] {$\delta$};
+\draw[<->] (2.2,0) -- (2.2,2) node[midway, right, font=\scriptsize] {$\delta$};
+\node[font=\scriptsize, anchor=west] at (2.6,1.4) {eight squares of side $\delta/2$:};
+\node[font=\scriptsize, anchor=west] at (2.6,1.0) {at most one point in each};
+\end{tikzpicture}
+\par\smallskip{\small The strip argument. The points that follow $p$ in the $y$ order and are within $\delta$ of it lie
+in the shaded $2\delta \times \delta$ rectangle; each of its eight squares holds at most one point. Points on one side
+are at least $\delta$ apart; the point just right of the line is the one that can beat $\delta$.}
+\end{omfigure}
+
+\omcode{code/bachelor-1/21-divide-and-conquer/listings/closest_pair.py}{27}{45}{The closest pair, returning the points
+sorted by $y$ for the caller's strip}\label{lst:b1:divide-and-conquer:closest}
+
+Each call returns its points sorted by $y$, merged from the two halves, so that the strip is sorted without sorting:
+the combine step costs $\Theta(n)$ and the whole $\Theta(n \log n)$. On the town's 30 places and on random points:
+
+\omoutput{code/bachelor-1/21-divide-and-conquer/outputs/closest_pair.txt}{The closest pair of the town's places, and
+distances computed on random points, against \omterm{def:b1:backtracking:exhaustive}{brute force}.}\label{out:b1:divide-and-conquer:closest}
+
+On random points the strip is thin and holds few points: barely more than one distance per point.
+
+\section{Selection in linear time}\label{sec:b1:divide-and-conquer:selection}
+
+\begin{definition}[Selection problem, quickselect, median of medians]\label{def:b1:divide-and-conquer:selection}
+The \emph{selection problem}\index{selection problem} asks for the key of rank $k$ of $n$ keys, the one that would be
+at position $k$ if they were sorted; the median is the key of rank $\lfloor (n - 1)/2 \rfloor$. \emph{Quickselect}
+\index{quickselect} partitions the keys around a pivot, as \omterm{def:b1:sorting:quicksort}{quicksort} does, and goes on in the one part that holds rank
+$k$. The \emph{median of medians}\index{median of medians} chooses as pivot the median of the medians of groups of five
+keys, found by a recursive call.
+\end{definition}
+
+Sorting answers in $\Theta(n \log n)$; selection needs less. \omterm{def:b1:divide-and-conquer:selection}{Quickselect} makes one recursive call instead of two, so
+with pivots that halve the keys its cost is $n + n/2 + n/4 + \dots \leq 2n$ partition steps. With bad pivots it is
+quadratic, like \omterm{def:b1:sorting:quicksort}{quicksort}.
+
+\omcodes{code/bachelor-1/21-divide-and-conquer/listings/selection.py}{15-31,45-57}{Partition, \omterm{def:b1:divide-and-conquer:selection}{quickselect}, and the
+\omterm{def:b1:divide-and-conquer:selection}{median of medians}}\label{lst:b1:divide-and-conquer:select}
+
+\omoutput{code/bachelor-1/21-divide-and-conquer/outputs/selection.txt}{Comparisons to find the median of $n$ keys,
+sorted or shuffled.}\label{out:b1:divide-and-conquer:select}
+
+On a sorted list, the last key as pivot is the largest, and \omterm{def:b1:divide-and-conquer:selection}{quickselect} removes one key per round: about $n^2/2$
+partition steps from $n$ keys down to $n/2$, two comparisons per key and step: about $3n^2/4$, the 750\,500 of the
+table for $n = 1000$. A random pivot gives a linear cost on average. The \omterm{def:b1:divide-and-conquer:selection}{median of
+medians} gives it in the worst case.
+
+\begin{omfigure}
+\begin{tikzpicture}[scale=0.55]
+\fill[omDef!20] (-0.4,-0.4) rectangle (3.4,2.4);
+\fill[omThm!15] (2.6,1.6) rectangle (6.4,4.4);
+\foreach \c in {0,...,6} \foreach \r in {0,...,4} \fill (\c,\r) circle (3pt);
+\foreach \c in {0,...,6} \draw[gray] (\c,0) -- (\c,4);
+\draw[very thick, omThm] (3,2) circle (8pt);
+\draw[dashed] (-0.8,2) -- (6.8,2);
+\node[font=\scriptsize, anchor=west] at (7.2,2) {medians of the columns, in increasing order};
+\node[font=\scriptsize, anchor=west] at (7.2,4) {each column sorted, smallest at the bottom};
+\node[font=\scriptsize, anchor=west, omDef] at (7.2,0.5) {at most the pivot: $3 \cdot 4 = 12$ keys here};
+\node[font=\scriptsize, anchor=west, omThm] at (7.2,3.2) {at least the pivot: 12 keys};
+\end{tikzpicture}
+\par\smallskip{\small Thirty-five keys in seven columns of five, columns ordered by their median; the circled key, the
+median of the medians, is the pivot. The shaded block below and left holds keys no larger than the pivot, the one
+above and right keys no smaller: each about $3/10$ of all keys.}
+\end{omfigure}
+
+\begin{theorem}[Selection in linear time]\label{thm:b1:divide-and-conquer:mom}
+The \omterm{def:b1:divide-and-conquer:selection}{median of medians} finds the key of rank $k$ of $n$ keys in $O(n)$ comparisons.
+\end{theorem}
+
+\begin{proof}
+Of the $g = \lceil n/5 \rceil$ medians, at least $\lceil g/2 \rceil$ are at most the pivot, and each of their groups,
+except perhaps the pivot's own and a last incomplete one, holds three keys at most the pivot. So at least $3(\lceil
+g/2 \rceil - 2) \geq 3n/10 - 6$ keys are at most the pivot; likewise at least that many are at least the pivot. The
+recursive call on one side therefore receives at most $7n/10 + 6$ keys. Sorting the groups and partitioning cost at
+most $an$ comparisons for a constant $a$, so
+\[ T(n) \leq T(\lceil n/5 \rceil) + T(7n/10 + 6) + an. \]
+Suppose $T(j) \leq cj$ for $j < n$, with $n \geq 140$ and $c = 20a$, and $T$ bounded by $cj$ on small sizes by taking
+$c$ larger if needed. Then $T(n) \leq c(n/5 + 1) + c(7n/10 + 6) + an = cn - c(n/10 - 7) + an$, and $n/10 - 7 \geq
+n/20$ for $n \geq 140$, so $T(n) \leq cn - cn/20 + an = cn$.
+\end{proof}
+
+The proof works because $1/5 + 7/10 < 1$: the two calls together receive less than the whole. Groups of three fail
+this test (\cref{exo:b1:divide-and-conquer:10}). The constant is large: nine to eleven comparisons per key in
+\cref{out:b1:divide-and-conquer:select}, against three to seven for \omterm{def:b1:divide-and-conquer:selection}{quickselect} on shuffled keys or with random
+pivots. A practical routine runs \omterm{def:b1:divide-and-conquer:selection}{quickselect} and can fall back on a guaranteed method when the recursion goes too deep,
+as \omterm{def:b1:sorting:introsort}{introsort} does for sorting. The algorithm is due to Blum, Floyd, Pratt, Rivest and Tarjan, in 1973.
+
+\section{Dichotomy on the answer, and meeting in the middle}\label{sec:b1:divide-and-conquer:dichotomy}
+
+Binary search halves a sorted \omterm{def:b1:pointers-and-arrays:array}{array} (\cref{prop:b1:program-correctness:bsearch}). It halves anything ordered, including
+the answers to a question.
+
+\begin{definition}[Monotone predicate, dichotomy on the answer]\label{def:b1:divide-and-conquer:dichotomy}
+A predicate $P$ on the integers is \emph{monotone}\index{monotone predicate} if $P(x)$ implies $P(x + 1)$: false up to
+some point, true after it. A \emph{dichotomy on the answer}\index{dichotomy on the answer} finds the smallest $x$ in
+$[lo, hi]$ with $P(x)$, knowing $P(hi)$, by binary search on $x$, with $\lceil \log_2 (hi - lo + 1) \rceil$ evaluations
+of $P$.
+\end{definition}
+
+The town wants to cover its 30 places with $k$ snow-clearing zones, each a band of the same width from west to east.
+For a given width, a greedy pass decides whether $k$ bands suffice: start a band at the westernmost place not yet
+covered. A larger width never needs more bands, so the predicate is \omterm{def:b1:divide-and-conquer:dichotomy}{monotone}, and the smallest width is found by
+dichotomy.
+
+\omcodes{code/bachelor-1/21-divide-and-conquer/listings/segments.py}{10-31}{The greedy test and the dichotomy on the
+width}\label{lst:b1:divide-and-conquer:segments}
+
+\omoutput{code/bachelor-1/21-divide-and-conquer/outputs/segments.txt}{The smallest width of $k$ bands covering the
+town's places, and the number of tests.}\label{out:b1:divide-and-conquer:segments}
+
+Twelve or thirteen tests decide among 5625 widths. The method applies whenever checking an answer is easier than
+finding it, and the check is \omterm{def:b1:divide-and-conquer:dichotomy}{monotone}.
+
+\begin{definition}[Meet in the middle]\label{def:b1:divide-and-conquer:meet}
+\emph{Meeting in the middle}\index{meet in the middle} splits a search over choices into two halves, lists the partial
+results of each half, and finds the compatible pairs by sorting or hashing, instead of trying every combination.
+\end{definition}
+
+The subset-sum search of \cref{ch:b1:backtracking} visits up to $2^n$ subsets. Split the $n$ values into two halves:
+each has $2^{n/2}$ subset sums; a subset of all the values sums to the target exactly when its left part sums to $s$ and
+its right part to $\mathit{target} - s$. A table of how many right subsets give each sum answers that question for all
+$s$.
+
+\omcodes{code/bachelor-1/21-divide-and-conquer/listings/meet_middle.py}{16-30}{Subset sum by meeting in the
+middle}\label{lst:b1:divide-and-conquer:meet}
+
+\omoutput{code/bachelor-1/21-divide-and-conquer/outputs/meet_middle.txt}{Reading lists of exactly 1000 pages from the
+first $n$ books.}\label{out:b1:divide-and-conquer:meet}
+
+The counts for 16 and 24 books are those found by \omterm{def:b1:backtracking:backtracking}{backtracking} in \cref{out:b1:backtracking:subset-sum}. The cost is
+$\Theta(2^{n/2})$ sums and table operations, with a table of the same size: memory is traded for time. Forty books are
+reached with two million sums, where the full tree has a trillion leaves.
+
+\section{Exercises}\label{sec:b1:divide-and-conquer:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:divide-and-conquer:1}
+List the inversions of $[3, 1, 4, 1, 5, 9, 2, 6]$ and check the count of \cref{out:b1:divide-and-conquer:inversions}.
+How many are counted by the top-level merge?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:divide-and-conquer:2}
+Give the three products of halves that Karatsuba's method computes at the top level for $1234 \times 5678$, the sign
+$s$, and the result.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:divide-and-conquer:3}
+Run \code{quickselect} by hand on $[7, 2, 9, 4, 1, 8, 5]$ with $k = 5$ and the last key as pivot: give the pivots and
+the parts kept.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:divide-and-conquer:4}
+For the points $0, 3, 4, 10, 12, 20$ and $k = 2$, give the values of \code{covers} for every width, and the widths the
+dichotomy tests.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:divide-and-conquer:5}
+This version compares each point of the strip with the next one only. Explain the counterexample it finds.
+\omcode{code/bachelor-1/21-divide-and-conquer/listings/exo_strip_bug.py}{7}{16}{A strip checked too lightly}
+\omoutput[2-3]{code/bachelor-1/21-divide-and-conquer/outputs/exo_strip_bug.txt}{Against \omterm{def:b1:backtracking:exhaustive}{brute force}.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:divide-and-conquer:6}
+This dichotomy computes a cube root with an absolute tolerance. Explain why it never ends for $y = 10^{15}$, and repair
+it.
+\omcode{code/bachelor-1/21-divide-and-conquer/listings/exo_float_bisect.py}{4}{18}{A dichotomy on reals}
+\omoutput[2-4]{code/bachelor-1/21-divide-and-conquer/outputs/exo_float_bisect.txt}{Three cube roots.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:divide-and-conquer:7}
+Compute the largest sum of a non-empty slice of a list by \omterm{def:b1:divide-and-conquer:dc}{divide and conquer}, in $O(n \log n)$, and test it against a
+linear method that keeps the best sum ending at each position.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:divide-and-conquer:8}
+A \emph{majority key} of a list is held by more than half of its positions. Find it, or report that there is none, by
+\omterm{def:b1:divide-and-conquer:dc}{divide and conquer} in $O(n \log n)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:divide-and-conquer:9}
+Karatsuba's method pads numbers of $n$ digits to the next power of 2. Show that it makes fewer than $3 n^{\log_2 3}$
+digit products, and that with a cutoff $2^j$ it makes $3^{k-j} 4^j$ on $2^k$ digits.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:divide-and-conquer:10}
+Show that the \omterm{def:b1:divide-and-conquer:selection}{median of medians} with groups of three gives the recurrence $T(n) \leq T(n/3) + T(2n/3) + an$, and that
+this recurrence does not imply $T(n) = O(n)$: its solution with equality is $\Theta(n \log n)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:divide-and-conquer:11}
+Buildings are rectangles $(\mathit{left}, \mathit{right}, \mathit{height})$ standing on a line. Compute the skyline,
+the list of points where the visible height changes, by \omterm{def:b1:divide-and-conquer:dc}{divide and conquer} in $O(n \log n)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:divide-and-conquer:12}
+Find four positions $i < j < k < m$ of a list whose keys sum to a target in $O(n^2 \log n)$, by meeting in the middle
+on the sums of pairs, and prove the method correct.
+\end{exercise}
+
+\section{Problem: Multiplying long numbers}\label{sec:b1:divide-and-conquer:problem}
+
+\begin{problem}[{Weekend problem --- Multiplying long numbers}]\label{pb:b1:divide-and-conquer:1}
+The listings of this chapter multiply numbers given as lists of decimal digits. The problem counts their work exactly,
+then reads their measured times (\cref{out:b1:divide-and-conquer:karatsuba,out:b1:divide-and-conquer:timing}).
+
+\medskip\noindent\textbf{Part I --- The school method.}
+\begin{enumerate}
+\item How many digit products does the school method make for two numbers of $n$ digits? Check with the output.
+\item Show that a cell of \code{r}, before the carries, holds at most $81n$.
+\item Show that propagating the carries once, at the end, costs $\Theta(n)$ and gives the right digits.
+\item Why does the result of two $n$-digit numbers fit in $2n$ digits?
+\item By what factor does the school method's time grow when $n$ doubles, according to the table? What does the
+model predict?
+\item How many digit products does the hook's multiplication of two 1000-digit numbers take?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Karatsuba's identity.}
+\begin{enumerate}[resume]
+\item Expand $ab$ with $a = a_1 10^m + a_0$, $b = b_1 10^m + b_0$.
+\item Prove $a_1 b_0 + a_0 b_1 = a_1 b_1 + a_0 b_0 - (a_1 - a_0)(b_1 - b_0)$.
+\item Why do $|a_1 - a_0|$ and $|b_1 - b_0|$ have at most $m$ digits?
+\item What does \code{difference} return, and why does it compare from the top digit?
+\item The combine loop leaves cells that may be negative. Why does \code{normalise} still give the right digits?
+\item Write the recurrence for the number $K(n)$ of digit products, $n$ a power of 2.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Exact counts.}
+\begin{enumerate}[resume]
+\item Prove $K(2^k) = 3^k$.
+\item Show that $3^k = n^{\log_2 3}$ for $n = 2^k$.
+\item Compare $K(1024)$ with $1024^2$.
+\item Show that the other work of one call on $n$ digits is $\Theta(n)$, and that the total work is still
+$\Theta(n^{\log_2 3})$.
+\item With a cutoff $c = 2^j$, how many digit products are made on $2^k$ digits (\cref{exo:b1:divide-and-conquer:9})?
+Give the count for $n = 1024$ and $c = 32$.
+\item Which cutoff minimises the number of digit products? Why is a larger one used anyway?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Where it pays, on this machine.}
+\begin{enumerate}[resume]
+\item Without a cutoff, by what factor is Karatsuba's method slower than the school method at each $n$ of the table?
+How does that factor change when $n$ doubles?
+\item Estimate from that trend the size from which Karatsuba's method without a cutoff would win.
+\item From which $n$ of the table does Karatsuba's method with cutoff 8, then with cutoff 32, beat the school method?
+\item By what factor does the time with cutoff 32 grow when $n$ doubles at the end of the table? Compare with $3$ and
+$4$.
+\item CPython's cutoff is 70 digits of 30 bits. How many decimal digits is that?
+\item State the named result, \emph{Karatsuba's count}.
+\end{enumerate}
+\end{problem}

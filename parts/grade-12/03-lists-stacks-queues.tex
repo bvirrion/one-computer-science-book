@@ -1,0 +1,395 @@
+% Provenance (never printed): NSI terminale "Structures de donnees: listes, piles, files; interface et
+% implementation; structures lineaires". See sources/book2/BRIEFS.md.
+\chapter{Linked Lists, Stacks and Queues}\label{ch:g12:lists-stacks-queues}
+
+The undo button of an editor cancels the last change first, then the one before it: the newest change leaves
+first. A printer serves its waiting documents in the order they came: the oldest leaves first. The two are the same
+idea, a line of things waiting, taken from opposite ends; and each has a name, an interface, and more than one way to
+build it.
+
+This chapter separates what a structure does from how it is built. It builds the \omterm{def:g12:lists-stacks-queues:linked-list}{linked list}, a chain of small \omterm{def:g12:lists-stacks-queues:linked-list}{cells},
+and from it the \omterm{def:g12:lists-stacks-queues:stack}{stack} and the \omterm{def:g12:lists-stacks-queues:queue}{queue}, each in two ways; it counts what each operation costs; and it uses them to check
+brackets, to compute, and to simulate a day at a post office counter.
+
+\begin{recall}
+A class groups data with its methods, and an invariant is kept by the methods (chapter
+\ref{ch:g12:classes-and-objects}). A module offers an interface and hides its \omterm{def:g11:modules-and-interfaces:interface}{implementation} (chapter
+\ref{ch:g11:modules-and-interfaces}). The cost of an algorithm (chapter \ref{ch:g11:cost-of-an-algorithm}). A
+dictionary finds a value from its key (Book 1, grade 8).
+\end{recall}
+
+\section{A structure is defined by its operations}\label{sec:g12:lists-stacks-queues:adt}
+
+\begin{definition}[Abstract data type]\label{def:g12:lists-stacks-queues:adt}
+An \emph{abstract data type}\index{abstract data type} is a kind of data defined only by its operations and what
+each one does: an interface with its specifications. How the data is stored, its \omterm{def:g11:modules-and-interfaces:interface}{implementation}, is left out; one
+abstract data type can have several \omterm{def:g11:modules-and-interfaces:interface}{implementations}, and a program that uses only the interface works with any of
+them.
+\end{definition}
+
+This is the idea of the module interface, applied to data. The \omterm{def:g12:lists-stacks-queues:stack}{stack} and the \omterm{def:g12:lists-stacks-queues:queue}{queue} below are \omterm{def:g12:lists-stacks-queues:adt}{abstract data types}; the
+\omterm{def:g12:lists-stacks-queues:linked-list}{linked list} is one way to implement them.
+
+\section{The linked list}\label{sec:g12:lists-stacks-queues:linked}
+
+\begin{definition}[Linked list, cell]\label{def:g12:lists-stacks-queues:linked-list}
+A \emph{linked list}\index{linked list} is a sequence stored as a chain of \emph{cells}\index{cell (linked list)}:
+each cell holds one value and a link to the next cell, and the last cell's link is \code{None}. The list is known by
+its first cell, its head.
+\end{definition}
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/cell.py}{1}{23}{\omterm{def:g12:lists-stacks-queues:linked-list}{Cells}, and two conversions to and from Python
+lists.}\label{lst:g12:lists-stacks-queues:cell}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, val/.style={draw, minimum width=7mm, minimum height=6mm, fill=omDef!10},
+    lnk/.style={draw, minimum width=5mm, minimum height=6mm}]
+  \node at (-1.3,0) {\code{head}};
+  \foreach \v [count=\i] in {3, 1, 4, 1} {
+    \node[val] (v\i) at ({2.0*(\i-1)},0) {$\v$};
+    \node[lnk, right=0pt of v\i] (l\i) {};
+  }
+  \draw[->, thick] (-0.9,0) -- (v1.west);
+  \foreach \i/\j in {1/2, 2/3, 3/4} \draw[->, thick] (l\i.center) -- (v\j.west);
+  \fill (l1.center) circle (1.2pt); \fill (l2.center) circle (1.2pt); \fill (l3.center) circle (1.2pt);
+  \draw (l4.south west) -- (l4.north east);
+  \node[right] at (7.3,0) {\code{None}};
+  \node[font=\scriptsize, black!60] at (3.2,-0.8) {each cell: a value, and a link to the next cell};
+\end{tikzpicture}
+
+{\small The \omterm{def:g12:lists-stacks-queues:linked-list}{linked list} $3, 1, 4, 1$. Walking it means following the links from the head; the crossed box is the link
+\code{None} of the last cell. Inserting at the head is one new cell whose link is the old head.}
+\end{omfigure}
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/linked_demo.py}{1}{15}{Walking, inserting at the head, and
+removing a cell by skipping it.}\label{lst:g12:lists-stacks-queues:demo}
+
+\omoutput{code/grade-12/03-lists-stacks-queues/outputs/linked_demo.txt}{Inserting and removing changed one link each;
+no value moved.}\label{out:g12:lists-stacks-queues:demo}
+
+A \omterm{def:g12:lists-stacks-queues:linked-list}{linked list} and a Python list cost differently. Reading the value at index $i$ of a Python list takes the same
+short time for every $i$; in a \omterm{def:g12:lists-stacks-queues:linked-list}{linked list} it means walking $i$ links. Inserting at the front of a Python list shifts
+every element by one place; in a \omterm{def:g12:lists-stacks-queues:linked-list}{linked list} it is one new cell, whatever the length.
+
+\section{The stack}\label{sec:g12:lists-stacks-queues:stack}
+
+\begin{definition}[Stack, push, pop, LIFO]\label{def:g12:lists-stacks-queues:stack}
+A \emph{stack}\index{stack} is an \omterm{def:g12:lists-stacks-queues:adt}{abstract data type} holding a sequence of elements, with four operations: create an
+empty stack; test whether it is empty; \emph{push}\index{push} an element on top; \emph{pop}\index{pop} the top
+element, removing and returning it, which is refused on an empty stack. A fifth, \code{top}, returns the top without
+removing it. The last element pushed is the first popped: the stack is \emph{LIFO}\index{LIFO}, last in, first out.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, el/.style={draw, minimum width=12mm, minimum height=5mm, fill=omDef!10}]
+  \foreach \x/\n/\lab in {0/2/{before}, 3.4/3/{after \code{push("c")}}, 6.8/2/{after \code{pop()}}} {
+    \draw[thick] (\x-0.75,1.9) -- (\x-0.75,-0.05) -- (\x+0.75,-0.05) -- (\x+0.75,1.9);
+    \node[el] at (\x,0.25) {\code{"a"}}; \node[el] at (\x,0.75) {\code{"b"}};
+    \ifnum\n=3 \node[el, fill=omThm!15] at (\x,1.25) {\code{"c"}}; \fi
+    \node[below] at (\x,-0.1) {\lab};
+  }
+  \draw[->, omThm, thick] (1.0,1.6) to[bend left] node[above] {push} (2.55,1.35);
+  \draw[->, omThm, thick] (4.25,1.35) to[bend left] node[above] {pop returns \code{"c"}} (5.95,1.6);
+\end{tikzpicture}
+
+{\small A \omterm{def:g12:lists-stacks-queues:stack}{stack} before and after one \omterm{def:g12:lists-stacks-queues:stack}{push} and one \omterm{def:g12:lists-stacks-queues:stack}{pop}. Only the top is reachable; the \omterm{def:g12:lists-stacks-queues:stack}{pop} gives back the element of
+the last \omterm{def:g12:lists-stacks-queues:stack}{push}.}
+\end{omfigure}
+
+Two \omterm{def:g11:modules-and-interfaces:interface}{implementations} share one interface. In the first, the top is the end of a Python list; in the second, the top
+is the head of a \omterm{def:g12:lists-stacks-queues:linked-list}{linked list}. Both \omterm{def:g12:lists-stacks-queues:stack}{push} and \omterm{def:g12:lists-stacks-queues:stack}{pop} in a time that does not depend on the number of elements.
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/stack_list.py}{1}{22}{A \omterm{def:g12:lists-stacks-queues:stack}{stack} in a Python
+list.}\label{lst:g12:lists-stacks-queues:stack-list}
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/stack_linked.py}{1}{25}{The same interface, with linked
+\omterm{def:g12:lists-stacks-queues:linked-list}{cells}.}\label{lst:g12:lists-stacks-queues:stack-linked}
+
+Since both promise the same behaviour, one \omterm{def:g10:specifications-and-tests:test-suite}{test suite} checks both: the tests use only the interface, and the class
+under test is chosen by a loop.
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/stacks_tests.py}{1}{31}{One suite of tests for the \omterm{def:g12:lists-stacks-queues:stack}{stack}
+interface.}\label{lst:g12:lists-stacks-queues:stacks-tests}
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/stacks_tests.py}{34}{43}{The suite run on each \omterm{def:g11:modules-and-interfaces:interface}{implementation} in
+turn.}\label{lst:g12:lists-stacks-queues:stacks-tests-run}
+
+\omoutput{code/grade-12/03-lists-stacks-queues/outputs/stacks_tests.txt}{Both \omterm{def:g11:modules-and-interfaces:interface}{implementations} pass the four
+tests.}\label{out:g12:lists-stacks-queues:stacks-tests}
+
+\section{The queue}\label{sec:g12:lists-stacks-queues:queue}
+
+\begin{definition}[Queue, enqueue, dequeue, FIFO]\label{def:g12:lists-stacks-queues:queue}
+A \emph{queue}\index{queue} is an \omterm{def:g12:lists-stacks-queues:adt}{abstract data type} holding a sequence, with the operations: create an empty queue;
+test whether it is empty; \emph{enqueue}\index{enqueue} an element at the back; \emph{dequeue}\index{dequeue} the
+element at the front, removing and returning it, refused on an empty queue. The first element enqueued is the first
+dequeued: the queue is \emph{FIFO}\index{FIFO}, first in, first out.
+\end{definition}
+
+A \omterm{def:g12:lists-stacks-queues:linked-list}{linked list} makes a \omterm{def:g12:lists-stacks-queues:queue}{queue} if the program keeps a second pointer, to the last cell: elements leave at the head and
+arrive after the tail. Both operations then change one or two links.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, val/.style={draw, minimum width=7mm, minimum height=6mm, fill=omDef!10},
+    lnk/.style={draw, minimum width=5mm, minimum height=6mm}]
+  \foreach \v [count=\i] in {5, 8, 2} {
+    \node[val] (v\i) at ({2.0*(\i-1)},0) {$\v$};
+    \node[lnk, right=0pt of v\i] (l\i) {};
+  }
+  \node[val, dashed, fill=omThm!10] (v4) at (6,0) {$7$}; \node[lnk, dashed, right=0pt of v4] (l4) {};
+  \foreach \i/\j in {1/2, 2/3} {\fill (l\i.center) circle (1.2pt); \draw[->, thick] (l\i.center) -- (v\j.west);}
+  \fill[omThm] (l3.center) circle (1.2pt); \draw[->, thick, dashed, omThm] (l3.center) -- (v4.west);
+  \draw (l4.south west) -- (l4.north east);
+  \node (h) at (0,1.3) {\code{_head}}; \draw[->, thick] (h) -- (v1.north);
+  \node (t) at (4,1.3) {\code{_tail}}; \draw[->, thick] (t) -- (v3.north);
+  \draw[->, thick, dashed, omThm] (t.east) to[bend left=20] (v4.north);
+  \node[font=\scriptsize, omThm] at (6.3,-0.8) {enqueue 7};
+  \node[font=\scriptsize] at (0,-0.8) {dequeue here};
+\end{tikzpicture}
+
+{\small A linked \omterm{def:g12:lists-stacks-queues:queue}{queue} holding $5, 8, 2$. Enqueueing $7$ links a new cell after the tail and moves \code{_tail} to it
+(dashed); dequeueing moves \code{_head} to the next cell.}
+\end{omfigure}
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/queue_linked.py}{1}{31}{A linked \omterm{def:g12:lists-stacks-queues:queue}{queue}, which also counts its
+moves.}\label{lst:g12:lists-stacks-queues:queue-linked}
+
+The second \omterm{def:g11:modules-and-interfaces:interface}{implementation} surprises: a \omterm{def:g12:lists-stacks-queues:queue}{queue} made of two \omterm{def:g12:lists-stacks-queues:stack}{stacks}. Arrivals are pushed on an \omterm{def:g12:lists-stacks-queues:stack}{in-stack}. To \omterm{def:g12:lists-stacks-queues:queue}{dequeue}, the
+program \omterm{def:g12:lists-stacks-queues:stack}{pops} from an \omterm{def:g12:lists-stacks-queues:stack}{out-stack}; when the \omterm{def:g12:lists-stacks-queues:stack}{out-stack} is empty, it first \omterm{def:g12:lists-stacks-queues:stack}{pops} every element of the \omterm{def:g12:lists-stacks-queues:stack}{in-stack} and \omterm{def:g12:lists-stacks-queues:stack}{pushes}
+it on the \omterm{def:g12:lists-stacks-queues:stack}{out-stack}, which reverses their order and puts the oldest on top.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, el/.style={draw, minimum width=8mm, minimum height=5mm, fill=omDef!10}]
+  \foreach \x/\lab in {0/{in}, 2/{out}, 7/{in}, 9/{out}} {
+    \draw[thick] (\x-0.5,1.9) -- (\x-0.5,-0.05) -- (\x+0.5,-0.05) -- (\x+0.5,1.9);
+    \node[below] at (\x,-0.1) {\lab};
+  }
+  \foreach \v [count=\i] in {1, 2, 3} \node[el] at (0,{0.25+0.5*(\i-1)}) {$\v$};
+  \foreach \v [count=\i] in {3, 2} \node[el] at (9,{0.25+0.5*(\i-1)}) {$\v$};
+  \node[el, fill=omThm!15] (d) at (10.9,1.0) {$1$};
+  \node[font=\scriptsize, omThm, above] at (d.north) {dequeued};
+  \draw[->, omThm, thick] (9,1.2) to[bend left] (d.west);
+  \draw[->, thick] (3.1,1) -- node[above, align=center, font=\scriptsize] {dequeue: out is\\ empty, so transfer}
+    (5.9,1);
+  \node[font=\scriptsize, black!60] at (1,2.3) {after enqueueing $1, 2, 3$};
+  \node[font=\scriptsize, black!60] at (8,2.3) {after the first dequeue};
+\end{tikzpicture}
+
+{\small A \omterm{def:g12:lists-stacks-queues:queue}{queue} from two \omterm{def:g12:lists-stacks-queues:stack}{stacks}. The transfer \omterm{def:g12:lists-stacks-queues:stack}{pops} $3$, $2$, $1$ from the \omterm{def:g12:lists-stacks-queues:stack}{in-stack} and \omterm{def:g12:lists-stacks-queues:stack}{pushes} them on the \omterm{def:g12:lists-stacks-queues:stack}{out-stack},
+where $1$, the oldest, is now on top. The next two \omterm{def:g12:lists-stacks-queues:queue}{dequeues} \omterm{def:g12:lists-stacks-queues:stack}{pop} $2$ and $3$ with no transfer.}
+\end{omfigure}
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/queue_two_stacks.py}{1}{26}{A \omterm{def:g12:lists-stacks-queues:queue}{queue} made of two
+\omterm{def:g12:lists-stacks-queues:stack}{stacks}.}\label{lst:g12:lists-stacks-queues:queue-stacks}
+
+One \omterm{def:g12:lists-stacks-queues:queue}{dequeue} can be slow: it may transfer every element. But an element is transferred at most once, since it never
+goes back to the \omterm{def:g12:lists-stacks-queues:stack}{in-stack}. Counting a ``move'' each time an element is pushed on the \omterm{def:g12:lists-stacks-queues:stack}{in-stack}, transferred, or popped
+from the \omterm{def:g12:lists-stacks-queues:stack}{out-stack}, each element makes at most three moves in its whole life: $n$ \omterm{def:g12:lists-stacks-queues:queue}{enqueues} followed by any \omterm{def:g12:lists-stacks-queues:queue}{dequeues}
+cost at most $3n$ moves in all, however they are interleaved (exercise \ref{exo:g12:lists-stacks-queues:12}).
+
+The two \omterm{def:g12:lists-stacks-queues:queue}{queues} pass one suite of tests, written like the \omterm{def:g12:lists-stacks-queues:stack}{stack} suite; here is one of its four tests.
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/queues_tests.py}{18}{25}{A test that mixes \omterm{def:g12:lists-stacks-queues:queue}{enqueues} and
+\omterm{def:g12:lists-stacks-queues:queue}{dequeues}.}\label{lst:g12:lists-stacks-queues:queues-tests}
+
+\omoutput{code/grade-12/03-lists-stacks-queues/outputs/queues_tests.txt}{Both \omterm{def:g12:lists-stacks-queues:queue}{queues} pass.}%
+\label{out:g12:lists-stacks-queues:queues-tests}
+
+\section{Using them}\label{sec:g12:lists-stacks-queues:using}
+
+\subsection*{Checking brackets}
+
+In a program, every opening bracket must be closed by a bracket of the same kind, the last opened being the first
+closed: a \omterm{def:g12:lists-stacks-queues:stack}{stack}. Each opening is pushed; each closing must match the top, which is popped; at the end nothing may be
+left open.
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/brackets.py}{1}{18}{Balanced brackets, with a
+\omterm{def:g12:lists-stacks-queues:stack}{stack}.}\label{lst:g12:lists-stacks-queues:brackets}
+
+\omoutput{code/grade-12/03-lists-stacks-queues/outputs/brackets.txt}{\code{(]} closes the wrong kind; \code{((x)}
+leaves one open; \code{x)(} closes before opening.}\label{out:g12:lists-stacks-queues:brackets}
+
+\subsection*{Computing in postfix notation}
+
+\begin{definition}[Postfix notation]\label{def:g12:lists-stacks-queues:postfix}
+In \emph{postfix notation}\index{postfix notation}, an operator is written after its two operands: $3 + 4$ is
+\code{3 4 +}, and $(3 + 4) \times 2$ is \code{3 4 + 2 *}. No brackets and no priority rules are needed: the order of
+the operators says everything.
+\end{definition}
+
+A postfix expression is evaluated with one \omterm{def:g12:lists-stacks-queues:stack}{stack}: a number is pushed; an operator \omterm{def:g12:lists-stacks-queues:stack}{pops} two numbers, the right operand
+first, and \omterm{def:g12:lists-stacks-queues:stack}{pushes} the result. At the end the \omterm{def:g12:lists-stacks-queues:stack}{stack} holds exactly one number, the value.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, el/.style={draw, minimum width=8mm, minimum height=5mm, fill=omDef!10}]
+  \foreach \t/\x in {3/0, 4/1.6, +/3.2, 2/4.8, */6.4} \node at (\x,-0.5) {read \texttt{\t}};
+  \node[el] at (0,0.25) {$3$};
+  \node[el] at (1.6,0.25) {$3$}; \node[el] at (1.6,0.75) {$4$};
+  \node[el, fill=omThm!15] at (3.2,0.25) {$7$};
+  \node[el] at (4.8,0.25) {$7$}; \node[el] at (4.8,0.75) {$2$};
+  \node[el, fill=omThm!15] at (6.4,0.25) {$14$};
+  \foreach \x in {0, 1.6, 3.2, 4.8, 6.4} \draw[thick] (\x-0.5,1.3) -- (\x-0.5,-0.05) -- (\x+0.5,-0.05) -- (\x+0.5,1.3);
+\end{tikzpicture}
+
+{\small The \omterm{def:g12:lists-stacks-queues:stack}{stack} while \code{3 4 + 2 *} is read, one picture per token. An operator replaces the two numbers on top
+by its result (shaded); $14$ is left alone at the end.}
+\end{omfigure}
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/postfix.py}{1}{30}{A postfix calculator.}%
+\label{lst:g12:lists-stacks-queues:postfix}
+
+\omoutput{code/grade-12/03-lists-stacks-queues/outputs/postfix.txt}{The top after each token, then three values and a
+malformed expression.}\label{out:g12:lists-stacks-queues:postfix}
+
+\subsection*{A waiting line}
+
+A counter serves people in the order they came: a \omterm{def:g12:lists-stacks-queues:queue}{queue}. Here people arrive at random, and the counter serves one
+every two minutes.
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/waiting_line.py}{1}{13}{Ten minutes at a
+counter.}\label{lst:g12:lists-stacks-queues:line}
+
+\omoutput{code/grade-12/03-lists-stacks-queues/outputs/waiting_line.txt}{Each person leaves in the order of arrival;
+\code{c31} waits four minutes behind \code{c30}.}\label{out:g12:lists-stacks-queues:line}
+
+\subsection*{Choosing a structure}
+
+The choice follows from the operations the program needs. Undo, brackets, the calls of a \omterm{def:g12:recursion:recursion}{recursive function}: a
+\omterm{def:g12:lists-stacks-queues:stack}{stack}. Services in order of arrival, a printer, the visit of a \omterm{def:g10:graphs-first-look:graph}{graph} level by level (chapter
+\ref{ch:g12:graph-algorithms}): a \omterm{def:g12:lists-stacks-queues:queue}{queue}. Many insertions at the front: a \omterm{def:g12:lists-stacks-queues:linked-list}{linked list}. Reading by index: a Python list.
+Finding a value from a key: a dictionary, which does not scan its keys at all.
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/list_vs_dict.py}{1}{20}{Finding a key in a list of pairs and in
+a dictionary.}\label{lst:g12:lists-stacks-queues:list-dict}
+
+\omoutput{code/grade-12/03-lists-stacks-queues/outputs/list_vs_dict.txt}{On the author's laptop: the scan grows ten
+times with $n$, the dictionary stays at about $0.01$ microseconds.}\label{out:g12:lists-stacks-queues:list-dict}
+
+\section{Exercises}\label{sec:g12:lists-stacks-queues:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g12:lists-stacks-queues:1}
+From an empty \omterm{def:g12:lists-stacks-queues:stack}{stack}: \omterm{def:g12:lists-stacks-queues:stack}{push} $1$, \omterm{def:g12:lists-stacks-queues:stack}{push} $2$, \omterm{def:g12:lists-stacks-queues:stack}{push} $3$, \omterm{def:g12:lists-stacks-queues:stack}{pop}, \omterm{def:g12:lists-stacks-queues:stack}{push} $4$, \omterm{def:g12:lists-stacks-queues:stack}{pop}, \omterm{def:g12:lists-stacks-queues:stack}{pop}. What did the \omterm{def:g12:lists-stacks-queues:stack}{pops} return, and what is
+left?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:lists-stacks-queues:2}
+From an empty \omterm{def:g12:lists-stacks-queues:queue}{queue}: \omterm{def:g12:lists-stacks-queues:queue}{enqueue} \code{a}, \code{b}, \code{c}, \omterm{def:g12:lists-stacks-queues:queue}{dequeue}, \omterm{def:g12:lists-stacks-queues:queue}{enqueue} \code{d}, \omterm{def:g12:lists-stacks-queues:queue}{dequeue}. What did the \omterm{def:g12:lists-stacks-queues:queue}{dequeues}
+return, and what is left, front first?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:lists-stacks-queues:3}
+Give the \omterm{def:g12:lists-stacks-queues:stack}{stack} after each character of \code{{[()]}(}, and the answer of \code{balanced}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:lists-stacks-queues:4}
+Evaluate \code{5 1 2 + 4 * + 3 -} by hand, with the \omterm{def:g12:lists-stacks-queues:stack}{stack} after each token.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:lists-stacks-queues:5}
+Add a method \code{size} to both \omterm{def:g12:lists-stacks-queues:stack}{stacks}. In the linked \omterm{def:g12:lists-stacks-queues:stack}{stack}, it must not walk the \omterm{def:g12:lists-stacks-queues:linked-list}{cells}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:lists-stacks-queues:6}
+If \code{pop} did not test for an empty \omterm{def:g12:lists-stacks-queues:stack}{stack}, what would each \omterm{def:g11:modules-and-interfaces:interface}{implementation} raise on an empty \omterm{def:g12:lists-stacks-queues:stack}{stack}? Why is the
+test worth writing?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:lists-stacks-queues:7}
+Write the length of a \omterm{def:g12:lists-stacks-queues:linked-list}{linked list} given by its head, recursively and with a loop.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:lists-stacks-queues:8}
+A student's \omterm{def:g12:lists-stacks-queues:queue}{queue} decides that it is empty by \code{self._tail is None}, and its \code{dequeue} never changes
+\code{_tail}. \omterm{def:g12:lists-stacks-queues:queue}{Enqueue} $1$, \omterm{def:g12:lists-stacks-queues:queue}{dequeue}, \omterm{def:g12:lists-stacks-queues:queue}{enqueue} $2$: where is $2$, and what does the next \omterm{def:g12:lists-stacks-queues:queue}{dequeue} do?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:lists-stacks-queues:9}
+On the \omterm{def:g12:lists-stacks-queues:stack}{two-stack} \omterm{def:g12:lists-stacks-queues:queue}{queue}: \omterm{def:g12:lists-stacks-queues:queue}{enqueue} $1$, $2$, $3$, \omterm{def:g12:lists-stacks-queues:queue}{dequeue}, \omterm{def:g12:lists-stacks-queues:queue}{enqueue} $4$, then \omterm{def:g12:lists-stacks-queues:queue}{dequeue} three times. Count the moves after
+each operation.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:lists-stacks-queues:10}
+Write \code{reverse(head)}, which reverses a \omterm{def:g12:lists-stacks-queues:linked-list}{linked list} by changing its links, without creating a cell, and returns
+the new head.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:lists-stacks-queues:11}
+Write $(2 + 3) \times (7 - 4) / 5$ in \omterm{def:g12:lists-stacks-queues:postfix}{postfix notation}, and evaluate it with the \omterm{def:g12:lists-stacks-queues:stack}{stack} method.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:lists-stacks-queues:12}
+Prove that, in the \omterm{def:g12:lists-stacks-queues:stack}{two-stack} \omterm{def:g12:lists-stacks-queues:queue}{queue}, each element makes at most three moves, and deduce that any sequence of
+operations containing $n$ \omterm{def:g12:lists-stacks-queues:queue}{enqueues} makes at most $3n$ moves.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:lists-stacks-queues:13}
+Write a \omterm{def:g12:lists-stacks-queues:queue}{queue} of fixed capacity kept in a Python list of that length, with the index of the oldest element and the
+number of elements; the indices wrap around to $0$ at the end of the list. A full \omterm{def:g12:lists-stacks-queues:queue}{queue} refuses to \omterm{def:g12:lists-stacks-queues:queue}{enqueue}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:lists-stacks-queues:14}
+Write \code{to_postfix(expression)} for expressions of numbers, \code{+}, \code{-}, \code{*}, \code{/} and brackets,
+tokens separated by spaces. Numbers go straight to the output; operators wait on a \omterm{def:g12:lists-stacks-queues:stack}{stack}, which first gives up the
+operators of priority greater than or equal to the new one; a closing bracket empties the \omterm{def:g12:lists-stacks-queues:stack}{stack} down to its opening
+bracket.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:lists-stacks-queues:15}
+Call a string of the characters \code{(}, \code{)}, \code{[}, \code{]} \emph{balanced} if it is empty, or of the form
+$(u)v$ or $[u]v$ with $u$ and $v$ balanced. Prove that \code{balanced} returns \code{True} exactly on the balanced
+strings.
+\end{exercise}
+
+\section{Problem: The Queue at the Post Office}\label{sec:g12:lists-stacks-queues:problem}
+
+\begin{problem}[{Weekend problem --- a day at the counter}]\label{pb:g12:lists-stacks-queues:1}
+A post office opens for $480$ minutes. In each minute, a customer arrives with chance $0.3$; one clerk serves the
+line in order, each service taking $1$ to $5$ minutes. At closing time the doors shut and the people inside are still
+served. The program runs the same day, with the same random numbers, on both \omterm{def:g12:lists-stacks-queues:queue}{queues}.
+
+\omcode{code/grade-12/03-lists-stacks-queues/listings/post_office.py}{1}{33}{A day at the post office, on both
+\omterm{def:g12:lists-stacks-queues:queue}{queues}.}\label{lst:g12:lists-stacks-queues:post}
+
+\omoutput{code/grade-12/03-lists-stacks-queues/outputs/post_office.txt}{One day, two \omterm{def:g11:modules-and-interfaces:interface}{implementations}.}%
+\label{out:g12:lists-stacks-queues:post}
+
+\medskip\noindent\textbf{Part I --- The queue as an abstract data type.}
+\begin{enumerate}
+  \item Which operations of the \omterm{def:g12:lists-stacks-queues:queue}{queue} does \code{simulate} use? Which attribute does it read that is not part of
+    the \omterm{def:g12:lists-stacks-queues:adt}{abstract data type}?
+  \item Why can \code{simulate} take the class \code{Queue} as an argument and work with either?
+  \item What does the \omterm{def:g12:lists-stacks-queues:queue}{queue} hold: the customers' names, or something else? Why is that enough?
+  \item The variable \code{waiting} counts the people in line. Why does the program keep it, rather than ask the
+    \omterm{def:g12:lists-stacks-queues:queue}{queue}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Two implementations.}
+\begin{enumerate}[resume]
+  \item In \code{queue_linked}, which links change at an \omterm{def:g12:lists-stacks-queues:queue}{enqueue} on an empty \omterm{def:g12:lists-stacks-queues:queue}{queue}, and on a \omterm{def:g12:lists-stacks-queues:queue}{queue} of three?
+  \item Why must \code{dequeue} set \code{_tail} to \code{None} when the \omterm{def:g12:lists-stacks-queues:queue}{queue} becomes empty?
+  \item In \code{queue_two_stacks}, when does a \omterm{def:g12:lists-stacks-queues:queue}{dequeue} transfer elements, and how many?
+  \item Give a sequence of $6$ operations in which one \omterm{def:g12:lists-stacks-queues:queue}{dequeue} makes $4$ moves.
+  \item Which \omterm{def:g11:modules-and-interfaces:interface}{implementation} would you pick for a \omterm{def:g12:lists-stacks-queues:queue}{queue} that is mostly empty? For one where every \omterm{def:g12:lists-stacks-queues:queue}{dequeue} must be
+    fast?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The simulation.}
+\begin{enumerate}[resume]
+  \item Why is the random generator built from a fixed seed?
+  \item Why do both \omterm{def:g11:modules-and-interfaces:interface}{implementations} give exactly the same customers, line and waits?
+  \item A service lasts $3$ minutes on average over the five durations, and a customer arrives about every
+    $1/0.3 \approx 3.3$ minutes. What happens to the line if the services become a little longer?
+  \item Why does the loop go on after minute $480$, and when does it stop?
+  \item Explain how the program finds each customer's wait.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Results and costs.}
+\begin{enumerate}[resume]
+  \item Read the number of customers, the longest line and the longest wait.
+  \item How many moves does the linked \omterm{def:g12:lists-stacks-queues:queue}{queue} make per customer? Why exactly that number?
+  \item How many does the \omterm{def:g12:lists-stacks-queues:stack}{two-stack} \omterm{def:g12:lists-stacks-queues:queue}{queue} make per customer? Why exactly $3$, and not at most $3$?
+  \item Is the \omterm{def:g12:lists-stacks-queues:stack}{two-stack} \omterm{def:g12:lists-stacks-queues:queue}{queue} slower in time? Compare the work of one move in each.
+  \item What would change in the moves if the program stopped at minute $480$, with people still in line?
+  \item State the result of the day, and of the comparison.
+\end{enumerate}
+\end{problem}

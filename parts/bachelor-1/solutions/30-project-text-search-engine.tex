@@ -1,0 +1,139 @@
+% Solutions of 30-project-text-search-engine.
+\section*{Chapter \ref{ch:b1:project-text-search-engine} --- Project: A Search Engine for a Folder of Texts}
+
+\begin{solution}{exo:b1:project-text-search-engine:1}
+\emph{it}, \emph{s}, \emph{nal}, \emph{s}, \emph{e}, \emph{mail}, \emph{v}. The digits and punctuation only separate.
+The letter Ü is the two bytes \code{0xC3 0x9C}, neither of them an ASCII letter, so it separates too. A reader would not
+call \emph{s}, \emph{nal}, \emph{e} or \emph{v} words. The query \emph{Ünal} goes through the same \omterm{def:b1:project-text-search-engine:tokenizer}{tokenizer} and becomes
+\emph{nal}, which is in the index for this line. So it is found, together with every other text in which a non-ASCII
+letter is followed by \emph{nal}: the rule is consistent, not exact.
+\end{solution}
+
+\begin{solution}{exo:b1:project-text-search-engine:2}
+\emph{the}: $(0, 2), (1, 2)$. \emph{cat}: $(0, 1), (1, 1), (2, 1)$. \emph{hat}: $(1, 1), (2, 1)$. \emph{a}: $(2, 3)$.
+The capitals of document 1 are lowercased, and the comma and semicolon of document 2 separate. There are 9 distinct
+words (\emph{the, cat, sat, on, mat, and, hat, a, bat}) and $5 + 4 + 4 = 13$ postings, one per distinct word of each
+document.
+\end{solution}
+
+\begin{solution}{exo:b1:project-text-search-engine:3}
+The steps, written (document of the result list, document of the second list): $(2, 1)$ advances the second list;
+$(2, 5)$ the first; $(5, 5)$ keeps 5; $(9, 6)$ the second; $(9, 14)$ the first; $(14, 14)$ keeps 14; $(20, 31)$ the
+first; $(31, 31)$ keeps 31. The result is $[5, 14, 31]$, after 8 runs of the body. The first list is then exhausted,
+and since every later document of the second list (40 and 41) is greater than all of the first, none of them can be
+in both.
+\end{solution}
+
+\begin{solution}{exo:b1:project-text-search-engine:4}
+Writing hits by their scores: $[4]$; $[4, 8]$, since 8 is better than its parent 4 and stays below it; $[1, 8, 4]$, the
+1 rising to the root; then the heap is full. 6 beats the root 1 and replaces it, and sinks below its worse child 4:
+$[4, 8, 6]$. 9 beats 4, replaces it and sinks below 6: $[6, 8, 9]$. 3 does not beat 6 and is dropped. 7 beats 6 and
+stays at the root, both children being better: $[7, 8, 9]$. \code{topk_sorted} returns 9 (document 4), 8 (document 1)
+and 7 (document 6).
+\end{solution}
+
+\begin{solution}{exo:b1:project-text-search-engine:5}
+A word is counted only when a separator ends it. In the third text the last word, \emph{fish}, is followed by no byte
+at all, so it is never counted. The function fails on every text whose last byte is a letter, which is a file without
+a final newline ending on a word, or any string passed without one. The correction counts the word still open at the
+end: \code{return n + in_word;}. \code{next_word} has no such case, because its loop over letters stops at the end of
+the text as well as at a separator, and returns the word it has copied.
+\end{solution}
+
+\begin{solution}{exo:b1:project-text-search-engine:6}
+Every occurrence of \emph{cat} adds a posting, so document 0, which has it twice, gets two postings $(0, 1)$. The
+length of the list, taken as the \omterm{def:b1:project-text-search-engine:tfidf}{document frequency}, is then 3, more than the 2 documents. The weight $\ln(2/3)$ is
+negative, so a document would lose score for containing the word. In the engine, line 56 of
+\cref{lst:b1:project-text-search-engine:index} looks at the last posting and increments its count when it is already
+for the current document. With the error, the engine's document frequencies would count occurrences, its scores would
+differ from those of the naive scan, which counts documents, and the \omterm{def:b1:project-text-search-engine:end-to-end}{end-to-end test} would fail on the first query
+of a word used twice in a document, that is, on almost every query.
+\end{solution}
+
+\begin{solution}{exo:b1:project-text-search-engine:7}
+An \omterm{def:b1:pointers-and-arrays:array}{array} of scores, one per document, receives the weight of each posting of each term; a document is a match if it
+received anything. The matches then go through the heap.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/exercises/or_query.c}{7}{29}{OR queries, by adding the weights of
+every posting}
+
+The test \code{tests/exercises_test.c} compares the number of matches with a brute-force count on six small documents,
+for every pair of six words, one of which occurs nowhere. The cost is the total length of the \omterm{def:b1:project-text-search-engine:inverted-index}{posting lists},
+$\ell_1 + \dots + \ell_k$, plus $\Oh{N}$ to clear and scan the \omterm{def:b1:pointers-and-arrays:array}{arrays}. There is no shortcut by the shortest list as for
+AND: every posting of every list contributes. The result can be large too, since an OR query with one frequent word
+matches almost every document.
+\end{solution}
+
+\begin{solution}{exo:b1:project-text-search-engine:8}
+The function takes the shortest list and keeps each of its documents only if a binary search finds it in every other
+list; it counts and allocates nothing.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/exercises/count.c}{7}{35}{Counting the documents that contain
+every term}
+
+In \code{main}, when \code{argv[2]} is \texttt{-{}-{}count}, the terms are split from \code{argv + 3} instead, and the program
+prints \code{count_and(&ix, terms, n)} and returns 0 if that number is positive, 1 otherwise. The test compares
+\code{count_and} with the brute-force count of the previous exercise.
+\end{solution}
+
+\begin{solution}{exo:b1:project-text-search-engine:9}
+\begin{enumerate}
+\item The running result starts as the shortest list and only loses documents, so it has at most $\ell_1$ elements.
+In the merge with list $i$, every run of the body advances the index of the result, or that of list $i$, or both. The
+first index takes at most $\ell_1$ values and the second at most $\ell_i$, so the body runs at most $\ell_1 + \ell_i$
+times. Summing over $i = 2, \dots, k$ gives $(k - 1)\ell_1 + \ell_2 + \dots + \ell_k$.
+\item Each of the $\ell_1$ documents is searched for in $k - 1$ lists, and a binary search in a list of length $\ell_i
+\le \ell_k$ makes at most $\lfloor \log_2 \ell_i \rfloor + 1 \le \log_2 \ell_k + 1$ comparisons. In all, $\ell_1 (k -
+1)(\log_2 \ell_k + 1) = \Oh{\ell_1 \log \ell_k \cdot k}$.
+\item \emph{xylograph} is in one document (42) and \emph{ba} in 400. The bound of the merge is $1 + 400 = 401$ runs; the
+real merge runs 43 times, advancing through \emph{ba}'s documents 0 to 42, then stops when the result is exhausted.
+The binary search makes at most $\lfloor \log_2 400 \rfloor + 1 = 9$ comparisons. When one list is much shorter than
+the others, searching beats merging; when they have similar lengths, $\ell_1 \log \ell_k$ exceeds $\ell_1 + \ell_k$
+and merging wins.
+\end{enumerate}
+\end{solution}
+
+\begin{solution}{exo:b1:project-text-search-engine:10}
+A positional \omterm{def:b1:project-text-search-engine:inverted-index}{posting list} holds, for a word, the pairs (document, position) of its occurrences, in increasing order.
+The phrase starts at the places of $w_1$ that are followed by $w_i$ at $+ (i - 1)$ for every $i$. Each word filters the
+places kept so far by one merge, comparing $(d, p + i - 1)$ with the places of $w_i$ in \omterm{def:b1:induction-and-termination:lex}{lexicographic order}.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/exercises/phrase.c}{30}{53}{Phrase queries, by merging lists of
+(document, position) pairs}
+
+Here the positional lists are built from the texts by \code{places_of}; in the engine they would be stored in each
+posting, as an \omterm{def:b1:pointers-and-arrays:array}{array} of positions next to the count, which multiplies the size of the index by about the number of
+occurrences per posting. The test finds \emph{red fish} in documents 0 and 3, and \emph{fish red} in none, although
+both words are in documents 0 and 3: \emph{fish} is never just before \emph{red}.
+\end{solution}
+
+\begin{solution}{exo:b1:project-text-search-engine:11}
+An entry is a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to its word, a \omterm{def:b1:project-text-search-engine:inverted-index}{posting list} (a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} and two \code{int}s) and a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to the next entry:
+$8 + 16 + 8 = 32$ bytes. A posting is two \code{int}s, 8 bytes. The \omterm{def:b1:pointers-and-arrays:array}{array} of names has a capacity $D$ that doubles from
+64. Then
+\[
+  M = 8B + 32W + (L + W) + 8 \sum_t c_t + 8D + \sum_d (|\mathit{name}_d| + 1) .
+\]
+The table starts with 1024 \omterm{def:b1:hash-tables:hash-table}{buckets} and doubles when the number of words exceeds the number of \omterm{def:b1:hash-tables:hash-table}{buckets}: at the 1025th,
+2049th and 4097th word, so $B = 8192$ for 5004 words. Likewise $D = 512$ for 400 documents. Then $8B = 65\,536$,
+$32W = 160\,128$, $L + W = 35\,207$, $8 \sum_t c_t = 2\,192\,688$, $8D = 4096$ and the names take $400 \times 11 = 4400$
+bytes: $M = 2\,462\,055$ bytes, the number printed. The posting \omterm{def:b1:pointers-and-arrays:array}{arrays} hold $274\,086$ places for $193\,455$ postings, so
+$80\,631$ places, 29\,\% of them and 645\,048 bytes, are slack.
+\end{solution}
+
+\begin{solution}{exo:b1:project-text-search-engine:12}
+The format: the number of documents and their names, then the number of words, then each word followed by the length
+of its \omterm{def:b1:project-text-search-engine:inverted-index}{posting list} and its postings; every number is an \code{int}, every string its length then its bytes.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/exercises/persist.c}{32}{47}{Saving the index}
+
+Loading rebuilds, for each document, a text made of its words, each repeated as often as its count, and indexes these
+texts in document order: the lists, counts and numbers come out as before, through the code that is already tested.
+The loader refuses a file that ends early (every \code{fread} is checked), a name or word longer than 4096 bytes, a
+document number out of range, an empty list or a count that is not positive, and returns $-1$ without crashing. The test
+in \code{tests/exercises_test.c} saves, loads, and compares the numbers of documents, words and postings and the
+\omterm{def:b1:project-text-search-engine:inverted-index}{posting lists} of five words. The file is not portable because it stores \code{int}s and
+\code{Posting}s as the machine lays them out in memory: a machine of the other \omterm{def:b1:c-strings-structs-files:byte-order}{byte order}
+(\cref{def:b1:c-strings-structs-files:byte-order}) or with another size of \code{int} would read other numbers. A
+portable format fixes the size and the \omterm{def:b1:c-strings-structs-files:byte-order}{byte order} of every number, as network formats do.
+\end{solution}

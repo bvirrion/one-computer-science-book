@@ -1,0 +1,152 @@
+\section*{Chapter \ref{ch:g10:images-sound-compression} --- Digital Images, Sound and Compression}
+
+\begin{solution}{exo:g10:images-sound-compression:1}
+$4000 \times 3000 \times 3 = 36{,}000{,}000$ bytes, that is $36{,}000{,}000 / 2^{20} \approx 34.3$~MiB, as the listing
+printed. In grey levels, one byte per pixel: $12{,}000{,}000$ bytes, about $11.4$~MiB.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:2}
+$48{,}000 \times 2 \times 2 = 192{,}000$ bytes per second. One hour: $3600 \times 192{,}000 = 691{,}200{,}000$ bytes,
+about $659$~MiB.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:3}
+\code{[(3, "A"), (1, "B"), (4, "C"), (1, "D")]} (Python prints the letters with single quotes): $4$ numbers and $4$
+characters, $8$ values against $9$. Runs of length $1$ cost more than they save.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:4}
+The $10{,}000$ letters \code{a} come out smallest, a few dozen bytes: the whole input is one repetition. The chapter's
+text comes next, a few thousand bytes: words and spaces repeat, and some letters are much more frequent than others.
+The random bytes come out largest, a little more than $10{,}000$ bytes: there is nothing to exploit, and the format
+adds a few bytes of its own, as the listing showed.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:5}
+\code{return "".join(ch * count for count, ch in runs)}: each pair gives its character repeated \code{count} times,
+and the pieces are joined in order. The listing checks \code{rle_decode(rle_encode(row)) == row}; the chapter's tests
+check it on $300$ random strings.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:6}
+A run is appended only when the character changes, and the last run is followed by no change: it is never appended.
+After the loop, add the last run (\code{exercises/rle_bugs.py}):
+
+\smallskip\noindent\hspace*{2em}\code{if s: runs.append((count, s[-1]))}
+
+\smallskip\noindent The test on the empty string keeps an empty list. The buggy version is right only on the empty string: every other string has a last run.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:7}
+The worst row has no two equal neighbours, such as \code{WBWBWB}: $n$ runs of length $1$, so $2n$ bytes, twice the
+row. The encoding is shorter exactly when there are fewer than $n/2$ runs, that is, when runs are on average longer
+than $2$ pixels: plain areas, drawings and maps, not photographs.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:8}
+Split the text into words; check that the first is \code{P2}; read the width, height and largest value; take the
+next \code{width * height} words as whole numbers; count them in a list of \code{maxval + 1} zeros
+(\code{exercises/pgm_histogram.py}). For the image \code{P2 3 2 4} with values \code{0 1 1 4 4 4} it returns
+\code{[1, 2, 0, 0, 3]}.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:9}
+$2^{16} = 65{,}536$ colours. Red and blue have $2^5 = 32$ levels each, green $2^6 = 64$. The eye tells shades of green
+apart best, as the colour filter mosaic also reflects with its two green \omterm{def:g10:images-sound-compression:photosite}{photosites} in four, so the extra bit is best
+spent there.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:10}
+With \code{<= 4}, the index $4$ is accepted, but the rows and columns are numbered $0$ to $3$. For every pixel in the
+last row or the last column, a neighbour at index $4$ is read, and \code{MOSAIC[4]} or \code{MOSAIC[r][4]} raises an
+\code{IndexError}: the program stops. The other pixels are unchanged. The condition must be \code{< 4}, or better
+\code{< len(MOSAIC)}.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:11}
+Open the file with \code{wave.open(path, "rb")} and return \code{w.getnframes() / w.getframerate()}
+(\code{exercises/wav_duration.py}): a frame holds one sample per channel, so the number of frames per second is the
+\omterm{def:g10:images-sound-compression:sampling-rate}{sampling rate}. The tone of the listing has $8000$ frames at $8000$~Hz: $1.0$~s.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:12}
+There are $256^n$ files of exactly $n$ bytes, and $1 + 256 + 256^2 + \dots + 256^{n-1}$ files of fewer than $n$ bytes.
+Multiplying this sum by $256 - 1$ gives $256^n - 1$, since all the other terms cancel; so the sum is
+$(256^n - 1)/255$, less than $256^n$. A \omterm{def:g10:images-sound-compression:compression}{lossless} method must send two different files to two different results,
+otherwise decompression could not tell which one to give back. If it made every file of $n$ bytes shorter, it would
+send $256^n$ different files into fewer than $256^n$ shorter files: two of them would share a result. So some file of
+$n$ bytes is not made shorter.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:13}
+\code{bitmap_ratio} adds the lengths of the rows and the numbers of runs of each row, and returns the pixels divided
+by twice the runs (\code{exercises/rle_bitmap.py}). On a map with large plain areas the ratio is well above $1$. On an
+$8 \times 8$ chessboard every pixel is a run: $64$ pixels, $64$ runs, a ratio of $0.5$, the worst case of
+\cref{exo:g10:images-sound-compression:7}.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:14}
+The levels are $0, s, 2s, \dots$. A grey value $v$ lies between two neighbouring levels $ks$ and $(k + 1)s$, so its
+distances to them add up to $s$; the smaller of the two is at most $s/2$, and rounding picks the nearer level. In the
+listing the levels are also rounded to whole numbers, which can add up to $\tfrac12$. For $16$ levels, $s = 17$ and
+the largest error printed is $8 \le 8.5$; for $8$ levels, $s \approx 36.43$ and the largest error is
+$18 \le 18.2$.
+\end{solution}
+
+\begin{solution}{exo:g10:images-sound-compression:15}
+The count gives $1000$ crossings per second (\code{exercises/aliasing.py}): the recording seems to be a $1000$~Hz
+tone. Between two samples the $7000$~Hz wave makes $7000/8000 = \tfrac78$ of a turn, which lands at the same place as
+going back $\tfrac18$ of a turn. The samples therefore trace a wave that goes back one eighth of a turn per sample,
+one turn every $8$ samples: $8000 / 8 = 1000$ turns per second. The samples cannot tell the two waves apart, which is
+why the \omterm{def:g10:images-sound-compression:sampling-rate}{sampling rate} must be more than twice the highest frequency kept.
+\end{solution}
+
+\begin{solution}{pb:g10:images-sound-compression:1}
+\textbf{1.} $44{,}100$ samples per second, $16$ bits per sample.
+
+\textbf{2.} $2^{16} = 65{,}536$ levels.
+
+\textbf{3.} $2 \times 44{,}100 = 88{,}200$ samples.
+
+\textbf{4.} $1/44{,}100$~s $\approx 22.7$~µs.
+
+\textbf{5.} $88{,}200 \times 2 = 176{,}400$ bytes per second, as the program prints.
+
+\textbf{6.} $60 \times 176{,}400 = 10{,}584{,}000$ bytes.
+
+\textbf{7.} $10{,}584{,}000 / 2^{20} \approx 10.09$~MiB, and $10.584$~MB.
+
+\textbf{8.} $8 \times 176{,}400 = 1{,}411{,}200$ bits per second.
+
+\textbf{9.} $210 \times 176{,}400 = 37{,}044{,}000$ bytes, about $35.3$~MiB.
+
+\textbf{10.} $10^9 / 37{,}044{,}000 \approx 26.99$: $26$ whole songs.
+
+\textbf{11.} $44 / 37{,}044{,}000 \approx 1.2 \times 10^{-6}$, about a millionth: nothing.
+
+\textbf{12.} $1{,}411{,}200 / 160{,}000 = 8.82$.
+
+\textbf{13.} \omterm{def:g10:images-sound-compression:compression}{Lossy}. Part IV measures a \omterm{def:g10:images-sound-compression:compression}{lossless} ratio of about $1.09$ on music, nowhere near $8.82$; and the
+proposition says that no \omterm{def:g10:images-sound-compression:compression}{lossless} method shrinks every file, so no cleverer \omterm{def:g10:images-sound-compression:compression}{lossless} method can be counted on to
+reach such a ratio on data that looks almost random. The service throws away what the ear hardly notices.
+
+\textbf{14.} $175{,}662$ runs for $176{,}400$ bytes: almost every byte is a run of its own. \omterm{def:g10:images-sound-compression:rle}{Run-length coding} with
+two bytes per run would nearly double the size, to about $351{,}000$ bytes.
+
+\textbf{15.} About $1.09$ on music ($161{,}664$ bytes) and about $909$ on silence ($194$ bytes).
+
+\textbf{16.} A sample is stored in two bytes, the low byte first. The low byte holds the finest $\tfrac{1}{256}$ of
+the amplitude: even a smooth tone moves by hundreds of levels from one sample to the next, and the small noise
+changes it at random. The bytes of the two channels and of the two halves of each sample also alternate. Seen as a
+sequence of bytes, the music looks almost random.
+
+\textbf{17.} Every byte is $0$: one run of $176{,}400$ bytes, which a dictionary method describes in a few
+references to what it has just written.
+
+\textbf{18.} The silent part compresses as well as the silence of Part IV, so the file shrinks by roughly the length of
+that silence; the music before it hardly shrinks at all.
+
+\textbf{19.} One minute of disc-quality stereo is $44{,}100 \times 2 \times 2 \times 60 = 10{,}584{,}000$ bytes, about
+$10.1$~MiB. \omterm{def:g10:images-sound-compression:compression}{Lossless} \omterm{def:g10:images-sound-compression:compression}{compression} reaches a ratio of only about $1.09$ on music, against about $909$ on silence:
+music bytes look nearly random, and that is why music files are made small with \omterm{def:g10:images-sound-compression:compression}{lossy} methods.
+\end{solution}

@@ -1,0 +1,102 @@
+\section*{Chapter \ref{ch:b3:lambda-calculus} --- The Lambda Calculus and Operational Semantics}
+
+\begin{solution}{exo:b3:lambda-calculus:1}
+$\{y\}$; $\{x\}$ (the last $x$ is outside the \omterm{def:b3:lambda-calculus:terms}{abstraction}); $\{w, z\}$ (\code{exercise_1_free_variables}).
+\end{solution}
+
+\begin{solution}{exo:b3:lambda-calculus:2}
+The first pair is $\alpha$-equivalent: both are $\lambda.\,\lambda.\,1\;0$. The second is not: $\lambda.\,\lambda.\,1\;0$ against $\lambda.\,\lambda.\,0\;1$. The third is not: in \texttt{\textbackslash{}x.\ x z} the $z$ is free, giving $\lambda.\,0\;z$, while \texttt{\textbackslash{}z.\ z z} is $\lambda.\,0\;0$; renaming $x$ to $z$ would capture the free $z$ (\code{exercise_2_alpha_equivalence}).
+\end{solution}
+
+\begin{solution}{exo:b3:lambda-calculus:3}
+The test \code{exercise_3_capture_avoided} checks the answer. One step gives \texttt{\textbackslash{}y\textquotesingle{}.\ y y\textquotesingle{}}, since the bound $y$ is renamed before the free $y$ is substituted. A substitution that ignores capture gives \texttt{\textbackslash{}y.\ y y}, a function that applies its argument to itself, where the term meant ``apply the free $y$ to the argument''.
+\end{solution}
+
+\begin{solution}{exo:b3:lambda-calculus:4}
+\code{succ c4}: 3 steps under each strategy, the numeral 5. \code{plus c4 c0}: 6 and 6, the numeral 4. The counts of $\mathit{succ}$ and $\mathit{plus}$ do not depend on the numbers (\code{exercise_4_predict_church_lines}).
+\end{solution}
+
+\begin{solution}{exo:b3:lambda-calculus:5}
+Take \texttt{\textbackslash{}a.\ (\textbackslash{}x.\ \textbackslash{}y.\ x) a}, whose \omterm{def:b3:lambda-calculus:beta}{normal form} is \texttt{\textbackslash{}a.\ \textbackslash{}y.\ a}. Normal order reduces the \omterm{def:b3:lambda-calculus:beta}{redex} under \texttt{\textbackslash{}a}; its argument is index 0, shifted to 1 by \code{beta} before the substitution. Under \texttt{\textbackslash{}y} the body's $x$ is index 1, and the substituted term should now be index 2 (it crosses \texttt{\textbackslash{}y}); the faulty line keeps it at 1, which after the \omterm{def:b3:lambda-calculus:beta}{redex}'s $\lambda$ disappears points at \code{y}. The result is \texttt{\textbackslash{}a.\ \textbackslash{}y.\ y}. The fix shifts the substituted term under each $\lambda$: \code{Lam(x, b) => Lam(x.clone(), Box::new(subst(j + 1, &shift(1, 0, s), b)))}, as in \cref{lst:b3:lambda-calculus:subst} (\code{exercise_5_shifting_matters} shows both results).
+\end{solution}
+
+\begin{solution}{exo:b3:lambda-calculus:6}
+$\mathit{is\_zero} = \lambda n.\,n\,(\lambda x.\,\mathit{false})\,\mathit{true}$: zero \omterm{def:b3:lambda-calculus:terms}{applications} leave $\mathit{true}$, and one or more replace it by $\mathit{false}$. With $\mathit{and} = \lambda p.\,\lambda q.\,p\,q\,\mathit{false}$, $\mathit{eq} = \lambda m.\,\lambda n.\,\mathit{and}\,(\mathit{is\_zero}\,(\mathit{sub}\,m\,n))\,(\mathit{is\_zero}\,(\mathit{sub}\,n\,m))$: since subtraction stops at zero, both differences are zero exactly when $m = n$. In \code{exercises/ex6_church.rs}; \code{exercise_6_is_zero_and_eq} checks all pairs up to 5.
+\end{solution}
+
+\begin{solution}{exo:b3:lambda-calculus:7}
+If $M \to_\beta^* N_1$ by one strategy and $M \to_\beta^* N_2$ by another, both \omterm{def:b3:lambda-calculus:beta}{normal forms}, then both are reducts of $M$, and \cref{cor:b3:lambda-calculus:unique} gives $N_1 = N_2$ up to $\alpha$-equivalence: a strategy only chooses among $\beta$-steps. \omterm{def:b3:lambda-calculus:strategy}{Call by name} stops after the two steps that substitute the numerals, at \texttt{\textbackslash{}f.\ \textbackslash{}x.\ c2 f (c3 f x)}, with the numerals written out (\code{exercise_7_call_by_name_stops_early}). It does not reduce under a $\lambda$, so it stops at an \omterm{def:b3:lambda-calculus:terms}{abstraction} that is not in \omterm{def:b3:lambda-calculus:beta}{normal form}. There is no contradiction: the result was about strategies that reach a \omterm{def:b3:lambda-calculus:beta}{normal form}, and this one has not; normal order, continuing from there, reaches $c_5$.
+\end{solution}
+
+\begin{solution}{exo:b3:lambda-calculus:8}
+$2m + 3$ (\code{exercise_8_mult_steps}, for $m, n \le 6$). Two steps substitute $c_m$ and $c_n$, giving $\lambda f.\,c_m\,(c_n\,f)$. One step unfolds $c_m$: $\lambda f.\,\lambda x.\,(c_n\,f)\,((c_n\,f)\,(\cdots x))$, with $m$ copies of $c_n\,f$. Normal order then takes the outermost copy: $c_n\,f \to \lambda x'.\,f^n\,x'$ in one step, and applying it to its argument is a second; and so on for each of the $m$ copies. The number $n$ does not appear because one $\beta$-step substitutes $f$ into all $n$ occurrences of the numeral's body at once: the step count ignores the size of what a step copies.
+\end{solution}
+
+\begin{solution}{exo:b3:lambda-calculus:9}
+Write $e = \mathtt{if}\ e_1\ \mathtt{then}\ e_2\ \mathtt{else}\ e_3$. If $e_1$ is not a value, the only rule that applies to $e$ is the congruence rule, which steps $e_1$ and keeps the shape. So a reduction $e \to^* v$ begins with steps of $e_1$, as long as $e_1$ is not a value; it must reach a value $v_1$, since otherwise $e$ keeps its shape and never becomes the value $v$. If $v_1$ is neither $\mathtt{true}$ nor $\mathtt{false}$, $e$ is stuck. If it is $\mathtt{true}$, the next step gives $e_2$, and the rest is $e_2 \to^* v$; likewise for $\mathtt{false}$ and $e_3$. Conversely, the congruence rule lifts $e_1 \to^* \mathtt{true}$ to $e \to^* \mathtt{if}\ \mathtt{true}\ \mathtt{then}\ e_2\ \mathtt{else}\ e_3$, one step gives $e_2$, and $e_2 \to^* v$. By \cref{thm:b3:lambda-calculus:agree}, $\to^*$ to a value is $\Downarrow$, which gives the two big-step rules: $e_1 \Downarrow \mathtt{true}$ and $e_2 \Downarrow v$ give $e \Downarrow v$; $e_1 \Downarrow \mathtt{false}$ and $e_3 \Downarrow v$ give $e \Downarrow v$.
+\end{solution}
+
+\begin{solution}{exo:b3:lambda-calculus:10}
+Local \omterm{def:b3:lambda-calculus:rewriting}{confluence}: from $b$, the reducts $a$ and $c$ meet at $a$, since $c \to b \to a$; from $c$, the reducts $b$ and $d$ meet at $d$, since $b \to c \to d$. The other elements have at most one reduct. Not \omterm{def:b3:lambda-calculus:rewriting}{confluent}: $b \to a$ and $b \to c \to d$, and $a$ and $d$ are distinct \omterm{def:b3:lambda-calculus:beta}{normal forms}. Termination fails: $b \to c \to b \to \cdots$. In context: $w$ is strictly increasing in each argument ($w(s(t)) = w(t) + 1$, $w(\mathit{add}(t, u)) = 2w(t) + w(u)$), so if $w(t) > w(t')$, then $w(C[t]) > w(C[t'])$ for every context $C$, by induction on the depth of the hole in $C$. A rule applied anywhere therefore decreases the weight of the whole term.
+\end{solution}
+
+\begin{solution}{exo:b3:lambda-calculus:11}
+$\Omega$ has exactly one \omterm{def:b3:lambda-calculus:beta}{redex}, itself (its two parts are \omterm{def:b3:lambda-calculus:terms}{abstractions} in \omterm{def:b3:lambda-calculus:beta}{normal form}), and contracting it gives $\Omega$ again. So every reduction from $\Omega$ is $\Omega \to \Omega \to \cdots$, and every term on it contains a \omterm{def:b3:lambda-calculus:beta}{redex}: no \omterm{def:b3:lambda-calculus:beta}{normal form}. Normal order: $K\,I\,\Omega = ((\lambda x.\,\lambda y.\,x)\,I)\,\Omega \to (\lambda y.\,I)\,\Omega \to I$, two steps, and $I$ is a \omterm{def:b3:lambda-calculus:beta}{normal form}. \omterm{def:b3:lambda-calculus:strategy}{Call by value}: $K\,I \to \lambda y.\,I$, a value, but then the argument $\Omega$ must be reduced to a value before the \omterm{def:b3:lambda-calculus:beta}{redex} $(\lambda y.\,I)\,\Omega$ may be contracted, and it never becomes one (\code{exercise_11_omega}). By \cref{cor:b3:lambda-calculus:unique}, $I$ is the only \omterm{def:b3:lambda-calculus:beta}{normal form} of $K\,I\,\Omega$; \omterm{def:b3:lambda-calculus:strategy}{call by value} simply never reaches it.
+\end{solution}
+
+\begin{solution}{exo:b3:lambda-calculus:12}
+\code{exercises/ex12_krivine.rs}. The environment is shared through reference counting, so pushing an argument costs one closure, not a copy of the term. When the machine stops (an \omterm{def:b3:lambda-calculus:terms}{abstraction} with an empty stack, or a free variable), the result is read back: each free index of the term is replaced by its closure, read back in turn and shifted by the number of $\lambda$'s crossed; the pending arguments are applied to it. \code{exercise_12_krivine_matches_call_by_name} runs eight terms, Church arithmetic and $K\,I\,\Omega$ among them: the read-back term is $\alpha$-equivalent to the result of \omterm{def:b3:lambda-calculus:strategy}{call by name}, and the number of pops equals the number of $\beta$-steps, since each pop is exactly the contraction \omterm{def:b3:lambda-calculus:strategy}{call by name} makes at that point, with the substitution postponed into the environment.
+\end{solution}
+
+\begin{solution}{pb:b3:lambda-calculus:1}
+The formulas are asserted in \code{tests/pb_test.rs}.
+
+\textbf{1.} $c_3 = \lambda f.\,\lambda x.\,f\,(f\,(f\,x))$. Then, in 3 steps,
+\[ \mathit{succ}\,c_2 \to \lambda f.\,\lambda x.\,f\,(c_2\,f\,x) \to \lambda f.\,\lambda x.\,f\,((\lambda x'.\,f\,(f\,x'))\,x) \to \lambda f.\,\lambda x.\,f\,(f\,(f\,x)). \]
+
+\textbf{2.} Two steps substitute the numerals: $\lambda f.\,\lambda x.\,c_2\,f\,(c_3\,f\,x)$. Then $c_2\,f$ unfolds and is applied (2 steps), giving $f\,(f\,(c_3\,f\,x))$, and $c_3\,f\,x$ likewise (2 steps): 6 in all. Each numeral is unfolded in two steps whatever its value, because a step substitutes into all the occurrences at once.
+
+\textbf{3.} No. A step substitutes a term, which may be large, and copies it once per occurrence of the variable. The steps of $\mathit{plus}\,c_m\,c_n$ substitute $f$ and $x$ into bodies of sizes about $m$ and $n$, and the result has size $\Theta(m + n)$: the work is at least linear, the step count constant.
+
+\textbf{4.} Two $\lambda$'s and $n$ \omterm{def:b3:lambda-calculus:terms}{applications} of $f$, so $\Theta(n)$ symbols, against $\lfloor \log_2 n \rfloor + 1$ bits in binary: numerals are unary.
+
+\textbf{5.} $c_m\ \mathit{succ}\ c_n \to^* \mathit{succ}\,(\mathit{succ}\,(\cdots(\mathit{succ}\,c_n)))$ with $m$ \omterm{def:b3:lambda-calculus:terms}{applications}, which is $c_{n+m}$ by induction on $m$, since $\mathit{succ}\,c_k \to^* c_{k+1}$.
+
+\textbf{6.} It applies $\mathit{succ}$ $m$ times, at 3 steps each, so it takes $3m + 4$ steps whatever $n$ is, against a constant 6 for $\mathit{plus}$, which moves all of $c_m$'s \omterm{def:b3:lambda-calculus:terms}{applications} of $f$ in one substitution.
+
+\textbf{7.} $2n + 3$ under both strategies: 3, 5, 7, 9, \dots; for instance $n = 4$ gives 11 and $n = 10$ gives 23.
+
+\textbf{8.} Normal order: $2^{n+1}$ (4, 8, 16, 32, 64). Applicative order: $3n + 1$ (4, 7, 10, 13, 16).
+
+\textbf{9.} $\mathit{exp}\,c_2\,c_n$ becomes $c_n\,c_2$, which unfolds to $\lambda x.\,c_2\,(c_2\,(\cdots(c_2\,x)))$. Normal order reduces the outermost $c_2$ first; $c_2$ uses its argument twice, so the inner, unreduced tower is copied twice and each copy is reduced separately: the work doubles at each level. Applicative order reduces the innermost $c_2\,x$ first, to a \omterm{def:b3:lambda-calculus:beta}{normal form}, so each level costs 3 steps on an argument already in \omterm{def:b3:lambda-calculus:beta}{normal form}.
+
+\textbf{10.} No. On $K\,I\,\Omega$ normal order takes 2 steps and applicative order never stops; on $(\lambda x.\,y)\,M$ normal order takes one step and applicative order first reduces $M$, at any cost.
+
+\textbf{11.} The \omterm{def:b3:lambda-calculus:beta}{normal form} is $c_{2^n}$, of size $\Theta(2^n)$. The $3n + 1$ applicative steps cannot write it out in constant work each: later steps substitute ever larger terms. Step counts measure neither strategy's real work here; the size of the result is a lower bound for both.
+
+\textbf{12.} Applicative order: Church arithmetic uses its arguments several times, and reducing them once, before they are copied, avoids the doubling. Call by need would share each argument's reduction among its copies, keeping normal order's guarantee of finding a \omterm{def:b3:lambda-calculus:beta}{normal form} while removing the duplicated work.
+
+\textbf{13.} By induction on $k$: one step takes $(0, 0)$ to $(0, 1)$; if the pair is $(k - 1, k)$, the step gives $(k, k + 1)$.
+
+\textbf{14.} $c_0$ applies the step zero times, leaving $(0, 0)$, whose first component is $c_0$.
+
+\textbf{15.} $10n + 6$: 16, 26, 36, \dots, 106 ($\mathit{pred}\,c_0$ takes 9).
+
+\textbf{16.} 10 steps per round of the step: building the new pair and computing $\mathit{succ}$ of the second component. The remaining 6 are a constant: unfolding $\mathit{pred}$, applying the numeral to the step and the initial pair, and selecting the first component at the end.
+
+\textbf{17.} $9n + 16$ for $n \ge 2$ (34, 43, \dots, 106; 23 for $n = 1$, 14 for $n = 0$). Normal order is cheaper up to $n = 9$, the two meet at $n = 10$ (106), and applicative order wins beyond, by one step per round.
+
+\textbf{18.} On binary numbers a predecessor changes the trailing zeros and the last one: $O(\log n)$ bit operations at worst, a constant on average, and one instruction on a machine word. The unary encoding costs a factor of $n$.
+
+\textbf{19.} $c_n\ \mathit{pred}\ c_m \to^* \mathit{pred}^n\,c_m$, and by induction on $n$, using $\mathit{pred}\,c_0 = c_0$ and $\mathit{pred}\,c_{k+1} = c_k$, this is $c_{\max(m - n, 0)}$.
+
+\textbf{20.} 106, 96, 86, 76, 66, 56, 46, 36, 26, 16: they decrease by 10, and each is the cost of $\mathit{pred}$ on $c_{10}, c_9, \dots, c_1$.
+
+\textbf{21.} $4 + \sum_{k=1}^{n} \bigl(10(m - k + 1) + 6\bigr) = 4 + 10mn - 5n(n - 1) + 6n = 10mn - 5n^2 + 11n + 4$. For $m = 10$: $n = 3$ gives $300 - 45 + 33 + 4 = 292$, $n = 10$ gives 614, as in the table (the test checks all $n \le m \le 12$).
+
+\textbf{22.} $\mathit{pred} = \lambda n.\,\mathit{fst}\,(n\ \mathit{step}\ (0, 0))$ uses its argument once. Normal order duplicates only arguments that are used several times, so each inner predecessor is reduced exactly once, when the outer one needs it as a numeral; the contractions are the same as if it had been reduced first, in another order.
+
+\textbf{23.} $\Theta(mn)$ for $1 \le n \le m$; at $m = n$, $5n^2 + 11n + 4 = \Theta(n^2)$.
+
+\textbf{24.} Under normal order, $\mathit{pred}\,c_n$ takes $10n + 6$ $\beta$-steps, $\Theta(n)$, and $\mathit{sub}\,c_m\,c_n$ takes $10mn - 5n^2 + 11n + 4$, $\Theta(mn)$. A machine integer subtracts in one instruction: the $\lambda$-calculus can compute everything, at a price that only matters once one counts.
+\end{solution}

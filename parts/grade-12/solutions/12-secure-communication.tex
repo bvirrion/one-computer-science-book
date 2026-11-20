@@ -1,0 +1,181 @@
+\section*{Chapter \ref{ch:g12:secure-communication} --- Cryptography and Secure Communication}
+
+\begin{solution}{exo:g12:secure-communication:1}
+$10110010 \oplus 01100111 = 11010101$: a $1$ wherever the two bits differ. In hexadecimal, \code{b2} xor \code{67}
+gives \code{d5}, that is $213$.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:2}
+$64$ in both cases: a \omterm{def:g12:secure-communication:hash}{digest} has $256$ bits, four per hexadecimal digit, whatever the length of the message. The
+\omterm{def:g12:secure-communication:hash}{digest} of the empty message starts \code{e3b0c44298fc1c14}.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:3}
+$6 = 110$ in binary. $5^2 = 25$, which is $2$ modulo $23$; $5^4 = 2^2 = 4$; $5^6 = 5^4 \times 5^2 = 4 \times 2 = 8$.
+So $5^6 \bmod 23 = 8$, in three multiplications.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:4}
+$855^{2753} \bmod 3233 = 123$: the message $123$, whose encryption $123^{17} \bmod 3233$ is indeed $855$. The tests
+compute both.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:5}
+\smallskip\noindent\hspace*{2em}\code{def xor_bytes(a, b):}
+
+\noindent\hspace*{4em}\code{if len(a) != len(b):}
+
+\noindent\hspace*{6em}\code{raise ValueError("the two byte strings must have the same length")}
+
+\noindent\hspace*{4em}\code{return bytes(x ^ y for x, y in zip(a, b))}
+
+\smallskip\noindent Without the check, \code{zip} would stop at the shorter one, and the end of a message would be
+silently lost.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:6}
+Every message is xored with the same bytes, so the xor of any two encrypted messages is the xor of the two plain
+ones, as in \code{xor_reuse.py}: guessing a few words of one reveals the same places of all the others. The fix gives
+each message a number used once, a \emph{nonce}, sent in clear with the message, and builds the stream from the key
+and the nonce together:
+
+\smallskip\noindent\hspace*{2em}\code{key_stream(f"{key}:{nonce}", len(message))}
+
+\smallskip\noindent The nonce may be public; what matters is that a key and a nonce are never used together twice.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:7}
+\code{def dh_shared(p, a, B): return pow(B, a, p)}. The number $g$ is already inside $B = g^b \bmod p$; Alice needs
+only Bob's message, her own secret and the modulus.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:8}
+The listener tries exponents until it meets the secret, which may be anywhere between $2$ and $p - 2$: on average
+about $p/2$ tries, and the output shows means from $0.30\,p$ to $0.51\,p$. One more bit doubles $p$, so it doubles
+the mean. Alice's fast power makes at most two multiplications per bit of her exponent, so one more bit adds at most
+two.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:9}
+The signature was made on the \omterm{def:g12:secure-communication:hash}{digest}, so the \omterm{def:g12:secure-communication:key-pair}{public key} turns it back into the \omterm{def:g12:secure-communication:hash}{digest} modulo $n$, not into the
+message number: the comparison fails, and every genuine signature is refused. (By chance it would succeed about once
+in $3233$ messages.) Signer and checker must apply the same function to the message. The tests check that the wrong
+function refuses the signature of \code{"Pay Bea 20"}, which the right one accepts.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:10}
+Secret: the browser's exponent $a$; the server's exponent $b$ and the site's \omterm{def:g12:secure-communication:key-pair}{private key}; the \omterm{def:g12:secure-communication:key-pair}{private keys} of the
+authorities, held by them; the shared number and the session key, on both sides. Public: $p$ and $g$, the shares
+$A$ and $B$, the \omterm{def:g12:secure-communication:certificate}{certificates} and every \omterm{def:g12:secure-communication:key-pair}{public key} in them, the signature, and the encrypted bytes.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:11}
+\smallskip\noindent\hspace*{2em}\code{def encrypt_text(public, text):}
+
+\noindent\hspace*{4em}\code{return [apply(public, byte) for byte in text.encode()]}
+
+\smallskip\noindent For \code{"noon"} the two \code{o} give the same number, and so do the two \code{n}. Each byte
+always gives the same number, so the result is a substitution of $256$ symbols, and letter frequencies break it as
+in Book 1. Worse, anyone can encrypt all $256$ bytes with the \omterm{def:g12:secure-communication:key-pair}{public key} and read the table directly. \omterm{def:g12:secure-communication:key-pair}{Public-key
+encryption} is applied to one large random number, such as a symmetric key, never to letters one by one.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:12}
+Computing modulo $p$ is compatible with products: $(xy) \bmod p = ((x \bmod p)(y \bmod p)) \bmod p$. Applied $a$
+times, $(x \bmod p)^a \bmod p = x^a \bmod p$. With $x = g^b$: $(g^b \bmod p)^a \bmod p = g^{ba} \bmod p$. In the same
+way Bob's number is $g^{ab} \bmod p$, and $ab = ba$.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:13}
+$ed = 17 \times 2753 = 46\,801 = 1 + 15 \times 3120$, and $3120 = 60 \times 52$. Take $x$ not a multiple of $61$.
+Fermat gives $x^{60} \bmod 61 = 1$, so $x^{ed} = x \cdot (x^{60})^{15 \times 52}$ leaves the remainder of $x$ modulo
+$61$. In the same way, with $x^{52} \bmod 53 = 1$, $x^{ed}$ and $x$ have the same remainder modulo $53$. So
+$x^{ed} - x$ is a multiple of $61$ and of $53$, two different primes, hence of $3233$: $x^{ed} \bmod 3233 = x$ for
+$x < 3233$. (It holds for the multiples too, but they need another line; the tests check all $3233$ values.)
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:14}
+\smallskip\noindent\hspace*{2em}\code{def store_password(password, rounds=600_000):}
+
+\noindent\hspace*{4em}\code{salt = os.urandom(16)}
+
+\noindent\hspace*{4em}\code{digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, rounds)}
+
+\noindent\hspace*{4em}\code{return salt, rounds, digest}
+
+\smallskip\noindent\hspace*{2em}\code{def check_password(stored, attempt):}
+
+\noindent\hspace*{4em}\code{salt, rounds, digest = stored}
+
+\noindent\hspace*{4em}\code{trial = hashlib.pbkdf2_hmac("sha256", attempt.encode(), salt, rounds)}
+
+\noindent\hspace*{4em}\code{return hmac.compare_digest(trial, digest)}
+
+\smallskip\noindent The number of rounds is kept so that it can be raised later, as machines get faster: old entries
+are still checked with their own number, and rewritten with the new one at the user's next login.
+\code{hmac.compare_digest} compares the two \omterm{def:g12:secure-communication:hash}{digests} without stopping at the first difference, so that the time the
+check takes says nothing about how much of a guess was right.
+\end{solution}
+
+\begin{solution}{exo:g12:secure-communication:15}
+Mallory keeps Alice's $A$ and sends Bob her own $M = g^m \bmod p$; she does the same with Bob's $B$. Alice computes
+$M^a$, which Mallory knows as $A^m$; Bob computes $M^b = B^m$. Mallory now shares one key with each, decrypts each
+message, reads or changes it, and encrypts it again for the other: neither notices anything. She needs only to sit on
+the path and to know $p$ and $g$, which are public. The \omterm{def:g12:secure-communication:certificate}{certificate} and the signature over the exchange stop her: the
+server's share comes signed by a key that a trusted chain ties to the site's name, and Mallory cannot sign her own
+share with that key.
+\end{solution}
+
+\begin{solution}{pb:g12:secure-communication:1}
+\textbf{1.} $5, 2, 10, 4, 20, 8, 17, 16, 11, 9, 22, 18, 21, 13, 19, 3, 15, 6, 7, 12, 14, 1$: every number from $1$ to
+$22$, once each.
+
+\textbf{2.} Then $A$ can be any of the $22$ values, and the listener has $22$ candidates for $a$. With fewer values,
+there are fewer secrets to try.
+
+\textbf{3.} No: $2^{11} \bmod 23 = 1$, so the powers of $2$ repeat after $11$ values, and only $11$ different shares
+are possible.
+
+\textbf{4.} $5 = 101$ in binary: $5^2$, $5^4$, then $5^4 \times 5$: three multiplications.
+
+\textbf{5.} $5^5$ is the fifth value of the list, $20$; $5^{12}$ the twelfth, $18$.
+
+\textbf{6.} $18^5 \bmod 23 = 3$ and $20^{12} \bmod 23 = 3$, as the program printed.
+
+\textbf{7.} $20$ is the fifth power: $a = 5$, found at the fifth try.
+
+\textbf{8.} The exponent has at most $61$ bits: at most about $2 \times 61 = 122$ multiplications.
+
+\textbf{9.} The secret is drawn evenly from $2$ to $p - 2$, and the search stops when it reaches it, so the number of
+steps is spread evenly too, with a mean near $p/2$.
+
+\textbf{10.} Each line is the mean of only $12$ secrets; with so few, the mean wanders around $p/2$.
+
+\textbf{11.} From $426$ to $8\,238\,342$ steps, about $19\,000$ times more; $p$ grew $16\,432$ times. The two factors
+agree within the wandering of question 10.
+
+\textbf{12.} About $2^{k - 1}$ steps for a $k$-bit prime: it doubles with each bit.
+
+\textbf{13.} \code{def expected_steps(k): return 2 ** (k - 1)}. For $24$ bits, $8\,388\,608$ against $8\,238\,342$
+counted.
+
+\textbf{14.} $8.4 \times 10^6 / 10^9$: under a hundredth of a second.
+
+\textbf{15.} $2^{60} / 10^9 \approx 1.15 \times 10^9$ seconds, about $36.5$ years.
+
+\textbf{16.} $2^{2047} / 10^9$ seconds is about $5.1 \times 10^{599}$ years.
+
+\textbf{17.} At most about $2 \times 2048 = 4096$ multiplications of $2048$-bit numbers, a small fraction of a
+second.
+
+\textbf{18.} The prime is chosen large enough against the best known method, not against brute force. Faster methods
+are why the prime has thousands of bits, where brute force alone would be stopped by a few hundred.
+
+\textbf{19.} It gives a key, but not the identity of the other end: a man in the middle can run one exchange with
+each side (exercise \ref{exo:g12:secure-communication:15}). \omterm{def:g12:secure-communication:certificate}{Certificates}, in the last section, answer that.
+
+\textbf{20.} \textbf{Brute force needs about $p/2$ tries, so the listener's work doubles with each bit of the prime:
+counted from $10$ to $24$ bits, it grew from $426$ to $8.2$ million steps, always between $0.30\,p$ and $0.51\,p$. At
+$10^9$ tries per second, a prime of $2048$ bits would take about $5 \times 10^{599}$ years, while Alice needs about
+$4096$ multiplications.}
+\end{solution}

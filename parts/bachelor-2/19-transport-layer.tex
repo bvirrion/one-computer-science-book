@@ -1,0 +1,494 @@
+% Book 4, Year 2, chapter 19 -- The transport layer: UDP and TCP.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 19.
+\chapter{The Transport Layer: UDP and TCP}\label{ch:b2:transport-layer}
+
+The town's table of people is sent in 100-byte packets over a link that loses a fifth of them, duplicates some and
+delivers others out of order:
+
+\omoutput{code/bachelor-2/19-transport-layer/outputs/file_copy.txt}{A file across a bad link (a seeded
+simulation).}\label{out:b2:transport-layer:hook}
+
+Twelve packets were lost on the way, and yet the copy is exact. The network layer of \cref{ch:b2:network-layer}
+promises nothing: packets may be lost, duplicated or reordered. The \emph{transport layer} builds, on top of it, what
+programs want: a conversation between two programs (not just two machines), and, for TCP, a stream of bytes that
+arrives complete and in order, as the \omterm{def:b2:sockets:socket}{sockets} of \cref{ch:b2:sockets} assumed. This chapter derives the protocols
+that do it, measures what they cost, and ends with how TCP shares the network with everyone else.
+
+\begin{recall}
+Book 2: a sender numbers its messages, the receiver acknowledges them, and the sender repeats a message whose
+acknowledgement does not come in time; one bit of numbering is enough when one message is in flight (the
+alternating-bit protocol). \cref{ch:b2:sockets}: a \omterm{def:b2:sockets:port}{port number} names a program on a machine; TCP \omterm{def:b2:sockets:socket}{sockets} carry a
+byte stream, UDP \omterm{def:b2:sockets:socket}{sockets} datagrams. \cref{ch:b2:network-layer}: IP delivers packets between machines, at best.
+\end{recall}
+
+\section{Ports and UDP}\label{sec:b2:transport-layer:udp}
+
+% ledger: b2:udp-header
+% ledger: b2:port-ranges
+IP brings a packet to a machine; the transport layer brings it to a program.
+
+\begin{definition}[Multiplexing and demultiplexing]\label{def:b2:transport-layer:demux}
+A transport protocol \emph{multiplexes}\index{multiplexing} the messages of many programs into the packets of one
+machine, labelling each with a source and a destination \emph{\omterm{def:b2:sockets:port}{port number}}, and \emph{demultiplexes} the packets
+it receives, handing each to the program that owns its destination port. A conversation is named by four numbers:
+both addresses and both ports.
+\end{definition}
+
+ Ports 0 to 1023 are the \emph{system ports} of
+well-known services, 1024 to 49151 are registered to applications, and 49152 to 65535 are left free for the
+temporary ports clients use. UDP adds nothing else: its header is 8 bytes, the two ports, a length that counts header
+and data, and a \omterm{def:b2:link-layer:edc}{checksum}.
+
+\omoutput{code/bachelor-2/19-transport-layer/outputs/udp_header.txt}{The UDP header of a 5-byte request.}
+
+A UDP datagram may be lost, duplicated or reordered, exactly like the packet that carries it. Programs that prefer
+speed to completeness (a voice call, a game, a name lookup that can simply be asked again) use it as it is; the others
+need reliable transfer.
+
+\section{Reliable transfer}\label{sec:b2:transport-layer:reliable}
+
+\begin{definition}[Reliable data transfer]\label{def:b2:transport-layer:rdt}
+A protocol provides \emph{reliable data transfer}\index{reliable data transfer} over a channel that may lose,
+duplicate or reorder packets if the receiver hands its program every item the sender was given, each exactly once,
+in the order given. \emph{Stop-and-wait}\index{stop-and-wait} is the protocol in which the sender has at most one
+packet unacknowledged.
+\end{definition}
+
+The protocols of this section run in a small simulator: a link with a one-way delay of 50 ms, 1 ms to put a packet
+on the wire, and seeded loss, duplication and reordering.
+
+\subsection{Stop-and-wait}
+
+\begin{definition}[Sequence number, acknowledgement, timeout]\label{def:b2:transport-layer:seq}
+A \emph{sequence number}\index{sequence number} is a number a sender puts in each packet so that the receiver can
+tell new packets from repeated ones and put them in order. An \emph{acknowledgement} is a packet from the receiver
+that names a sequence number it has received; it is \emph{cumulative}\index{cumulative acknowledgement} when it
+vouches for every packet up to that number. The \emph{round-trip time} (RTT) is the time from sending a packet to
+receiving its acknowledgement, and the \emph{retransmission timeout} is how long the sender waits for an
+acknowledgement before sending the packet again.
+\end{definition}
+
+\omterm{def:b2:transport-layer:rdt}{Stop-and-wait} sends one packet and waits for its acknowledgement; if none comes before the timeout, it sends the
+packet again. A 1-bit sequence number tells a new packet from a repeated one.
+
+\omcode{code/bachelor-2/19-transport-layer/listings/stop_and_wait.py}{5}{24}{The sender of \omterm{def:b2:transport-layer:rdt}{stop-and-wait}}
+
+\omoutput{code/bachelor-2/19-transport-layer/outputs/stop_and_wait.txt}{200 packets, 5~\% of them duplicated, at
+three loss rates.}\label{out:b2:transport-layer:sw}
+
+It is correct, but slow: 200 packets take 20 seconds even without loss, because the link carries a packet for 1 ms
+and then sits idle for the 100 ms round trip.
+
+\begin{proposition}[Utilisation]\label{prop:b2:transport-layer:utilisation}
+Let a packet of $L$ bits take $L/R$ to send at rate $R$, and let RTT be the round-trip time. Without loss, the
+fraction of time a \omterm{def:b2:transport-layer:rdt}{stop-and-wait} sender keeps the link busy is
+\[
+U = \frac{L/R}{\mathrm{RTT} + L/R} ,
+\]
+and a sender allowed $W$ packets in flight reaches $\min\bigl(1, W U\bigr)$.
+\end{proposition}
+
+\begin{proof}
+A cycle starts when a packet starts. It occupies the link for $L/R$; its acknowledgement comes back RTT after the
+packet has been sent completely, and the next packet starts then, so a cycle lasts $\mathrm{RTT} + L/R$ and the link
+is busy for $L/R$ of it. With a \omterm{def:b2:transport-layer:window}{window} of $W$, the sender sends $W$ packets back to back in each cycle, unless the
+link is full before the first acknowledgement returns, which happens when $W L/R \ge \mathrm{RTT} + L/R$.
+\end{proof}
+
+Here $U = 1/101$: about 1~\%. The cure is to keep several packets in flight.
+
+\subsection{Sliding windows}
+
+\begin{definition}[Window, sequence numbers]\label{def:b2:transport-layer:window}
+In a \emph{sliding-window} protocol\index{sliding window}, the sender may have up to $W$ packets sent but not yet
+acknowledged, the \emph{window}. Packets carry sequence numbers on $k$ bits, so numbers are counted modulo $2^k$. When
+the oldest packet of the window is acknowledged, the window slides forward. In \emph{go-back-N}\index{go-back-N} the receiver accepts packets only in
+order and acknowledges cumulatively, and a timeout makes the sender send its whole window again; in
+\emph{selective repeat}\index{selective repeat} the receiver also keeps packets that arrive early, acknowledges
+each packet separately, and the sender sends again only the packets whose own timer expires.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, c/.style={draw, minimum width=6mm, minimum height=6mm, inner sep=0pt}]
+\foreach \i/\f in {0/omDef!45,1/omDef!45,2/omDef!45,3/omThm!25,4/omThm!25,5/omThm!25,6/white,7/white,8/white,
+  9/white,10/white,11/white} {\node[c, fill=\f] at (0.6*\i,0) {};}
+\foreach \i in {0,...,11} {\pgfmathtruncatemacro{\s}{mod(\i,8)} \node at (0.6*\i,0) {\s};}
+\draw[very thick, omThm] (1.5,-0.42) rectangle (5.7,0.42);
+\node[above, text=omThm] at (3.6,0.45) {window of $W = 7$};
+\node[below, align=center] at (0.6,-0.4) {acknowledged};
+\node[below, align=center] at (2.7,-0.4) {sent, waiting\\ for their ack};
+\node[below, align=center] at (4.8,-0.4) {may be sent\\ now};
+\node[below, align=center] at (6.3,-0.4) {not yet};
+\end{tikzpicture}
+\par\smallskip{\small A sender's view of the sequence space with $k = 3$: numbers repeat after 8. When the ack of
+packet 3 arrives, the \omterm{def:b2:transport-layer:window}{window} moves one place right and one more packet may go.}
+\end{omfigure}
+
+The two ways to repeat what is lost differ in how much they keep. The \omterm{def:b2:transport-layer:window}{go-back-N} receiver acknowledges the last
+packet it has accepted in order; the sender keeps one timer, for its oldest packet.
+
+\omcode{code/bachelor-2/19-transport-layer/listings/go_back_n.py}{13}{37}{The \omterm{def:b2:transport-layer:window}{go-back-N} sender: fill the \omterm{def:b2:transport-layer:window}{window}, go
+back on a timeout, slide on an ack}\label{lst:b2:transport-layer:gbn}
+
+\omcode{code/bachelor-2/19-transport-layer/listings/go_back_n.py}{45}{51}{The \omterm{def:b2:transport-layer:window}{go-back-N} receiver}
+
+\omoutput{code/bachelor-2/19-transport-layer/outputs/go_back_n.txt}{Utilisation against the \omterm{def:b2:transport-layer:window}{window}, then a lossy
+link.}\label{out:b2:transport-layer:gbn}
+
+Without loss the measured utilisation follows \cref{prop:b2:transport-layer:utilisation}. With 5~\% loss, \omterm{def:b2:transport-layer:window}{go-back-N}
+sends 13\,408 packets for 5\,000: each loss throws away the \omterm{def:b2:transport-layer:window}{window} behind it. \omterm{def:b2:transport-layer:window}{Selective repeat} keeps those packets
+instead: its receiver accepts any packet within its own \omterm{def:b2:transport-layer:window}{window} of $W$ and buffers it, and its sender keeps a timer
+per packet (\cref{exo:b2:transport-layer:7}).
+
+\omcode{code/bachelor-2/19-transport-layer/listings/selective_repeat.py}{41}{52}{The selective-repeat receiver:
+buffer, deliver in order, acknowledge each packet}\label{lst:b2:transport-layer:sr}
+
+\omoutput{code/bachelor-2/19-transport-layer/outputs/selective_repeat.txt}{The same link: 531 extra packets instead of
+8\,408.}
+
+How large may the \omterm{def:b2:transport-layer:window}{window} be, for $k$ bits of sequence number? The receiver must never take an old packet, sent again,
+for a new one with the same number.
+
+\begin{proposition}[Go-back-N window]\label{prop:b2:transport-layer:gbn-window}
+On a channel that may lose and duplicate packets but does not reorder them, \omterm{def:b2:transport-layer:window}{go-back-N} with $k$-bit sequence numbers
+is correct if and only if $W \le 2^k - 1$.
+\end{proposition}
+
+The proof is \cref{exo:b2:transport-layer:8}. For \omterm{def:b2:transport-layer:window}{selective repeat}, the receiver's \omterm{def:b2:transport-layer:window}{window} moves too, and the bound is
+halved.
+
+\begin{theorem}[Selective-repeat window]\label{thm:b2:transport-layer:sr-window}
+On such a channel, \omterm{def:b2:transport-layer:window}{selective repeat} with $k$-bit sequence numbers and \omterm{def:b2:transport-layer:window}{windows} of $W$ at both ends is correct if and
+only if $W \le 2^{k-1}$.
+\end{theorem}
+
+\begin{proof}
+Let the receiver expect packet $b$ (all before it have been delivered). The sender has had acknowledgements for every
+packet before $b - W$, since it could not have sent packet $b - 1$ otherwise; so any packet it may still send, new
+or repeated, is numbered from $b - W$ to $b + W - 1$. These $2W$ numbers are distinct modulo $2^k$ when $2W \le 2^k$,
+so the receiver tells apart the packets of its \omterm{def:b2:transport-layer:window}{window}, $b$ to $b + W - 1$, from the old ones, $b - W$ to $b - 1$, which
+it only acknowledges again. That proves sufficiency. Conversely, if $W \ge 2^{k-1} + 1$, let the sender send packets
+$0$ to $W - 1$, all received and all acknowledgements lost. The receiver now expects $W$ to $2W - 1$, and $2W - 1 \ge
+2^k$, so its \omterm{def:b2:transport-layer:window}{window} contains the number $2^k \equiv 0$. The sender, timing out, repeats packet 0, which the receiver
+stores as packet $2^k$: wrong data is delivered.
+\end{proof}
+
+\omoutput{code/bachelor-2/19-transport-layer/outputs/sr_too_wide.txt}{The second half of the proof, staged with $k =
+2$ and $W = 3$.}\label{out:b2:transport-layer:too-wide}
+
+On a channel that reorders packets, an old packet can arrive very late, and no \omterm{def:b2:transport-layer:window}{window} is safe unless the sequence
+space is much larger than what can be in flight. TCP numbers bytes with 32 bits for that reason.
+
+\section{TCP}\label{sec:b2:transport-layer:tcp}
+
+% ledger: b2:tcp-header
+TCP is a \omterm{def:b2:transport-layer:window}{sliding-window} protocol over a byte stream. Each \emph{segment} carries a 32-bit sequence number, the
+position of its first byte in the stream, and a 32-bit acknowledgement number, the next byte expected: acknowledgements
+are \omterm{def:b2:transport-layer:seq}{cumulative}, as in \omterm{def:b2:transport-layer:window}{go-back-N}, but the receiver keeps segments that arrive early, as in \omterm{def:b2:transport-layer:window}{selective repeat}. The
+header, at least 20 bytes, also holds the two ports, a \omterm{def:b2:transport-layer:window}{window} size, a \omterm{def:b2:link-layer:edc}{checksum}, and flags such as SYN, ACK and FIN.
+
+\subsection{Connections}
+
+% ledger: b2:tcp-states
+\begin{definition}[TCP connection]\label{def:b2:transport-layer:tcp}
+A \emph{TCP connection}\index{TCP connection} is the state two ends keep about one byte stream in each direction:
+the sequence numbers sent and acknowledged, the \omterm{def:b2:transport-layer:window}{windows}, and a \emph{connection state} such as ESTABLISHED. It is
+opened by a \emph{three-way handshake}\index{three-way handshake}: the client sends SYN with its starting sequence
+number, the server answers SYN+ACK with its own, and the client acknowledges it. Each end later closes its
+direction separately with FIN.
+\end{definition}
+
+The states of a connection form a finite automaton:
+
+\omoutput{code/bachelor-2/19-transport-layer/outputs/tcp_states.txt}{The handshake and a close, as transitions of
+TCP's state machine.}\label{out:b2:transport-layer:states}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, w/.style={-{Stealth[length=1.8mm]}, thick}]
+\node[font=\small\bfseries] at (0,0.3) {client}; \node[font=\small\bfseries] at (6,0.3) {server};
+\draw[gray] (0,0) -- (0,-6.2); \draw[gray] (6,0) -- (6,-6.2);
+\draw[w, omDef] (0,-0.4) -- node[above, sloped] {SYN, seq $x$} (6,-1.0);
+\draw[w, omDef] (6,-1.2) -- node[above, sloped] {SYN+ACK, seq $y$, ack $x + 1$} (0,-1.8);
+\draw[w, omDef] (0,-2.0) -- node[above, sloped] {ACK, ack $y + 1$} (6,-2.6);
+\node[anchor=west] at (6.1,-0.4) {LISTEN}; \node[anchor=east] at (-0.1,-0.4) {SYN-SENT};
+\node[anchor=west] at (6.1,-1.1) {SYN-RECEIVED}; \node[anchor=east] at (-0.1,-1.9) {ESTABLISHED};
+\node[anchor=west] at (6.1,-2.6) {ESTABLISHED};
+\node at (3,-3.0) {\dots\ data in both directions \dots};
+\draw[w, omThm] (0,-3.4) -- node[above, sloped] {FIN} (6,-4.0);
+\draw[w, omThm] (6,-4.1) -- node[above, sloped] {ACK} (0,-4.7);
+\draw[w, omThm] (6,-4.9) -- node[above, sloped] {FIN} (0,-5.5);
+\draw[w, omThm] (0,-5.6) -- node[above, sloped] {ACK} (6,-6.2);
+\node[anchor=east] at (-0.1,-3.4) {FIN-WAIT-1}; \node[anchor=west] at (6.1,-4.0) {CLOSE-WAIT};
+\node[anchor=east] at (-0.1,-4.7) {FIN-WAIT-2}; \node[anchor=west] at (6.1,-4.9) {LAST-ACK};
+\node[anchor=east, align=right] at (-0.1,-5.6) {TIME-WAIT,\\ then CLOSED}; \node[anchor=west] at (6.1,-6.2)
+{CLOSED};
+\end{tikzpicture}
+\par\smallskip{\small The handshake and a close initiated by the client, with the state each end enters (time runs
+downwards). The side that closes first waits in TIME-WAIT before forgetting the connection.}
+\end{omfigure}
+
+% ledger: b2:tcp-time-wait
+The side that closes first stays in TIME-WAIT for twice the maximum lifetime of a segment (4 minutes in the standard,
+much less in practice), so that a late segment of this connection cannot be taken for part of a new one between the
+same ports; this is the state that made \code{SO_REUSEADDR} necessary in \cref{ch:b2:sockets}.
+
+\subsection{The retransmission timeout}
+
+A timer set too short sends needless copies; set too long, it leaves the link idle after a loss. TCP sets it from the
+round-trip times it measures, smoothing both their mean and their variation.
+
+\begin{method}[Retransmission timeout]\label{met:b2:transport-layer:rto}
+% ledger: b2:rto-rules
+For the first round-trip sample $R$, set $\mathrm{SRTT} = R$ and $\mathrm{RTTVAR} = R/2$. For each later sample, set
+$\mathrm{RTTVAR} \leftarrow \frac34 \mathrm{RTTVAR} + \frac14 |\mathrm{SRTT} - R|$, then $\mathrm{SRTT} \leftarrow
+\frac78 \mathrm{SRTT} + \frac18 R$. The timeout is $\mathrm{RTO} = \mathrm{SRTT} + 4\,\mathrm{RTTVAR}$, at least 1
+second, and it is doubled each time it expires.
+\end{method}
+
+\omcode{code/bachelor-2/19-transport-layer/listings/rto.py}{5}{14}{The estimator}
+
+\omoutput[1-9]{code/bachelor-2/19-transport-layer/outputs/rto.txt}{One sample of 400 ms among samples near 100
+ms.}\label{out:b2:transport-layer:rto}
+
+The spike raises the variation at once and the mean slowly, so the timeout jumps and then decays. On a fast network
+the 1-second floor dominates.
+
+\subsection{Flow control}
+
+The receiving program may read slower than the network delivers.
+
+\begin{definition}[Flow control]\label{def:b2:transport-layer:flow-control}
+Each TCP acknowledgement carries the free space left in the receiver's buffer, the \emph{receive
+window}\index{receive window}, and the sender never has more unacknowledged bytes in flight than that. This is
+\emph{flow control}\index{flow control}: it protects the receiver, as \omterm{def:b2:transport-layer:congestion}{congestion} control protects the network.
+\end{definition}
+
+ A small
+receive buffer therefore limits throughput, even on a loopback connection:
+
+\omoutput{code/bachelor-2/19-transport-layer/outputs/bulk_transfer.txt}{256 MiB over TCP on 127.0.0.1, on the laptop,
+with the receiver's buffer set three ways.}\label{out:b2:transport-layer:bulk}
+
+\section{Congestion control}\label{sec:b2:transport-layer:congestion}
+
+A \omterm{def:b2:transport-layer:window}{window} large enough to fill the sender's link may still be too large for a slower link further on, shared with
+other connections. Packets then queue in a \omterm{def:b2:network-layer:routing}{router} until its buffer overflows and they are dropped. TCP reads a loss
+as a sign of \omterm{def:b2:transport-layer:congestion}{congestion} and slows down.
+
+\begin{definition}[Congestion, congestion window]\label{def:b2:transport-layer:congestion}
+A network is \emph{congested}\index{congestion} when packets arrive at a \omterm{def:b2:network-layer:routing}{router} faster than it can forward them,
+so that its queue grows and packets are dropped. A TCP sender limits its own rate by a \emph{congestion
+window}\index{congestion window}, a number of bytes it may have in flight, which it raises while acknowledgements
+come and lowers when a loss shows congestion. Raising it by a constant per round trip and multiplying it by a
+constant below 1 at a loss is \emph{additive increase, multiplicative decrease}\index{additive increase,
+multiplicative decrease} (AIMD).
+\end{definition}
+
+\begin{method}[TCP congestion control]\label{met:b2:transport-layer:cc}
+% ledger: b2:congestion-control
+The sender keeps a \emph{\omterm{def:b2:transport-layer:congestion}{congestion window}} cwnd and sends at most $\min(\text{cwnd}, \text{receive window})$.
+\emph{Slow start}: cwnd starts at one segment and grows by one segment per acknowledgement, doubling every round
+trip, up to a threshold ssthresh. \emph{\omterm{def:b2:transport-layer:congestion}{Congestion} avoidance}: above it, cwnd grows by about one segment per round
+trip. On three duplicate acknowledgements (\emph{fast retransmit}), the sender resends the missing segment at once
+and halves cwnd (\emph{fast recovery}); on a timeout, it sets ssthresh to half the data in flight and cwnd to one
+segment, and slow-starts again.
+\end{method}
+
+Growing by one segment per round trip and halving on a loss is AIMD. Its \omterm{def:b2:transport-layer:window}{window} draws a sawtooth:
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=0.72\linewidth, height=4.6cm, xlabel={round trip}, ylabel={window (segments)},
+    ymin=0, xmin=0, xmax=120]
+  \addplot[const plot, omDef, thick] table[x=round, y=w] {code/bachelor-2/19-transport-layer/figures/sawtooth.dat};
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b2:transport-layer:congestion}{congestion window} of \code{aimd.py} with one packet in 500 lost: slow start doubles the
+\omterm{def:b2:transport-layer:window}{window} up to 64, a loss halves it, and the sawtooth of additive increase and halving follows.}
+\end{omfigure}
+
+The sawtooth gives TCP's throughput as a function of the loss rate.
+
+\begin{proposition}[Throughput law]\label{prop:b2:transport-layer:mathis}
+% ledger: b2:mathis-1997
+If one packet in $1/p$ is lost, periodically, and the \omterm{def:b2:transport-layer:window}{window} grows by one segment per round trip and halves at each
+loss, the average throughput is
+\[
+\frac{\mathrm{MSS}}{\mathrm{RTT}} \sqrt{\frac{3}{2p}}
+\]
+where MSS is the segment size.
+\end{proposition}
+
+The derivation, from the area under one tooth, is \cref{exo:b2:transport-layer:10}. The simulator checks it:
+
+\omoutput{code/bachelor-2/19-transport-layer/outputs/aimd.txt}{Packets per round trip, simulated over 200\,000 round
+trips, against the law.}\label{out:b2:transport-layer:law}
+
+With periodic losses the simulation lands within 3~\% of the law once $p \le 0.001$; with $p = 0.01$ the \omterm{def:b2:transport-layer:window}{window} is
+only about 16 segments and whole segments count. With random losses the throughput is a few per cent higher: losses
+are irregular and the \omterm{def:b2:transport-layer:window}{window} sometimes grows longer.
+
+\section{Fairness}\label{sec:b2:transport-layer:fairness}
+
+When several connections share a link, AIMD also divides it fairly.
+
+\begin{definition}[Fairness, Jain's index]\label{def:b2:transport-layer:fairness}
+% ledger: b2:jain-index
+An allocation of a link among $n$ flows is \emph{fair}\index{fairness} when the flows that want more than an equal
+share all get the same share. \emph{Jain's index}\index{Jain's fairness index} of shares $x_1, \dots, x_n$ is
+\[
+J = \frac{(\sum_i x_i)^2}{n \sum_i x_i^2} ,
+\]
+which is 1 for equal shares and $1/n$ when one flow has everything.
+\end{definition}
+
+\begin{theorem}[AIMD is fair]\label{thm:b2:transport-layer:aimd-fair}
+Two flows share a link of capacity $C$. In each round, if $x_1 + x_2 \le C$ both add $a > 0$, and otherwise both
+multiply by $b \in (0, 1)$. Then $x_1 - x_2 \to 0$: the shares become equal.
+\end{theorem}
+
+\begin{proof}
+An increase leaves $x_1 - x_2$ unchanged, and a decrease multiplies it by $b$. Decreases happen infinitely often: after
+at most $\lceil C / (2a) \rceil + 1$ increases in a row, $x_1 + x_2$ exceeds $C$. So $|x_1 - x_2|$ is multiplied by
+$b$ infinitely often and never grows: it tends to 0.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=0.5\linewidth, height=0.5\linewidth, xlabel={$x_1$}, ylabel={$x_2$}, xmin=0, xmax=52,
+    ymin=0, ymax=52, legend style={font=\scriptsize}, legend pos=north east]
+  \addplot[omDef, thin, mark=*, mark size=0.8pt] table[x=x1, y=x2]
+    {code/bachelor-2/19-transport-layer/figures/phase.dat};
+  \addlegendentry{AIMD}
+  \addplot[gray, dashed, domain=0:52] {x}; \addlegendentry{fair: $x_1 = x_2$}
+  \addplot[omThm, domain=0:50] {50 - x}; \addlegendentry{full: $x_1 + x_2 = C$}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Two AIMD flows starting at 4 and 40 with $C = 50$. Increases move parallel to the \omterm{def:b2:transport-layer:fairness}{fair} line;
+each decrease moves towards the origin, halving the distance to it.}
+\end{omfigure}
+
+\omoutput{code/bachelor-2/19-transport-layer/outputs/fairness.txt}{The shares and \omterm{def:b2:transport-layer:fairness}{Jain's index} every 25
+rounds.}\label{out:b2:transport-layer:fair}
+
+\omterm{def:b2:transport-layer:fairness}{Jain's index} measures how equal the shares are. \omterm{def:b2:transport-layer:fairness}{Fairness} holds only among flows that see the
+same round trip; a flow with a longer one adds its segment less often, and gets less (\cref{exo:b2:transport-layer:11}).
+Multiplying on increase instead of adding would keep the ratio of the shares for ever (\cref{exo:b2:transport-layer:12}).
+
+\begin{dated}{2026}
+% ledger: b2:quic
+TCP is no longer the only reliable transport. QUIC, standardised in May 2021, runs over UDP and provides several
+independent streams in one encrypted connection, with a faster connection setup and the ability to keep a
+connection when a phone changes network; it carries a large share of web traffic. Its loss recovery and \omterm{def:b2:transport-layer:congestion}{congestion}
+control follow the principles of this chapter.
+\end{dated}
+
+\section{Exercises}\label{sec:b2:transport-layer:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:transport-layer:1}
+\omterm{def:b2:transport-layer:window}{Go-back-N} with $W = 4$ sends packets 0 to 9. Packet 2 is lost once, and the acknowledgement of packet 5 is lost. List
+the packets sent, in order, until all are acknowledged, assuming the timer expires only when needed.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:transport-layer:2}
+In \cref{out:b2:transport-layer:too-wide}, which packets does the receiver deliver, which is wrong, and what \omterm{def:b2:transport-layer:window}{window}
+would have prevented it with $k = 2$?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:transport-layer:3}
+Write the receiver of \omterm{def:b2:transport-layer:rdt}{stop-and-wait} for the sender of \cref{out:b2:transport-layer:sw}: it must deliver each item
+once and acknowledge every packet, duplicates included. Why must it acknowledge duplicates?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:transport-layer:4}
+A link of 1 Gbit/s connects two towns 3000 km apart (a round trip of 30 ms). Packets are 1500 bytes. Compute the
+utilisation of \omterm{def:b2:transport-layer:rdt}{stop-and-wait}, and the \omterm{def:b2:transport-layer:window}{window} that fills the link.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:transport-layer:5}
+Compute SRTT, RTTVAR and the timeout for the samples 800, 800, 1600 and 800 ms, and check them with
+\code{rto.py}, whose second series is these samples. Why does the timeout of the third sample exceed 1600?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:transport-layer:6}
+This receiver acknowledges each packet it receives, in order or not. Explain the output.
+\omcode{code/bachelor-2/19-transport-layer/listings/exo_gbn_ack.py}{5}{12}{A wrong acknowledgement}
+\omoutput{code/bachelor-2/19-transport-layer/outputs/exo_gbn_ack.txt}{With 5~\% loss.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:transport-layer:7}
+Write the sender of \omterm{def:b2:transport-layer:window}{selective repeat}, with a timer per packet, for the receiver of \cref{lst:b2:transport-layer:sr}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:transport-layer:8}
+Prove \cref{prop:b2:transport-layer:gbn-window}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:transport-layer:9}
+Add fast retransmit to the \omterm{def:b2:transport-layer:window}{go-back-N} sender: at the third duplicate acknowledgement, go back at once instead of
+waiting for the timer. Measure the effect with 2~\% loss.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:transport-layer:10}
+Prove \cref{prop:b2:transport-layer:mathis}: in the steady state the \omterm{def:b2:transport-layer:window}{window} grows from $W/2$ to $W$ between two
+losses; count the packets sent in one tooth and set it to $1/p$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:transport-layer:11}
+Simulate two AIMD flows sharing a link, whose round trips are 1 and 2 time units, with losses that hit both. Measure
+their shares of the link and \omterm{def:b2:transport-layer:fairness}{Jain's index}, and explain the ratio.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:transport-layer:12}
+Show that with multiplicative increase and multiplicative decrease ($x_i \leftarrow c\,x_i$ with $c > 1$, and $x_i
+\leftarrow b\,x_i$), the ratio $x_1/x_2$ never changes, so two flows never converge to \omterm{def:b2:transport-layer:fairness}{fairness}. What about additive
+increase and additive decrease?
+\end{exercise}
+
+\section{Problem: Sending the town archive across a bad link}\label{sec:b2:transport-layer:problem}
+
+\begin{problem}[{Weekend problem --- Sending the town archive across a bad link}]\label{pb:b2:transport-layer:1}
+The town sends its archive, 10\,000 packets of 1000 bytes, to the lighthouse over a link of 8 Mbit/s with a round trip
+of 100 ms that loses 1 packet in 100.
+
+\medskip\noindent\textbf{Part I --- Stop-and-wait.}\par\nopagebreak
+\begin{enumerate}
+\item How long does one packet take to send, and what is the utilisation of \omterm{def:b2:transport-layer:rdt}{stop-and-wait}?
+\item Estimate how long the archive takes with \omterm{def:b2:transport-layer:rdt}{stop-and-wait} and no loss.
+\item With 1~\% loss and a timeout of 300 ms, how much does the expected time grow?
+\item Why does \omterm{def:b2:transport-layer:rdt}{stop-and-wait} need a sequence number at all, and why does one bit suffice?
+\item What goes wrong if the channel can reorder packets?
+\item Why is the timeout chosen longer than the round trip?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Windows.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item What \omterm{def:b2:transport-layer:window}{window} fills the link?
+\item With 4-bit sequence numbers, what is the largest \omterm{def:b2:transport-layer:window}{window} for \omterm{def:b2:transport-layer:window}{go-back-N}, and for \omterm{def:b2:transport-layer:window}{selective repeat}?
+\item With each protocol and that \omterm{def:b2:transport-layer:window}{window}, estimate the packets sent per loss.
+\item Using \cref{out:b2:transport-layer:gbn}, compare the two protocols at 5~\% loss.
+\item Why does TCP number bytes with 32 bits rather than packets with 4?
+\item The lighthouse's program reads slowly. Which mechanism protects it, and how?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Congestion.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Starting from one segment, how many round trips does slow start take to reach the \omterm{def:b2:transport-layer:window}{window} of question 7?
+\item In \omterm{def:b2:transport-layer:congestion}{congestion} avoidance with 1~\% loss, what average throughput does the law predict, in Mbit/s?
+\item Is the archive transfer limited by the link or by the losses?
+\item What loss rate would let TCP fill the link?
+\item Why does TCP halve its \omterm{def:b2:transport-layer:window}{window} after a loss rather than reduce it by one segment?
+\item Read in \cref{out:b2:transport-layer:law} how close the law is at $p = 0.01$, and why.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Two transfers sharing the link.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item A second transfer starts on the same link. Using \cref{thm:b2:transport-layer:aimd-fair}, what shares do they
+converge to?
+\item In \cref{out:b2:transport-layer:fair}, after how many rounds is \omterm{def:b2:transport-layer:fairness}{Jain's index} above 0.99?
+\item Why do the shares keep oscillating although the index reaches 1?
+\item If the second transfer's round trip were twice as long, what share would it get?
+\item Why would a program that opens ten connections at once get more than its share?
+\item State the result: the $\sqrt{3/(2p)}$ law, checked by simulation within a few per cent.
+\end{enumerate}
+\end{problem}

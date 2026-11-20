@@ -1,0 +1,376 @@
+% Provenance (never printed): NSI terminale "Architectures materielles, systemes d'exploitation et reseaux: gestion
+% des processus et des ressources par un systeme d'exploitation (creation, ordonnancement, interblocage); observer
+% les processus actifs ou en attente avec une commande" (+ interrupts, named in the introduction). See
+% sources/book2/BRIEFS.md.
+\chapter{Processes and Scheduling}\label{ch:g12:processes-and-scheduling}
+
+A laptop with four processor cores runs some three hundred programs ``at the same time'': the editor, the browser and
+its tabs, the music player, and many small programs of the operating system that nobody started by hand. Four cores
+can run four instructions at once, not three hundred. The rest is an illusion that the operating system maintains by
+switching from one program to the next many times a second.
+
+This chapter looks at a running program, a \omterm{def:g12:processes-and-scheduling:process}{process}, from the operating system's side: how it is created, the \omterm{def:g12:processes-and-scheduling:states}{states}
+it passes through, and how the system chooses which one runs. Sharing the processor raises two new kinds of bug, a
+lost update and a \omterm{def:g12:processes-and-scheduling:deadlock}{deadlock}, which appear only when programs run together; both are shown on small simulations where
+every possible order can be tried.
+
+\begin{recall}
+The \omterm{def:g11:os-and-command-line:kernel}{kernel} is the part of the operating system that manages the hardware and runs programs; programs ask it for
+services by \omterm{def:g11:os-and-command-line:kernel}{system calls}, and the shell starts commands (chapter \ref{ch:g11:os-and-command-line}). A \omterm{def:g10:sensors-actuators-control:state-machine}{state machine}
+moves between \omterm{def:g12:processes-and-scheduling:states}{states} on events (chapter \ref{ch:g10:sensors-actuators-control}). A queue serves its elements first in,
+first out (chapter \ref{ch:g12:lists-stacks-queues}). A cycle in a \omterm{def:g10:graphs-first-look:directed}{directed graph} is a path that comes back to its
+start (chapter \ref{ch:g12:graph-algorithms}).
+\end{recall}
+
+\section{Programs and processes}\label{sec:g12:processes-and-scheduling:process}
+
+\begin{definition}[Process]\label{def:g12:processes-and-scheduling:process}
+A \emph{process}\index{process} is a program being run. It has its own memory (its code, its data, its stack), the
+values of the processor's registers when it last ran, the files it has opened, and a number, its process identifier,
+given by the operating system.
+\end{definition}
+
+One program can give several processes: two windows of the same editor are two processes running the same code with
+different data. A \omterm{def:g12:processes-and-scheduling:process}{process} creates another by a \omterm{def:g11:os-and-command-line:kernel}{system call}; the new one is its \emph{child}. In Python, the module
+\code{subprocess} starts a child and waits for it.
+
+\omcode{code/grade-12/10-processes-and-scheduling/listings/spawn.py}{1}{10}{A parent \omterm{def:g12:processes-and-scheduling:process}{process} starts two
+children.}\label{lst:g12:processes-and-scheduling:spawn}
+
+\omoutput{code/grade-12/10-processes-and-scheduling/outputs/spawn.txt}{Each child ends with an exit status: $0$ means
+success, anything else a failure that the parent can test.}\label{out:g12:processes-and-scheduling:spawn}
+
+The command \code{ps} lists processes. Below, a shell starts \code{sleep 30} in the background with \texttt{\&}, so that
+the shell does not wait for it; \texttt{\$!} is the number of that last background \omterm{def:g12:processes-and-scheduling:process}{process}, and \texttt{\$\$} the
+shell's own. The option \code{-p} selects processes by number, and \code{-o state=,comm=} asks for two columns: the
+state and the command.
+% ledger: g12:ps-state
+
+\omoutput{code/grade-12/10-processes-and-scheduling/outputs/ps_session.txt}{Both processes are in state \code{S},
+asleep: \code{sleep} waits for its thirty seconds to pass, the shell for \code{ps} to
+finish.}\label{out:g12:processes-and-scheduling:ps}
+
+\section{The states of a process}\label{sec:g12:processes-and-scheduling:states}
+
+\begin{definition}[Process states]\label{def:g12:processes-and-scheduling:states}
+At each moment a \omterm{def:g12:processes-and-scheduling:process}{process} is in one of three \emph{states}\index{process state (ready, running, blocked)}:
+\emph{running}, if a processor core is executing it; \emph{ready}, if it could run but waits for a core;
+\emph{blocked}, if it waits for an event, such as the end of a disk read, a key press or a message from the network,
+and could not use a core if it had one.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, st/.style={draw, circle, minimum size=16mm, align=center, fill=omDef!10},
+    ed/.style={->, thick, >={Stealth}}]
+  \node[st] (rd) at (0,0) {ready};
+  \node[st, fill=omMeth!15] (rn) at (5,0) {running};
+  \node[st, fill=omThm!12] (bl) at (2.5,-3.6) {blocked};
+  \node[draw, rounded corners, inner sep=3pt] (nw) at (-3,0) {created};
+  \node[draw, rounded corners, inner sep=3pt] (dn) at (8,0) {ended};
+  \draw[ed] (nw) -- (rd);
+  \draw[ed] (rd) to[bend left=25] node[above] {chosen by the scheduler} (rn);
+  \draw[ed] (rn) to[bend left=25] node[below, align=center] {interrupted:\\ quantum over} (rd);
+  \draw[ed] (rn) -- node[pos=0.6, right=2pt, align=left] {waits for\\ an event} (bl);
+  \draw[ed] (bl) -- node[pos=0.4, left=2pt, align=right] {the event\\ happened} (rd);
+  \draw[ed] (rn) -- node[above] {exits} (dn);
+\end{tikzpicture}
+
+{\small The \omterm{def:g12:processes-and-scheduling:states}{states} of a \omterm{def:g12:processes-and-scheduling:process}{process} as a \omterm{def:g10:sensors-actuators-control:state-machine}{state machine}. Only the \omterm{def:g12:processes-and-scheduling:scheduler}{scheduler} moves a \omterm{def:g12:processes-and-scheduling:process}{process} into \emph{running}; a blocked
+\omterm{def:g12:processes-and-scheduling:process}{process} always goes back through \emph{ready}, even when its event is over.}
+\end{omfigure}
+
+The output of \code{ps} above uses letters for these \omterm{def:g12:processes-and-scheduling:states}{states}: \code{R} for running or ready, \code{S} for asleep, waiting for an
+event to complete.
+% ledger: g12:ps-state
+
+\section{The scheduler}\label{sec:g12:processes-and-scheduling:scheduler}
+
+\begin{definition}[Interrupt]\label{def:g12:processes-and-scheduling:interrupt}
+An \emph{interrupt}\index{interrupt} is a signal from a device to the processor that makes it stop the current
+program, at the end of the current instruction, and run a function of the \omterm{def:g11:os-and-command-line:kernel}{kernel}. A timer, the network card or the
+disk controller each sends interrupts; the \omterm{def:g11:os-and-command-line:kernel}{kernel}'s function decides what happens next.
+\end{definition}
+
+A timer \omterm{def:g12:processes-and-scheduling:interrupt}{interrupts} the processor at a regular pace, many times a second. Each time, the \omterm{def:g11:os-and-command-line:kernel}{kernel} can take the processor away from the running \omterm{def:g12:processes-and-scheduling:process}{process} and give it to another.
+
+\begin{definition}[Scheduler, quantum, round robin]\label{def:g12:processes-and-scheduling:scheduler}
+The \emph{scheduler}\index{scheduler} is the part of the \omterm{def:g11:os-and-command-line:kernel}{kernel} that chooses which ready \omterm{def:g12:processes-and-scheduling:process}{process} runs next. A
+\emph{quantum}\index{quantum} is the longest time a \omterm{def:g12:processes-and-scheduling:process}{process} may run before it is interrupted and sent back to the
+ready queue. \emph{Round robin}\index{round robin} keeps the ready processes in a queue: it runs the first one for at
+most a quantum, then puts it back at the end of the queue if it is not finished. \emph{First come, first served} runs
+each \omterm{def:g12:processes-and-scheduling:process}{process} to its end, in order of arrival.
+\end{definition}
+
+\begin{definition}[Context switch]\label{def:g12:processes-and-scheduling:context-switch}
+A \emph{context switch}\index{context switch} is the work of the \omterm{def:g11:os-and-command-line:kernel}{kernel} to stop one \omterm{def:g12:processes-and-scheduling:process}{process} and start another: save
+the registers of the first, choose the second, restore its registers and its memory map. While it happens, no \omterm{def:g12:processes-and-scheduling:process}{process}
+does useful work.
+\end{definition}
+
+The simulator below follows these rules on a \emph{workload}: a list of processes, each with its arrival time and
+the processor time it needs, its \emph{burst}. Time is counted in units, the same for all. A \omterm{def:g12:processes-and-scheduling:process}{process}'s
+\emph{turnaround} is its finish time minus its arrival; its \emph{waiting time} is its turnaround minus its burst; its
+\emph{response time} is the time from its arrival to its first run.
+
+\omcode{code/grade-12/10-processes-and-scheduling/listings/scheduler.py}{1}{39}{First come, first served and \omterm{def:g12:processes-and-scheduling:scheduler}{round
+robin}, simulated.}\label{lst:g12:processes-and-scheduling:scheduler}
+
+\omcode{code/grade-12/10-processes-and-scheduling/listings/scheduler.py}{42}{56}{The times of each \omterm{def:g12:processes-and-scheduling:process}{process}, and a
+Gantt line of text.}\label{lst:g12:processes-and-scheduling:times}
+
+\omcode{code/grade-12/10-processes-and-scheduling/listings/fcfs_rr.py}{1}{16}{One workload, three
+schedules.}\label{lst:g12:processes-and-scheduling:fcfs-rr}
+
+\omoutput{code/grade-12/10-processes-and-scheduling/outputs/fcfs_rr.txt}{Each letter is one unit of processor time
+given to that \omterm{def:g12:processes-and-scheduling:process}{process}. \omterm{def:g12:processes-and-scheduling:scheduler}{Round robin} starts every \omterm{def:g12:processes-and-scheduling:process}{process} sooner, at the price of a longer
+turnaround.}\label{out:g12:processes-and-scheduling:fcfs-rr}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, x=7mm, y=7mm]
+  \foreach \n/\a/\b/\c in {A/0/2/omDef!12, B/2/4/omMeth!18, C/4/6/omThm!14, A/6/8/omDef!12, D/8/10/black!10,
+      B/10/11/omMeth!18, C/11/13/omThm!14, A/13/14/omDef!12, C/14/18/omThm!14}
+    \draw[fill=\c] (\a,0) rectangle node {\n} (\b,1);
+  \foreach \t in {0,2,...,18} \node[below, font=\scriptsize] at (\t,0) {\t};
+  \foreach \n/\t in {A/0, B/1, C/2, D/3} \draw[->, omThm] (\t,2) node[above, font=\scriptsize] {\n} -- (\t,1.05);
+  \node[left, font=\scriptsize] at (-0.3,1.6) {arrivals};
+\end{tikzpicture}
+
+{\small \omterm{def:g12:processes-and-scheduling:scheduler}{Round robin} with a \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} of $2$ on the workload of the listing. A, B, C and D arrive at times $0$ to $3$.
+Each \omterm{def:g12:processes-and-scheduling:process}{process} runs at most two units, then goes to the end of the queue; B needs a third unit at time $10$, A its
+fifth at time $13$; C, the longest, finishes last at $18$.}
+\end{omfigure}
+
+The choice of the \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} is a compromise. A short \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} gives each \omterm{def:g12:processes-and-scheduling:process}{process} a turn soon, which is what a person at
+a keyboard notices; but each switch costs time. A long \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} wastes little in switches, but \omterm{def:g12:processes-and-scheduling:scheduler}{round robin} then
+behaves like first come, first served. The problem of the chapter measures this compromise.
+
+\section{Two processes and one variable}\label{sec:g12:processes-and-scheduling:race}
+
+Processes that share data, such as two threads of a program updating the same counter, can be interrupted between
+any two instructions. The line \code{counter += 1} is three instructions for the processor: \emph{load} the counter
+into a register, \emph{add} $1$ to the register, \emph{store} the register back. The program below plays two such
+processes in every possible order.
+
+\omcode{code/grade-12/10-processes-and-scheduling/listings/interleave.py}{1}{35}{Every interleaving of two
+three-step updates.}\label{lst:g12:processes-and-scheduling:interleave}
+
+\omoutput{code/grade-12/10-processes-and-scheduling/outputs/interleave.txt}{Only two orders of the twenty give the
+right answer.}\label{out:g12:processes-and-scheduling:interleave}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, x=1.9cm, y=-0.9cm]
+  \node[left] at (0.4,0) {P}; \node[left] at (0.4,1) {counter}; \node[left] at (0.4,2) {Q};
+  \draw[black!30] (0.5,0) -- (6.6,0); \draw[black!30] (0.5,2) -- (6.6,2);
+  \foreach \k/\w/\a/\v/\f in {1/0/load/0/omDef!12, 2/0/add/0/omDef!12, 3/2/load/0/omMeth!15,
+      4/0/store/1/omDef!12, 5/2/add/1/omMeth!15, 6/2/store/1/omMeth!15} {
+    \node[draw, rounded corners=1pt, fill=\f] at (\k,\w) {\a};
+    \node[draw=black!40, fill=black!5] at (\k,1) {$\v$};
+  }
+  \node[font=\scriptsize, below=1pt] at (1,0.25) {reg $0$};
+  \node[font=\scriptsize, below=1pt] at (2,0.25) {reg $1$};
+  \node[font=\scriptsize, above=1pt] at (3,1.75) {reg $0$};
+  \node[font=\scriptsize, above=1pt] at (5,1.75) {reg $1$};
+  \draw[->, thick, omThm] (4,0.3) -- (4,0.7);
+  \draw[->, thick, omThm] (6,1.7) -- (6,1.3);
+  \node[font=\scriptsize, omThm, right] at (6.15,1) {lost: $1$, not $2$};
+\end{tikzpicture}
+
+{\small The interleaving printed above. Q loads the counter before P has stored its result, so both start from $0$;
+P stores $1$, then Q stores $1$ over it. One of the two additions is lost.}
+\end{omfigure}
+
+\begin{definition}[Race condition, critical section, mutual exclusion, lock]\label{def:g12:processes-and-scheduling:race}
+A \emph{race condition}\index{race condition} is a bug whose effect depends on the order in which processes happen to
+run. A \emph{critical section}\index{critical section} is a part of a program that uses shared data and must not run
+in two processes at once. \emph{Mutual exclusion}\index{mutual exclusion} is the guarantee that at most one \omterm{def:g12:processes-and-scheduling:process}{process} is
+in a critical section at any time. A \emph{lock}\index{lock} provides it: a \omterm{def:g12:processes-and-scheduling:process}{process} \emph{acquires} the lock before the
+critical section and \emph{releases} it after; a \omterm{def:g12:processes-and-scheduling:process}{process} that tries to acquire a lock already held waits until it is
+released.
+\end{definition}
+
+\omcode{code/grade-12/10-processes-and-scheduling/listings/with_lock.py}{1}{40}{The two updates inside a \omterm{def:g12:processes-and-scheduling:race}{lock}, with
+every possible run.}\label{lst:g12:processes-and-scheduling:lock}
+
+\omoutput{code/grade-12/10-processes-and-scheduling/outputs/with_lock.txt}{Whoever acquires the \omterm{def:g12:processes-and-scheduling:race}{lock} first does its
+three steps alone: the counter is always $2$.}\label{out:g12:processes-and-scheduling:lock}
+
+A real \omterm{def:g12:processes-and-scheduling:race}{lock} must itself be acquired without a race: two processes testing ``is it free?'' and then taking it would
+repeat the bug. Processors provide special instructions that test and set a memory cell in one indivisible step, and
+operating systems build \omterm{def:g12:processes-and-scheduling:race}{locks} on them.
+
+\section{Deadlock}\label{sec:g12:processes-and-scheduling:deadlock}
+
+\begin{definition}[Deadlock]\label{def:g12:processes-and-scheduling:deadlock}
+A \emph{deadlock}\index{deadlock} is a state in which each \omterm{def:g12:processes-and-scheduling:process}{process} of a group waits for a resource held by another
+\omterm{def:g12:processes-and-scheduling:process}{process} of the group, so that none of them can ever go on.
+\end{definition}
+
+The simplest case needs two \omterm{def:g12:processes-and-scheduling:race}{locks}. P takes A, then B; Q takes B, then A. If each takes its first \omterm{def:g12:processes-and-scheduling:race}{lock} before the other
+takes its second, both wait for ever.
+
+\omcode{code/grade-12/10-processes-and-scheduling/listings/deadlock_sim.py}{1}{29}{Every run of two processes taking
+two \omterm{def:g12:processes-and-scheduling:race}{locks}.}\label{lst:g12:processes-and-scheduling:deadlock}
+
+\omcode{code/grade-12/10-processes-and-scheduling/listings/deadlock_sim.py}{31}{51}{The cycle of the wait-for \omterm{def:g10:graphs-first-look:graph}{graph},
+and the two orders of taking the \omterm{def:g12:processes-and-scheduling:race}{locks}.}\label{lst:g12:processes-and-scheduling:deadlock-run}
+
+\omoutput{code/grade-12/10-processes-and-scheduling/outputs/deadlock_sim.txt}{Opposite orders can \omterm{def:g12:processes-and-scheduling:deadlock}{deadlock}; the same
+order never does.}\label{out:g12:processes-and-scheduling:deadlock}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, pr/.style={draw, circle, minimum size=10mm, fill=omDef!12},
+    rs/.style={draw, minimum size=9mm, fill=omMeth!15}, ed/.style={->, thick, >={Stealth}}]
+  \node[pr] (P) at (0,0) {P}; \node[pr] (Q) at (4,0) {Q};
+  \node[rs] (A) at (2,1.6) {A}; \node[rs] (B) at (2,-1.6) {B};
+  \draw[ed] (A) -- node[above left, font=\scriptsize] {held by} (P);
+  \draw[ed, omThm] (P) -- node[below left, font=\scriptsize] {waits for} (B);
+  \draw[ed] (B) -- node[below right, font=\scriptsize] {held by} (Q);
+  \draw[ed, omThm] (Q) -- node[above right, font=\scriptsize] {waits for} (A);
+\end{tikzpicture}
+
+{\small The resource-allocation \omterm{def:g10:graphs-first-look:graph}{graph} of the \omterm{def:g12:processes-and-scheduling:deadlock}{deadlock}. Processes are circles, \omterm{def:g12:processes-and-scheduling:race}{locks} squares; an arrow from a \omterm{def:g12:processes-and-scheduling:race}{lock} to
+a \omterm{def:g12:processes-and-scheduling:process}{process} means ``held by'', from a \omterm{def:g12:processes-and-scheduling:process}{process} to a \omterm{def:g12:processes-and-scheduling:race}{lock} ``waits for''. The four arrows form a cycle. Leaving out the
+\omterm{def:g12:processes-and-scheduling:race}{locks} gives the wait-for \omterm{def:g10:graphs-first-look:graph}{graph} of the output: P waits for Q, Q waits for P.}
+\end{omfigure}
+
+A \omterm{def:g12:processes-and-scheduling:deadlock}{deadlock} needs four conditions together: \emph{\omterm{def:g12:processes-and-scheduling:race}{mutual exclusion}} (a resource is held by one \omterm{def:g12:processes-and-scheduling:process}{process} at a time),
+\emph{hold and wait} (a \omterm{def:g12:processes-and-scheduling:process}{process} keeps what it holds while it waits for more), \emph{no preemption} (a resource cannot
+be taken away from the \omterm{def:g12:processes-and-scheduling:process}{process} holding it), and \emph{circular wait} (a cycle of processes, each waiting for the
+next). Breaking any one prevents \omterm{def:g12:processes-and-scheduling:deadlock}{deadlock}. The usual remedy breaks the fourth: number the resources, and have every
+\omterm{def:g12:processes-and-scheduling:process}{process} take them in increasing order. A cycle would then need a \omterm{def:g12:processes-and-scheduling:process}{process} waiting for a resource numbered lower than
+one it holds, which the rule forbids; the last line of the output checks it on every run.
+
+\begin{history}[Coffman, Elphick and Shoshani, 1971]
+The four conditions were stated together by Edward G.\ Coffman, Michael Elphick and Arie Shoshani in ``System
+\omterm{def:g12:processes-and-scheduling:deadlock}{deadlocks}'', a survey published in 1971 in \emph{ACM Computing Surveys}.
+% ledger: g12:coffman-1971
+\end{history}
+
+\section{Exercises}\label{sec:g12:processes-and-scheduling:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g12:processes-and-scheduling:1}
+Three processes arrive at time $0$ in the order X (burst $4$), Y ($1$), Z ($3$). Give the order and the slices of first
+come, first served.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:processes-and-scheduling:2}
+Compute the waiting time of each \omterm{def:g12:processes-and-scheduling:process}{process} of exercise \ref{exo:g12:processes-and-scheduling:1}, and the mean.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:processes-and-scheduling:3}
+Write the Gantt line of \omterm{def:g12:processes-and-scheduling:scheduler}{round robin} with a \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} of $1$ on X, Y, Z of exercise
+\ref{exo:g12:processes-and-scheduling:1}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:processes-and-scheduling:4}
+How many \omterm{def:g12:processes-and-scheduling:context-switch}{context switches} does \omterm{def:g12:processes-and-scheduling:scheduler}{round robin} with $q = 2$ make on the workload of the chapter? And with $q = 4$?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:processes-and-scheduling:5}
+Write \code{turnaround(workload, slices)}, which returns the turnaround of each \omterm{def:g12:processes-and-scheduling:process}{process} as a dictionary.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:processes-and-scheduling:6}
+A \omterm{def:g12:processes-and-scheduling:scheduler}{round robin} forgets to put an unfinished \omterm{def:g12:processes-and-scheduling:process}{process} back in the queue. What happens on the workload of the chapter
+with $q = 2$?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:processes-and-scheduling:7}
+How many interleavings do two processes of $3$ steps each have? Of $a$ and $b$ steps? Explain the count.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:processes-and-scheduling:8}
+Write \code{sjf(workload)}, shortest job first: when the processor is free, it runs to its end the ready \omterm{def:g12:processes-and-scheduling:process}{process} with
+the smallest burst. Apply it to the workload of the chapter.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:processes-and-scheduling:9}
+A function acquires a \omterm{def:g12:processes-and-scheduling:race}{lock}, and returns early, without releasing it, when the value it reads is negative. What
+happens to the other processes that use the \omterm{def:g12:processes-and-scheduling:race}{lock}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:processes-and-scheduling:10}
+Give the final counter for the order: P load, Q load, Q add, Q store, P add, P store. Is an update lost?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:processes-and-scheduling:11}
+Two designs. In the first, processes never use the printer: they hand whole documents to a printer server, which
+prints them one after the other. In the second, a \omterm{def:g12:processes-and-scheduling:process}{process} asks for all the resources it will need in one request,
+granted all at once or not at all, before it starts. Which of the four conditions of \omterm{def:g12:processes-and-scheduling:deadlock}{deadlock} does each design rule
+out?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:processes-and-scheduling:12}
+Prove that with the \omterm{def:g12:processes-and-scheduling:race}{lock}, no run of \code{with_lock.py} loses an update, whatever the order of the steps.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:processes-and-scheduling:13}
+Write \code{has_cycle(waits_for)}, which detects a \omterm{def:g12:processes-and-scheduling:deadlock}{deadlock} in a wait-for \omterm{def:g10:graphs-first-look:graph}{graph} given as a dictionary from each
+\omterm{def:g12:processes-and-scheduling:process}{process} to the list of processes it waits for.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:processes-and-scheduling:14}
+Four processes arrive at time $0$ with bursts $6$, $8$, $3$, $2$. Compute the mean waiting time of first come, first
+served and of shortest job first. Show that, when all processes arrive together, shortest job first gives the smallest
+mean waiting time of all orders.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:processes-and-scheduling:15}
+Five philosophers sit at a round table, with a fork between each two. To eat, a philosopher takes the fork on the left,
+then the one on the right. Show that a \omterm{def:g12:processes-and-scheduling:deadlock}{deadlock} can happen, and that taking the lower-numbered fork first prevents it.
+\end{exercise}
+
+\section{Problem: Choosing the Quantum}\label{sec:g12:processes-and-scheduling:problem}
+
+\begin{problem}[{Weekend problem --- how long should a turn last?}]\label{pb:g12:processes-and-scheduling:1}
+Five processes share one core: A, a long computation, arrives first; four short ones follow. Every \omterm{def:g12:processes-and-scheduling:context-switch}{context switch} costs
+one unit of time. The program tries \omterm{def:g12:processes-and-scheduling:scheduler}{round robin} with every \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} from $1$ to $12$.
+
+\omcode{code/grade-12/10-processes-and-scheduling/listings/quantum.py}{1}{28}{\omterm{def:g12:processes-and-scheduling:scheduler}{Round robin} on one workload, for every
+\omterm{def:g12:processes-and-scheduling:scheduler}{quantum}.}\label{lst:g12:processes-and-scheduling:quantum}
+
+\omoutput{code/grade-12/10-processes-and-scheduling/outputs/quantum.txt}{Mean turnaround, number of switches, and the
+time when everything is done.}\label{out:g12:processes-and-scheduling:quantum}
+
+\medskip\noindent\textbf{Part I --- The workload.}
+\begin{enumerate}
+  \item How much processor time does the workload need in all?
+  \item Why can no schedule finish everything before time $35$?
+  \item With first come, first served, in which order do the processes run? Give the slices, with the switches.
+  \item Compute the turnaround of each \omterm{def:g12:processes-and-scheduling:process}{process} under first come, first served, and check the mean printed.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Short and long quanta.}
+\begin{enumerate}[resume]
+  \item Why is \omterm{def:g12:processes-and-scheduling:scheduler}{round robin} with $q = 1$ worse than first come, first served here?
+  \item Count the time lost in switches for $q = 1$, and check it against the time when everything is done.
+  \item Why is the result the same for every $q \ge 20$? Which schedule is it?
+  \item Why do $q = 12$ and first come, first served differ, although A runs first in both?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The best quantum.}
+\begin{enumerate}[resume]
+  \item Which \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} gives the smallest mean turnaround? By how much does it beat first come, first served?
+  \item With $q = 6$, write the slices, and find when each \omterm{def:g12:processes-and-scheduling:process}{process} finishes.
+  \item Explain why $q = 6$ suits this workload: compare it with the bursts of the short processes.
+  \item Why does the mean grow again for $q$ from $7$ to $12$?
+  \item The mean does not change steadily with $q$: $q = 5$ is worse than $q = 4$. Compare the finishing time of each
+    \omterm{def:g12:processes-and-scheduling:process}{process} for the two quanta, and explain.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Other measures.}
+\begin{enumerate}[resume]
+  \item Compute the response time of B under first come, first served and under $q = 6$.
+  \item A person typing in an editor cares about the response time; a person waiting for a report, about the
+    turnaround. Which \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} would each prefer here?
+  \item If a switch cost nothing, the program gives a mean turnaround of $17.4$ for $q = 1$, and $17.0$ for $q = 2$
+    and $q = 3$. Why does $q = 1$ improve so much, and why is it still not the best?
+  \item Shortest job first is not \omterm{def:g12:processes-and-scheduling:scheduler}{round robin}. Would it beat the best \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} on this workload? Why can a real
+    \omterm{def:g12:processes-and-scheduling:scheduler}{scheduler} not use it directly?
+  \item Suppose a \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} of $4$ milliseconds and a switch costing $4$ microseconds. What fraction of the processor
+    time goes to switches when every \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} is used in full? Compare with $q = 6$ here.
+  \item Why do real systems also change the \omterm{def:g12:processes-and-scheduling:scheduler}{quantum}, or the order, for processes that often block?
+  \item State the result: the best \omterm{def:g12:processes-and-scheduling:scheduler}{quantum} for this workload and switch cost, its mean turnaround, and that of first
+    come, first served.
+\end{enumerate}
+\end{problem}

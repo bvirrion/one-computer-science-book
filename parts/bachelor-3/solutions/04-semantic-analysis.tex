@@ -1,0 +1,102 @@
+\section*{Chapter \ref{ch:b3:semantic-analysis} --- Abstract Syntax and Semantic Analysis}
+
+\begin{solution}{exo:b3:semantic-analysis:1}
+Line 3: \code{n} is the parameter of line 2, which \omterm{def:b3:semantic-analysis:scope}{shadows} the global of line 1. Line 5: \code{m} is the \code{m} of line 3; the new \code{n} is declared after its initialiser is resolved. Line 6: \code{m} is still line 3's, \code{n} is line 5's. Line 8: the inner block is closed, so \code{n} is the parameter again and \code{m} is line 3's. The global \code{n} is never used. With $f(5)$: $m = 5$, the inner $n = 6$, $m = 6$, and the result is $5 + 6 = 11$; the program prints 11 (\code{exercise_1_and_4_scopes}).
+\end{solution}
+
+\begin{solution}{exo:b3:semantic-analysis:2}
+Five messages, in source order (\code{exercise_2_type_errors}): the returned value must be a \code{bool}, found an \code{int}; the left operand of \code{'+'} must be an \code{int}, found a \code{bool} (\code{f(1)}); the condition of an \code{if} must be a \code{bool}, found an \code{int}; argument 1 of \code{print} must be an \code{int}, found a \code{bool}; \code{'=='} compares a \code{bool} with an \code{int}. There are no more because each rule reports only its own requirement: \code{f(1) + 2} still has type \code{int}, since \code{+} always gives an integer, so \code{b} is an \code{int} and nothing later complains about it; and the \code{==}, once reported, has type \code{bool}, so the \code{while}'s condition is accepted.
+\end{solution}
+
+\begin{solution}{exo:b3:semantic-analysis:3}
+\begin{mathpar}
+\inferrule{\Gamma \vdash e : \mathsf{bool} \\ \Gamma \vdash B}{\Gamma \vdash \mathtt{while}\ e\ B \dashv \Gamma}
+\end{mathpar}
+The condition is a boolean, the body is checked in $\Gamma$ (its own declarations are local to it), and the context after the loop is $\Gamma$ unchanged.
+\end{solution}
+
+\begin{solution}{exo:b3:semantic-analysis:4}
+Under \omterm{def:b3:semantic-analysis:scope}{lexical scope}, 1: the \code{x} in \code{show} is the global, the only \code{x} the text of \code{show} can see; the interpreter prints 1 (\code{exercise_1_and_4_scopes}). Under \omterm{def:b3:semantic-analysis:scope}{dynamic scope}, 2: when \code{show} runs, the most recent active \code{x} is \code{main}'s. Only \omterm{def:b3:semantic-analysis:scope}{lexical scope} can be checked before the program runs: under \omterm{def:b3:semantic-analysis:scope}{dynamic scope}, whether a name is declared at a use depends on the calls that lead there, which in general depend on the input.
+\end{solution}
+
+\begin{solution}{exo:b3:semantic-analysis:5}
+Declaring the inner \code{x} replaces the outer one in the map, and closing the block removes \code{x} altogether: the outer declaration is lost, and after the block \code{x} is not found. The fix (\code{exercises/ex5_flat_fixed.rs}) maps each name to the stack of its visible declarations. Declaring pushes onto the name's stack and records the name in the block's list; closing the block pops one declaration per recorded name, and removes the entry when its stack is empty. A lookup reads the top of one stack: one probe. The test replays the sequence of \cref{out:b3:semantic-analysis:flat} and finds line 15 after the block, and nothing after the outer one.
+\end{solution}
+
+\begin{solution}{exo:b3:semantic-analysis:6}
+\code{exercises/ex6_unused.rs}. Walk every function and collect the declarations read: a \code{Var} expression's entry in the \code{uses} table (the target of an assignment is a use in the table, but not a read, so the walk does not count it). Warn for each local or parameter not collected. On \code{ex6.moor}: \code{unit} (line 1, a parameter never used), \code{spare} (line 3, assigned but never read) and the inner \code{total} (line 10, \omterm{def:b3:semantic-analysis:scope}{shadowing} the outer one, which \code{print} reads).
+\end{solution}
+
+\begin{solution}{exo:b3:semantic-analysis:7}
+By induction on the block. If \code{returns(B)} holds, some statement $s_k$ of $B$ returns in the sense of the function. An execution of $B$ runs $s_1, s_2, \dots$ in order; if it returns before $s_k$ we are done; otherwise it reaches $s_k$, and runs it to its end or to a return. If $s_k$ is a \code{return}, it returns. If it is an \code{if} with both branches returning, the branch taken returns by induction (it is a smaller block). If it is a block, by induction again. So no execution gets past $s_k$, and none reaches the end of $B$. A function the check refuses although it always returns: \texttt{fn f(n:\ int) -> int \{ if n > 0 \{ return 1; \} if n <= 0 \{ return 2; \} \}}, or any function ending in \code{while true { return 1; }}; deciding exactly which functions always return is undecidable in general, so a sound check must refuse some.
+\end{solution}
+
+\begin{solution}{exo:b3:semantic-analysis:8}
+The stack holds the globals' map, the parameters' map and one map per block: $d + 2$ maps at depth $d$. A lookup searches from the top. A local of the innermost block: 1 probe. A parameter: $d + 1$. A global: $d + 2$. An undeclared name: $d + 2$, every map. In general a name declared $k$ maps below the top costs $k + 1$ (\code{exercise_8_probes_grow_with_depth} checks the count on stacks of 1 to 20 maps).
+\end{solution}
+
+\begin{solution}{exo:b3:semantic-analysis:9}
+\code{f(4)} calls \code{f(3)}, which calls \code{f(2)}, which calls \code{f(1)}: it prints 1 and returns 1. \code{f(2)} prints 2 and calls \code{f(0)}, which prints 0: \code{f(2)} returns 1. \code{f(3)} prints 3 and calls \code{f(1)}, which prints 1: \code{f(3)} returns 2. \code{f(4)} prints 4 and calls \code{f(2)} again: 1, 2, 0. The output is 1, 2, 0, 3, 1, 4, 1, 2, 0, one per line, and the exit status is $f(4) = 2 + 1 = 3$, the Fibonacci number $F_4$ (\code{exercise_9_recursive_output}).
+\end{solution}
+
+\begin{solution}{exo:b3:semantic-analysis:10}
+Strengthen the claim to: an evaluation that ends without error, in an environment that agrees with $\Gamma$, gives a value of the expression's type, and every call it makes, of a function with result type $\rho$, returns a value of type $\rho$. Induct on the length of the evaluation (the number of steps, finite since it ends). For $f(e_1, \dots, e_n)$ with $\Gamma(f) = (\tau_1, \dots, \tau_n) \to \tau$: the arguments are shorter evaluations, so they give values of types $\tau_i$; the callee's environment, its parameters bound to them, agrees with the context in which its body was checked. Every statement of the body keeps agreement, as in the proof of \cref{thm:b3:semantic-analysis:sound}, the calls inside being shorter evaluations. The body ends in one of two ways. By a \code{return e}: the rule of \code{return} gives $\Gamma' \vdash e : \tau$, and by induction $e$'s value has type $\tau$. By reaching its end: then the interpreter returns no value at all, and this is what the return-on-every-path check excludes (exercise~\ref{exo:b3:semantic-analysis:7}) for every function with a result type. Calls of functions without one have type \emph{nothing}, which no rule accepts as an operand, so they appear only as statements.
+\end{solution}
+
+\begin{solution}{exo:b3:semantic-analysis:11}
+\code{exercises/ex11_persistent.rs}: an AVL tree whose insertion copies the nodes on the path from the root and rebalances on the way up, sharing every other subtree with the old tree. The test declares 1,000 names: the tree's height is at most 14 ($1.44 \log_2 1001 < 14.4$), a lookup makes at most 14 comparisons, and an inner block that \omterm{def:b3:semantic-analysis:scope}{shadows} one name and adds another allocates at most $2 \times 3 \times 14$ nodes, while the outer tree still answers as before. Compared with the stack of maps: entering and leaving a block cost nothing (keep or drop a root), and a lookup costs $O(\log n)$ comparisons whatever the depth, against one probe per enclosing scope; a declaration costs $O(\log n)$ new nodes against one map insertion. The persistent table also lets several phases keep the scope of any program point alive at once, at no cost, which a mutable stack cannot.
+\end{solution}
+
+\begin{solution}{exo:b3:semantic-analysis:12}
+Let $\mathrm{DA}$ be the set of definitely assigned variables at a point. A \texttt{var x:\ int;} adds \code{x} to the scope but not to $\mathrm{DA}$; \code{var x = e;} and \code{x = e;} first require that every variable read by $e$ is in $\mathrm{DA}$, then add \code{x}. For \code{if e B1 else B2}: the condition is checked against $\mathrm{DA}$, both branches start from $\mathrm{DA}$, and after the statement $\mathrm{DA}$ is the intersection of the sets at the ends of the branches. Without \code{else}, the intersection with $\mathrm{DA}$ itself, which is $\mathrm{DA}$. For \code{while e B}: the body is checked from $\mathrm{DA}$, and after the loop $\mathrm{DA}$ is unchanged, since the body may run zero times. After a \code{return}, $\mathrm{DA}$ is the set of all variables in scope: no path goes on from there, so the intersection at the end of an \code{if} ignores that branch. Closing a block removes its variables. \emph{Soundness}, by induction on the length of a path from the function's entry: at each point $p$ reached, every variable of $\mathrm{DA}(p)$ has been assigned on the path. Each rule preserves this: an assignment adds only the variable it assigns; after an \code{if}, the path came through one branch, whose set contains the intersection; after a \code{while}, the set is the one at the loop's entry, which the path passed through; after a \code{return}, no path continues. So a read of a variable in $\mathrm{DA}$ never reads an unassigned one.
+\end{solution}
+
+\begin{solution}{pb:b3:semantic-analysis:1}
+The counts are asserted in \code{tests/pb_test.rs}.
+
+\textbf{1.} The generator's \code{script(2, 2, None)} (its text is fixed by a test) has \code{var reg = 0;} and two declarations in the body, then a block with two more, one statement per line. Below the parameters' map (empty), the body's map grows \{reg\}, \{reg, v1\_1\}, \{reg, v1\_1, v1\_2\}; then the block pushes a map that grows \{v2\_1\}, \{v2\_1, v2\_2\}. The globals' map holds \code{main} and the three built-ins.
+
+\textbf{2.} Every use is bound to the \code{reg} of the outermost block. Every declaration's initialiser reads it, at every depth, and an inner block sees every declaration of the blocks around it.
+
+\textbf{3.} The uses in the second block after its own \code{reg}, and in every block inside it; the uses of the first block keep the outer one.
+
+\textbf{4.} The outer \code{v}: the initialiser is resolved before the new name is declared.
+
+\textbf{5.} No. Lexical and \omterm{def:b3:semantic-analysis:scope}{dynamic scope} differ only when a function reads a name declared outside it and is called from elsewhere; the script is one function with no calls.
+
+\textbf{6.} $n + 1 = dm + 1$ declarations, \code{reg} included, and $n$ uses.
+
+\textbf{7.} $k$: the list holds, newest first, the $k - 1$ declarations made since \code{reg}, then \code{reg} itself.
+
+\textbf{8.} $\sum_{k=1}^{n} k = n(n+1)/2$, whatever $d$: a block's exit truncates the list, but no block closes before the last declaration.
+
+\textbf{9.} $i$ probes: the maps of blocks $i, i - 1, \dots, 1$. In total $\sum_{i=1}^{d} m\,i = m\,d(d+1)/2 = n(d+1)/2$.
+
+\textbf{10.} One probe per lookup, $n$ in total. Leaving a block pops one declaration per name the block declared: $m$ operations.
+
+\textbf{11.} All three hold the $n + 1$ live declarations: the list $n + 1$ pairs and $d$ marks; the stack $d + 2$ maps with $n + 5$ entries in all; the single map $n + 1$ entries, with $d$ lists of names. Each is $\Theta(n + d)$.
+
+\textbf{12.} $n(n+1)/2$ comparisons for the list, $n$ probes for the stack of maps (every use is found in the first map searched), $n$ for the single map.
+
+\textbf{13.} For $n = 10{,}000$, the list makes 50,005,000 comparisons at every depth; the stack of maps makes 10,000, 55,000, 505,000 and 5,005,000 probes for $d = 1$, 10, 100 and 1,000; the single map makes 10,000 probes at every depth.
+
+\textbf{14.} Its count, $n(n+1)/2$, depends only on how many declarations are newer than \code{reg} at each use.
+
+\textbf{15.} About 10 at $d = 1{,}000$ ($50{,}005{,}000 / 5{,}005{,}000$), and about 5,000 at $d = 1$.
+
+\textbf{16.} The stack of maps: its cost per lookup is the number of blocks between a use and its declaration, which is small in real programs, and it is the simplest to write and to get right, since closing a block drops one map. The single map wins only on deep nesting with far references, as in this script.
+
+\textbf{17.} A probe hashes the name and inspects one bucket; its cost depends on how many keys share the bucket. With a good hash function and a bounded load factor, the expected number is constant; in the worst case every name collides.
+
+\textbf{18.} Times depend on the machine, its caches and its load, and change from run to run; counts are deterministic, reproducible anywhere, and predicted exactly by the formulas above.
+
+\textbf{19.} Four: one ``\code{'rge'} is not declared'' per use in block 3.
+
+\textbf{20.} Each \code{rge} has the \omterm{def:b3:semantic-analysis:error-type}{error type}; \code{+} accepts it silently and gives \code{int}, so the declared variable is an \code{int} and nothing after it complains.
+
+\textbf{21.} Not for this script: \code{rge + j} would be \code{int + int}. It would for \code{var ok = rge && true;}, which would then add a message about the left operand of \code{&&}, a consequence of the same cause.
+
+\textbf{22.} Keep the set of undeclared names already reported in the current function, and report only the first use of each (possibly with a count of the others). The script would get one message.
+
+\textbf{23.} On a script of $n$ declarations and depth $d$, a list of pairs costs $n(n+1)/2$ comparisons, $\Theta(n^2)$ whatever the depth; a stack of hash maps costs $n(d+1)/2$ probes, $\Theta(nd)$; one map from names to stacks of declarations costs $n$ probes, $\Theta(n)$ expected: only the last makes resolution linear in the size of the script. At $n = 10{,}000$ and $d = 1{,}000$: 50,005,000, 5,005,000 and 10,000.
+\end{solution}

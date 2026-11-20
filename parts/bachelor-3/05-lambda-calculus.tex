@@ -1,0 +1,389 @@
+\chapter{The Lambda Calculus and Operational Semantics}\label{ch:b3:lambda-calculus}
+
+The interpreter of the last chapter defines Moor: whatever it does is what a Moor program means. That is a fine definition for running programs and a poor one for reasoning about them, since to know what \code{x + 1} means one must read a few hundred lines of Rust. This chapter takes the opposite road. It starts from the smallest language that can compute anything, with one way to build a function and one way to call it, and then writes the meaning of a richer language as a handful of rules, each one line, from which an interpreter can be read off.
+
+\section{Terms and substitution}\label{sec:b3:lambda-calculus:terms}
+
+\begin{recall}
+A closure is a function value that carries the variables it uses from its surrounding scope; a higher-order function takes or returns functions (Year 2 volume). Structural induction proves a property of every tree by proving it for each kind of node, assuming it for the children (Year 1 volume). In a formula $\forall x.\,\varphi$, the quantifier binds the occurrences of $x$ in $\varphi$; the others are free (Year 2 volume, predicate logic).
+\end{recall}
+
+\begin{definition}[$\lambda$-term]\label{def:b3:lambda-calculus:terms}
+The \emph{$\lambda$-terms}\index{lambda-term@$\lambda$-term} over a set of variables are given by the grammar $M ::= x \mid \lambda x.\,M \mid M\,M$. A term $\lambda x.\,M$ is an \emph{abstraction}\index{abstraction (lambda-calculus)@abstraction ($\lambda$-calculus)}: the function that maps $x$ to $M$. A term $M\,N$ is an \emph{application}\index{application (lambda-calculus)@application ($\lambda$-calculus)}: the function $M$ called with the argument $N$.
+\end{definition}
+
+\omterm{def:b3:lambda-calculus:terms}{Application} associates to the left, so $f\,a\,b$ is $(f\,a)\,b$, a function of two arguments taken one at a time; and the body of a $\lambda$ extends as far right as possible, so $\lambda x.\,\lambda y.\,x\,y$ is $\lambda x.\,(\lambda y.\,(x\,y))$. In code we write \texttt{\textbackslash{}x.\ M} for $\lambda x.\,M$, and \texttt{\textbackslash{}x y.\ M} for $\lambda x.\,\lambda y.\,M$. A $\lambda$ binds its variable in its body exactly as a quantifier does in logic: in $\lambda x.\,x\,y$ the occurrence of $x$ is bound and $y$ is free, and the free variables of a term are defined by the same structural recursion as for formulas.
+
+\begin{definition}[$\alpha$-equivalence, capture-avoiding substitution]\label{def:b3:lambda-calculus:alpha}
+Two terms are \emph{$\alpha$-equivalent}\index{alpha-equivalence@$\alpha$-equivalence} if they differ only in the names of bound variables, renamed consistently: $\lambda x.\,x\,y$ and $\lambda z.\,z\,y$ are, $\lambda x.\,x\,y$ and $\lambda y.\,y\,y$ are not. The \emph{capture-avoiding substitution}\index{capture-avoiding substitution} $M[x := N]$ replaces the free occurrences of $x$ in $M$ by $N$, after renaming the bound variables of $M$ that would otherwise capture a free variable of $N$.
+\end{definition}
+
+Capture is the whole difficulty. Substituting $y$ for $x$ in $\lambda y.\,x$ naively gives $\lambda y.\,y$, the identity, where we wanted the function that ignores its argument and returns $y$. The correct result renames first: $\lambda y'.\,y$. Terms are considered up to $\alpha$-equivalence from now on, so this renaming is harmless.
+
+Names make implementations fragile: every substitution must check for capture and invent fresh names. Nicolaas \omterm{def:b3:lambda-calculus:debruijn}{de Bruijn} removed the names altogether.
+
+\begin{definition}[de Bruijn index]\label{def:b3:lambda-calculus:debruijn}
+In the \emph{de Bruijn}\index{de Bruijn index} notation, a bound variable is replaced by the number of $\lambda$'s between its occurrence and its binder: 0 for the nearest enclosing $\lambda$, 1 for the next one out, and so on. The term $\lambda x.\,\lambda y.\,x\,y$ becomes $\lambda.\,\lambda.\,1\;0$.
+\end{definition}
+
+Two $\alpha$-equivalent terms have the same \omterm{def:b3:lambda-calculus:debruijn}{de Bruijn} form, so $\alpha$-equivalence becomes plain equality of trees. \Cref{lst:b3:lambda-calculus:term} is the representation used in this chapter: an index for a bound variable, a name for a free one, and the binder's name kept only as a hint for printing.
+
+\omcode{code/bachelor-3/05-lambda-calculus/listings/term.rs}{8}{33}{$\lambda$-terms with \omterm{def:b3:lambda-calculus:debruijn}{de Bruijn} indices; $\alpha$-equivalence is structural equality, with the names ignored.}\label{lst:b3:lambda-calculus:term}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth,
+  nd/.style={inner sep=2pt, minimum size=5mm},
+  bnd/.style={->, dashed, omThm, thick}]
+  \node[nd] (lx) at (0,0) {$\lambda x$};
+  \node[nd] (ly) at (0,-0.9) {$\lambda y$};
+  \node[nd] (ap) at (0,-1.8) {@};
+  \node[nd] (x) at (-1.3,-2.7) {$x$ : 1};
+  \node[nd] (lz) at (1.3,-2.7) {$\lambda z$};
+  \node[nd] (ap2) at (1.3,-3.6) {@};
+  \node[nd] (z) at (0.5,-4.5) {$z$ : 0};
+  \node[nd] (y) at (2.1,-4.5) {$y$ : 1};
+  \draw (lx) -- (ly) -- (ap) -- (x); \draw (ap) -- (lz) -- (ap2) -- (z); \draw (ap2) -- (y);
+  \draw[bnd] (x.west) to[bend left=40] (lx.west);
+  \draw[bnd] (z.west) to[bend left=50] (lz.west);
+  \draw[bnd] (y.east) to[bend right=40] (ly.east);
+  \node[anchor=west, align=left] at (3.6,-1.6) {named: $\lambda x.\,\lambda y.\,x\,(\lambda z.\,z\,y)$\\[2pt] de Bruijn: $\lambda.\,\lambda.\,1\,(\lambda.\,0\;1)$};
+\end{tikzpicture}
+\par\smallskip{\small A term as a tree, each variable joined to its binder (dashed). The index counts the $\lambda$ nodes crossed on the way up: from $y$ the path meets $\lambda z$ first, so $y$ is 1, and so is $x$, which meets $\lambda y$.}
+\end{omfigure}
+
+Substitution must now keep indices right. When a term $N$ is substituted under a $\lambda$, its free indices must grow by one, since they now cross one more binder: this is the \emph{shift}. And when a $\lambda$ disappears in a reduction, the indices that pointed past it must shrink by one. \Cref{lst:b3:lambda-calculus:subst} does both.
+
+\omcode{code/bachelor-3/05-lambda-calculus/listings/reduce.rs}{6}{31}{Shifting and substitution on \omterm{def:b3:lambda-calculus:debruijn}{de Bruijn} terms. No name is ever compared, so no capture can happen.}\label{lst:b3:lambda-calculus:subst}
+
+\section{Reduction}\label{sec:b3:lambda-calculus:reduction}
+
+\begin{definition}[$\beta$-reduction, redex, normal form]\label{def:b3:lambda-calculus:beta}
+A \emph{redex}\index{redex} is a subterm of the form $(\lambda x.\,M)\,N$. \emph{$\beta$-reduction}\index{beta-reduction@$\beta$-reduction} replaces one redex by $M[x := N]$, anywhere in a term; we write $M \to_\beta M'$ for one step and $\to_\beta^*$ for zero or more. A term with no redex is in \emph{normal form}\index{normal form (of a lambda-term)@normal form (of a $\lambda$-term)}.
+\end{definition}
+
+The term $(\lambda x.\,\lambda y.\,x\,y)\,y$ reduces in one step to $\lambda y'.\,y\,y'$, renaming to avoid capture. Some terms have no \omterm{def:b3:lambda-calculus:beta}{normal form}: $\Omega = (\lambda x.\,x\,x)\,(\lambda x.\,x\,x)$ reduces to itself, forever. And a term with several \omterm{def:b3:lambda-calculus:beta}{redexes} may be reduced in several orders, which is where the choices of a programming language begin.
+
+\begin{definition}[Evaluation strategy]\label{def:b3:lambda-calculus:strategy}
+An \emph{evaluation strategy}\index{evaluation strategy} chooses which \omterm{def:b3:lambda-calculus:beta}{redex} to reduce next. \emph{Normal-order reduction}\index{normal-order reduction} reduces the leftmost outermost \omterm{def:b3:lambda-calculus:beta}{redex}, also under a $\lambda$. \emph{Call by name}\index{call by name} does the same but never reduces under a $\lambda$ or inside an argument. \emph{Call by value}\index{call by value} reduces a \omterm{def:b3:lambda-calculus:beta}{redex} $(\lambda x.\,M)\,N$ only once $N$ is a value (here, an \omterm{def:b3:lambda-calculus:terms}{abstraction}), and never under a $\lambda$. \emph{Lazy evaluation}\index{lazy evaluation} (call by need) is call by name in which an argument, once evaluated, is shared by all the places that use it.
+\end{definition}
+
+\Cref{lst:b3:lambda-calculus:step} implements four strategies: the three above and \emph{applicative order}, leftmost innermost, which reduces arguments first and also goes under $\lambda$'s; it is \omterm{def:b3:lambda-calculus:strategy}{call by value} continued to a \omterm{def:b3:lambda-calculus:beta}{normal form}. Each step returns the new term, or nothing when the strategy finds no \omterm{def:b3:lambda-calculus:beta}{redex}.
+
+\omcode{code/bachelor-3/05-lambda-calculus/listings/reduce.rs}{46}{78}{One step of each strategy. Normal order and \omterm{def:b3:lambda-calculus:strategy}{call by name} contract a \omterm{def:b3:lambda-calculus:beta}{redex} at the top before looking inside; \omterm{def:b3:lambda-calculus:strategy}{call by value} and applicative order look inside first.}\label{lst:b3:lambda-calculus:step}
+
+The reduction graph below shows every way to reduce one small term. Each strategy is one path through it; they differ in length, and \omterm{def:b3:lambda-calculus:strategy}{call by name} even stops early, at a term whose head is the free variable $a$, since it never reduces inside an argument.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, node distance=8mm,
+  t/.style={draw, rounded corners=2pt, fill=omDef!6, inner sep=3pt}]
+  \node[t] (T) at (0,0) {$(\lambda x.\,x\,x)\,((\lambda y.\,y)\,a)$};
+  \node[t] (A) at (-3.3,-1.5) {$(\lambda y.\,y)\,a\,((\lambda y.\,y)\,a)$};
+  \node[t] (B) at (3.3,-1.5) {$(\lambda x.\,x\,x)\,a$};
+  \node[t] (C) at (-5.0,-3.0) {$a\,((\lambda y.\,y)\,a)$};
+  \node[t] (D) at (-1.5,-3.0) {$(\lambda y.\,y)\,a\,a$};
+  \node[t] (N) at (0,-4.5) {$a\,a$};
+  \draw[->, very thick, omThm] (T) -- (A);
+  \draw[->, very thick, omMeth] (T) -- (B);
+  \draw[->, very thick, omThm] (A) -- (C);
+  \draw[->] (A) -- (D);
+  \draw[->, very thick, omMeth] (B) -- (N);
+  \draw[->, very thick, omThm] (C) -- (N);
+  \draw[->] (D) -- (N);
+  \node[omThm, anchor=west, align=left, font=\footnotesize] at (-7.2,-4.4) {normal order: 3 steps\\call by name: the first 2, then stops};
+  \node[omMeth, anchor=west, align=left, font=\footnotesize] at (2.0,-3.4) {call by value and\\applicative order: 2 steps};
+\end{tikzpicture}
+\par\smallskip{\small All the reducts of one term, an arrow per $\beta$-step (\code{reduction_graph_of_the_figure} enumerates them: six terms, seven arrows). Normal order copies the unreduced argument and reduces it twice; \omterm{def:b3:lambda-calculus:strategy}{call by value} reduces it once, before the copy.}
+\end{omfigure}
+
+Every path that ends, ends at $a\,a$. This is no accident of the example. To say why, we step back to rewriting in general.
+
+\begin{definition}[Term rewriting system, confluence]\label{def:b3:lambda-calculus:rewriting}
+A \emph{rewriting system}\index{term rewriting system} is a set $A$ with a relation $\to$ on it, often given by rules that rewrite terms (a \emph{term rewriting system}); $\to^*$ is its reflexive transitive closure. The system is \emph{confluent}\index{confluence} if whenever $a \to^* b$ and $a \to^* c$, there is a $d$ with $b \to^* d$ and $c \to^* d$; \emph{locally confluent} if this holds whenever $a \to b$ and $a \to c$ in one step each; \emph{terminating} if there is no infinite chain $a_0 \to a_1 \to \cdots$.
+\end{definition}
+
+\begin{theorem}[Church--Rosser]\label{thm:b3:lambda-calculus:church-rosser}
+$\beta$-reduction is \omterm{def:b3:lambda-calculus:rewriting}{confluent}.\index{Church--Rosser theorem}
+\end{theorem}
+
+\admitted
+
+Local \omterm{def:b3:lambda-calculus:rewriting}{confluence} is not enough here, since $\beta$-reduction does not terminate, and a one-step diamond fails: reducing a \omterm{def:b3:lambda-calculus:beta}{redex} inside an argument that is copied twice must be repeated in both copies. The usual proof defines a \emph{parallel reduction} that contracts any set of \omterm{def:b3:lambda-calculus:beta}{redexes} at once, shows by induction on terms that it satisfies the one-step diamond, and notes that its reflexive transitive closure is $\to_\beta^*$.
+
+\begin{corollary}\label{cor:b3:lambda-calculus:unique}
+A $\lambda$-term has at most one \omterm{def:b3:lambda-calculus:beta}{normal form}, up to $\alpha$-equivalence.
+\end{corollary}
+
+\begin{proof}
+If $M \to_\beta^* N_1$ and $M \to_\beta^* N_2$ with both in \omterm{def:b3:lambda-calculus:beta}{normal form}, \omterm{def:b3:lambda-calculus:rewriting}{confluence} gives $P$ with $N_1 \to_\beta^* P$ and $N_2 \to_\beta^* P$. A \omterm{def:b3:lambda-calculus:beta}{normal form} reduces only to itself, so $N_1 = P = N_2$.
+\end{proof}
+
+So the strategies cannot disagree on the result; they can only disagree on whether they reach it. Normal order is the safe one.
+
+\begin{theorem}[Normal order normalises]\label{thm:b3:lambda-calculus:normal-order}
+If a $\lambda$-term has a \omterm{def:b3:lambda-calculus:beta}{normal form}, \omterm{def:b3:lambda-calculus:strategy}{normal-order reduction} reaches it.
+\end{theorem}
+
+\admitted
+
+The proof goes through the \emph{standardisation theorem}: any reduction to a \omterm{def:b3:lambda-calculus:beta}{normal form} can be reordered so that it contracts \omterm{def:b3:lambda-calculus:beta}{redexes} from left to right, outermost first. It is longer than this chapter allows; we use the result and check it on examples. Applicative order is the fragile one: in $(\lambda x.\,\lambda y.\,y)\,\Omega$ it reduces $\Omega$ forever, while normal order discards it in one step (exercise~\ref{exo:b3:lambda-calculus:11}).
+
+For a terminating system, local \omterm{def:b3:lambda-calculus:rewriting}{confluence} is all one needs to check, because of a lemma whose proof is a model of well-founded induction.
+
+\begin{lemma}[Newman]\label{lem:b3:lambda-calculus:newman}
+A terminating, locally \omterm{def:b3:lambda-calculus:rewriting}{confluent} \omterm{def:b3:lambda-calculus:rewriting}{rewriting system} is \omterm{def:b3:lambda-calculus:rewriting}{confluent}.\index{Newman's lemma}
+\end{lemma}
+
+\begin{proof}
+Since the system terminates, the relation ``$b$ is reachable from $a$ in at least one step'' has no infinite chain, so we may prove a property of all elements by induction along it: assume the property for every element reachable from $a$ in one or more steps, and prove it for $a$. The property is: every two reducts of $a$ have a common reduct.
+
+Let $a \to^* b$ and $a \to^* c$. If either reduction is empty, say $a = b$, take $d = c$. Otherwise write $a \to b_1 \to^* b$ and $a \to c_1 \to^* c$. By local \omterm{def:b3:lambda-calculus:rewriting}{confluence}, there is $e$ with $b_1 \to^* e$ and $c_1 \to^* e$. Now $b_1$ is a reduct of $a$, so the induction hypothesis applies to it: $b$ and $e$, both reducts of $b_1$, have a common reduct $f$. Likewise $c_1$ is a reduct of $a$, and $f$ and $c$ are both reducts of $c_1$ (since $c_1 \to^* e \to^* f$), so they have a common reduct $d$. Then $b \to^* f \to^* d$ and $c \to^* d$.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, x=1.15cm, y=1.0cm]
+  \begin{scope}
+  \node (a) at (0,0) {$a$}; \node (b) at (-1.2,-1.2) {$b$}; \node (c) at (1.2,-1.2) {$c$}; \node (d) at (0,-2.4) {$d$};
+  \draw[->] (a) -- node[above left] {$*$} (b); \draw[->] (a) -- node[above right] {$*$} (c);
+  \draw[->, dashed] (b) -- node[below left] {$*$} (d); \draw[->, dashed] (c) -- node[below right] {$*$} (d);
+  \node at (0,-3.2) {confluence};
+  \end{scope}
+  \begin{scope}[xshift=5.2cm]
+  \node (a) at (0,0) {$a$};
+  \node (b1) at (-1.1,-1) {$b_1$}; \node (c1) at (1.1,-1) {$c_1$};
+  \node (b) at (-2.2,-2) {$b$}; \node (e) at (0,-2) {$e$}; \node (c) at (2.2,-3) {$c$};
+  \node (f) at (-1.1,-3) {$f$}; \node (d) at (0.55,-4) {$d$};
+  \draw[->] (a) -- (b1); \draw[->] (a) -- (c1);
+  \draw[->] (b1) -- node[above left] {$*$} (b); \draw[->] (c1) -- node[right, pos=0.3] {$*$} (c);
+  \draw[->, dashed, omMeth] (b1) -- node[below left, pos=0.7] {$*$} (e); \draw[->, dashed, omMeth] (c1) -- node[below right, pos=0.7] {$*$} (e);
+  \draw[->, dashed, omThm] (b) -- (f); \draw[->, dashed, omThm] (e) -- (f);
+  \draw[->, dashed, omDef] (f) -- (d); \draw[->, dashed, omDef] (c) -- (d);
+  \node[omMeth, font=\footnotesize] at (0,-1.15) {local};
+  \node[omThm, font=\footnotesize, align=center] at (-2.4,-3.0) {induction\\at $b_1$};
+  \node[omDef, font=\footnotesize, align=center] at (2.3,-4.0) {induction\\at $c_1$};
+  \end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Left: what \omterm{def:b3:lambda-calculus:rewriting}{confluence} asks. Right: the proof of Newman's lemma, three tiles. Local \omterm{def:b3:lambda-calculus:rewriting}{confluence} closes the top diamond; the induction hypothesis, used at the two one-step reducts $b_1$ and $c_1$, closes the two others. Termination is what makes the induction legitimate.}
+\end{omfigure}
+
+Termination is usually proved by a \emph{measure}: a function to the natural numbers that every step decreases. The two rules $\mathit{add}(0, y) \to y$ and $\mathit{add}(s(x), y) \to s(\mathit{add}(x, y))$ define addition on numbers written with $0$ and a successor $s$. Give each term the weight $w$ with $w(0) = 1$, $w(s(t)) = w(t) + 1$, $w(\mathit{add}(t, u)) = 2w(t) + w(u)$: the first rule removes at least $w(y) + 2 - w(y) = 2$, the second $2(w(x)+1) + w(y) - 2w(x) - w(y) - 1 = 1$, and weights are positive, so every chain is finite. Two rules can only conflict where one's left side overlaps another's; here none does, so the system is locally \omterm{def:b3:lambda-calculus:rewriting}{confluent}, and \omterm{def:b3:lambda-calculus:rewriting}{confluent} by Newman's lemma: every closed sum has exactly one value. Without termination the lemma fails: exercise~\ref{exo:b3:lambda-calculus:10} gives four elements that show it.
+
+\section{Data as functions}\label{sec:b3:lambda-calculus:church}
+
+The $\lambda$-calculus has no numbers, no booleans and no pairs, and needs none: each can be represented by what it does.
+
+\begin{definition}[Church boolean, Church numeral]\label{def:b3:lambda-calculus:church}
+The \emph{Church booleans}\index{Church boolean} are $\mathit{true} = \lambda a.\,\lambda b.\,a$ and $\mathit{false} = \lambda a.\,\lambda b.\,b$: a boolean chooses between two arguments. The \emph{Church numeral}\index{Church numeral} of $n$ is $c_n = \lambda f.\,\lambda x.\,f\,(f\,(\cdots(f\,x)))$, with $n$ \omterm{def:b3:lambda-calculus:terms}{applications} of $f$: the number $n$ is the operation ``do something $n$ times''.
+\end{definition}
+
+A conditional needs no keyword: $b\,M\,N$ is $M$ when $b$ is $\mathit{true}$ and $N$ when it is $\mathit{false}$. A pair holds its two components until a selector is given to it: $\mathit{pair} = \lambda a.\,\lambda b.\,\lambda f.\,f\,a\,b$, with $\mathit{fst}\,p = p\,\mathit{true}$. Arithmetic follows from ``$n$ times'': $\mathit{succ}\,n$ does $f$ once more than $n$ does; $\mathit{plus}\,m\,n$ does $f$ $m$ times after $n$ times; $\mathit{mult}\,m\,n$ does ``$f$ $n$ times'', $m$ times; and $\mathit{exp}\,m\,n = n\,m$ applies ``multiply by $m$'' $n$ times, starting from the function itself.
+
+\omcode{code/bachelor-3/05-lambda-calculus/listings/encode.rs}{21}{36}{Booleans, pairs and arithmetic as $\lambda$-terms. Each name may use the earlier ones; \code{parse_with} replaces a name by its term.}\label{lst:b3:lambda-calculus:encode}
+
+The predecessor is the hard one, because a numeral can only do something $n$ times, never undo a step. The trick is to count pairs: start from $(0, 0)$ and apply $n$ times the step $(a, b) \mapsto (b, b + 1)$. After $k$ steps the pair is $(k - 1, k)$ for $k \ge 1$, so after $n$ steps its first component is $n - 1$ (and $0$ when $n = 0$). The definition \code{pred} in \cref{lst:b3:lambda-calculus:encode} is exactly that.
+
+\omoutput{code/bachelor-3/05-lambda-calculus/outputs/church.txt}{Six computations, each reduced to \omterm{def:b3:lambda-calculus:beta}{normal form} under normal order and under applicative order, with the number of $\beta$-steps. The \omterm{def:b3:lambda-calculus:beta}{normal forms} are recognised as numerals; \code{exp c2 c3} prints its numeral with the names \code{x} and \code{x'}, an $\alpha$-variant of $c_8$.}\label{out:b3:lambda-calculus:church}
+
+Addition, multiplication and exponentiation each take a handful of steps, the same under both strategies; the predecessor takes dozens. The weekend problem measures how the counts grow with the numbers.
+
+\section{Recursion without names}\label{sec:b3:lambda-calculus:fixpoint}
+
+The $\lambda$-calculus has no way to name a function, so a function cannot call itself by name. It can, however, receive itself as an argument. Write the factorial as a functional that takes ``the function to call recursively'' as a parameter:
+\[ F = \lambda \mathit{fact}.\,\lambda n.\,\mathtt{if}\ n = 0\ \mathtt{then}\ 1\ \mathtt{else}\ n \times \mathit{fact}\,(n - 1). \]
+The factorial is the function $g$ with $F\,g = g$: a fixed point of $F$.
+
+\begin{definition}[Fixed-point combinator]\label{def:b3:lambda-calculus:fixpoint}
+A \emph{fixed-point combinator}\index{fixed-point combinator} is a closed term $\Theta$ such that $\Theta\,F =_\beta F\,(\Theta\,F)$ for every term $F$, where $=_\beta$ is the equivalence generated by $\beta$-reduction.
+\end{definition}
+
+The best known is \[ Y = \lambda f.\,(\lambda x.\,f\,(x\,x))\,(\lambda x.\,f\,(x\,x)). \] Indeed $Y\,F \to_\beta (\lambda x.\,F\,(x\,x))\,(\lambda x.\,F\,(x\,x)) \to_\beta F\,((\lambda x.\,F\,(x\,x))\,(\lambda x.\,F\,(x\,x)))$, and the argument of $F$ is the term $Y\,F$ reduced to in one step. Under \omterm{def:b3:lambda-calculus:strategy}{call by value}, $Y$ is useless: the argument $x\,x$ is evaluated before $F$ is ever entered, and it unfolds again, without end. Wrapping it in a $\lambda$ delays it: \[ Z = \lambda f.\,(\lambda x.\,f\,(\lambda v.\,x\,x\,v))\,(\lambda x.\,f\,(\lambda v.\,x\,x\,v)) \] is a \omterm{def:b3:lambda-calculus:fixpoint}{fixed-point combinator} for \omterm{def:b3:lambda-calculus:strategy}{call by value}, since $\lambda v.\,x\,x\,v$ is already a value. \Cref{lst:b3:lambda-calculus:ycomb} runs both, in the small language of the next section, which has integers and \code{if}.
+
+\omcode{code/bachelor-3/05-lambda-calculus/listings/ycomb.rs}{9}{32}{The factorial of 5 three ways: through $Z$, through \code{letrec}, and through $Y$, all under \omterm{def:b3:lambda-calculus:strategy}{call by value}.}\label{lst:b3:lambda-calculus:ycomb}
+
+\omoutput{code/bachelor-3/05-lambda-calculus/outputs/ycomb.txt}{$Z$ computes 120 in 46 steps, \code{letrec} in 35; $Y$ never reaches a value, and the term it rewrites keeps growing.}\label{out:b3:lambda-calculus:ycomb}
+
+A language does not need $Z$ in its programs: \texttt{letrec f = \textbackslash{}x.\ e1 in e2} is sugar for binding $f$ to the fixed point of $\lambda f.\,\lambda x.\,e_1$, and the semantics of the next section gives it directly, by one rule that unfolds the definition once. It saves the eleven steps $Z$ spends rebuilding itself.
+
+\section{Small steps and big steps}\label{sec:b3:lambda-calculus:semantics}
+
+The $\lambda$-language of this chapter and the next, \code{.lam} files, adds to the $\lambda$-calculus the integers, the booleans, \code{let}, \code{letrec}, \code{if}, pairs and five operators. Its syntax tree is in \cref{lst:b3:lambda-calculus:lam}; the optional type on a $\lambda$ is for chapter~\ref{ch:b3:type-systems}.
+
+\omcode{code/bachelor-3/05-lambda-calculus/listings/lam.rs}{13}{26}{The expressions of the $\lambda$-language.}\label{lst:b3:lambda-calculus:lam}
+
+\begin{definition}[Operational semantics, small-step, big-step]\label{def:b3:lambda-calculus:semantics}
+An \emph{operational semantics}\index{operational semantics} defines the meaning of a program by rules describing how it runs. A \emph{small-step semantics}\index{small-step semantics} defines a relation $e \to e'$, one step of computation, and a program's result is the value $v$ with $e \to^* v$. A \emph{big-step semantics}\index{big-step semantics} defines a relation $e \Downarrow v$, ``$e$ evaluates to $v$'', directly, by rules whose premises evaluate the parts of $e$.
+\end{definition}
+
+The values are the integers, the booleans, the \omterm{def:b3:lambda-calculus:terms}{abstractions}, and the pairs of values. The program is closed, and \omterm{def:b3:lambda-calculus:strategy}{call by value} only ever substitutes values, which are then closed too: nothing can be captured, and substitution by name is safe. These are the small-step rules for \omterm{def:b3:lambda-calculus:terms}{application}, \code{let}, \code{letrec} and \code{if}; an operator applied to two values computes ($2 + 3 \to 5$), and its operands are reduced left to right like an \omterm{def:b3:lambda-calculus:terms}{application}'s.
+\begin{mathpar}
+\inferrule{ }{(\lambda x.\,e)\,v \to e[x := v]}
+
+\inferrule{e_1 \to e_1'}{e_1\,e_2 \to e_1'\,e_2}
+
+\inferrule{e_2 \to e_2'}{v\,e_2 \to v\,e_2'}
+
+\inferrule{ }{\mathtt{let}\ x = v\ \mathtt{in}\ e \to e[x := v]}
+
+\inferrule{ }{\mathtt{letrec}\ f = \lambda x.\,e_1\ \mathtt{in}\ e_2 \to e_2[f := \lambda x.\,\mathtt{letrec}\ f = \lambda x.\,e_1\ \mathtt{in}\ e_1]}
+
+\inferrule{ }{\mathtt{if}\ \mathtt{true}\ \mathtt{then}\ e_2\ \mathtt{else}\ e_3 \to e_2}
+
+\inferrule{e_1 \to e_1'}{\mathtt{if}\ e_1\ \mathtt{then}\ e_2\ \mathtt{else}\ e_3 \to \mathtt{if}\ e_1'\ \mathtt{then}\ e_2\ \mathtt{else}\ e_3}
+\end{mathpar}
+The rules without premises \emph{compute}; those with a premise only say where to look. The interpreter of \cref{lst:b3:lambda-calculus:small} is read off them, one match arm per rule, in the same order; a term no rule applies to is stuck, and the interpreter says why.
+
+\omcode{code/bachelor-3/05-lambda-calculus/listings/smallstep.rs}{55}{89}{The small-step rules of the $\lambda$-language as a function: one arm per rule.}\label{lst:b3:lambda-calculus:small}
+
+The big-step rules say the same thing at once, from the leaves of a derivation up:
+\begin{mathpar}
+\inferrule{ }{v \Downarrow v}
+
+\inferrule{e_1 \Downarrow \lambda x.\,e \\ e_2 \Downarrow v_2 \\ e[x := v_2] \Downarrow v}{e_1\,e_2 \Downarrow v}
+
+\inferrule{e_1 \Downarrow v_1 \\ e_2[x := v_1] \Downarrow v}{\mathtt{let}\ x = e_1\ \mathtt{in}\ e_2 \Downarrow v}
+
+\inferrule{e_1 \Downarrow \mathtt{true} \\ e_2 \Downarrow v}{\mathtt{if}\ e_1\ \mathtt{then}\ e_2\ \mathtt{else}\ e_3 \Downarrow v}
+
+\inferrule{e_1 \Downarrow n_1 \\ e_2 \Downarrow n_2}{e_1 + e_2 \Downarrow n_1 + n_2}
+\end{mathpar}
+Read as an algorithm, the big-step rules are a recursive evaluator, the shape of chapter~\ref{ch:b3:semantic-analysis}'s interpreter: each recursive call builds one premise (\cref{lst:b3:lambda-calculus:big}).
+
+\omcode{code/bachelor-3/05-lambda-calculus/listings/bigstep.rs}{21}{53}{The big-step rules as an evaluator. Each call is one node of the derivation; \code{z} counts the nodes, and those whose rule computes.}\label{lst:b3:lambda-calculus:big}
+
+\begin{omfigure}
+\begin{mathpar}
+\inferrule*[right=app]{\inferrule*{ }{\lambda x.\,x + 1 \Downarrow \lambda x.\,x + 1} \\ \inferrule*{ }{2 \Downarrow 2} \\ \inferrule*[right=add]{\inferrule*{ }{2 \Downarrow 2} \\ \inferrule*{ }{1 \Downarrow 1}}{2 + 1 \Downarrow 3}}{(\lambda x.\,x + 1)\,2 \Downarrow 3}
+\end{mathpar}
+\par\smallskip{\small The derivation of $(\lambda x.\,x + 1)\,2 \Downarrow 3$: six nodes, two of which compute (the \omterm{def:b3:lambda-calculus:terms}{application} and the addition). The small-step run takes exactly two steps: $(\lambda x.\,x + 1)\,2 \to 2 + 1 \to 3$.}
+\end{omfigure}
+
+\Cref{out:b3:lambda-calculus:sum} runs \code{sum.lam}, $3 + 2 + 1 + 0$ by recursion, both ways. The small-step trace shows what the big-step derivation hides: the pending additions pile up on the left, \code{3 + (2 + (1 + ...))}, and are only performed once the recursion has bottomed out. The demonstration prints the unfolded function as \code{<sum>} and an unfolded \code{letrec} with its definition elided.
+
+\omoutput{code/bachelor-3/05-lambda-calculus/outputs/semantics_demo.txt}{\code{sum.lam} under the small-step rules, one line per step, then under the big-step rules: 23 steps, and a derivation with 23 computing nodes.}\label{out:b3:lambda-calculus:sum}
+
+The two counts are equal, and this is a theorem.
+
+\begin{theorem}[Small steps and big steps agree]\label{thm:b3:lambda-calculus:agree}
+For a closed expression $e$ and a value $v$: $e \to^* v$ if and only if $e \Downarrow v$. Moreover, the number of steps equals the number of computing nodes of the derivation.
+\end{theorem}
+
+\begin{proof}
+($\Leftarrow$) By induction on the derivation. A value takes zero steps. For an \omterm{def:b3:lambda-calculus:terms}{application}, the premises give, by induction, $e_1 \to^* \lambda x.\,e$ in $k_1$ steps, $e_2 \to^* v_2$ in $k_2$ and $e[x := v_2] \to^* v$ in $k_3$. The congruence rules lift the first two reductions to the whole term (a short induction on their length): $e_1\,e_2 \to^* (\lambda x.\,e)\,e_2 \to^* (\lambda x.\,e)\,v_2$, then one computing step gives $e[x := v_2]$, and $k_3$ more give $v$. In all $k_1 + k_2 + 1 + k_3$ steps, the node itself being the one computing step. The other rules are alike.
+
+($\Rightarrow$) First a lemma: if $e \to e'$ and $e' \Downarrow v$ by a derivation with $k$ computing nodes, then $e \Downarrow v$ with $k + 1$. By induction on the step. If it is $(\lambda x.\,e_0)\,v_2 \to e_0[x := v_2]$, build the \omterm{def:b3:lambda-calculus:terms}{application} node from $\lambda x.\,e_0 \Downarrow \lambda x.\,e_0$, $v_2 \Downarrow v_2$ and the given derivation. If it is $e_1\,e_2 \to e_1'\,e_2$ with $e_1 \to e_1'$, the derivation of $e_1'\,e_2 \Downarrow v$ contains $e_1' \Downarrow \lambda x.\,e_0$; by induction $e_1 \Downarrow \lambda x.\,e_0$ with one more computing node; put it back in place. The other rules are alike. Then the theorem follows by induction on the number of steps of $e \to^* v$, starting from $v \Downarrow v$.
+\end{proof}
+
+The test \code{small_and_big_step_agree} checks the theorem on six programs. It says nothing of programs that do not terminate: a small-step run of $\Omega$ is an infinite sequence, while $\Omega$ has no derivation at all. \omterm{def:b3:lambda-calculus:semantics}{Big-step semantics} cannot tell a loop from a stuck program, both having no derivation; \omterm{def:b3:lambda-calculus:semantics}{small-step semantics} can, which is why proofs of type safety in the next chapter use it.
+
+\begin{remark}
+A third style, \emph{denotational semantics}, gives each program a mathematical object as its meaning: a function from inputs to outputs, built compositionally from the meanings of the parts. A recursive definition then denotes a fixed point of a function on a suitable ordered set, and a loop denotes an ``undefined'' element. It answers questions \omterm{def:b3:lambda-calculus:semantics}{operational semantics} answers badly, such as when two programs are interchangeable in every context; it needs more mathematics than this chapter has room for.
+\end{remark}
+
+\begin{inpractice}[Keep the rules runnable]
+Rules written on paper drift away from the compiler they describe. Rules read off as an interpreter, as here, can be run on the compiler's test programs: a disagreement between the two is then a bug in one of them, and the rules, being short, are the easier to check. The compiler of chapter~\ref{ch:b3:code-generation} is held to the interpreter of chapter~\ref{ch:b3:semantic-analysis} in this way.
+\end{inpractice}
+
+\begin{history}[Functions as the foundation]
+Alonzo Church introduced the $\lambda$-notation in 1932, in a system meant as a foundation of logic. % ledger: b3:church-1932
+In 1936 he and J. Barkley Rosser proved the \omterm{def:b3:lambda-calculus:rewriting}{confluence} theorem that bears their names. % ledger: b3:church-rosser-1936
+Max Newman's lemma appeared in 1942, in a paper on equivalence defined by combinatorial rules. % ledger: b3:newman-1942
+Nicolaas \omterm{def:b3:lambda-calculus:debruijn}{de Bruijn}'s nameless notation was published in 1972, as a tool for manipulating formulas by machine. % ledger: b3:debruijn-1972
+The big-step style of semantics was named \emph{natural semantics} by Gilles Kahn in 1987. % ledger: b3:kahn-1987
+\end{history}
+
+\section{Exercises}\label{sec:b3:lambda-calculus:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:lambda-calculus:1}
+Give the free variables of \texttt{\textbackslash{}x.\ x y}, of \texttt{(\textbackslash{}x.\ x) x} and of \texttt{\textbackslash{}x.\ \textbackslash{}y.\ z (x y) w}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:lambda-calculus:2}
+Which of these pairs are $\alpha$-equivalent? \texttt{\textbackslash{}x.\ \textbackslash{}y.\ x y} and \texttt{\textbackslash{}y.\ \textbackslash{}x.\ y x}; \texttt{\textbackslash{}x.\ \textbackslash{}y.\ x y} and \texttt{\textbackslash{}x.\ \textbackslash{}y.\ y x}; \texttt{\textbackslash{}x.\ x z} and \texttt{\textbackslash{}z.\ z z}. Give the \omterm{def:b3:lambda-calculus:debruijn}{de Bruijn} form of each term.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:lambda-calculus:3}
+Reduce \texttt{(\textbackslash{}x.\ \textbackslash{}y.\ x y) y} by one $\beta$-step. What does a substitution that ignores capture give, and why is it wrong?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:lambda-calculus:4}
+Predict the lines that \code{church.rs} would print for \code{succ c4} and for \code{plus c4 c0}: both step counts and the numeral.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:lambda-calculus:5}
+A first version of \code{subst} handled \omterm{def:b3:lambda-calculus:terms}{abstractions} with \code{Lam(x, b) => Lam(x.clone(), Box::new(subst(j + 1, s, b)))}. Find a term that normal order reduces wrongly with it, say what it gives, and fix the line.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:lambda-calculus:6}
+With the definitions of \cref{lst:b3:lambda-calculus:encode} and $\mathit{sub} = \lambda m.\,\lambda n.\,n\ \mathit{pred}\ m$, which computes $\max(m - n, 0)$, write $\mathit{is\_zero}$, which maps $c_0$ to $\mathit{true}$ and every other numeral to $\mathit{false}$, and $\mathit{eq}$, which tests two numerals for equality. Test them on all numerals up to 5.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:lambda-calculus:7}
+Prove that if two strategies both lead a term to a \omterm{def:b3:lambda-calculus:beta}{normal form}, they lead it to the same one. Then reduce \code{plus c2 c3} by \omterm{def:b3:lambda-calculus:strategy}{call by name}: where does it stop, and why does this not contradict what you just proved?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:lambda-calculus:8}
+Count the $\beta$-steps that normal order takes to reduce $\mathit{mult}\,c_m\,c_n$ to \omterm{def:b3:lambda-calculus:beta}{normal form}, as a function of $m$ and $n$, and explain why $n$ does not appear.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:lambda-calculus:9}
+Using only the small-step rules of \code{if} and their congruence rule, show that $\mathtt{if}\ e_1\ \mathtt{then}\ e_2\ \mathtt{else}\ e_3 \to^* v$ holds exactly when $e_1 \to^* \mathtt{true}$ and $e_2 \to^* v$, or $e_1 \to^* \mathtt{false}$ and $e_3 \to^* v$. Deduce the big-step rules of \code{if}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:lambda-calculus:10}
+On the set $\{a, b, c, d\}$, let $b \to a$, $b \to c$, $c \to b$ and $c \to d$. Show that this system is locally \omterm{def:b3:lambda-calculus:rewriting}{confluent} but not \omterm{def:b3:lambda-calculus:rewriting}{confluent}, and say which hypothesis of Newman's lemma fails. Then prove that the measure used for the rules of $\mathit{add}$ in this chapter decreases when a rule is applied inside a larger term, not only at the top.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:lambda-calculus:11}
+Prove that $\Omega$ has no \omterm{def:b3:lambda-calculus:beta}{normal form}. Show that $K\,I\,\Omega$, with $K = \lambda x.\,\lambda y.\,x$ and $I = \lambda z.\,z$, has one, that normal order reaches it in two steps, and that \omterm{def:b3:lambda-calculus:strategy}{call by value} never does.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:lambda-calculus:12}
+The Krivine machine evaluates by \omterm{def:b3:lambda-calculus:strategy}{call by name} without substitution. Its state is a term, an environment (a list of closures, one per enclosing $\lambda$) and a stack of closures (pending arguments), where a closure is a term with its environment. An \omterm{def:b3:lambda-calculus:terms}{application} pushes its argument, as a closure, and continues with the function; an \omterm{def:b3:lambda-calculus:terms}{abstraction} pops a closure into its environment and continues with its body; a variable $k$ continues with the $k$-th closure of the environment. Implement it on \omterm{def:b3:lambda-calculus:debruijn}{de Bruijn} terms, with a function that reads a closure back as a term, and test that it reaches the same term as \omterm{def:b3:lambda-calculus:strategy}{call by name}, in the same number of $\beta$-steps.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:lambda-calculus:problem}
+
+\begin{problem}[{Weekend problem --- Arithmetic with nothing but functions}]\label{pb:b3:lambda-calculus:1}
+\omterm{def:b3:lambda-calculus:church}{Church numerals} are a complete arithmetic: every computable function on numbers can be written with them. This problem measures what it costs, counting $\beta$-steps to \omterm{def:b3:lambda-calculus:beta}{normal form}, under normal order (the strategy that always finds a \omterm{def:b3:lambda-calculus:beta}{normal form}) and applicative order. The program \code{pb_counts.rs} prints the counts it needs.
+
+\omoutput{code/bachelor-3/05-lambda-calculus/outputs/pb_counts.txt}{$\beta$-steps to \omterm{def:b3:lambda-calculus:beta}{normal form} under normal order (\code{nor}) and applicative order (\code{app}); \code{exp c2 c0} is left out, its \omterm{def:b3:lambda-calculus:beta}{normal form} \texttt{\textbackslash{}x.\ x} not being a numeral.}\label{out:b3:lambda-calculus:pb}
+
+\medskip\noindent\textbf{Part I --- Numerals and addition.}
+\begin{enumerate}
+\item Write $c_3$, and reduce $\mathit{succ}\,c_2$ to \omterm{def:b3:lambda-calculus:beta}{normal form} by hand, counting the steps.
+\item Reduce $\mathit{plus}\,c_2\,c_3$ by normal order. Why do the counts of \cref{out:b3:lambda-calculus:church} for $\mathit{plus}$ not depend on the numbers?
+\item Is the number of $\beta$-steps a fair measure of the work? What does each step of $\mathit{plus}\,c_m\,c_n$ copy, and how large is the result?
+\item How many symbols does $c_n$ have? Compare with the binary representation of $n$.
+\item Show that $\lambda m.\,\lambda n.\,m\ \mathit{succ}\ n$ also computes $m + n$.
+\item Why does that second addition need more steps than $\mathit{plus}$ as $m$ grows?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Multiplication and exponentiation.}
+\begin{enumerate}[resume]
+\item From \cref{out:b3:lambda-calculus:pb}, give the counts for $\mathit{mult}\,c_n\,c_3$ as a formula, and check it on two lines.
+\item Give the counts for $\mathit{exp}\,c_2\,c_n$ under both strategies as formulas.
+\item Explain the doubling under normal order: what does normal order copy that applicative order has already reduced?
+\item Is normal order always slower? Give a term for which it takes fewer steps than applicative order.
+\item What size does the \omterm{def:b3:lambda-calculus:beta}{normal form} of $\mathit{exp}\,c_2\,c_n$ have? Does its step count, under either strategy, measure the work of writing it out?
+\item Which strategy would you choose for a calculator built on \omterm{def:b3:lambda-calculus:church}{Church numerals}, and what would call by need change?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The predecessor.}
+\begin{enumerate}[resume]
+\item Show that after $k \ge 1$ \omterm{def:b3:lambda-calculus:terms}{applications} of the step $(a, b) \mapsto (b, b + 1)$ to $(0, 0)$, the pair is $(k - 1, k)$.
+\item Why does $\mathit{pred}\,c_0$ give $c_0$?
+\item From \cref{out:b3:lambda-calculus:pb}, give the normal-order count of $\mathit{pred}\,c_n$ for $n \ge 1$ as a formula.
+\item How many steps does each round of the step take under normal order? Where do the remaining ones go?
+\item Give the applicative-order count for $n \ge 2$ as a formula. Which strategy wins for large $n$?
+\item Compare with the cost of a predecessor on binary numbers. What has the encoding cost?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Subtraction.}
+\begin{enumerate}[resume]
+\item Show that $\mathit{sub}\,c_m\,c_n = c_n\ \mathit{pred}\ c_m$ reduces to $c_{\max(m - n, 0)}$.
+\item From the column \code{sub 10 n}, compute the differences between consecutive normal-order counts. What do you notice?
+\item Suppose the $k$-th predecessor, for $k = 1, \dots, n$, costs as much as $\mathit{pred}$ applied to the numeral $c_{m - k + 1}$, plus 4 steps in all to unfold $\mathit{sub}$. Derive a formula for the count when $1 \le n \le m$, and check it against the table.
+\item Under normal order, the predecessors are applied to terms that are not yet numerals. Why does the assumption of the previous question still hold?
+\item What is the order of growth of the count in $m$ and $n$? At $m = n$?
+\item Sum up: give the cost of $\mathit{pred}$ and of $\mathit{sub}$ under normal order, and say what a machine integer would cost instead.
+\end{enumerate}
+\end{problem}

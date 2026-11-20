@@ -1,0 +1,519 @@
+% Book 4, Year 2, chapter 17 -- The link layer.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 17.
+\chapter{The Link Layer}\label{ch:b2:link-layer}
+
+The town's lighthouse is told by radio when to light its lamp. One evening a \omterm{def:b2:link-layer:burst}{burst} of noise flips a single bit of
+the message on its way:
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/lighthouse.txt}{One flipped bit, and who notices
+it.}\label{out:b2:link-layer:hook}
+
+``20:00'' became ``21:00'': the character \code{0} is the byte \code{0x30} and \code{1} is \code{0x31}, one bit
+apart. The message still reads well, so no person would notice. The receiver noticed because the sender had added
+four bytes computed from the message, a \emph{check}, and the received message no longer matches it. This chapter is
+about the bottom of the network: how a stream of bits on one wire or one radio channel is cut into \omterm{def:b2:link-layer:frame}{frames}, how errors
+are detected, how many machines share one medium, and how a \omterm{def:b2:link-layer:frame}{frame} finds its way across a local network.
+
+\begin{recall}
+Book 2: the network is built in layers, each using the one below; a protocol is a set of rules that both sides
+follow. The physics series: a signal on a wire or in the air weakens with distance and picks up noise.
+\cref{ch:b2:sockets}: bytes sent over a \omterm{def:b2:sockets:socket}{socket} arrive intact and in order; this chapter and the next two show who
+makes that true.
+\end{recall}
+
+\section{Links and frames}\label{sec:b2:link-layer:frames}
+
+\begin{definition}[Link, frame]\label{def:b2:link-layer:frame}
+A \emph{link}\index{link} connects machines that can reach each other directly: a cable between two machines, or a
+radio channel that all of them hear. The \emph{link layer}\index{link layer} carries \emph{frames}\index{frame}: a
+frame is a block of bytes with a header (who sends it, to whom, what it carries), a payload, and a check. The link
+layer hands frames to the layer above; a frame never leaves its link.
+\end{definition}
+
+The first problem is to find where a \omterm{def:b2:link-layer:frame}{frame} begins and ends in a stream of bits. A common answer marks the ends with a
+special byte, the \emph{flag}. A flag byte inside the payload must then be disguised.
+
+\begin{method}[Byte stuffing]\label{met:b2:link-layer:stuffing}
+% ledger: b2:ppp-flag
+\omterm{def:b2:link-layer:frame}{Frames} begin and end with the flag \code{0x7e}. Inside a \omterm{def:b2:link-layer:frame}{frame}, the sender replaces each byte \code{0x7e} or
+\code{0x7d} by the escape \code{0x7d} followed by the byte XOR \code{0x20}. The receiver cuts the stream at the
+flags, and in each \omterm{def:b2:link-layer:frame}{frame} replaces \code{0x7d}, $b$ by $b$ XOR \code{0x20}.
+\end{method}
+
+\omcode{code/bachelor-2/17-link-layer/listings/stuffing.py}{5}{27}{Stuffing and unstuffing}
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/stuffing.txt}{Two \omterm{def:b2:link-layer:frame}{frames} on the wire.}
+
+After stuffing, \code{0x7e} occurs only at the ends of a \omterm{def:b2:link-layer:frame}{frame}, so the cut at the flags is exact. XOR with
+\code{0x20} is its own inverse, which is why the receiver applies the same operation.
+
+\section{Detecting errors}\label{sec:b2:link-layer:errors}
+
+Noise flips bits.
+
+\begin{definition}[Error-detecting code, checksum]\label{def:b2:link-layer:edc}
+An \emph{error-detecting code}\index{error-detecting code} adds to each block of data a few check bits computed from
+it; the receiver computes them again from what arrived, and drops the block if they differ. A \emph{checksum}
+\index{checksum} is a check computed by adding the data as numbers; a \omterm{def:b2:link-layer:parity}{parity bit}, below, is the smallest check.
+\end{definition}
+
+No check catches every error: the question is which errors each one is sure to catch.
+
+\subsection{Parity}
+
+\begin{definition}[Parity bit]\label{def:b2:link-layer:parity}
+The \emph{even parity bit}\index{parity bit} of a block of bits is 1 if the block has an odd number of 1s, and 0
+otherwise, so that the block and its parity bit together hold an even number of 1s.
+\end{definition}
+
+\begin{proposition}[Parity]\label{prop:b2:link-layer:parity}
+A \omterm{def:b2:link-layer:parity}{parity bit} detects every error that flips an odd number of bits of the block and its \omterm{def:b2:link-layer:parity}{parity bit}, and no error that
+flips an even number.
+\end{proposition}
+
+\begin{proof}
+Sent, the block and its bit hold an even number of 1s. Each flip changes that number by $\pm 1$, so after $k$ flips
+it has changed by $k$ modulo 2: it is odd, and the receiver sees the error, exactly when $k$ is odd.
+\end{proof}
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/parity.txt}{One \omterm{def:b2:link-layer:parity}{parity bit} per byte, then a grid of
+parities.}\label{out:b2:link-layer:parity}
+
+Arranged as a grid, with a \omterm{def:b2:link-layer:parity}{parity bit} per row (byte) and a parity byte for the columns, parity does more: a single
+flip makes exactly one row and one column wrong, and their crossing is the bit to flip back. The code
+\emph{corrects} the error (\cref{exo:b2:link-layer:3}). The price is one bit in nine, plus a byte per block.
+
+\subsection{The Internet checksum}
+
+% ledger: b2:inet-checksum
+The Internet's own protocols use a cheaper check.
+
+\begin{definition}[Internet checksum]\label{def:b2:link-layer:inet-checksum}
+The \emph{Internet checksum}\index{Internet checksum} adds the data as 16-bit words, adding each carry out of the top
+back in at the bottom (the \emph{one's complement sum}), and sends the complement of the result. The receiver adds
+everything, \omterm{def:b2:link-layer:edc}{checksum} included, and expects \code{ffff}.
+\end{definition}
+
+\omcode{code/bachelor-2/17-link-layer/listings/inet_checksum.py}{4}{15}{The one's complement sum and the
+\omterm{def:b2:link-layer:edc}{checksum}}
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/inet_checksum.txt}{It catches a flipped bit, not two swapped
+words.}
+
+A sum does not depend on the order of its terms, so swapping two words passes unseen. The \omterm{def:b2:link-layer:edc}{checksum} is fast to compute
+in software, which is why the Internet layers use it; the \omterm{def:b2:link-layer:frame}{links}, which see the noise, use a stronger check.
+
+\subsection{Cyclic redundancy codes}
+
+A \omterm{def:b2:link-layer:crc}{cyclic redundancy code} treats a string of bits as a polynomial whose coefficients are 0 or 1: the bits $1101$ are
+$x^3 + x^2 + 1$. Coefficients are added modulo 2, so adding is XOR, with no carries, and $x^k + x^k = 0$. Polynomials
+can be multiplied and divided with remainder exactly as with numbers, the subtractions in a long division being XORs.
+
+\begin{definition}[Cyclic redundancy code]\label{def:b2:link-layer:crc}
+Let $g(x)$ be a polynomial of degree $r$ whose constant term is 1, the \emph{generator}. A message $M(x)$ is sent as
+$T(x) = M(x)\,x^r + R(x)$, where $R(x)$ is the remainder of $M(x)\,x^r$ divided by $g(x)$: the message followed by
+$r$ \emph{check bits}. The receiver accepts a \omterm{def:b2:link-layer:frame}{frame} $T'(x)$ if $g(x)$ divides it. This is a \emph{cyclic redundancy
+code}\index{cyclic redundancy code}, or CRC.
+\end{definition}
+
+Since $M x^r = Q g + R$ and $R + R = 0$, $T = M x^r + R = Q g$: every \omterm{def:b2:link-layer:frame}{frame} sent is a multiple of $g$. The long
+division is mechanical:
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/long_division.txt}{A CRC by long division, with $g(x) = x^4 + x +
+1$: XOR $g$ under every leading 1.}
+
+\omcode{code/bachelor-2/17-link-layer/listings/crc.py}{5}{12}{The same division in code, on the bits of an
+integer}\label{lst:b2:link-layer:remainder}
+
+If the noise adds an error $E(x)$ (a 1 at each flipped bit), the receiver gets $T + E$, and since $g$ divides $T$, it
+accepts exactly when $g$ divides $E$. So the errors a CRC misses are the multiples of its generator, and choosing a
+CRC is choosing $g$.
+
+\begin{definition}[Burst error]\label{def:b2:link-layer:burst}
+A \emph{burst}\index{burst error} of length $b$ is an error whose first and last flipped bits are $b$ positions apart,
+counting both; the bits between them may be flipped or not.
+\end{definition}
+
+\begin{theorem}[Bursts]\label{thm:b2:link-layer:crc-burst}
+A CRC whose generator has degree $r$ and constant term 1 detects every \omterm{def:b2:link-layer:burst}{burst} of length $b \le r$.
+\end{theorem}
+
+\begin{proof}
+Such an error is $E(x) = x^i B(x)$, where $B$ has degree $b - 1 < r$ and constant term 1. First, if $g$ divides $x
+C(x)$ for some $C$, then $g$ divides $C$: write $xC = gQ$; the constant term of $gQ$ is that of $Q$, because $g$'s is
+1, and it is 0, because $xC$ has none; so $Q = xQ'$, and $xC = x\,gQ'$ gives $C = gQ'$. Applying this $i$ times, if
+$g$ divided $E$ it would divide $B$. But a nonzero multiple of $g$ has degree at least $r$, and $B$ is nonzero of
+degree less than $r$. So $g$ does not divide $E$.
+\end{proof}
+
+\begin{proposition}[Odd numbers of flips]\label{prop:b2:link-layer:crc-odd}
+If $x + 1$ divides the generator, the CRC detects every error with an odd number of flipped bits.
+\end{proposition}
+
+The proof is \cref{exo:b2:link-layer:8}; the idea is to evaluate polynomials at $x = 1$. The 16-bit generator
+% ledger: b2:crc16-ccitt
+$x^{16} + x^{12} + x^5 + 1$ has four terms, so it is divisible by $x + 1$, and both results apply. They can be checked
+by brute force on a \omterm{def:b2:link-layer:frame}{frame} of 4 bytes and its 16 check bits:
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/burst_check.txt}{Every \omterm{def:b2:link-layer:burst}{burst} of up to 17 bits through
+CRC-16.}\label{out:b2:link-layer:bursts}
+
+Not one \omterm{def:b2:link-layer:burst}{burst} of 16 bits or fewer passes. Of the \omterm{def:b2:link-layer:burst}{bursts} of 17 bits, exactly one pattern per position passes: the
+generator itself, shifted.
+
+\subsection{CRC-32 in practice}
+
+% ledger: b2:crc32-ieee
+The 32-bit CRC of Ethernet uses a generator of degree 32 written \code{0x104c11db7} as a bit vector. Real CRCs add two
+details to the definition. The hardware sends each byte lowest bit first, so the bits are processed in that order,
+and the generator appears reversed, as \code{0xedb88320}. The register starts at all ones and the result is
+% ledger: b2:crc32-gzip
+complemented, so that leading zero bytes change the check. The same CRC-32 protects zip and gzip files and PNG images:
+
+\omcode{code/bachelor-2/17-link-layer/listings/crc.py}{35}{58}{CRC-32 bit by bit, then a byte at a time from a
+table}\label{lst:b2:link-layer:crc32}
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/crc.txt}{Three ways, one value: ours agrees with
+\code{zlib.crc32}.}
+
+The table holds, for each byte value, the effect of eight steps of the bitwise loop; one lookup replaces eight steps.
+The same table in C gives the same values:
+
+\omcode{code/bachelor-2/17-link-layer/listings/crc32.c}{18}{24}{The table-driven CRC-32 in C}
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/crc32.txt}{The values of the C program.}
+
+\section{Sharing a medium}\label{sec:b2:link-layer:sharing}
+
+On a radio channel, every station hears every other.
+
+\begin{definition}[Multiple access protocol, collision]\label{def:b2:link-layer:mac-protocol}
+When several stations share one medium and two transmit at once, their signals mix and both \omterm{def:b2:link-layer:frame}{frames} are lost: a
+\emph{collision}\index{collision}. A \emph{multiple access protocol}\index{multiple access protocol} (or medium
+access protocol) is the rule by which each station decides when to transmit.
+\end{definition}
+
+\begin{history}
+% ledger: b2:aloha-1970
+In 1970, Norman Abramson described the \omterm{def:b2:link-layer:aloha}{ALOHA} system, which linked terminals on several Hawaiian islands to one
+computer over a shared radio channel. Its rule was the simplest possible: send when you have a \omterm{def:b2:link-layer:frame}{frame}; if no
+acknowledgement comes, wait a random time and send again.
+\end{history}
+
+In \emph{slotted \omterm{def:b2:link-layer:aloha}{ALOHA}}, time is cut into slots of one \omterm{def:b2:link-layer:frame}{frame} each, and a station sends only at the start of a slot.
+A slot is useful when exactly one station sends. Let $n$ stations each send in a slot with probability $p = G/n$, so
+that $G$ \omterm{def:b2:link-layer:frame}{frames} are tried per slot on average.
+
+\begin{proposition}[Slotted ALOHA]\label{prop:b2:link-layer:aloha}
+The fraction of useful slots is $S_n = G(1 - G/n)^{n-1}$, which tends to $S = G e^{-G}$ as $n$ grows. The maximum of
+$G e^{-G}$ is $1/e \approx 0.368$, at $G = 1$.
+\end{proposition}
+
+\begin{proof}
+Exactly one station sends with probability $n \cdot p (1 - p)^{n-1} = G (1 - G/n)^{n-1}$: one of the $n$ sends, and
+the $n - 1$ others do not. As $n$ grows, $(1 - G/n)^{n} \to e^{-G}$ and $(1 - G/n)^{-1} \to 1$. The maximum is
+\cref{exo:b2:link-layer:10}.
+\end{proof}
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/aloha_sim.txt}{Slotted \omterm{def:b2:link-layer:aloha}{ALOHA} with 100 stations, 20\,000 slots per
+value of $G$.}\label{out:b2:link-layer:aloha}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=0.66\linewidth, height=5cm, xlabel={$G$, frames tried per slot},
+    ylabel={useful slots}, xmin=0, xmax=3.1, ymin=0, ymax=0.42, legend pos=north east,
+    legend style={font=\scriptsize}]
+  \addplot[omDef, thick, domain=0:3.1, samples=80] {x*exp(-x)};
+  \addlegendentry{$G e^{-G}$}
+  \addplot[only marks, mark=*, mark size=1.6pt, omThm] table[x=G, y=simulated]
+    {code/bachelor-2/17-link-layer/figures/aloha.dat};
+  \addlegendentry{simulated}
+  \draw[dashed, gray] (axis cs:1,0) -- (axis cs:1,0.368) -- (axis cs:0,0.368);
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The points of \cref{out:b2:link-layer:aloha} against $G e^{-G}$. Too few attempts leave
+slots empty; too many waste them in \omterm{def:b2:link-layer:mac-protocol}{collisions}. At best, 37 slots in 100 are useful.}
+\end{omfigure}
+
+On a cable, a station can do better: listen first. \emph{Carrier sense multiple access with \omterm{def:b2:link-layer:mac-protocol}{collision} detection}
+(\omterm{def:b2:link-layer:aloha}{CSMA/CD}), the rule of the first Ethernets, sends only when the medium is quiet, keeps listening while sending, and
+stops as soon as it hears a \omterm{def:b2:link-layer:mac-protocol}{collision}. It then waits a random number of slots before trying again, chosen by
+\emph{binary exponential backoff}\index{binary exponential backoff}: after its $c$-th \omterm{def:b2:link-layer:mac-protocol}{collision} on a \omterm{def:b2:link-layer:frame}{frame}, a station
+waits a number of slots drawn uniformly from $0$ to $2^{\min(c,10)} - 1$. Each \omterm{def:b2:link-layer:mac-protocol}{collision} doubles the range, so the
+stations spread out until one gets through; \cref{exo:b2:link-layer:9} measures the delay.
+
+\begin{definition}[ALOHA, CSMA/CD, binary exponential backoff]\label{def:b2:link-layer:aloha}
+In \emph{ALOHA}\index{ALOHA} a station sends whenever it has a \omterm{def:b2:link-layer:frame}{frame} and, after a \omterm{def:b2:link-layer:mac-protocol}{collision}, again after a random
+delay; \emph{slotted ALOHA} sends only at the start of a time slot. \emph{CSMA/CD}\index{CSMA/CD} senses the medium
+before sending and stops on hearing a \omterm{def:b2:link-layer:mac-protocol}{collision}. \emph{\omterm{prop:b2:link-layer:aloha}{Binary exponential backoff}} draws the delay after the $c$-th
+\omterm{def:b2:link-layer:mac-protocol}{collision} uniformly among $0, \dots, 2^{\min(c,10)} - 1$ slots.
+\end{definition}
+
+Carrier sense fails on radio, where a station may not hear every other one. If $A$ and $C$ are both in range of $B$ but
+not of each other, each senses a quiet medium and sends to $B$, and their \omterm{def:b2:link-layer:frame}{frames} collide at $B$ without either hearing
+it.
+
+\begin{definition}[Hidden terminal]\label{def:b2:link-layer:hidden}
+A \emph{hidden terminal}\index{hidden terminal} is a station whose transmissions reach a receiver but not another
+sender to that receiver, so that carrier sense cannot prevent their \omterm{def:b2:link-layer:mac-protocol}{collisions}. Wireless networks therefore detect
+lost \omterm{def:b2:link-layer:frame}{frames} by the missing acknowledgement, and may reserve the medium first by a short exchange.
+\end{definition}
+
+\section{Ethernet and switches}\label{sec:b2:link-layer:ethernet}
+
+\begin{definition}[MAC address, broadcast address]\label{def:b2:link-layer:mac-address}
+% ledger: b2:mac-bits
+A \emph{MAC address}\index{MAC address} is the 6-byte address of a network interface on its \omterm{def:b2:link-layer:frame}{link}, written as six
+hexadecimal bytes, \code{02:00:00:00:00:01}. In the first byte, the lowest bit marks a \emph{group} address (a \omterm{def:b2:link-layer:frame}{frame}
+for several receivers), and the next bit a \emph{locally administered} one, chosen by its \omterm{def:b2:rust-ownership:ownership}{owner} rather than by the
+maker. The address \code{ff:ff:ff:ff:ff:ff}, the \emph{broadcast address}\index{broadcast address}, means every
+interface on the \omterm{def:b2:link-layer:frame}{link}.
+\end{definition}
+
+% ledger: b2:ethernet-header
+% ledger: b2:ethernet-payload
+% ledger: b2:ethertypes
+An Ethernet \omterm{def:b2:link-layer:frame}{frame} has a 14-byte header (destination, source, type), a payload of 46 to 1500 bytes, shorter payloads
+being padded, and a 4-byte CRC-32. The type says what the payload is: \code{0800} an IPv4 packet, \code{0806} an ARP
+message (\cref{sec:b2:link-layer:arp}), \code{86dd} an IPv6 packet.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, f/.style={draw, minimum height=7mm, inner sep=2pt, align=center}]
+\node[f, fill=omDef!25, minimum width=2.1cm] (d) at (0,0) {destination\\ 6 bytes};
+\node[f, fill=omDef!25, minimum width=2.1cm, anchor=west] (s) at (d.east) {source\\ 6 bytes};
+\node[f, fill=omDef!25, minimum width=1.2cm, anchor=west] (t) at (s.east) {type\\ 2};
+\node[f, fill=omThm!10, minimum width=4.6cm, anchor=west] (p) at (t.east) {payload\\ 46 to 1500 bytes};
+\node[f, fill=omDef!10, minimum width=1.5cm, anchor=west] (c) at (p.east) {CRC-32\\ 4 bytes};
+\draw[decorate, decoration={brace, mirror, amplitude=4pt}] ([yshift=-1mm]d.south west) -- node[below=5pt]
+{header, 14 bytes} ([yshift=-1mm]t.south east);
+\draw[decorate, decoration={brace, mirror, amplitude=4pt}] ([yshift=-1mm]p.south west) -- node[below=5pt]
+{a packet of the layer above, padded to 46} ([yshift=-1mm]p.south east);
+\end{tikzpicture}
+\par\smallskip{\small An Ethernet \omterm{def:b2:link-layer:frame}{frame}. The CRC-32 covers the header and the payload; a \omterm{def:b2:link-layer:frame}{frame} is therefore 64 to
+1518 bytes long.}
+\end{omfigure}
+
+\omcode{code/bachelor-2/17-link-layer/listings/ethernet_frame.py}{13}{26}{A \omterm{def:b2:link-layer:frame}{frame} built byte by
+byte}\label{lst:b2:link-layer:frame}
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/ethernet_frame.txt}{The 64 bytes of a broadcast \omterm{def:b2:link-layer:frame}{frame} carrying an
+ARP request.}\label{out:b2:link-layer:frame}
+
+\begin{definition}[Network switch, switch table]\label{def:b2:link-layer:switch}
+A \emph{network switch}\index{network switch} is a box with many ports, each linked to a machine or another switch,
+that receives each \omterm{def:b2:link-layer:frame}{frame} and sends it on only through the ports where its destination may be. Its \emph{switch table}
+maps MAC addresses to ports.
+\end{definition}
+
+Machines on one Ethernet are connected by switches. A switch needs no configuration, because it learns its table.
+
+\begin{method}[Self-learning switch]\label{met:b2:link-layer:switch}
+For each \omterm{def:b2:link-layer:frame}{frame} that arrives on port $p$: record in the table that its source is reachable through $p$. Then, if the
+destination is in the table on a port other than $p$, send the \omterm{def:b2:link-layer:frame}{frame} on that port only (\emph{forward}); if it is
+in the table on port $p$, drop it (\emph{filter}: the receiver already heard it); if it is not in the table, or is a
+broadcast, send it on every port except $p$ (\emph{flood}).
+\end{method}
+
+\omcode{code/bachelor-2/17-link-layer/listings/switch_sim.py}{4}{16}{A self-learning switch}
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/switch_sim.txt}{Five hosts on ports 1 to 5; the table after each
+\omterm{def:b2:link-layer:frame}{frame}.}
+
+The first \omterm{def:b2:link-layer:frame}{frame} from $A$ is flooded, since nobody knows $B$ yet; $B$'s answer is forwarded, since $A$ is now known.
+After a few \omterm{def:b2:link-layer:frame}{frames} the switch floods only for unknown or broadcast destinations. Several switches can be connected in
+a tree, and learning works through them (\cref{exo:b2:link-layer:5}). A loop, though, would make a flooded \omterm{def:b2:link-layer:frame}{frame}
+circle forever, each switch flooding it again. Real networks keep a spare cable for safety anyway; the switches then
+run the \emph{spanning tree protocol}, in which they elect one switch as root and switch off the ports that would
+close a loop, leaving a tree, and switch a spare port on again when a cable fails.
+
+\omimg{book4/ethernet-rj45-connector.jpg}{0.42\linewidth}{The plug of an Ethernet cable: eight gold contacts for
+four twisted pairs of copper wires. Photograph: David Monniaux, CC BY-SA 3.0.}
+
+\section{Address resolution}\label{sec:b2:link-layer:arp}
+
+The layer above addresses machines by IP address (\cref{ch:b2:network-layer}); the \omterm{def:b2:link-layer:frame}{link} needs a \omterm{def:b2:link-layer:mac-address}{MAC address}.
+
+\begin{definition}[Address resolution]\label{def:b2:link-layer:arp}
+\emph{Address resolution}\index{address resolution protocol} finds the \omterm{def:b2:link-layer:mac-address}{MAC address} of the interface that holds a given
+IP address on the same \omterm{def:b2:link-layer:frame}{link}; on Ethernet with IPv4 it is done by the \emph{address resolution protocol} (ARP).
+\end{definition}
+
+\begin{method}[ARP]\label{met:b2:link-layer:arp}
+% ledger: b2:arp-fields
+To send to IP address $a$ on its \omterm{def:b2:link-layer:frame}{link}, a machine looks $a$ up in its \emph{ARP cache}. If the address is missing,
+it broadcasts a request (operation 1): ``who has $a$? tell me, at this IP and \omterm{def:b2:link-layer:mac-address}{MAC address}''. The machine whose
+address is $a$ records the asker in its cache and sends a reply (operation 2) with its \omterm{def:b2:link-layer:mac-address}{MAC address}; the asker records
+it. Entries expire after a while, so that a machine that changed its interface is found again.
+\end{method}
+
+The request of \cref{out:b2:link-layer:frame} is such a broadcast: hardware type 1 (Ethernet), protocol
+\code{0800} (IPv4), address lengths 6 and 4, operation 1, the sender's two addresses, an unknown target \omterm{def:b2:link-layer:mac-address}{MAC address}
+(zeros) and the target IP address \code{0a 00 00 02}, that is 10.0.0.2.
+
+\omoutput{code/bachelor-2/17-link-layer/outputs/arp_sim.txt}{Three hosts; cache entries live 60 seconds in this
+simulation.}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, w/.style={-{Stealth[length=1.8mm]}, thick},
+  l/.style={fill=white, inner sep=1.5pt}]
+\foreach \x/\n in {0/A, 4.5/B, 9/C} {\node[font=\small\bfseries] at (\x,0.3) {\n}; \draw[gray] (\x,0) --
+(\x,-3.6);}
+\draw[w, omThm] (0,-0.6) -- (9,-0.6);
+\node[l, text=omThm, above=1.5pt] at (4.5,-0.6) {broadcast: who has 10.0.0.3? tell 10.0.0.1};
+\node[anchor=west] at (4.6,-1.05) {not mine: ignored};
+\node[anchor=east] at (8.9,-1.5) {records A in its cache};
+\draw[w, omDef] (9,-2.1) -- (0,-2.1);
+\node[l, text=omDef, above=1.5pt] at (4.5,-2.1) {reply to A only: 10.0.0.3 is at 02:00:00:00:00:03};
+\node[anchor=west] at (0.1,-2.55) {records C in its cache};
+\draw[w, black] (0,-3.3) -- (9,-3.3);
+\node[l, above=1.5pt] at (4.5,-3.3) {the frame, sent to C's MAC address};
+\end{tikzpicture}
+\par\smallskip{\small An ARP exchange. The request reaches everyone; the reply and the \omterm{def:b2:link-layer:frame}{frame} reach only their
+addressee. A second \omterm{def:b2:link-layer:frame}{frame} to C needs no request until the entry expires.}
+\end{omfigure}
+
+ARP trusts every reply. A machine that answers for an address that is not its own receives the \omterm{def:b2:link-layer:frame}{frames} meant for it;
+networks defend against this by having switches check replies against the addresses they handed out, and by
+encrypting what travels above the \omterm{def:b2:link-layer:frame}{link}, as the Year 3 volume explains.
+
+\section{Wireless links}\label{sec:b2:link-layer:wireless}
+
+A radio \omterm{def:b2:link-layer:frame}{link} differs from a cable in three ways. The signal weakens quickly with distance and through walls, so its
+error rate is far higher, and many wireless \omterm{def:b2:link-layer:frame}{links} resend a \omterm{def:b2:link-layer:frame}{frame} themselves: the receiver acknowledges each \omterm{def:b2:link-layer:frame}{frame},
+and the sender repeats it when no acknowledgement comes. Second, a station cannot listen while it sends, its own
+signal drowning every other, so it cannot detect a \omterm{def:b2:link-layer:mac-protocol}{collision}. Third, not every station hears every other: $A$ and
+$C$ may both reach $B$ while being too far apart to hear each other, the \emph{hidden terminal}\index{hidden
+terminal} problem; both find the channel quiet, both send, and their \omterm{def:b2:link-layer:frame}{frames} collide at $B$. Wireless networks
+therefore \emph{avoid} \omterm{def:b2:link-layer:mac-protocol}{collisions} (CSMA/CA): a station waits a random backoff even when the channel is quiet, and
+may first reserve the channel with a short request that the receiver answers with a short ``clear to send'', which
+every station near the receiver, hidden or not, hears.
+
+\omimg{book4/ai/b2-link-layer-plugging-cable.jpg}{0.58\linewidth}{Plugging a cable into a switch. Each port is a \omterm{def:b2:link-layer:frame}{link}
+of its own: the switch decides which \omterm{def:b2:link-layer:frame}{links} a \omterm{def:b2:link-layer:frame}{frame} crosses.}
+
+\section{Exercises}\label{sec:b2:link-layer:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:link-layer:1}
+Give the \omterm{def:b2:link-layer:parity}{even parity bits} of the bytes \code{0x4c}, \code{0x41}, \code{0x4d} and \code{0x50}, and check your answer
+against \cref{out:b2:link-layer:parity}. Which of the following errors does a \omterm{def:b2:link-layer:parity}{parity bit} per byte detect: one flip in
+each of two bytes; three flips in one byte; two flips in one byte?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:link-layer:2}
+This \omterm{def:b2:link-layer:edc}{checksum} forgets to add its carries back. Find the line, and explain why the first input gives the right value
+and the second does not.
+\omcode{code/bachelor-2/17-link-layer/listings/exo_nofold.py}{5}{9}{No folding}
+\omoutput{code/bachelor-2/17-link-layer/outputs/exo_nofold.txt}{Right and wrong.}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:link-layer:3}
+Write \code{correct(data, rows, col)}, which takes the data, its row \omterm{def:b2:link-layer:parity}{parity bits} and its column parity byte, corrects
+any single flipped bit (in the data or in the parities) and returns \code{None} when it cannot.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:link-layer:4}
+By long division, compute the 3 check bits of the message $1101\,0011$ with $g(x) = x^3 + x + 1$. Check that the \omterm{def:b2:link-layer:frame}{frame}
+sent is divisible by $g$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:link-layer:5}
+Two switches are connected by a cable between port 3 of $s_1$ and port 1 of $s_2$; hosts $A$ and $B$ are on ports 1
+and 2 of $s_1$, $C$ and $D$ on ports 2 and 3 of $s_2$. Starting from empty tables, the \omterm{def:b2:link-layer:frame}{frames} $A \to C$, $C \to A$,
+$D \to B$, $B \to D$, $A \to B$, $D \to C$ are sent. Give both tables at the end, and say which \omterm{def:b2:link-layer:frame}{frames} were flooded
+by which switch.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:link-layer:6}
+This decoder drops the escape bytes. Explain its output and fix it.
+\omcode{code/bachelor-2/17-link-layer/listings/exo_unstuff.py}{5}{6}{A wrong decoder}
+\omoutput{code/bachelor-2/17-link-layer/outputs/exo_unstuff.txt}{What came out.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:link-layer:7}
+Write a CRC with the generator $x^8 + x^2 + x + 1$, most significant bit first, bit by bit and with a table of 256
+entries, and test that they agree with each other and with \code{remainder} (\cref{lst:b2:link-layer:remainder}).
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:link-layer:8}
+Prove \cref{prop:b2:link-layer:crc-odd}. Hint: for a polynomial $P$, $P(1)$ is the number of its terms modulo 2.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:link-layer:9}
+Simulate $k$ stations that each have one \omterm{def:b2:link-layer:frame}{frame} to send at time 0 and follow \omterm{prop:b2:link-layer:aloha}{binary exponential backoff} on a slotted
+channel. Measure the mean number of slots until every \omterm{def:b2:link-layer:frame}{frame} is through and the mean delay of a \omterm{def:b2:link-layer:frame}{frame}, for $k = 2, 4,
+\dots, 32$. How do they grow with $k$?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:link-layer:10}
+Prove that $G e^{-G}$ is largest at $G = 1$. In \emph{pure} \omterm{def:b2:link-layer:aloha}{ALOHA}, a station sends whenever it likes; a \omterm{def:b2:link-layer:frame}{frame} is lost
+if any other \omterm{def:b2:link-layer:frame}{frame} starts within one \omterm{def:b2:link-layer:frame}{frame} time before or after it. With attempts forming a Poisson process of $G$
+\omterm{def:b2:link-layer:frame}{frames} per \omterm{def:b2:link-layer:frame}{frame} time, the throughput is $G e^{-2G}$. Find its maximum, and explain the factor 2.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:link-layer:11}
+Show that a \omterm{def:b2:link-layer:burst}{burst} $x^i B(x)$ passes a CRC exactly when $B$ does, so that checking every \omterm{def:b2:link-layer:burst}{burst} on a \omterm{def:b2:link-layer:frame}{frame} reduces to
+checking every pattern $B$ once. For CRC-16, count the patterns of lengths 17 and 18 that pass, compare with
+\cref{out:b2:link-layer:bursts}, and explain both counts.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:link-layer:12}
+On \omterm{def:b2:link-layer:frame}{frames} of $N \ge r$ bits, show that exactly $2^{N-r} - 1$ of the $2^N - 1$ nonzero error patterns pass a CRC of
+degree $r$, about one in $2^r$. With $x + 1$ dividing $g$, what fraction of the patterns with an even number of
+flips pass?
+\end{exercise}
+
+\section{Problem: The noisy link to the lighthouse}\label{sec:b2:link-layer:problem}
+
+\begin{problem}[{Weekend problem --- The noisy link to the lighthouse}]\label{pb:b2:link-layer:1}
+The harbour sends short \omterm{def:b2:link-layer:frame}{frames} to the lighthouse over a radio \omterm{def:b2:link-layer:frame}{link}: a 4-byte command followed by 16 check bits of
+CRC-16, with $g(x) = x^{16} + x^{12} + x^5 + 1$. Noise comes in \omterm{def:b2:link-layer:burst}{bursts}.
+
+\medskip\noindent\textbf{Part I --- Framing.}\par\nopagebreak
+\begin{enumerate}
+\item \omterm{def:b2:link-layer:frame}{Frames} are separated by the flag \code{0x7e}. Stuff the payload \code{7d 7e 00 7e}.
+\item What is the longest a stuffed payload of $n$ bytes can be, and for which payloads?
+\item A flag is lost in the noise. What does the receiver see, and how does the CRC limit the damage?
+\item Why does the CRC cover the payload before stuffing rather than after?
+\item The lighthouse could instead receive a length byte before each payload. Why is a length byte risky on a noisy
+\omterm{def:b2:link-layer:frame}{link}, where a flag is not?
+\item How many bytes cross the \omterm{def:b2:link-layer:frame}{link} for the command \code{LAMP}, its check and two flags?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Detecting errors.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item The last line of the output of \code{crc.py} gives the check bits of \code{LAMP}. Write the 6 bytes sent, and
+say why the receiver's CRC of the whole \omterm{def:b2:link-layer:frame}{frame} is 0.
+\item Why can one \omterm{def:b2:link-layer:parity}{parity bit} per \omterm{def:b2:link-layer:frame}{frame} not protect this \omterm{def:b2:link-layer:frame}{link} against \omterm{def:b2:link-layer:burst}{bursts}?
+\item Using \cref{thm:b2:link-layer:crc-burst}, which \omterm{def:b2:link-layer:burst}{bursts} is CRC-16 sure to detect?
+\item Using \cref{prop:b2:link-layer:crc-odd}, which other errors is it sure to detect?
+\item In \cref{out:b2:link-layer:bursts}, why are there 32 undetected \omterm{def:b2:link-layer:burst}{bursts} of length 17 and not more?
+\item The listing below draws $2^{24}$ random error patterns on the 48-bit \omterm{def:b2:link-layer:frame}{frame}. What count of undetected patterns
+does \cref{exo:b2:link-layer:12} predict? Compare with the output.
+\omoutput{code/bachelor-2/17-link-layer/outputs/random_errors.txt}{Random error patterns through CRC-16.}
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Sharing the radio channel.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Five buoys report to the harbour on the same channel with slotted \omterm{def:b2:link-layer:aloha}{ALOHA}. Each sends in a slot with
+probability $p$. What is the probability that a slot is useful?
+\item Which $p$ makes it largest, and what is the largest value? Compare with $1/e$.
+\item Why can the buoys not use \omterm{def:b2:link-layer:mac-protocol}{collision} detection?
+\item The lighthouse and a buoy behind the headland both hear the harbour, but not each other. Name the problem and
+say what it causes.
+\item How does a short reservation exchange help, and what does it cost?
+\item Why does every \omterm{def:b2:link-layer:frame}{frame} need an acknowledgement on this \omterm{def:b2:link-layer:frame}{link}, when a cable often needs none?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Choosing a CRC.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item \omterm{def:b2:link-layer:burst}{Bursts} of up to 20 bits are common on this \omterm{def:b2:link-layer:frame}{link}. Is CRC-16 enough? What does CRC-32 guarantee instead?
+\item What does CRC-32 cost per \omterm{def:b2:link-layer:frame}{frame}, in bytes and in computation, against CRC-16?
+\item A \omterm{def:b2:link-layer:frame}{frame} carries 4 bytes of data. What fraction of the \omterm{def:b2:link-layer:frame}{frame} is check bits with each CRC?
+\item \omterm{def:b2:link-layer:burst}{Bursts} of 20 bits occur in one \omterm{def:b2:link-layer:frame}{frame} in a thousand. Estimate how many corrupted \omterm{def:b2:link-layer:frame}{frames} CRC-16 lets through per
+million \omterm{def:b2:link-layer:frame}{frames}.
+\item Why is a CRC computed by a table in software, or by a shift register in hardware, rather than by the
+bit-by-bit division of \cref{lst:b2:link-layer:remainder}?
+\item State the result: no \omterm{def:b2:link-layer:burst}{burst} of 16 bits or fewer passes CRC-16, and random errors pass at the predicted rate
+$2^{-16}$, with the counts of the simulation.
+\end{enumerate}
+\end{problem}

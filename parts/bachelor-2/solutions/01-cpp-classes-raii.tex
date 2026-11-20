@@ -1,0 +1,197 @@
+% Solutions of Book 4, chapter 1 (cpp-classes-raii).
+\section*{Chapter \ref{ch:b2:cpp-classes-raii} --- From C to C++: Classes and Resource Management}
+
+\begin{solution}{exo:b2:cpp-classes-raii:1}
+The global \omterm{def:b2:cpp-classes-raii:class}{object} is built before \code{main} and destroyed after it; inside, \code{f(1)} makes \code{x1}, calls
+\code{f(0)}, which makes and drops \code{x0}, then drops \code{x1}; the inner block makes and drops \code{b}:
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/exo_order.txt}{The ten lines.}
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-classes-raii:2}
+\code{result} is an automatic \omterm{def:b2:cpp-classes-raii:class}{object} of \code{longer}: it dies when \code{longer} returns, so the returned \omterm{def:b2:cpp-classes-raii:reference}{reference}
+names an \omterm{def:b2:cpp-classes-raii:class}{object} that no longer exists (a \emph{dangling} \omterm{def:b2:cpp-classes-raii:reference}{reference}), and reading it in \code{main} is undefined
+behaviour. Any outcome is allowed; this compiler, knowing the \omterm{def:b2:cpp-classes-raii:reference}{reference} is dangling, returned a null address and the
+print produced nothing. The simplest fix returns a copy: declare the return type \code{std::string} instead of
+\code{const std::string &}, and the body can shrink to \code{return a.size() >= b.size() ? a : b;}. (Returning \code{a} or \code{b} by \omterm{def:b2:cpp-classes-raii:reference}{reference} would also be
+correct, since they name the caller's \omterm{def:b2:cpp-classes-raii:class}{objects}, but only as long as those outlive the use.)
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-classes-raii:3}
+\omcode{code/bachelor-2/01-cpp-classes-raii/exercises/int_array.hpp}{7}{27}{\code{IntArray}}
+Step 1: the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} acquires the block (\code{new int[n]{}} zero-fills it, and throws \code{std::bad_alloc} if
+there is no memory, so no \omterm{def:b2:cpp-classes-raii:class}{object} without a block exists). Step 2: the \omterm{def:b2:cpp-classes-raii:constructor}{destructor}'s \code{delete[]} is the only
+release. Step 3: the two deleted functions. Step 4: \code{size} and the two \code{at}, which keep every access inside
+the block. Tested in \code{tests/exercises_test.cpp}.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-classes-raii:4}
+Each of the $nm$ \omterm{def:b2:cpp-classes-raii:class}{objects} prints one \code{make} and one \code{drop} line: $2nm$ lines. When \code{n.m} is made, all
+$nm$ \omterm{def:b2:cpp-classes-raii:class}{objects} are alive (the blocks are nested and none has ended), so by \cref{prop:b2:cpp-classes-raii:reverse-order}
+they die in the reverse order of construction. Construction order is \code{1.1}, \dots, \code{1.m}, \code{2.1},
+\dots, \code{n.m}, so the first drops are \code{n.m}, \code{n.(m-1)}, \code{n.(m-2)} and the last three
+\code{1.3}, \code{1.2}, \code{1.1} (for $m \geq 3$).
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-classes-raii:5}
+\omoutput{code/bachelor-2/01-cpp-classes-raii/outputs/exo_handlers.txt}{The output.}
+$k = 0$: nothing thrown. $k = 1$: \code{invalid_argument} skips the \code{out_of_range} handler (not its type) and is
+caught by the second inner handler, which prints and rethrows with \code{throw;}; the middle handler catches it,
+since \code{invalid_argument} derives from \code{logic_error}, and \code{step done} is never reached. $k = 2$: the
+first inner handler matches; the \omterm{def:b2:cpp-classes-raii:exception}{exception} is finished, so \code{step} goes on and prints \code{step done}.
+$k = 3$: \code{runtime_error} matches neither inner handler nor \code{logic_error}; the outer
+\code{std::exception} handler catches it. $k = 4$: an \code{int} is not a \omterm{def:b2:cpp-classes-raii:class}{class} derived from \code{std::exception};
+only \code{catch (...)} matches.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-classes-raii:6}
+Each time, the first \code{fopen} succeeds, the second fails, and the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} throws. A \omterm{def:b2:cpp-classes-raii:constructor}{constructor} that throws
+never produces an \omterm{def:b2:cpp-classes-raii:class}{object}, so the \omterm{def:b2:cpp-classes-raii:constructor}{destructor} never runs, and the raw pointer \code{a_} has no \omterm{def:b2:cpp-classes-raii:constructor}{destructor} of its own:
+one file leaks per failure, 4, 5, \dots, 8 open files. The fix makes each file a member that owns itself:
+\omcode{code/bachelor-2/01-cpp-classes-raii/exercises/merger.hpp}{5}{14}{\code{Merger} with \code{File} members}
+When \code{b_}'s \omterm{def:b2:cpp-classes-raii:constructor}{constructor} throws, the members already built (here \code{a_}) are destroyed before the \omterm{def:b2:cpp-classes-raii:exception}{exception}
+leaves the \omterm{def:b2:cpp-classes-raii:constructor}{constructor}, so \code{a_} closes its file. The test opens and fails ten times and finds the count of open
+files unchanged.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-classes-raii:7}
+\omcode{code/bachelor-2/01-cpp-classes-raii/exercises/scope_guard.hpp}{5}{20}{\code{ScopeGuard}}
+In a C-style function, right after each acquisition succeeds, declare its guard:
+\code{char *a = (char *)malloc(n); if (!a) return -1; ScopeGuard ga([&] {free(a);});}, then the same for the second
+block and for the file. Every later \code{return} (or \omterm{def:b2:cpp-classes-raii:exception}{exception}) runs the guards declared so far, newest first, so
+each path frees exactly what was acquired. When the function succeeds and returns the \omterm{def:b2:cpp-classes-raii:raii}{resources} to its caller, they
+must not be freed: the function calls \code{dismiss()} on each guard just before the final \code{return}.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-classes-raii:8}
+Each of the $k$ checks has its \code{return}, and the end of the body is one more: $k + 1$ paths. In C, path $i$ must
+release the $a_i$ \omterm{def:b2:cpp-classes-raii:raii}{resources} held at check $i$, and the last path all $r$: the author writes
+$a_1 + \dots + a_k + r$ release calls. With one RAII \omterm{def:b2:cpp-classes-raii:class}{object} per \omterm{def:b2:cpp-classes-raii:raii}{resource}, the function contains none: the release is
+written once, in each \omterm{def:b2:cpp-classes-raii:class}{class}'s \omterm{def:b2:cpp-classes-raii:constructor}{destructor}. By \cref{prop:b2:cpp-classes-raii:every-path}, on path $i$ exactly the
+$a_i$ \omterm{def:b2:cpp-classes-raii:class}{objects} built so far are destroyed, each once, which is exactly the set the C author had to release by hand.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-classes-raii:9}
+\omcode{code/bachelor-2/01-cpp-classes-raii/exercises/bounded_stack.hpp}{7}{17}{\code{BoundedStack}, up to
+\code{push}}
+The full check comes before any change. The \omterm{def:b2:cpp-classes-raii:constructor}{constructor} reserves room for $N$ elements, so \code{push_back} never
+reallocates: it copies \code{x} into the free slot after the last element, and only then increases the size. If the
+copy throws, the size was not changed and no existing element was touched, so the stack is exactly as before: the
+strong guarantee. (A vector that had to grow would copy the old elements into a new block first, which is where a
+weaker implementation could lose them.) \code{pop} and \code{top} throw \code{std::out_of_range} on an empty stack.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-classes-raii:10}
+\omcode{code/bachelor-2/01-cpp-classes-raii/exercises/txn_file.hpp}{8}{44}{\code{TxnFile}}
+A function that writes its report through a \code{TxnFile} and commits at its end gives the strong guarantee for
+the file \code{path}: either the commit happened and the whole report is there, or the \omterm{def:b2:cpp-classes-raii:constructor}{destructor} removed the
+temporary and \code{path} is as before. Between the close and the rename, \code{rename} itself may fail (no
+permission, or a temporary on another file system); then \code{commit} throws, the \omterm{def:b2:cpp-classes-raii:constructor}{destructor} removes the temporary,
+and \code{path} is untouched. A crash of the whole machine there leaves a stale \code{path.tmp}, but never a half
+file at \code{path}. The \omterm{def:b2:cpp-classes-raii:constructor}{destructor} runs during unwinding, when another \omterm{def:b2:cpp-classes-raii:exception}{exception} is in flight; letting a second one
+out would end the program (\omterm{def:b2:cpp-classes-raii:constructor}{destructors} are \code{noexcept}), so it ignores the results of \code{fclose} and
+\code{remove}.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-classes-raii:11}
+$o_k$'s \omterm{def:b2:cpp-classes-raii:constructor}{constructor} did not finish, so $o_k$ never existed and has no \omterm{def:b2:cpp-classes-raii:constructor}{destructor} call (whatever part of $R_k$ it had
+acquired, it must release itself, for instance with members, as in \cref{exo:b2:cpp-classes-raii:6}). The \omterm{def:b2:cpp-classes-raii:exception}{exception}
+leaves blocks $k, k-1, \dots, 1$ in that order, and each destroys its \omterm{def:b2:cpp-classes-raii:class}{object}: $o_{k-1}, \dots, o_1$, so
+$R_{k-1}, \dots, R_1$ are released, in that order, by $k - 1$ \omterm{def:b2:cpp-classes-raii:constructor}{destructor} calls. $R_{k+1}, \dots, R_n$ were never
+acquired. If the \omterm{def:b2:cpp-classes-raii:exception}{exception} comes after $o_n$ is built, all $n$ \omterm{def:b2:cpp-classes-raii:class}{objects} are alive, and unwinding destroys
+$o_n, \dots, o_1$: $n$ calls, releasing $R_n$ first and $R_1$ last.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-classes-raii:12}
+\omcodes{code/bachelor-2/01-cpp-classes-raii/exercises/matrix.hpp}{10-21,48-63}{\code{Matrix}: construction,
+assignment and the checks}
+The \omterm{def:b2:cpp-classes-raii:constructor}{constructor} establishes the invariant: \code{checked} throws before \code{data_} is built when a size is 0, and
+otherwise \code{data_} gets exactly $rc$ elements. The three members are private, so only \omterm{def:b2:cpp-classes-raii:class}{member functions} can
+change them. Of those, \code{operator()} changes an element, never a size; \code{transposed} and \code{operator*}
+create new matrices through the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} and do not change \code{*this}. The copy \omterm{def:b2:cpp-classes-raii:constructor}{constructor} copies a valid
+matrix member by member. The one danger is assignment: the implicit one would assign \code{rows_}, \code{cols_},
+then \code{data_}, and if copying \code{data_} ran out of memory, the new sizes would sit with the old data. The
+\omterm{def:b2:cpp-classes-raii:class}{class} therefore takes its argument by value (the copy is made first, and may throw before \code{*this} is touched)
+and swaps the three members, which cannot throw. No public function can break the invariant. Tested in
+\code{tests/exercises_test.cpp}.
+\end{solution}
+
+\begin{solution}{pb:b2:cpp-classes-raii:1}
+\textbf{1.} Five: the four early returns $-1$ to $-4$ and the final \code{return n}, that is $k + 1$ with $k = 4$.
+
+\textbf{2.} $-1$: nothing is held (\code{fopen} failed). $-2$: \code{f} is held and not closed. $-3$ and $-4$:
+\code{f} and \code{buf} are held, neither released. \code{return n}: both are released.
+
+\textbf{3.} 3: the open failed, nothing leaked. 4: the $-99.0$ case returned $-3$ and leaked its \code{FILE} for
+\code{/dev/null}. 4: the good batch released everything. 5: \code{/dev/full} returned $-4$ and leaked one more.
+
+\textbf{4.} Each \code{malloc} asked for $16 \cdot 3 + 1 = 49$ bytes, lost in cases 2 and 4: 98 bytes (without
+counting the memory of the two leaked \code{FILE}s).
+
+\textbf{5.} Keep the result in a variable and jump to labels placed in the reverse order of acquisition:
+\code{free_buf:} (\code{free(buf);}) before \code{close_file:} (\code{fclose(f);}), then one \code{return result;}.
+Check 2 jumps to \code{close_file}, checks 3 and 4 to \code{free_buf}: two labels.
+
+\textbf{6.} $r = 2$, $k = 4$, $(a_1, a_2, a_3, a_4) = (0, 1, 2, 2)$: $0 + 1 + 2 + 2 + 2 = 7$ release calls were
+needed; the author wrote 2, both on the final path.
+
+\textbf{7.} \code{buf}, a \code{std::string}, owns its heap memory; \code{f}, a \code{File}, owns the \code{FILE}
+and the open file. (\code{cell} is an array in the frame: no \omterm{def:b2:cpp-classes-raii:raii}{resource}.)
+
+\textbf{8.} In case 1 the \code{File} \omterm{def:b2:cpp-classes-raii:constructor}{constructor} threw because \code{fopen} failed, so nothing was opened. In case 2
+the function threw before \code{f} existed. In case 3 \code{f} died at the end of the function. In case 4 the throw
+from \code{flush} unwound the function and destroyed \code{f}, which closed the file. No path leaves a file open.
+
+\textbf{9.} It would have written \code{18.5} before meeting $-99.0$: a half batch at the end of the log, with no
+sign that it is incomplete. Checking everything first and writing once leaves the log as it was.
+
+\textbf{10.} The end of the body (line 23); the \code{throw} of line 15; the \code{File} \omterm{def:b2:cpp-classes-raii:constructor}{constructor}'s throw at line
+20; \code{write} at line 21; \code{flush} at line 22. A \code{std::bad_alloc} from \code{buf += cell} (line 18) is
+possible too.
+
+\textbf{11.} None. The releases are written once, in \code{~File} (its \code{fclose}) and in the \omterm{def:b2:cpp-classes-raii:constructor}{destructor} of
+\code{std::string}.
+
+\textbf{12.} \code{f}, built after \code{buf}, is destroyed first and closes the file; then \code{buf} frees its
+memory; then the handler in \code{main} runs.
+
+\textbf{13.} The strong guarantee: the function threw before opening the file, so the log and everything else are as
+before the call.
+
+\textbf{14.} Only the basic one: nothing leaks and the \code{File} is closed, but on a disk that fills during the
+write, part of the batch may already be in the log. (\code{/dev/full} accepts nothing, which hides this.)
+
+\textbf{15.} A \omterm{def:b2:cpp-classes-raii:constructor}{destructor} is \code{noexcept}: an \omterm{def:b2:cpp-classes-raii:exception}{exception} leaving it calls \code{std::terminate}, and it may be
+running during the unwinding of another \omterm{def:b2:cpp-classes-raii:exception}{exception}. So \code{~File} cannot report a failed \code{fclose}. A caller
+who must know whether the data reached the file calls \code{flush} while the \omterm{def:b2:cpp-classes-raii:class}{object} is alive, where a throw is
+allowed; the close that follows has nothing left to write.
+
+\textbf{16.} Open a \code{TxnFile} on the log's name, copy the current log into it, append the batch, then commit,
+which renames the copy over the log. If anything throws before the rename, the temporary is removed and the log is
+untouched; after the rename, the log holds the old lines and the whole batch.
+
+\textbf{17.} The plain version writes $b$ bytes; the strong one writes $L + b$.
+
+\textbf{18.} $L = 731 \times 5 = 3655$ and $b = 15$: $(3655 + 15)/15 \approx 245$ times more. Once a day, 3.7 kB is
+nothing for a disk: the strong version is worth it.
+
+\textbf{19.} Both success timings are below a nanosecond and differ by noise only: being able to throw costs nothing
+measurable when nothing is thrown.
+
+\textbf{20.} A failed return code costs about as much as a success, below a nanosecond; a throw and its catch cost
+several hundred nanoseconds. The last line of the output gives the ratio of that run: of the order of a thousand.
+
+\textbf{21.} $365 \times 24 \times 60 = 525\,600$ batches a year, of which 5256 fail: about $5$ milliseconds of
+throwing in a year.
+
+\textbf{22.} $3 \times 10^7$ throws at about a microsecond: about 30 seconds, against a few hundredths of a second
+with error values, a thousand times less.
+
+\textbf{23.} The logger: its failures are rare and handled far from where they occur. The validator should return
+an error value per field: an invalid field is a normal outcome there.
+
+\textbf{24.} \emph{A function with $k$ checks has $k + 1$ exit paths by return (more with \omterm{def:b2:cpp-classes-raii:exception}{exceptions}). With every
+\omterm{def:b2:cpp-classes-raii:raii}{resource} owned by an \omterm{def:b2:cpp-classes-raii:class}{object}, each acquired \omterm{def:b2:cpp-classes-raii:raii}{resource} is released exactly once on each path, and no release is written
+in the function itself: 0 instead of $a_1 + \dots + a_k + r$ (7 for the logger, which wrote 2). On the author's
+laptop the success path costs the same with or without \omterm{def:b2:cpp-classes-raii:exception}{exceptions}, below a nanosecond, while a throw costs several
+hundred nanoseconds, about a thousand failed return codes.}
+\end{solution}

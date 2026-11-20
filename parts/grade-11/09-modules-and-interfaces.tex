@@ -1,0 +1,398 @@
+% Provenance (never printed): NSI premiere "Langages et programmation: utilisation de bibliotheques, documentation;
+% modularite; diversite et unite des langages". See sources/book2/BRIEFS.md.
+\chapter{Modules, Interfaces and Libraries}\label{ch:g11:modules-and-interfaces}
+
+Twenty programs of the town hall use the same small \omterm{def:g11:modules-and-interfaces:module}{module} of dates: the school calendar, the \omterm{def:g11:modules-and-interfaces:library}{library}'s loans, the
+market's opening days. One summer the \omterm{def:g11:modules-and-interfaces:module}{module} is rewritten and becomes thousands of times faster on large calendars.
+None of the twenty programs is changed, none of them breaks, and their authors only notice that things run faster.
+
+That is possible because the twenty programs relied only on what the \omterm{def:g11:modules-and-interfaces:module}{module} promised, never on how it kept its
+dates. This chapter splits programs into \omterm{def:g11:modules-and-interfaces:module}{modules}, separates the promise from the way it is kept, reads the
+documentation of Python's own \omterm{def:g11:modules-and-interfaces:module}{modules}, and then changes an \omterm{def:g11:modules-and-interfaces:interface}{implementation} behind its users' backs, with the tests to
+prove nothing broke.
+
+\begin{recall}
+A function has parameters and returns a value (the first book of the series). A specification states what a function
+must do, and tests check it (chapter \ref{ch:g10:specifications-and-tests}); a set answers \code{x in s} without a
+scan (chapter \ref{ch:g10:tuples-sets-comprehensions}); the \omterm{def:g11:cost-of-an-algorithm:halvings}{number of halvings} $h(n)$ and the cost of searching
+(chapter \ref{ch:g11:cost-of-an-algorithm}).
+\end{recall}
+
+\section{Splitting a program into modules}\label{sec:g11:modules-and-interfaces:modules}
+
+\begin{definition}[Module]\label{def:g11:modules-and-interfaces:module}
+A \emph{module}\index{module} is a file of code whose names, functions, constants and others, other programs can use by
+importing it. In Python every file \code{name.py} is a module named \code{name}.
+\end{definition}
+
+\omcode{code/grade-11/09-modules-and-interfaces/listings/geometry.py}{1}{23}{A \omterm{def:g11:modules-and-interfaces:module}{module} of plane geometry: two functions
+and a helper.}\label{lst:g11:modules-and-interfaces:geometry}
+
+\code{import geometry} runs the file once and makes the single name \code{geometry} available; its contents are
+reached through it, as \code{geometry.distance}. \code{from geometry import perimeter} copies one name into the
+program, to be used without the prefix.
+
+\omcode{code/grade-11/09-modules-and-interfaces/listings/use_geometry.py}{1}{8}{Two ways of importing, and the names a
+\omterm{def:g11:modules-and-interfaces:module}{module} holds.}\label{lst:g11:modules-and-interfaces:use-geometry}
+
+\omoutput{code/grade-11/09-modules-and-interfaces/outputs/use_geometry.txt}{The \omterm{def:g11:modules-and-interfaces:module}{module} also holds \code{math}, which it
+imported for itself, and the helper \code{_square}.}\label{out:g11:modules-and-interfaces:use-geometry}
+
+Python looks for a \omterm{def:g11:modules-and-interfaces:module}{module} first in the directory of the program being run, then in the directories listed in the
+variable \code{PYTHONPATH}, then where the installation keeps its \omterm{def:g11:modules-and-interfaces:module}{modules}; the list is in \code{sys.path}. A \omterm{def:g11:modules-and-interfaces:module}{module}
+named like one of Python's own, \code{random.py} next to a program, hides the real one: a classic trap.
+% ledger: g11:py-syspath
+
+Each \omterm{def:g11:modules-and-interfaces:module}{module} has a name in the variable \code{__name__}. A file started as a program gets the name
+\code{"__main__"}; imported, it gets its own name. The guard \code{if __name__ == "__main__":} keeps a demonstration
+from running when the file is only imported.
+% ledger: g11:py-main-name
+
+\omcode{code/grade-11/09-modules-and-interfaces/listings/main_guard.py}{1}{10}{A \omterm{def:g11:modules-and-interfaces:module}{module} with a guarded
+demonstration.}\label{lst:g11:modules-and-interfaces:main-guard}
+
+\omoutput{code/grade-11/09-modules-and-interfaces/outputs/main_guard.txt}{Started as a program: the guard lets the
+greeting through.}\label{out:g11:modules-and-interfaces:main-guard}
+
+\omoutput{code/grade-11/09-modules-and-interfaces/outputs/import_guard.txt}{Imported by \code{import_guard.py}, which
+calls \code{greet} itself: the \omterm{def:g11:modules-and-interfaces:module}{module}'s own greeting does not run.}\label{out:g11:modules-and-interfaces:import-guard}
+
+A \omterm{def:g11:modules-and-interfaces:module}{module}'s statements run only at its first import; a second \code{import} in the same run finds it already loaded.
+% ledger: g11:py-import-once
+
+\begin{omfigure}
+\begin{tikzpicture}[mod/.style={draw, rounded corners=2pt, fill=omDef!8, font=\ttfamily\footnotesize,
+    minimum height=6mm, inner sep=3pt}, std/.style={mod, fill=black!6}, ->, >=stealth]
+  \node[mod] (use) at (0,0) {use\_dateset.py};
+  \node[mod] (tests) at (4.2,0) {dateset\_tests.py};
+  \node[mod] (meas) at (9.2,0) {measure\_dateset.py};
+  \node[std] (il) at (4.2,1.3) {importlib, unittest};
+  \node[std] (st) at (9.2,1.3) {statistics, time};
+  \node[std] (dt) at (-1.5,-1.6) {datetime};
+  \node[mod] (l) at (1.4,-1.6) {dateset\_list};
+  \node[mod] (s) at (4.6,-1.6) {dateset\_set};
+  \node[mod] (o) at (8.0,-1.6) {dateset\_sorted};
+  \node[std] (bi) at (8.0,-3.0) {bisect};
+  \draw (tests) -- (il); \draw (meas) -- (st);
+  \foreach \p in {use, tests, meas} { \draw (\p) -- (dt); \draw (\p) -- (l); \draw (\p) -- (s); }
+  \draw (tests) -- (o); \draw (meas) -- (o);
+  \draw (o) -- (bi);
+\end{tikzpicture}
+
+{\small The \omterm{def:g11:modules-and-interfaces:module}{modules} of this chapter's date programs. An arrow goes from a \omterm{def:g11:modules-and-interfaces:module}{module} to a \omterm{def:g11:modules-and-interfaces:module}{module} it imports; the grey
+ones come with Python.}
+\end{omfigure}
+
+\section{The interface and the hidden implementation}\label{sec:g11:modules-and-interfaces:interface}
+
+\begin{definition}[Interface, implementation]\label{def:g11:modules-and-interfaces:interface}
+The \emph{interface}\index{interface} of a \omterm{def:g11:modules-and-interfaces:module}{module} is what its users may rely on: the names it offers and, for each, a
+specification. The \emph{implementation}\index{implementation} is the code that keeps these promises, and everything
+else in the \omterm{def:g11:modules-and-interfaces:module}{module}: helpers, data structures, imported \omterm{def:g11:modules-and-interfaces:module}{modules}.
+\end{definition}
+
+Python does not lock anything away: \code{geometry._square} can be called. The protection is a convention: a name
+beginning with an underscore is internal, and \code{from geometry import *} does not even copy it. A name that is not
+documented, or that the \omterm{def:g11:modules-and-interfaces:module}{module} only imported for itself, as \code{geometry.math}, is internal too.
+% ledger: g11:pep8-names
+% ledger: g11:py-import-star
+
+The documentation of a function is its \omterm{def:g10:specifications-and-tests:docstring}{docstring}, which \code{help} prints.
+
+\omcode{code/grade-11/09-modules-and-interfaces/listings/help_view.py}{1}{3}{Asking for the documentation of a
+function.}\label{lst:g11:modules-and-interfaces:help}
+
+\omoutput{code/grade-11/09-modules-and-interfaces/outputs/help_view.txt}{The signature and the \omterm{def:g10:specifications-and-tests:docstring}{docstring}: all a user
+needs.}\label{out:g11:modules-and-interfaces:help}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize]
+  \fill[omDef!8] (0,0) rectangle (11,1.7);
+  \fill[black!8] (0,-1.9) rectangle (11,0);
+  \draw[very thick, omThm] (0,0) -- (11,0);
+  \node[right, font=\small\bfseries] at (0.1,1.45) {interface: what users may rely on};
+  \node[right, align=left] at (0.2,0.7) {\code{empty()}\quad \code{from_dates(dates)}\quad \code{add(s, d)}\quad
+    \code{contains(s, d)}\quad \code{size(s)}\\ and the docstring of each};
+  \node[right, font=\small\bfseries] at (0.1,-0.3) {implementation: hidden, may change};
+  \node[right, align=left] at (0.2,-1.1) {\code{dateset_list}: a list scanned by \code{in}\\
+    \code{dateset_set}: a Python set};
+  \node[right, align=left] at (6,-1.1) {\code{dateset_sorted}: a sorted list,\\ searched by halving};
+\end{tikzpicture}
+
+{\small The \omterm{def:g11:modules-and-interfaces:interface}{interface} as a wall. Above it, five names with their specifications, the same in the three \omterm{def:g11:modules-and-interfaces:module}{modules}; below
+it, three ways of keeping the dates, which users never see.}
+\end{omfigure}
+
+\section{The standard library and its documentation}\label{sec:g11:modules-and-interfaces:library}
+
+\begin{definition}[Library, standard library]\label{def:g11:modules-and-interfaces:library}
+A \emph{library}\index{library} is a collection of \omterm{def:g11:modules-and-interfaces:module}{modules} written to be used by other programs. The \emph{standard
+library}\index{standard library} of a language is the library that comes with every installation of it.
+\end{definition}
+
+\begin{definition}[API]\label{def:g11:modules-and-interfaces:api}
+The \emph{API}\index{API (application programming interface)}, for application programming \omterm{def:g11:modules-and-interfaces:interface}{interface}, of a \omterm{def:g11:modules-and-interfaces:library}{library}
+is its \omterm{def:g11:modules-and-interfaces:interface}{interface}: the names, with their specifications, that programs may use.
+\end{definition}
+
+Python's \omterm{def:g11:modules-and-interfaces:library}{standard library} has hundreds of \omterm{def:g11:modules-and-interfaces:module}{modules}, and its documentation describes each function in a fixed shape:
+the signature, what it returns, what it raises and when, examples, and in which version it changed.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, note/.style={font=\scriptsize, omThm, align=left}]
+  \draw[fill=black!3] (0,0) rectangle (7.6,-4.3);
+  \node[right, font=\ttfamily\small] at (0.15,-0.35) {statistics.median(data)};
+  \node[right, text width=7.1cm] at (0.15,-1.35) {Return the median (middle value) of numeric data. When the number
+    of data points is even, the median is interpolated by taking the average of the two middle values.};
+  \node[right, text width=7.1cm] at (0.15,-2.3) {If \emph{data} is empty, \code{StatisticsError} is raised.};
+  \node[right, font=\ttfamily] at (0.15,-3.0) {>>> median([1, 3, 5, 7])};
+  \node[right, font=\ttfamily] at (0.15,-3.4) {4.0};
+  \node[right, font=\itshape] at (0.15,-3.95) {Changed in version \dots};
+  \foreach \y/\t in {-0.35/{signature: name and\\ parameters}, -1.35/{what it returns}, -2.3/{what it raises,\\ and when},
+      -3.2/{an example to\\ run and compare}, -3.95/{the versions}}
+    { \draw[omThm, ->] (9.4,\y) -- (7.7,\y); \node[note, right] at (9.45,\y) {\t}; }
+\end{tikzpicture}
+
+{\small The parts of a documentation entry, on the entry for \code{statistics.median}, shortened. Reading the
+raised exceptions and the examples is part of reading the entry.}
+\end{omfigure}
+% ledger: g11:py-median
+
+\omcode{code/grade-11/09-modules-and-interfaces/listings/stdlib_tour.py}{1}{11}{Four \omterm{def:g11:modules-and-interfaces:module}{modules} of the \omterm{def:g11:modules-and-interfaces:library}{standard library},
+used after reading their entries.}\label{lst:g11:modules-and-interfaces:stdlib}
+
+\omoutput{code/grade-11/09-modules-and-interfaces/outputs/stdlib_tour.txt}{A choice, two medians, the three most
+common letters, and some dates.}\label{out:g11:modules-and-interfaces:stdlib}
+
+Each line of the output is explained by an entry:
+\begin{itemize}
+  \item \code{random.choice} returns an element of a non-empty sequence, and raises \code{IndexError} on an empty one.
+    The documentation also warns that, for a given seed, only \code{random()} itself is guaranteed to give the same
+    numbers in every version of Python; \code{choice} may change.
+    % ledger: g11:py-random-choice
+  \item \code{statistics.median} of an even number of values is the mean of the two middle ones, here $(3 + 4) / 2$.
+  \item \code{Counter.most_common} lists equal counts in the order first met: \code{b} before \code{r}.
+    % ledger: g11:py-most-common
+  \item \code{date.weekday()} numbers Monday $0$ to Sunday $6$: $4$ is a Friday. Subtracting two dates gives a
+    \code{timedelta}, here $42$ days; years run from $1$ to $9999$.
+    % ledger: g11:py-date
+\end{itemize}
+
+\begin{remark}
+The documentation is written for one version of Python. The entries of this book were read for version $3.12$; an
+entry that says ``changed in version'' or ``new in version'' tells what an older or newer Python does differently.
+\end{remark}
+
+\section{Changing an implementation without touching its users}\label{sec:g11:modules-and-interfaces:change}
+
+The \omterm{def:g11:modules-and-interfaces:module}{module} of dates of the hook offers five functions. Its first \omterm{def:g11:modules-and-interfaces:interface}{implementation} keeps the dates in a list.
+
+\omcode{code/grade-11/09-modules-and-interfaces/listings/dateset_list.py}{1}{30}{A set of dates kept in a
+list.}\label{lst:g11:modules-and-interfaces:dateset-list}
+
+The second keeps them in a Python set; only the bodies change, and they become shorter.
+
+\omcode{code/grade-11/09-modules-and-interfaces/listings/dateset_set.py}{7}{29}{The same \omterm{def:g11:modules-and-interfaces:interface}{interface}, kept in a set
+(lines 1--4, the \omterm{def:g11:modules-and-interfaces:module}{module}'s \omterm{def:g10:specifications-and-tests:docstring}{docstring}, are not shown).}\label{lst:g11:modules-and-interfaces:dateset-set}
+
+\omcode{code/grade-11/09-modules-and-interfaces/listings/use_dateset.py}{1}{12}{A user of the \omterm{def:g11:modules-and-interfaces:interface}{interface}, run with each
+\omterm{def:g11:modules-and-interfaces:interface}{implementation}.}\label{lst:g11:modules-and-interfaces:use-dateset}
+
+\omoutput{code/grade-11/09-modules-and-interfaces/outputs/use_dateset.txt}{The same answers from both: the second
+1 May was not added twice.}\label{out:g11:modules-and-interfaces:use-dateset}
+
+The tests are written against the \omterm{def:g11:modules-and-interfaces:interface}{interface} only, and the same file tests every \omterm{def:g11:modules-and-interfaces:interface}{implementation}, named on the command
+line.
+
+\omcode{code/grade-11/09-modules-and-interfaces/listings/dateset_tests.py}{1}{33}{The tests of the \omterm{def:g11:modules-and-interfaces:interface}{interface}: one file
+for every \omterm{def:g11:modules-and-interfaces:interface}{implementation}.}\label{lst:g11:modules-and-interfaces:tests}
+
+\omoutput{code/grade-11/09-modules-and-interfaces/outputs/run_dateset_tests.txt}{The same three tests pass on both
+\omterm{def:g11:modules-and-interfaces:interface}{implementations} (the line with the running time is filtered out).}\label{out:g11:modules-and-interfaces:tests}
+
+\begin{method}[Changing an implementation safely]
+\begin{enumerate}
+  \item Write the \omterm{def:g11:modules-and-interfaces:interface}{interface} down: the names and the specification of each, in \omterm{def:g10:specifications-and-tests:docstring}{docstrings}.
+  \item Write tests that use the \omterm{def:g11:modules-and-interfaces:interface}{interface} only, and check that they pass on the old \omterm{def:g11:modules-and-interfaces:interface}{implementation}.
+  \item Write the new \omterm{def:g11:modules-and-interfaces:interface}{implementation} with the same names and specifications.
+  \item Run the same tests on it. Users need change nothing but, at most, the name of the \omterm{def:g11:modules-and-interfaces:module}{module} they import.
+\end{enumerate}
+\end{method}
+
+\section{Libraries outside the standard library, and what languages share}\label{sec:g11:modules-and-interfaces:outside}
+
+\begin{inpractice}[Libraries from elsewhere]
+Thousands of libraries are published outside the \omterm{def:g11:modules-and-interfaces:library}{standard library}. Python's installer, \code{pip}, fetches them from a
+public index; other languages have their own installers. Before relying on one, a programmer checks its version (an
+update may change the \omterm{def:g11:modules-and-interfaces:interface}{interface}), its licence (what it allows), and whether it is still maintained. This book installs
+nothing: every program in it uses the \omterm{def:g11:modules-and-interfaces:library}{standard library} only.
+\end{inpractice}
+
+Languages differ in their spelling, much less in their constructions. The same few constructions appear in the toy
+machine's \omterm{def:g11:von-neumann-machine:assembly}{assembly language} of chapter \ref{ch:g11:von-neumann-machine} and in Python:
+\begin{center}
+\begin{tabular}{lll}
+  construction & toy assembly & Python \\ \hline
+  assignment & \code{LOADI R0, 3} & \code{r0 = 3} \\
+  sequence & one instruction after another & one line after another \\
+  conditional & \code{CMP} then \code{JC} to a label & \code{if a < b:} \\
+  loop & \code{JNZ loop} back to a label & \code{while r0 != 0:} \\
+  call & \code{CALL square}, \code{RET} & \code{square(x)}, \code{return}
+\end{tabular}
+\end{center}
+A compiler or an interpreter translates the right-hand column into something like the middle one.
+
+\section{Exercises}\label{sec:g11:modules-and-interfaces:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g11:modules-and-interfaces:1}
+After \code{import geometry} alone, which of these work: \code{geometry.distance((0, 0), (1, 1))},
+\code{distance((0, 0), (1, 1))}, \code{geometry.math.sqrt(4)}? Which should a user avoid, even if it works?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:modules-and-interfaces:2}
+The file \code{report.py} holds the line \code{print(__name__)}. The file \code{main.py} holds \code{import report}
+then \code{print(__name__)}. What does \code{python main.py} print? And \code{python report.py}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:modules-and-interfaces:3}
+A \omterm{def:g11:modules-and-interfaces:module}{module} defines \code{MAX_SIZE}, \code{_cache}, \code{load}, \code{_parse} and \code{save}, and imports \code{json}.
+Which names belong to its \omterm{def:g11:modules-and-interfaces:interface}{interface}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:modules-and-interfaces:4}
+From the entries quoted in the chapter, give without running them \code{statistics.median([7, 1, 3, 9])} and
+\code{Counter("banana").most_common(2)}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:modules-and-interfaces:5}
+Write a \omterm{def:g11:modules-and-interfaces:module}{module} \code{temperature} with two functions, \code{to_fahrenheit(c)} and \code{to_celsius(f)}, each with a
+\omterm{def:g10:specifications-and-tests:docstring}{docstring}. (Fahrenheit is Celsius times $9/5$, plus $32$.)
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:modules-and-interfaces:6}
+\code{stops.py} starts with \code{import lines}, defines \code{FIRST_STOP = "Market Square"}, then prints
+\code{lines.LINES[0]}; \code{lines.py} starts with \code{import stops} and defines \code{LINES} from
+\code{stops.FIRST_STOP}. \code{python stops.py} stops with
+\texttt{AttributeError: partially initialized module \textquotesingle{}lines\textquotesingle{} has no attribute \textquotesingle{}LINES\textquotesingle{}}. Explain, and correct.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:modules-and-interfaces:7}
+A program does \code{holidays = dateset_list.from_dates(days)}, then \code{holidays.sort()} and prints
+\code{holidays[0]}, the earliest holiday. It breaks when the town switches to \code{dateset_set}. Whose fault is it,
+and how should the earliest date be obtained?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:modules-and-interfaces:8}
+Rewrite \code{geometry.perimeter} without indices, with \code{zip}, so that the same tests still pass.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:modules-and-interfaces:9}
+For $n$ dates, how many dates do \code{add} and \code{contains} look at, at most, in \code{dateset_list}? What about
+\code{dateset_set}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:modules-and-interfaces:10}
+What does this print, and why? \code{print(pow(2, 10))}, then \code{from math import *}, then again
+\code{print(pow(2, 10))}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:modules-and-interfaces:11}
+After reading the entry for \code{Counter}, write \code{word_count(text, n)}, which returns the \code{n} most common
+words of a text in lower case, with their counts, punctuation removed.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:modules-and-interfaces:12}
+Design, in prose, the \omterm{def:g11:modules-and-interfaces:interface}{interface} of a \omterm{def:g11:modules-and-interfaces:module}{module} of queues, the waiting line where the first in is the first out: the names
+of the functions and the specification of each, including what happens on an empty queue.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:modules-and-interfaces:13}
+Write a \omterm{def:g11:modules-and-interfaces:module}{module} \code{dates_chosen} that offers the five names of the \omterm{def:g11:modules-and-interfaces:interface}{interface}, taken from \code{dateset_list} when the
+environment variable \code{DATESET} is \code{list}, and from \code{dateset_set} otherwise. How can a single test file
+check both?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:modules-and-interfaces:14}
+Twenty programs call \code{contains} in about ten places each. Compare how many lines of user code change when the
+\omterm{def:g11:modules-and-interfaces:interface}{implementation} changes from list to set, and when the \omterm{def:g11:modules-and-interfaces:interface}{interface} renames \code{contains} to \code{has}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:modules-and-interfaces:15}
+The \omterm{def:g11:modules-and-interfaces:module}{module} \code{primes} computes, at its top level, all the primes below a million, and prints
+\code{computing the primes below 1000000...}. Every program that imports it, even to read a constant, prints the
+message and waits. Correct the \omterm{def:g11:modules-and-interfaces:module}{module} so that the work is done only when a prime is first asked for.
+\end{exercise}
+
+\section{Problem: The Calendar Module}\label{sec:g11:modules-and-interfaces:problem}
+
+\begin{problem}[{Weekend problem --- a module three times rewritten}]\label{pb:g11:modules-and-interfaces:1}
+The town's date \omterm{def:g11:modules-and-interfaces:module}{module} now has three \omterm{def:g11:modules-and-interfaces:interface}{implementations} behind one \omterm{def:g11:modules-and-interfaces:interface}{interface}. The third keeps the dates in a sorted list
+and searches it by halving. The program below measures \code{contains} in all three, for $n = 10^3$, $10^4$ and
+$10^5$ dates.
+
+\omcode{code/grade-11/09-modules-and-interfaces/listings/dateset_sorted.py}{5}{32}{The third \omterm{def:g11:modules-and-interfaces:interface}{implementation}: a sorted
+list.}\label{lst:g11:modules-and-interfaces:dateset-sorted}
+
+\omcode{code/grade-11/09-modules-and-interfaces/listings/measure_dateset.py}{1}{35}{One lookup, three
+\omterm{def:g11:modules-and-interfaces:interface}{implementations}.}\label{lst:g11:modules-and-interfaces:measure}
+
+\omoutput{code/grade-11/09-modules-and-interfaces/outputs/measure_dateset.txt}{Measured on the author's laptop, in
+microseconds per lookup.}\label{out:g11:modules-and-interfaces:measure}
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[width=10cm, height=6.5cm, xmode=log, ymode=log, xlabel={$n$ dates}, ylabel={microseconds per lookup},
+      legend pos=north west, legend cell align=left, font=\footnotesize]
+    \addplot[omThm, thick, mark=*] table[x=n, y=list]
+      {code/grade-11/09-modules-and-interfaces/figures/measured_contains.dat};
+    \addplot[omMeth, thick, mark=square*] table[x=n, y=sorted]
+      {code/grade-11/09-modules-and-interfaces/figures/measured_contains.dat};
+    \addplot[omDef, thick, mark=triangle*] table[x=n, y=set]
+      {code/grade-11/09-modules-and-interfaces/figures/measured_contains.dat};
+    \legend{list, sorted list, set}
+  \end{axis}
+\end{tikzpicture}
+
+{\small \code{contains} measured on the author's laptop (\code{figures/measured_contains.py}, a separate run). On both
+axes each step multiplies by $10$. The list climbs in step with $n$; the two others stay flat.}
+\end{omfigure}
+
+\medskip\noindent\textbf{Part I --- A module of dates.}
+\begin{enumerate}
+  \item With the leap-year rule of chapter \ref{ch:g10:specifications-and-tests}, how many days have the years $2028$,
+    $2100$ and $2000$?
+  \item What does \code{size} return for a set of dates holding every day of $2028$?
+  \item \code{date(2027, 2, 29)} raises \code{ValueError: day is out of range for month}. Why is this a good
+    behaviour for a \omterm{def:g11:modules-and-interfaces:module}{module} of dates?
+  \item From the output of \code{stdlib_tour.py}, on which day of the week is 20 November 2026, and which date comes
+    $100$ days later?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The interface and its tests.}
+\begin{enumerate}[resume]
+  \item List the five names of the \omterm{def:g11:modules-and-interfaces:interface}{interface}, with the specification of each in one sentence.
+  \item Which test checks that adding the same date twice keeps one copy?
+  \item Why do the tests call only the five names of the \omterm{def:g11:modules-and-interfaces:interface}{interface}?
+  \item What should \code{python dateset_tests.py sorted} print?
+  \item Write one more test: \code{from_dates([])} gives a set of size $0$.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Three implementations.}
+\begin{enumerate}[resume]
+  \item In \code{dateset_sorted}, which function relies on the list being sorted, and which keeps it sorted?
+  \item For $n = 10^5$, how many dates does \code{contains} look at, at most, in the list, and in the sorted list?
+  \item Why does \code{from_dates} in \code{dateset_list} use \code{dict.fromkeys} rather than \code{list(dates)}?
+  \item Why is \code{add} slower than \code{contains} in the sorted \omterm{def:g11:modules-and-interfaces:interface}{implementation}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Measured cost.}
+\begin{enumerate}[resume]
+  \item By how much is the list's time multiplied from $n = 10^3$ to $n = 10^5$? Is it what the count predicts?
+  \item How do the sorted list and the set behave as $n$ grows?
+  \item Predict the list's time per lookup for $n = 10^6$.
+  \item A program makes a thousand lookups in $10^5$ dates. How long does it take with each \omterm{def:g11:modules-and-interfaces:interface}{implementation}?
+  \item The measurement uses \code{from_dates} to build the sets. Why not $n$ calls to \code{add}?
+  \item Which lines of \code{use_dateset.py} would change to use \code{dateset_sorted}?
+  \item State the result: the speed-up of the set over the list at $n = 10^5$, and what happened to the tests.
+\end{enumerate}
+\end{problem}

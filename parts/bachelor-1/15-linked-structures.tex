@@ -1,0 +1,379 @@
+% Book 3, Year 1, chapter 15 -- linked structures.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 15.
+\chapter{Linked Structures: Lists, Stacks and Queues}\label{ch:b1:linked-structures}
+
+An editor keeps the history of a long document as a sequence of a million edits, and the user goes back to the middle
+of it to insert a forgotten change. In a \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic array}, inserting in the middle moves half a million entries one cell
+to the right. In a \omterm{def:b1:linked-structures:list}{linked list}, it changes two \omterm{def:b1:pointers-and-arrays:pointer}{pointers}. Linked structures give up the \omterm{def:b1:pointers-and-arrays:array}{array}'s direct access to the
+$i$-th element in exchange for insertions and removals that touch only the neighbours. This chapter builds them in C,
+puts \omterm{def:b1:linked-structures:stack}{stacks} and \omterm{def:b1:linked-structures:stack}{queues} on top of both kinds of structure behind one interface each, separates the loop over a
+structure from the structure with \omterm{def:b1:linked-structures:iterator}{iterators}, and measures what the table of costs does not say.
+
+\begin{recall}
+An \omterm{def:b1:dynamic-arrays:adt}{abstract data type} is a set of operations with a specification; its implementations are interchangeable behind its
+interface (\cref{ch:b1:dynamic-arrays}). A \omterm{def:b1:pointers-and-arrays:pointer}{pointer} holds an address; \code{p->f} is the field \code{f} of the
+structure that \code{p} points to; a cell obtained from \code{malloc} must be returned with \code{free} exactly once, and
+never used afterwards (\cref{ch:b1:pointers-and-arrays,ch:b1:dynamic-memory}).
+\end{recall}
+
+\section{Singly linked lists}\label{sec:b1:linked-structures:singly}
+
+\begin{definition}[Linked list, cell]\label{def:b1:linked-structures:list}
+A \emph{linked list}\index{linked list} stores a sequence in \emph{cells}\index{cell (of a linked list)}, each holding
+one element and a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to the next cell; the last cell's \omterm{def:b1:pointers-and-arrays:pointer}{pointer} is null, and the list is given by a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to its
+first cell (null for the empty list). In a \emph{singly linked list}\index{singly linked list} each cell knows only its
+successor; in a \emph{doubly linked list}\index{doubly linked list} it also knows its predecessor.
+\end{definition}
+
+\omcode{code/bachelor-1/15-linked-structures/listings/list.h}{6}{9}{The cell}\label{lst:b1:linked-structures:node}
+
+Pushing at the front makes a new cell that points to the old first cell, and makes it the first: $\Theta(1)$, whatever
+the length. Inserting after a known cell is just as cheap: the new cell takes the old successor, and the cell points to
+the new one. The order of the two assignments matters: done the other way round, the rest of the list would be lost.
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum width=7mm, minimum height=6mm, font=\small}, p/.style={draw, minimum
+  width=4mm, minimum height=6mm}, >={Stealth[length=2mm]}]
+\node[font=\small\ttfamily] (h) at (-1.3,0) {head};
+\foreach \v/\x in {1/0, 2/1.9, 3/3.8} {\node[c] (v\v) at (\x,0) {\v}; \node[p, right=0pt of v\v] (n\v) {};}
+\node[font=\small] (nul) at (5.7,0) {NULL};
+\draw[->] (h) -- (v1); \draw[->] (n1.center) -- (v2); \draw[->] (n2.center) -- (v3); \draw[->] (n3.center) -- (nul);
+\begin{scope}[yshift=-2cm]
+\node[font=\small\ttfamily] (h') at (-1.3,0) {head};
+\foreach \v/\x in {1/0, 2/1.9, 3/4.8} {\node[c] (w\v) at (\x,0) {\v}; \node[p, right=0pt of w\v] (m\v) {};}
+\node[c, fill=omDef!20] (w9) at (3.35,-1.1) {25}; \node[p, right=0pt of w9] (m9) {};
+\node[font=\small] (nul') at (6.7,0) {NULL};
+\draw[->] (h') -- (w1); \draw[->] (m1.center) -- (w2); \draw[->] (m3.center) -- (nul');
+\draw[->, thick, omThm] (m9.center) -- node[right, font=\scriptsize, pos=0.4] {1: new $\to$ next} (w3);
+\draw[->, thick, omThm] (m2.center) -- node[left, font=\scriptsize, pos=0.6] {2: cell $\to$ new} (w9);
+\draw[->, dashed, black!40] (m2.center) .. controls (3.6,0.6) .. (w3);
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b1:linked-structures:list}{singly linked list} $1, 2, 3$, and the insertion of 25 after the cell holding 2: first the new
+cell points to the successor, then the cell points to the new one; the dashed link is the one replaced.}
+\end{omfigure}
+
+Removal is the delicate operation, because the cell before the removed one must be changed, and the first cell has no
+cell before it: the \omterm{def:b1:pointers-and-arrays:pointer}{pointer} \code{head} itself must change. The usual code has two cases. A \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} removes
+the distinction: \code{link} points to the link that leads to the cell under examination, either \code{head} or the
+\code{next} field of a cell, and redirecting \code{*link} works the same way in both cases.
+
+\omcode{code/bachelor-1/15-linked-structures/listings/list.c}{20}{28}{Removal through a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to a
+link}\label{lst:b1:linked-structures:remove}
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum width=7mm, minimum height=6mm, font=\small}, p/.style={draw, minimum
+  width=4mm, minimum height=6mm}, >={Stealth[length=2mm]}]
+\node[draw, font=\small\ttfamily, minimum height=6mm] (h) at (-1.4,0) {head};
+\foreach \v/\x in {1/0, 2/1.9, 3/3.8} {\node[c] (v\v) at (\x,0) {\v}; \node[p, right=0pt of v\v] (n\v) {};}
+\node[font=\small] (nul) at (5.7,0) {NULL};
+\draw[->] (h) -- (v1); \draw[->] (n2.center) -- (v3); \draw[->] (n3.center) -- (nul);
+\draw[->, dashed, black!40] (n1.center) -- (v2);
+\node[font=\small\ttfamily, omThm] (link) at (2.3,1.3) {link};
+\draw[->, thick, omThm] (link) -- (n1.north);
+\draw[->, thick, omThm] (n1.center) .. controls (2.5,-1.0) and (3.2,-0.9) .. (v3.south);
+\node[font=\scriptsize, anchor=west, align=left] at (6.6,0.2) {\code{*link = dead->next;}\\the field that pointed\\to 2 now points to 3};
+\node[font=\scriptsize, anchor=north, align=center] at (-1.4,-0.5) {(\code{link} may also\\point here)};
+\end{tikzpicture}
+\par\smallskip{\small Removing 2 with a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to a link: \code{link} holds the address of the field that leads to the
+cell, here the \code{next} field of the cell 1, and the field is redirected past the cell. Removing 1 would redirect
+\code{head} the same way.}
+\end{omfigure}
+
+The version with cases needs the cell before the one removed, and therefore a separate branch for the first cell;
+both versions give the same lists.
+
+\omcode{code/bachelor-1/15-linked-structures/listings/remove_pp.c}{6}{21}{Removal with a special case for the first
+cell}\label{lst:b1:linked-structures:remove-cases}
+
+\omoutput[2-3]{code/bachelor-1/15-linked-structures/outputs/remove_pp.txt}{The list $1, 2, 3, 4$ after removing 1, 3
+and the absent 5, by each version.}\label{out:b1:linked-structures:remove}
+
+\omoutput{code/bachelor-1/15-linked-structures/outputs/list_demo.txt}{Pushes, an insertion after the second cell, and
+removals, the first of the first cell.}\label{out:b1:linked-structures:demo}
+
+Accessing the $i$-th element, finding a value, and appending at the end without a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to the last cell all walk
+the list: $\Theta(n)$. Freeing a list must read \code{next} before freeing the cell that holds it
+(\cref{exo:b1:linked-structures:5}).
+
+\section{Doubly linked lists and sentinels}\label{sec:b1:linked-structures:sentinel}
+
+A cell that knows its predecessor can be removed in $\Theta(1)$ when it is known, with no walk to find the cell before.
+The four special cases of a \omterm{def:b1:linked-structures:list}{doubly linked list} --- empty list, first cell, last cell, only cell --- disappear with one
+more idea.
+
+\begin{definition}[Sentinel]\label{def:b1:linked-structures:sentinel}
+A \emph{sentinel}\index{sentinel} is a cell that holds no element and is always present. In a circular \omterm{def:b1:linked-structures:list}{doubly linked
+list} with a sentinel, the sentinel's successor is the first cell, its predecessor the last, and the empty list is the
+sentinel pointing to itself both ways.
+\end{definition}
+
+\omcodes{code/bachelor-1/15-linked-structures/listings/dlist.c}{12-28}{Insertion and removal with no special
+case}\label{lst:b1:linked-structures:dlist}
+
+\begin{proposition}[No special case]\label{prop:b1:linked-structures:sentinel}
+In a circular \omterm{def:b1:linked-structures:list}{doubly linked list} with a \omterm{def:b1:linked-structures:sentinel}{sentinel}, every cell, the \omterm{def:b1:linked-structures:sentinel}{sentinel} included, has a predecessor and a
+successor, and $c\text{->next->prev} = c = c\text{->prev->next}$ for every cell $c$. Insertion after any cell and removal
+of any cell other than the \omterm{def:b1:linked-structures:sentinel}{sentinel} preserve this invariant.
+\end{proposition}
+
+\begin{proof}
+The empty list satisfies it: the \omterm{def:b1:linked-structures:sentinel}{sentinel} is its own neighbour both ways. Insertion of $n$ after $c$, with $d =
+c\text{->next}$: afterwards $c \to n \to d$ and $d \to n \to c$ backwards, every other link unchanged, so the property
+holds at $c$, $n$ and $d$, and elsewhere as before. Removal of $c$ between $p$ and $d$ links $p$ and $d$ to each other
+both ways, which restores the property at both. No step uses a \omterm{def:b1:pointers-and-arrays:null}{null pointer}, because there are none.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[c/.style={draw, minimum width=8mm, minimum height=6mm, font=\small}, >={Stealth[length=1.8mm]}]
+\node[c, fill=black!10] (s0) at (0,0) {S};
+\draw[->] (s0.north east) .. controls (1.2,1.1) and (-1.2,1.1) .. (s0.north west);
+\draw[->] (s0.south west) .. controls (-1.2,-1.1) and (1.2,-1.1) .. (s0.south east);
+\node[font=\scriptsize] at (0,-1.3) {empty: the sentinel alone};
+\begin{scope}[xshift=3.2cm]
+\node[c, fill=black!10] (s) at (0,0) {S}; \node[c] (a) at (1.8,0) {1}; \node[c] (b) at (3.6,0) {2};
+\node[c] (d) at (5.4,0) {3};
+\foreach \u/\v in {s/a, a/b, b/d} {\draw[->] (\u.15) -- (\v.165); \draw[->] (\v.195) -- (\u.345);}
+\draw[->] (d.north) .. controls (5.4,1.3) and (0,1.3) .. node[above, font=\scriptsize] {next of the last: S} (s.north);
+\draw[->] (s.south) .. controls (0,-1.3) and (5.4,-1.3) .. node[below, font=\scriptsize] {prev of S: the last} (d.south);
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small A circular \omterm{def:b1:linked-structures:list}{doubly linked list} with a \omterm{def:b1:linked-structures:sentinel}{sentinel} S, empty and holding 1, 2, 3. Every cell has two
+neighbours, so insertion and removal never test for an end.}
+\end{omfigure}
+
+\omoutput{code/bachelor-1/15-linked-structures/outputs/dlist_demo.txt}{Pushes at both ends, a removal of a known cell,
+and pops at both ends.}\label{out:b1:linked-structures:dlist}
+
+\section{Stacks, queues and deques}\label{sec:b1:linked-structures:stacks}
+
+\begin{definition}[Stack, queue, deque]\label{def:b1:linked-structures:stack}
+A \emph{stack}\index{stack (abstract type)} is an abstract type with operations push, pop, top and empty, where pop
+removes the element pushed last (last in, first out). A \emph{queue}\index{queue} has put and take, where take removes the
+element put first (first in, first out). A \emph{deque}\index{deque}, or double-ended queue, allows adding and removing
+at both ends.
+\end{definition}
+
+Each has an \omterm{def:b1:pointers-and-arrays:array}{array} implementation and a linked one. A \omterm{def:b1:linked-structures:stack}{stack} on a \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic array} pushes and pops at the end, in amortised
+$\Theta(1)$; on a \omterm{def:b1:linked-structures:list}{singly linked list}, at the front, in $\Theta(1)$. A \omterm{def:b1:linked-structures:stack}{queue} on a \omterm{def:b1:dynamic-arrays:ring}{circular buffer} was built in
+\cref{ch:b1:dynamic-arrays}; on a \omterm{def:b1:linked-structures:list}{singly linked list} it keeps a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to each end, takes at the front and puts at the
+rear. The \omterm{def:b1:linked-structures:list}{doubly linked list} of the previous section is a \omterm{def:b1:linked-structures:stack}{deque}.
+
+\omcodes{code/bachelor-1/15-linked-structures/listings/queue_list.c}{10-13,23-39}{A \omterm{def:b1:linked-structures:stack}{queue} on a \omterm{def:b1:linked-structures:list}{linked list} with a \omterm{def:b1:pointers-and-arrays:pointer}{pointer}
+to each end}\label{lst:b1:linked-structures:queue}
+
+\begin{omfigure}
+\begin{tikzpicture}[k/.style={draw, minimum width=6mm, minimum height=5mm, font=\scriptsize}, >={Stealth[length=1.6mm]}]
+\node[font=\scriptsize\bfseries] at (1.4,1.0) {stack on an array};
+\foreach \v/\i in {7/0, 2/1, 5/2} {\node[k] at (\i*0.6,0) {\v};}
+\foreach \i in {3,4} {\node[k, black!40] at (\i*0.6,0) {};}
+\draw[<-, omThm] (1.2,0.3) -- (1.2,0.75) node[above, font=\scriptsize] {}; \node[font=\scriptsize, omThm] at (1.2,-0.55) {top};
+\begin{scope}[xshift=4.0cm]
+\node[font=\scriptsize\bfseries] at (1.4,1.0) {stack on links};
+\node[font=\scriptsize\ttfamily] (t) at (-0.3,0) {top};
+\node[k] (a) at (0.6,0) {5}; \node[k] (b) at (1.5,0) {2}; \node[k] (c) at (2.4,0) {7};
+\draw[->] (t) -- (a); \draw[->] (a) -- (b); \draw[->] (b) -- (c);
+\end{scope}
+\begin{scope}[xshift=8.0cm]
+\node[font=\scriptsize\bfseries] at (1.4,1.0) {queue on an array (ring)};
+\foreach \v/\i in {9/0, {}/1, 4/2, 6/3, 8/4} {\node[k] at (\i*0.6,0) {\v};}
+\node[font=\scriptsize, omThm] at (1.2,-0.55) {front}; \node[font=\scriptsize, omCode] at (0,-0.55) {rear};
+\end{scope}
+\begin{scope}[xshift=12.0cm]
+\node[font=\scriptsize\bfseries] at (1.2,1.0) {queue on links};
+\node[k] (q1) at (0.1,0) {4}; \node[k] (q2) at (0.9,0) {6}; \node[k] (q3) at (1.7,0) {8}; \node[k] (q4) at (2.5,0) {9};
+\draw[->] (q1) -- (q2); \draw[->] (q2) -- (q3); \draw[->] (q3) -- (q4);
+\node[font=\scriptsize, omThm] (f) at (0.1,-0.65) {front}; \node[font=\scriptsize, omCode] (r) at (2.5,-0.65) {rear};
+\draw[->] (f) -- (q1); \draw[->] (r) -- (q4);
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b1:linked-structures:stack}{Stacks} and \omterm{def:b1:linked-structures:stack}{queues} on \omterm{def:b1:pointers-and-arrays:array}{arrays} and on links. The \omterm{def:b1:linked-structures:stack}{stack} 7, 2, 5 (5 on top) and the \omterm{def:b1:linked-structures:stack}{queue} 4, 6, 8, 9
+(4 at the front) each have two representations with the same operations and the same results.}
+\end{omfigure}
+
+The header \code{stack.h} declares an opaque \code{struct stack}; \code{stack_array.c} and \code{stack_list.c} each
+define it. A bracket checker, a user of the \omterm{def:b1:linked-structures:stack}{stack}, is linked with each and gives the same answers; one \omterm{def:b1:c-modules-make-tests:unit-test}{test suite}, in a
+header included by two test files, checks both implementations.
+
+\omoutput{code/bachelor-1/15-linked-structures/outputs/stack_both.txt}{The bracket checker linked with the \omterm{def:b1:pointers-and-arrays:array}{array} \omterm{def:b1:linked-structures:stack}{stack}
+and with the linked \omterm{def:b1:linked-structures:stack}{stack}.}\label{out:b1:linked-structures:both}
+
+\section{Iterators}\label{sec:b1:linked-structures:iterators}
+
+Summing the elements of an \omterm{def:b1:pointers-and-arrays:array}{array} and of a list are the same loop written twice: \code{for (i = 0; i < n; i++)} in one
+case, \code{for (p = head; p != NULL; p = p->next)} in the other. An \omterm{def:b1:linked-structures:iterator}{iterator} separates what the loop does from how
+the structure is walked.
+
+\begin{definition}[Iterator]\label{def:b1:linked-structures:iterator}
+An \emph{iterator}\index{iterator} over a structure is a value that designates a position in it, with an operation that
+tells whether elements remain and an operation that returns the next element and advances. A loop written with an
+iterator works on every structure that provides one.
+\end{definition}
+
+\omcode{code/bachelor-1/15-linked-structures/listings/iter.c}{7}{30}{One \omterm{def:b1:linked-structures:iterator}{iterator} type for lists and \omterm{def:b1:pointers-and-arrays:array}{arrays}, and a
+sum that uses only it}\label{lst:b1:linked-structures:iter}
+
+\omoutput{code/bachelor-1/15-linked-structures/outputs/iter.txt}{The same sum on both structures, and the callback
+style.}\label{out:b1:linked-structures:iter}
+
+The alternative is a \emph{callback}: the structure provides a function \code{list_each(head, f)} that calls \code{f}
+on every element. The \omterm{def:b1:linked-structures:iterator}{iterator} lets the caller stop, resume, or walk two structures side by side; the callback keeps the
+walk inside the structure's code. Either way, an \omterm{def:b1:linked-structures:iterator}{iterator} is valid only while the structure does not change: if the
+cell an \omterm{def:b1:linked-structures:iterator}{iterator} points to is removed, the \omterm{def:b1:linked-structures:iterator}{iterator} holds the address of freed memory (\cref{exo:b1:linked-structures:4}).
+
+\section{Costs, by proof and by measurement}\label{sec:b1:linked-structures:costs}
+
+\begin{center}
+\small
+\begin{tabular}{lccc}
+operation & \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic array} & \omterm{def:b1:linked-structures:list}{singly linked list} & \omterm{def:b1:linked-structures:list}{doubly linked list} \\ \hline
+access the $i$-th element & $\Theta(1)$ & $\Theta(i)$ & $\Theta(i)$ \\
+add or remove at the front & $\Theta(n)$ & $\Theta(1)$ & $\Theta(1)$ \\
+add or remove at the end & amortised $\Theta(1)$ & $\Theta(1)$ to add (rear \omterm{def:b1:pointers-and-arrays:pointer}{pointer}) & $\Theta(1)$ \\
+insert after a known position & $\Theta(n)$ & $\Theta(1)$ & $\Theta(1)$ \\
+remove a known cell & $\Theta(n)$ & $\Theta(n)$ (find the one before) & $\Theta(1)$ \\
+memory per element & 1 to 4 \omterm{def:b1:linked-structures:list}{cells} & element + 1 \omterm{def:b1:pointers-and-arrays:pointer}{pointer} & element + 2 \omterm{def:b1:pointers-and-arrays:pointer}{pointers}
+\end{tabular}
+\end{center}
+
+The table counts operations. A traversal of $n$ elements is $\Theta(n)$ on every structure, and yet:
+
+\omoutput{code/bachelor-1/15-linked-structures/outputs/traverse.txt}{Summing $2^{22}$ integers on the author's laptop:
+in an \omterm{def:b1:pointers-and-arrays:array}{array}, in a list whose \omterm{def:b1:linked-structures:list}{cells} follow each other in memory, and in the same list after shuffling the order of its
+\omterm{def:b1:linked-structures:list}{cells}.}\label{out:b1:linked-structures:traverse}
+
+The three loops perform the same number of additions. The \omterm{def:b1:pointers-and-arrays:array}{array} is read sequentially, and the processor fetches memory
+in blocks ahead of use; a list whose \omterm{def:b1:linked-structures:list}{cells} are in order is nearly as regular, with a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to follow at each step; the
+shuffled list sends each step to an unpredictable address, and most of them miss every cache, a factor of about 200.
+The memory hierarchy behind this is the subject of the second year. A linked structure pays for its flexibility with
+locality, and its costs in the table are only a part of the story.
+
+\begin{safety}
+Every linked structure in C is a set of \omterm{def:b1:linked-structures:list}{cells} to free exactly once. A cell freed while another \omterm{def:b1:pointers-and-arrays:pointer}{pointer} still refers to
+it, or a \code{next} field read after its cell was freed, is \omterm{def:b1:c-types-and-control:ub}{undefined behaviour} that may run correctly for years; the
+address sanitizer (\cref{ch:b1:c-modules-make-tests}) catches it in the tests.
+\end{safety}
+
+\section{Exercises}\label{sec:b1:linked-structures:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:linked-structures:1}
+Starting from the empty list, draw the list after: push 3, push 8, push 1, insert 5 after the first cell, remove 8, push
+2, remove 2.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:linked-structures:2}
+A \omterm{def:b1:linked-structures:stack}{stack} and a \omterm{def:b1:linked-structures:stack}{queue} start empty and receive the same operations: add 1, add 2, add 3, remove, add 4, remove, remove.
+Which elements does each return, and what does each hold at the end?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:linked-structures:3}
+What does the bracket checker of \cref{out:b1:linked-structures:both} report for \code{f(a[0)]}, \code{{}[]()} and
+\code{]}? Give the \omterm{def:b1:linked-structures:stack}{stack}'s contents at the error.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:linked-structures:4}
+An \omterm{def:b1:linked-structures:iterator}{iterator} over the list $1, 2, 3, 4$ has returned 1 and 2. What happens if the cell holding 3 is now removed and the
+loop continues? And if the cell holding 2 is removed instead?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:linked-structures:5}
+This function frees a list. Read the sanitizer's report, explain the error, and correct the loop.
+\omcode{code/bachelor-1/15-linked-structures/listings/exo_free_bug.c}{10}{12}{Freeing a list}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:linked-structures:6}
+This \omterm{def:b1:linked-structures:stack}{queue} loses its elements after it becomes empty once. Find the case it forgets, state the \omterm{def:b1:dynamic-arrays:rep-invariant}{representation
+invariant} it breaks, and repair it.
+\omcodes{code/bachelor-1/15-linked-structures/listings/exo_queue_bug.c}{12-35}{A \omterm{def:b1:linked-structures:stack}{queue}}
+\omoutput[2-3]{code/bachelor-1/15-linked-structures/outputs/exo_queue_bug.txt}{Two elements put, and none at the
+front.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:linked-structures:7}
+Write \code{list_reverse(head)}, which reverses a \omterm{def:b1:linked-structures:list}{singly linked list} in place in one pass and returns the new first cell.
+State its \omterm{def:b1:program-correctness:invariant}{loop invariant}, and test it on lists of length 0, 1 and 6.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:linked-structures:8}
+Write a \omterm{def:b1:linked-structures:stack}{deque} on a \omterm{def:b1:dynamic-arrays:ring}{circular buffer} of fixed capacity: push and pop at both ends in $\Theta(1)$. Test it against the
+\omterm{def:b1:linked-structures:list}{doubly linked list}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:linked-structures:9}
+Prove that $n$ appends at the end of a \omterm{def:b1:linked-structures:list}{singly linked list} cost $\Theta(n^2)$ cell visits without a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to the last
+cell, and $\Theta(n)$ with one.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:linked-structures:10}
+A list built by mistake may run into a cycle: its last cell points back to an earlier one. Write \code{has_cycle(head)},
+which uses two \omterm{def:b1:pointers-and-arrays:pointer}{pointers}, one moving one cell at a time and one moving two, and $O(1)$ memory. Test it on lists without
+a cycle and on every cycle of lists up to length 30.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:linked-structures:11}
+A list with a cycle has a tail of $\mu$ \omterm{def:b1:linked-structures:list}{cells} before the cycle and a cycle of $\lambda \geq 1$ \omterm{def:b1:linked-structures:list}{cells}. Prove that the two
+\omterm{def:b1:pointers-and-arrays:pointer}{pointers} of \cref{exo:b1:linked-structures:10} meet after at most $\mu + \lambda$ steps of the slow \omterm{def:b1:pointers-and-arrays:pointer}{pointer}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:linked-structures:12}
+A \omterm{def:b1:linked-structures:stack}{queue} can be made of two \omterm{def:b1:linked-structures:stack}{stacks}: put pushes on \code{in}; take pops from \code{out}, first moving all of \code{in}
+onto \code{out} if \code{out} is empty. Prove that the \omterm{def:b1:linked-structures:stack}{queue} is correct, and that $m$ operations cost $O(m)$ pushes and
+pops in all.
+\end{exercise}
+
+\section{Problem: The Josephus circle}\label{sec:b1:linked-structures:problem}
+
+\begin{problem}[{Weekend problem --- The Josephus circle}]\label{pb:b1:linked-structures:1}
+$n$ people, numbered 1 to $n$, stand in a circle. Counting starts at person 1, and every $k$-th person leaves the circle;
+counting goes on from the next person, until one remains. The problem is named after the historian Flavius Josephus,
+from a story told about him. A program simulates the circle with a circular \omterm{def:b1:linked-structures:list}{linked list}, computes the survivor by a
+recurrence, and compares both with a closed form for $k = 2$.
+\omcode{code/bachelor-1/15-linked-structures/listings/josephus.c}{11}{35}{Simulation, recurrence and closed
+form}\label{lst:b1:linked-structures:josephus}
+\omoutput{code/bachelor-1/15-linked-structures/outputs/josephus.txt}{The order of departures for $n = 10$, $k = 3$; the
+three methods for $k = 2$; and the checks.}\label{out:b1:linked-structures:josephus}
+
+\medskip\noindent\textbf{Part I --- Simulation.}
+\begin{enumerate}
+\item Follow the simulation for $n = 5$, $k = 2$: the departures and the survivor.
+\item Why does \code{simulate} keep a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to the person \emph{before} the next one to count?
+\item Why can the \omterm{def:b1:linked-structures:list}{cells} live in one \omterm{def:b1:pointers-and-arrays:array}{array}, allocated once, although people leave?
+\item Show that the simulation costs $\Theta(nk)$ steps.
+\item What would the cost be with a \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic array}, removing each departing person by shifting the others?
+\item Why is the circular list, rather than a list with an end, the natural structure here?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The recurrence.}
+\begin{enumerate}[resume]
+\item Number the people from 0 to $n - 1$, and let $J(n, k)$ be the survivor's number. Show that the first to leave is
+$(k - 1) \bmod n$.
+\item After that departure, renumber the $n - 1$ remaining people from 0, starting at the person after the one who
+left. Show that the old number of a person is (new number $+ k) \bmod n$.
+\item Deduce $J(1, k) = 0$ and $J(n, k) = (J(n - 1, k) + k) \bmod n$.
+\item Compute $J(n, 3)$ for $n \leq 10$ and check the survivor of the first line of the output (numbered from 1).
+\item What does the recurrence cost, and why is it so much cheaper than the simulation for large $k$?
+\item Check in the output that the recurrence and the simulation agree for $n \leq 1000$ and $k \leq 7$.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The closed form for $k = 2$.}
+\begin{enumerate}[resume]
+\item With people numbered from 1, show that for $n = 2m$, after the first round the $m$ people left are $1, 3, \dots,
+2m - 1$, and counting starts again at 1; deduce $J(2m) = 2J(m) - 1$.
+\item For $n = 2m + 1$, the first round removes $2, 4, \dots, 2m$ and then 1; deduce $J(2m + 1) = 2J(m) + 1$.
+\item With $J(1) = 1$, compute $J(n)$ for $n \leq 16$ and compare with the table.
+\item Write $n = 2^a + \ell$ with $0 \leq \ell < 2^a$. Prove by strong induction that $J(n) = 2\ell + 1$.
+\item What is $J(2^a)$? Explain it directly with the rounds.
+\item In binary, show that $J(n)$ is $n$ rotated left by one bit (the leading 1 moved to the end).
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Checking.}
+\begin{enumerate}[resume]
+\item The program checks the closed form against the simulation for $n \leq 10\,000$. Estimate the number of steps.
+\item Why is a simulation a good oracle here, and what does the check add to the proof?
+\item An independent test simulates the circle with an \omterm{def:b1:pointers-and-arrays:array}{array} of flags instead of a list. Why test with a second
+simulation of a different kind?
+\item For which $n$ is the survivor person $n$ itself, for $k = 2$?
+\item For $k = 2$, how does $J(n + 1)$ compare with $J(n)$? Read it on the table.
+\item State the named result of the problem, \emph{Josephus for $k = 2$}, with its proof and its check.
+\end{enumerate}
+\end{problem}

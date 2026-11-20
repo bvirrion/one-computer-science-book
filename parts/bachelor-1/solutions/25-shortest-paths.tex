@@ -1,0 +1,162 @@
+% Solutions of 25-shortest-paths.
+\section*{Chapter \ref{ch:b1:shortest-paths} --- Shortest Paths}
+
+\begin{solution}{exo:b1:shortest-paths:1}
+From \code{a}: settle \code{a} at 0, which gives \code{c} 1 and \code{t} 6; settle \code{c} at 1, which lowers \code{t} to
+4; settle \code{t} at 4. The \omterm{def:b1:graph-traversals:graph}{vertices} \code{s} and \code{b} are not reachable: their distance is $+\infty$.
+\end{solution}
+
+\begin{solution}{exo:b1:shortest-paths:2}
+Round 1: $a \to c$ and $b \to a$ do nothing (infinite estimates), then $a = 4$, $b = 2$, $c = 7$. Round 2: $c = 6$, then
+$a = 1$. Round 3: $c = 3$. Round 4 changes nothing: four rounds, the last one quiet. The \omterm{def:b1:shortest-paths:shortest}{shortest path} to $c$, $s \to
+b \to a \to c$, has three \omterm{def:b1:graph-traversals:graph}{arcs}, and this order of relaxation needs a round for each.
+\end{solution}
+
+\begin{solution}{exo:b1:shortest-paths:3}
+Rows are the sources, columns the targets, $\infty$ for no path:
+\[ D_0 = \begin{pmatrix} 0 & 5 & 9 \\ \infty & 0 & 2 \\ 1 & \infty & 0 \end{pmatrix},\quad
+D_1 = \begin{pmatrix} 0 & 5 & 9 \\ \infty & 0 & 2 \\ 1 & 6 & 0 \end{pmatrix},\quad
+D_2 = \begin{pmatrix} 0 & 5 & 7 \\ \infty & 0 & 2 \\ 1 & 6 & 0 \end{pmatrix}, \]
+and $D_3$ adds $D(1, 0) = 2 + 1 = 3$. Going through 0 helps only paths ending at 2 or starting there: $2 \to 0 \to 1$.
+\end{solution}
+
+\begin{solution}{exo:b1:shortest-paths:4}
+The database ends on day 6, the interface on day 7: the tests now start on day 7, training on day 10 and the launch on
+day 11. The project takes 12 days, and the \omterm{def:b1:shortest-paths:critical}{critical path} is design, interface, tests, training, launch: shortening a
+task off the \omterm{def:b1:shortest-paths:critical}{critical path} by two days saved only one.
+\end{solution}
+
+\begin{solution}{exo:b1:shortest-paths:5}
+\code{a} is reached first from \code{s}, at 5, and fixed; the path $s \to b \to a$, of weight 2, is found later and
+ignored. Fixing at discovery is right for \omterm{def:b1:graph-traversals:bfs}{breadth-first search}, where every \omterm{def:b1:graph-traversals:graph}{arc} has the same weight, so the first
+path found to a \omterm{def:b1:graph-traversals:graph}{vertex} has the fewest \omterm{def:b1:graph-traversals:graph}{arcs}. With weights, a \omterm{def:b1:graph-traversals:graph}{vertex} may only be fixed when it leaves the heap with the
+smallest key; until then, a cheaper path may still reach it.
+\end{solution}
+
+\begin{solution}{exo:b1:shortest-paths:6}
+With $k$ innermost, the entry $(i, j)$ is computed once and for all, by trying every single intermediate \omterm{def:b1:graph-traversals:graph}{vertex} $k$ with
+the entries $(i, k)$ and $(k, j)$ as they are at that moment, which are not final when $i$ or $j$ comes later in the
+loops. A path that needs two intermediate \omterm{def:b1:graph-traversals:graph}{vertices} whose entries are computed too late is missed. With $k$ outermost,
+the entries $D_k(i, k)$ and $D_k(k, j)$ are complete for the \omterm{def:b1:graph-traversals:graph}{vertices} below $k$ before they are used.
+\end{solution}
+
+\begin{solution}{exo:b1:shortest-paths:7}
+\omcode{code/bachelor-1/25-shortest-paths/exercises/at_most_k.py}{6}{15}{Paths of at most $k$ \omterm{def:b1:graph-traversals:graph}{arcs}}
+By induction, after round $r$, $\code{dist}[v]$ is the smallest weight of a path of at most $r$ \omterm{def:b1:graph-traversals:graph}{arcs}: such a path is
+either of at most $r - 1$ \omterm{def:b1:graph-traversals:graph}{arcs}, or a path of at most $r - 1$ \omterm{def:b1:graph-traversals:graph}{arcs} to some $u$ followed by $u \to v$. Relaxing from the
+copy \code{before} is what keeps one \omterm{def:b1:graph-traversals:graph}{arc} per round; relaxing \omterm{def:b1:sorting:comparison-sort}{in place} could chain several \omterm{def:b1:graph-traversals:graph}{arcs} in one round, as
+Bellman--Ford does on purpose. The test compares with a brute-force enumeration of walks.
+\end{solution}
+
+\begin{solution}{exo:b1:shortest-paths:8}
+\omcode{code/bachelor-1/25-shortest-paths/exercises/widest.py}{7}{21}{Widest paths}
+Extending a path can only lower its bottleneck, as adding a non-negative weight can only raise a length. So the proof
+of \cref{thm:b1:shortest-paths:dijkstra} works with ``largest'' for ``smallest'' and $\min$ for $+$: the unsettled \omterm{def:b1:graph-traversals:graph}{vertex}
+of largest width has its final width. The heap holds negated widths, since \code{heapq} pops the smallest.
+\end{solution}
+
+\begin{solution}{exo:b1:shortest-paths:9}
+Let $P$ be a \omterm{def:b1:shortest-paths:shortest}{shortest path} from $s$ to $v$ and $Q$ its piece from $x$ to $y$. If a path $Q'$ from $x$ to $y$ were lighter,
+replacing $Q$ by $Q'$ in $P$ would give a walk from $s$ to $v$ lighter than $P$; without \omterm{def:b1:shortest-paths:negative}{negative cycles} a walk can be
+shortened to a path no heavier, by cutting out its closed sub-walks, a contradiction. For the triangle inequality, a
+\omterm{def:b1:shortest-paths:shortest}{shortest path} to $u$ followed by $u \to v$ is a walk of weight $\delta(s, u) + w(u, v)$, and $\delta(s, v)$ is at most
+that (if $\delta(s, u) = +\infty$, there is nothing to prove).
+\end{solution}
+
+\begin{solution}{exo:b1:shortest-paths:10}
+Estimates are always weights of paths, so $\code{dist}[v] \geq \delta(s, v)$. Suppose $u$ is the first \omterm{def:b1:graph-traversals:graph}{vertex} settled
+with $\code{dist}[u] > \delta(s, u)$; $u \neq s$, and $u$ is reachable, or its estimate would be $+\infty = \delta(s, u)$.
+Take a \omterm{def:b1:shortest-paths:shortest}{shortest path} from $s$ to $u$; it starts in the settled set and ends outside it. Let $x \to y$ be its first \omterm{def:b1:graph-traversals:graph}{arc}
+leaving the set. $x$ was settled with $\code{dist}[x] = \delta(s, x)$, and relaxed $x \to y$, so $\code{dist}[y] \leq
+\delta(s, x) + w(x, y) = \delta(s, y) \leq \delta(s, u) < \code{dist}[u]$, using \cref{prop:b1:shortest-paths:subpath}
+and the non-negative weights after $y$. So $y \neq u$ and $y$ has a smaller key than $u$: it would have been settled
+first. Contradiction. For the tree: each \omterm{def:b1:graph-traversals:graph}{vertex}'s parent was settled before it, so the parent links have no cycle, and
+along them the weights add up to the distances.
+\end{solution}
+
+\begin{solution}{exo:b1:shortest-paths:11}
+\omcode{code/bachelor-1/25-shortest-paths/exercises/dag_count.py}{7}{19}{Counting \omterm{def:b1:shortest-paths:shortest}{shortest paths} in a DAG}
+By induction along the \omterm{def:b1:graph-traversals:topo}{topological order}: when $u$ is taken, every \omterm{def:b1:graph-traversals:graph}{arc} entering $u$ has been relaxed, so
+$\code{dist}[u] = \delta(s, u)$, and \code{ways[u]} is the sum of \code{ways[x]} over the \omterm{def:b1:graph-traversals:graph}{arcs} $x \to u$ with $\delta(s,
+x) + w(x, u) = \delta(s, u)$: each \omterm{def:b1:shortest-paths:shortest}{shortest path} to $u$ is a \omterm{def:b1:shortest-paths:shortest}{shortest path} to such an $x$ followed by the \omterm{def:b1:graph-traversals:graph}{arc}, in exactly
+one way. When an estimate drops, the count restarts from the new predecessor's. Each \omterm{def:b1:graph-traversals:graph}{arc} is handled once:
+$O(n + m)$, with zero weights allowed, since there is no cycle.
+\end{solution}
+
+\begin{solution}{exo:b1:shortest-paths:12}
+\omcode{code/bachelor-1/25-shortest-paths/exercises/negative_cycle.py}{4}{23}{A \omterm{def:b1:shortest-paths:negative}{negative cycle}}
+Starting every estimate at 0 is Bellman--Ford from a new \omterm{def:b1:graph-traversals:graph}{vertex} joined to all others by \omterm{def:b1:graph-traversals:graph}{arcs} of weight 0, so every
+cycle is reachable. If round $n$ still lowers the estimate of some \omterm{def:b1:graph-traversals:graph}{vertex}, the parent links contain a cycle: following
+them back $n$ steps from that \omterm{def:b1:graph-traversals:graph}{vertex} cannot avoid repeating a \omterm{def:b1:graph-traversals:graph}{vertex}. On a cycle of parent links, each estimate was set
+from the next one along the cycle, and summing the inequalities shows that its weight is negative. The cost is $n$
+rounds of $O(m)$.
+\end{solution}
+
+\begin{solution}{pb:b1:shortest-paths:1}
+\textbf{1.} $1360 \times 3.6 / 50 = 97.92$, rounded to 98 s.
+
+\textbf{2.} The road to the Town Hall is 1000 m at 30 km/h; the road to River Park is 680 m at 70 km/h.
+
+\textbf{3.} 105: two \omterm{def:b1:graph-traversals:graph}{arcs} for each of the 52 two-way roads and one for the one-way road.
+
+\textbf{4.} Integers make sums and comparisons exact, and ties really are ties. Each road's time is off by at most half a
+second, so a route of seven roads by at most 3.5 s.
+
+\textbf{5.} An edge could be driven both ways, and routes would use the one-way road against its direction.
+
+\textbf{6.} No, times are positive. Bellman--Ford and Floyd--Warshall would still apply, but not Dijkstra's algorithm.
+
+\textbf{7.} The fastest route is 7290 m in 445 s, the shortest 6270 m in 539 s: 1020 m more, 94 s less.
+
+\textbf{8.} 30 pops settle the places; the other 5 are stale entries, left behind when an estimate was lowered after
+its \omterm{def:b1:graph-traversals:graph}{vertex} had been pushed.
+
+\textbf{9.} One push for the source and at most one per relaxed \omterm{def:b1:graph-traversals:graph}{arc}, so at most $m + 1$ pushes and pops: 106 here.
+
+\textbf{10.} The parent of $v$ was settled before $v$, so following parents goes back in the order of settling and ends
+at $s$: no cycle, a tree. By \cref{thm:b1:shortest-paths:dijkstra}, its paths are shortest.
+
+\textbf{11.} Up to River Park, by the North \omterm{def:b1:graph-traversals:bridge}{Bridge}. The first part of each route is itself fastest, respectively shortest,
+to River Park; here the fastest and the shortest ways to River Park are the same.
+
+\textbf{12.} It is the shortest route, by chance: fewest roads and fewest metres need not agree. The fastest route has
+seven roads.
+
+\textbf{13.} For $k = 0$, a path without intermediate \omterm{def:b1:graph-traversals:graph}{vertex} is the empty path or a single \omterm{def:b1:graph-traversals:graph}{arc}. A best path from $i$ to $j$
+with intermediate \omterm{def:b1:graph-traversals:graph}{vertices} less than $k + 1$ avoids $k$, and weighs $D_k(i, j)$, or passes through $k$ once (without
+\omterm{def:b1:shortest-paths:negative}{negative cycles} it need not pass twice), and splits into two paths with intermediate \omterm{def:b1:graph-traversals:graph}{vertices} less than $k$, each best
+by cut and paste: $D_k(i, k) + D_k(k, j)$.
+
+\textbf{14.} With $k = n$, every \omterm{def:b1:graph-traversals:graph}{vertex} may be intermediate: $D_n(i, j) = \delta(i, j)$.
+
+\textbf{15.} In round $k$, the entries $D(i, k)$ and $D(k, j)$ do not change, since $D_k(k, k) = 0$ without \omterm{def:b1:shortest-paths:negative}{negative
+cycles}. So every entry read in round $k$ has its value of $D_k$, whether it was updated already or not.
+
+\textbf{16.} \code{nxt[i][j]} is the first step of a best path from $i$ to $j$; the route follows it until $j$. When the
+path through $k$ wins, its first step is the first step of the best path from $i$ to $k$.
+
+\textbf{17.} Road 1 goes one way, from the Town Square to the Library, in 98 s; the way back needs two roads and 204 s.
+
+\textbf{18.} Floyd--Warshall makes 27\,000 steps of the triple loop. One Dijkstra run handles 135 \omterm{def:b1:graph-traversals:graph}{vertices} and \omterm{def:b1:graph-traversals:graph}{arcs} with
+heap operations of about 7 comparisons: about 30 runs $\times$ 1000, of the same order. Floyd--Warshall's loop is
+simpler; Dijkstra's runs would win on a larger town, since $n^3$ grows faster than $n^2 \log n$.
+
+\textbf{19.} \code{max(d[i])} is the largest distance from place $i$; the 0 of $d[i][i]$ never wins when there are other
+places, all at positive distance.
+
+\textbf{20.} The \omterm{def:b1:shortest-paths:centre}{centre} is the Town Hall, with radius 349 s (5.8 min); the \omterm{def:b1:shortest-paths:centre}{diameter} is 675 s (11.2 min), between the Old
+Mill and the Post Office.
+
+\textbf{21.} The Post Office lies on the east edge of the map, the Old Mill in the south-west corner: they are far from
+most places, and from each other.
+
+\textbf{22.} With symmetric distances, for any $u$ and $v$ and the \omterm{def:b1:shortest-paths:centre}{centre} $c$: $\delta(u, v) \leq \delta(u, c) +
+\delta(c, v) = \delta(c, u) + \delta(c, v) \leq 2r$.
+
+\textbf{23.} The proof uses $\delta(u, c) = \delta(c, u)$, which the one-way road can break; the bound still holds here,
+$675 \leq 698$, but it is checked, not proved.
+
+\textbf{24.} \emph{The town's \omterm{def:b1:shortest-paths:centre}{centre} and \omterm{def:b1:shortest-paths:centre}{diameter}}: the Floyd--Warshall table is the distance table (questions 13--15),
+so the eccentricities computed from it are exact: the Town Hall is the \omterm{def:b1:shortest-paths:centre}{centre}, every place within 349 s of it, and no
+two places are more than 675 s apart. The ambulance station belongs at the Town Hall.
+\end{solution}

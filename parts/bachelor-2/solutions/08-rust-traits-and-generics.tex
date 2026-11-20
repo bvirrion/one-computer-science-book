@@ -1,0 +1,182 @@
+% Solutions of Book 4, chapter 8 (rust-traits-and-generics).
+\section*{Chapter \ref{ch:b2:rust-traits-and-generics} --- Traits and Generics}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:1}
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/exo_which.txt}{The five lines.}
+\code{a.hello()}: \code{Ada} keeps the default, which calls the \omterm{def:b2:rust-traits-and-generics:trait}{trait}'s \code{name}. \code{b.hello()}: \code{Bob}'s
+own \code{hello}, whose \code{self.name()} has \code{self: &Bob}; method lookup prefers an inherent method to a \omterm{def:b2:rust-traits-and-generics:trait}{trait}
+method of the same name, so it reaches \code{Robert}. \code{b.name()}: the inherent one again. In \code{twice}, the
+body knows only \code{T: Greet}: \code{x.name()} can only mean the \omterm{def:b2:rust-traits-and-generics:trait}{trait} method, \code{Bob}, while \code{x.hello()} is
+still \code{Bob}'s \code{hello}, which says \code{Robert}. Through \code{dyn Greet}, only \omterm{def:b2:rust-traits-and-generics:trait}{trait} methods exist:
+\code{Bob}.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:2}
+\omoutput[2-6,15-18]{code/bachelor-2/08-rust-traits-and-generics/outputs/exo_bound.txt}{The two errors' first
+lines.}
+\code{println!("{x}")} needs \code{Display}; a \code{HashSet<&T>} needs \code{&T: Eq + Hash}, that is \code{T: Eq +
+Hash}. The signature: \code{fn report<T>(items: &[T]) where T: Display + Eq + Hash}. With it the program prints the
+three names and \code{2 distinct}.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:3}
+\omcode{code/bachelor-2/08-rust-traits-and-generics/exercises/fraction.rs}{18}{36}{Lowest terms and
+\code{Display}}
+\code{write!} ignores the width; \code{f.pad} applies it. A fraction in lowest terms with a positive denominator is
+the only representation of its value, so two fractions are equal as numbers exactly when their fields are equal: the
+derived \code{PartialEq} is right. Without the normalisation, \code{1/2} and \code{2/4} would compare unequal.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:4}
+Expanding the calls, \code{show} is used with \code{i32} (\code{show(3)}, \code{show(4)}, inside
+\code{pair(1, "x")}), \code{&str} (\code{show("Mill")}, inside both \code{pair}s) and \code{f64} (inside \code{pair("y", 2.5)}):
+three copies. \code{pair} is used with \code{(i32, &str)} and \code{(&str, f64)}: two copies. Five generated functions
+for two written; each extra call site with a known type adds none.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:5}
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/exo_derived.txt}{The two lists.}
+Variants compare in the order written: \code{Returns} first, \code{Reference} last, and the two \code{Fiction}
+values by their letters. Loans compare by \code{due_day}, then by \code{title} for the two due on day 12. With
+\code{title} first, the loans sort alphabetically, Harbour Lights, Seven Comets, The Paper Forest; \code{==} does
+not change (it compares all fields), but \code{{:?}} prints the fields in the new order.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:6}
+\code{"NaN".parse::<f64>()} succeeds, and the comparator calls \code{NaN} equal to everything. The relation is not
+transitive, the sort's work relies on it, and the vector comes out as printed: only the parts on each side of
+\code{NaN} sorted. The middle element, index 3, is $-0.4$. With \code{total_cmp} the vector is sorted, \code{NaN}
+last, and the median is 4.3, still computed over a meaningless value. The right fix is at the parse: reject a field
+whose value is not finite (\code{v.is_finite()}), as the weather parser of \cref{ch:b2:rust-enums-and-errors} rejects
+error codes; the median of the six readings is then 4.3 or 3.9, depending on which middle is taken.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:7}
+\omcode{code/bachelor-2/08-rust-traits-and-generics/exercises/largest.rs}{2}{11}{The largest element, or
+\code{None}}
+\code{largest_ref} returns \code{&T} and keeps \code{best} as a reference. On \code{[1.0, NaN, 3.0]}: 3.0, since
+\code{NaN > 1.0} is false. On \code{[NaN, 3.0]}: \code{NaN}, since \code{3.0 > NaN} is false too. The answer
+depends on where \code{NaN} stands: \code{PartialOrd} gives no maximum when an element is unordered.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:8}
+Transitivity. Let $a < b$ and $b < c$, with $i$ the first index where $a$ and $b$ differ and $j$ the first where $b$
+and $c$ differ, and $m = \min(i, j)$. For $k < m$, $a.f_k = b.f_k = c.f_k$. At $m$: if $i < j$, $a.f_m < b.f_m =
+c.f_m$; if $j < i$, $a.f_m = b.f_m < c.f_m$; if $i = j$, $a.f_m < b.f_m < c.f_m$, and the field order is transitive.
+In every case $m$ is the first index where $a$ and $c$ differ, and $a.f_m < c.f_m$: $a < c$. Antisymmetry. If $a
+\le b$, $b \le a$ and $a \ne b$, at the first index $i$ where they differ both $a.f_i < b.f_i$ and $b.f_i < a.f_i$,
+impossible for a total order on the field.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:9}
+\omcode{code/bachelor-2/08-rust-traits-and-generics/exercises/shapes.rs}{31}{35}{Sorting \omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects} by area}
+\code{derive} needs the fields of a type, and \code{dyn Shape} has none known; areas are \code{f64}, with no
+\code{Ord}. A comparator given to \code{sort_by}, here with \code{total_cmp} and the operands swapped for a
+decreasing order, says what is meant. The test sorts a rectangle, a circle and the 3-4-5 triangle.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:10}
+\omcode{code/bachelor-2/08-rust-traits-and-generics/exercises/matrix.rs}{4}{7}{The \omterm{def:b2:rust-traits-and-generics:trait}{trait}}
+\code{Add} and \code{bool} are both defined outside our crate, so \code{impl Add for bool} breaks the orphan rule;
+the \omterm{def:b2:rust-traits-and-generics:newtype}{newtype} \code{Reach(bool)} is ours. \code{pow} squares the base and multiplies it into the result for each set
+bit of the exponent: $O(\log e)$ products. By induction, $\bigl(\begin{smallmatrix}1&1\\1&0\end{smallmatrix}
+\bigr)^n = \bigl(\begin{smallmatrix}F_{n+1}&F_n\\F_n&F_{n-1}\end{smallmatrix}\bigr)$, so the tenth power holds $F_{10}
+= 55$. For the boolean matrix of a graph, entry $(i, j)$ of the $k$-th power is true exactly when a walk of $k$
+edges leads from $i$ to $j$; the test's path $0 \to 1 \to 2$ has one walk of length two and none of length three.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:11}
+(a) One \omterm{def:b2:cpp-polymorphism:vtable}{vtable} per (type, \omterm{def:b2:rust-traits-and-generics:trait}{trait}) pair: $km$ tables, with $m \sum_i (3 + n_i) = 3km + m \sum_i n_i$ words in all,
+stored once in the program. (b) In the usual C++ layout, an object of a class with $k$ polymorphic bases carries one
+\omterm{def:b2:cpp-polymorphism:vtable}{table pointer} per base subobject: $k$ words in each object (the first base's may be shared with the class's own).
+(c) Rust pays per type, in tables, and per trait-object pointer, one extra word; the values themselves carry
+nothing. C++ pays per object, $k$ words in every one, even when no virtual call is ever made.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-traits-and-generics:12}
+\omcode{code/bachelor-2/08-rust-traits-and-generics/exercises/typestate.rs}{7}{34}{The typestate connection}
+\code{send} is defined only for \code{Connection<Open>}: on a new connection it fails with E0599, no
+method found; after \code{let d = c.close();}, \code{c.send("x")} fails with E0382, use of a moved
+value, since \code{close} consumed \code{c}. \code{PhantomData<State>} has size zero, and \code{Closed} and
+\code{Open} have no fields: the test checks that a connection is exactly the size of its \code{Vec<String>}.
+\end{solution}
+
+\begin{solution}{pb:b2:rust-traits-and-generics:1}
+\textbf{1.} 8 bytes, as an \code{f64}; the pair 16.
+
+\textbf{2.} Other modules can build \code{Metres(400.0)} and read \code{d.0}. A private field would force a
+\omterm{def:b2:cpp-classes-raii:constructor}{constructor} and accessors: the library could then refuse a negative or \code{NaN} length, and code could not take the
+bare number out without saying so.
+
+\textbf{3.} \code{Debug}, \code{Clone}, \code{Copy}, \code{PartialEq}, \code{PartialOrd}. A derive requires the
+\omterm{def:b2:rust-traits-and-generics:trait}{trait} of every field, and \code{f64} has no \code{Eq} or \code{Ord}.
+
+\textbf{4.} Not silently. With the interface typed \code{NewtonSeconds}, the ground program would have had to wrap
+its number, \code{NewtonSeconds(x)}, at the point where it knew it held pound-force seconds; if its own values were
+typed \code{PoundForceSeconds}, passing them would be a compile error. Types check how values flow, not the first
+wrapping of a bare number: they move the risk to one place, where it can be reviewed.
+
+\textbf{5.} A \omterm{def:b2:rust-traits-and-generics:newtype}{newtype} \code{PoundForceSeconds} over an \code{f64}, and an implementation of \code{From} that
+turns it into \code{NewtonSeconds}, whose \code{from} multiplies by the number of newtons in a pound-force, the factor that the board rounded to 4.45.
+
+\textbf{6.} It is written and checked once; a caller can neither forget it nor apply it twice, and \code{.into()}
+says that a conversion happens.
+
+\textbf{7.} \code{impl Div<Seconds> for Metres}, with \code{Output = MetresPerSecond}.
+
+\textbf{8.} No \code{impl Mul for Metres} exists. A library with areas would add one, with \code{Output =
+SquareMetres}.
+
+\textbf{9.} Line 10: \code{Add} for \code{Metres} takes a \code{Metres} on the right, and \code{t} is
+\code{Seconds}. Line 11: \code{d} is \code{Metres}, the declared type \code{f64}; a \omterm{def:b2:rust-traits-and-generics:newtype}{newtype} does not convert by
+itself.
+
+\textbf{10.} \code{impl Mul<MetresPerSecond> for Seconds { type Output = Metres; ... }}, with the body
+\code{Metres(self.0 * v.0)}.
+
+\textbf{11.} \code{impl std::iter::Sum for Metres}, whose \code{sum} takes an iterator of \code{Metres} and folds
+it with \code{+} from \code{Metres(0.0)}.
+
+\textbf{12.} Only \code{MetresPerSecond} has a \code{Display} impl, used by \code{{v}}; the others are printed with
+\code{{:?}}, the derived \code{Debug}, which shows the type's name: \code{Metres(1650.0)}.
+
+\textbf{13.} The body is \code{xs.iter().fold(zero, |acc, &x| acc + x)}; \code{total(&dists, Metres(0.0))} and
+\code{total(&times, Seconds(0.0))}.
+
+\textbf{14.} Two, \code{total::<Metres>} and \code{total::<Seconds>}, by
+\cref{prop:b2:rust-traits-and-generics:mono}, unless inlined.
+
+\textbf{15.} No: a slice has one element type. Adding lengths to times is exactly the mistake the types exist to
+refuse.
+
+\textbf{16.} A \omterm{def:b2:rust-traits-and-generics:trait}{trait} \code{Unit} with \code{const SYMBOL: &'static str}, empty types \code{M} and \code{S}
+implementing it, a type \code{Quantity<U>} holding an \code{f64} and a \code{PhantomData<U>}, and one
+generic implementation of \code{Display} for \code{Quantity<U>}, with \code{U: Unit}, that writes the value and \code{U::SYMBOL}. (A blanket \code{impl<U: Unit> Display for U} is refused by
+coherence.)
+
+\textbf{17.} A \omterm{def:b2:rust-traits-and-generics:trait}{trait} with an associated constant is not dyn compatible; with a method \code{symbol(&self)}
+instead, each value would be reached through a 16-byte \omterm{def:b2:rust-traits-and-generics:trait-object}{fat pointer} and each call would go through a table, with no
+inlining, where the generic costs nothing.
+
+\textbf{18.} For instance kilograms and newtons, with \code{Kilograms * MetresPerSecondSquared = Newtons} and
+\code{Newtons * Seconds = NewtonSeconds}, the board's unit.
+
+\textbf{19.} The symbol is the plain function name instead of a mangled name that encodes the crate and the path, so
+\code{objdump} can be given \code{trip_speed_raw} by name.
+
+\textbf{20.} Both names are in the section \code{.text.trip_speed_raw}, at the same address, with the same size
+\code{0xbd}, 189 bytes: one body with two names. The compiler compiled the two functions, found them identical, and
+kept one copy.
+
+\textbf{21.} 53. \code{unpckhpd} moves the total time from the high half of a register to the low half of another,
+\code{divsd} divides the total distance by it, and \code{ret} returns with the result in \code{xmm0}.
+
+\textbf{22.} A leg is 16 bytes, a distance and a time: one \code{addpd} adds a whole leg to the running pair $(d,
+t)$. The main loop handles eight legs per turn, eight \code{addpd}; the ninth is in the loop for the remaining legs.
+
+\textbf{23.} Extra work in the operator impls, a check or a conversion, or a layout that differs from \code{f64}.
+The \omterm{def:b2:rust-traits-and-generics:newtype}{newtypes} have neither: their \code{add} and \code{div} inline to the bare operations on the one field.
+
+\textbf{24.} Identical machine code: the units cost nothing. The typed function is not merely as fast as the untyped
+one; it is the same 189 bytes of code.
+\end{solution}

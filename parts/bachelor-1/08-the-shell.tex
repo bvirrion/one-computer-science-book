@@ -1,0 +1,435 @@
+% Book 3, Year 1, chapter 8 -- the shell.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 8.
+% ledger: b1:pipes-1972, b1:shell-user-program, b1:bourne-bash, b1:posix-expansion-order
+\chapter{The Shell}\label{ch:b1:the-shell}
+
+How many loans did each member of the town library make in 2025? A Python program of fifteen lines answers it; so does
+one line typed at a terminal, assembled from five small programs that each do one thing. This chapter is about that
+second way of working: the \omterm{def:b1:the-shell:shell}{shell}, the programs it starts, the streams that join them, and the scripts that turn a
+line that worked once into a tool that works every time. The C programs of the previous chapters are among the
+programs it starts.
+
+\begin{recall}
+The operating system's kernel runs programs and keeps their files in a tree of directories, each file named by a
+path, absolute from the root \code{/} or relative to the current directory. A running program is a process. Each file
+has permissions saying who may read, write or execute it.
+\end{recall}
+
+\section{Commands, processes and exit status}\label{sec:b1:the-shell:commands}
+
+\begin{definition}[Shell]\label{def:b1:the-shell:shell}
+A \emph{shell}\index{shell} is a program that reads command lines, typed or from a file, and runs them: for each
+command it starts the named program with the given arguments, waits for it to end, and reads the next line. The shell
+of this chapter is \code{bash}.
+\end{definition}
+
+\begin{history}[The shell and the pipe]
+On the first Unix system, the command \omterm{def:b1:compilation-pipeline:interpreter}{interpreter} was not part of the operating system but an ordinary program
+stored in a file, which any user could replace: \omterm{def:b1:the-shell:redirection}{redirection} with \code{<} and \code{>} came almost at once. Pipes came
+in 1972, at the insistence of Douglas McIlroy, who had long argued that programs should be joined like operators.
+The \omterm{def:b1:the-shell:shell}{shell} written by Stephen Bourne for the Seventh Edition of Unix fixed the language that \code{bash}, the GNU
+project's ``Bourne-Again SHell'', still speaks.
+% ledger: b1:vt100
+Its users typed at terminals: a keyboard and a screen of text joined to the computer by a serial line. The VT100 of
+1978 was one of the first to obey the standard escape sequences for moving the cursor, and the terminal windows of
+today still obey them.
+\end{history}
+
+\omimg{book3/vt100-terminal.jpg}{0.42\linewidth}{A VT100 terminal, made by Digital Equipment Corporation: a keyboard
+and a screen of text, with no computer of its own to run programs on. Photograph: Jason Scott, CC BY 2.0.}
+
+\begin{definition}[Command-line argument]\label{def:b1:the-shell:argument}
+The \omterm{def:b1:the-shell:shell}{shell} cuts a command line into words. The first names the program; the others are its \emph{command-line
+arguments}\index{command-line argument}, which the program receives as strings: in C, as \code{argv[1]} to
+\code{argv[argc - 1]}, \code{argv[0]} being the name it was started under.
+\end{definition}
+
+\begin{definition}[Exit status]\label{def:b1:the-shell:exit-status}
+The \emph{exit status}\index{exit status} of a program is the small integer, from 0 to 255, it hands back when it ends:
+the value returned by \code{main} or passed to \code{exit}. By convention 0 means success and any other value failure.
+The \omterm{def:b1:the-shell:shell}{shell} keeps the status of the last command in the variable \code{$?}.
+\end{definition}
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/status.txt}{Success is 0; \code{ls} reports a missing file with 2;
+\code{grep -q} says only, by its status, whether it found a line.}\label{out:b1:the-shell:status}
+
+\code{a && b} runs \code{b} only if \code{a} succeeded; \code{a || b} only if \code{a} failed; \code{a; b} runs both.
+Programs are judged by their status, not by their messages: \code{grep -q} prints nothing at all.
+
+\begin{definition}[Environment variable]\label{def:b1:the-shell:environment}
+An \emph{environment variable}\index{environment variable} is a pair \code{NAME=value} in the environment of a running
+program, a list of strings that it receives when it starts, as a copy of its parent's exported variables. A \omterm{def:b1:the-shell:shell}{shell}
+variable becomes part of the environment of the programs the \omterm{def:b1:the-shell:shell}{shell} starts when it is \emph{exported}; \code{NAME=value
+command} sets it for that one command. A C program reads it with \code{getenv("NAME")}.
+\end{definition}
+
+\omcode{code/bachelor-1/08-the-shell/listings/env_child.c}{2}{13}{A program that shows what it
+received}\label{lst:b1:the-shell:env-child}
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/env.txt}{Quotes make \code{two words} one argument; a variable reaches
+the program only once exported.}\label{out:b1:the-shell:env}
+
+Every program documents its arguments: \code{man ls} shows the manual page of \code{ls}, \texttt{ls -{}-{}help} a summary.
+A running program is stopped by Ctrl-C, which the terminal turns into a signal sent to it; signals are studied in the
+Year~2 volume.
+
+\section{Redirection and pipes}\label{sec:b1:the-shell:pipes}
+
+Every program starts with three open streams (\cref{ch:b1:c-strings-structs-files}): standard input, standard output
+and standard error. In a terminal all three are the terminal; the \omterm{def:b1:the-shell:shell}{shell} can connect them elsewhere.
+
+\begin{definition}[Redirection]\label{def:b1:the-shell:redirection}
+A \emph{redirection}\index{redirection} connects a standard stream of a command to a file: \code{> f} sends standard
+output to \code{f}, emptied first; \code{>> f} appends to it; \code{< f} reads standard input from it; \code{2> f}
+sends standard error; and \code{2>&1} sends standard error wherever standard output goes at that point of the line.
+Redirections are performed by the \omterm{def:b1:the-shell:shell}{shell} before the program starts, from left to right.
+\end{definition}
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/redirect.txt}{The error message ignores \code{>}; \code{2>} and
+\code{2>&1} catch it.}\label{out:b1:the-shell:redirect}
+
+\begin{omfigure}
+\begin{tikzpicture}[p/.style={draw, rounded corners=2pt, minimum width=16mm, minimum height=8mm, font=\small\ttfamily},
+                    f/.style={draw, minimum height=6mm, font=\scriptsize, inner sep=2pt}, >={Stealth[length=2mm]}]
+\node[font=\small\bfseries] at (2,1.4) {\code{ls ... > all.txt}};
+\node[p] (a) at (0.6,0) {ls};
+\node[f] (t1) at (3.4,0.4) {all.txt};
+\node[f] (t2) at (3.4,-0.4) {terminal};
+\draw[->, thick] (a.east) ++(0,0.15) -- node[above, font=\scriptsize, pos=0.4] {1} (t1.west);
+\draw[->, thick, omThm] (a.east) ++(0,-0.15) -- node[below, font=\scriptsize, pos=0.4] {2} (t2.west);
+\node[font=\small\bfseries] at (8,1.4) {\code{ls ... > all.txt 2>&1}};
+\node[p] (b) at (6.6,0) {ls};
+\node[f] (u1) at (9.4,0) {all.txt};
+\draw[->, thick] (b.east) ++(0,0.15) -- node[above, font=\scriptsize, pos=0.4] {1} (u1.west);
+\draw[->, thick, omThm] (b.east) ++(0,-0.15) -- node[below, font=\scriptsize, pos=0.4] {2} (u1.west);
+\end{tikzpicture}
+\par\smallskip{\small Standard output (1) and standard error (2) of \code{ls}. With \code{> all.txt} alone, the error
+still reaches the terminal; \code{2>&1}, written after it, sends the error where the output goes now, to the file.
+Written before \code{> all.txt}, it would copy the old destination, the terminal (\cref{exo:b1:the-shell:6}).}
+\end{omfigure}
+
+\begin{definition}[Pipeline]\label{def:b1:the-shell:pipeline}
+A \emph{pipeline}\index{pipeline (shell)} is a sequence of commands joined by the operator \code{|}: the \omterm{def:b1:the-shell:shell}{shell} starts
+them all at once, and connects the standard output of each to the standard input of the next, so that data flows
+through them without intermediate files. The \omterm{def:b1:the-shell:exit-status}{exit status} of a pipeline is that of its last command.
+\end{definition}
+
+\begin{definition}[Filter]\label{def:b1:the-shell:filter}
+A \emph{filter}\index{filter (shell)} is a program that reads standard input, transforms it, and writes standard
+output, so that it can stand anywhere in a \omterm{def:b1:the-shell:pipeline}{pipeline}: \code{sort} sorts lines, \code{uniq -c} collapses runs of equal
+adjacent lines and counts them, \code{wc -l} counts lines, \code{head} and \code{tail} keep the first or last lines,
+\code{cut} keeps fields, \code{tr} translates characters, \code{paste} joins lines.
+\end{definition}
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/loans.txt}{The opening question: the five members with the most loans
+in 2025, and the number of members who borrowed.}\label{out:b1:the-shell:loans}
+
+\begin{omfigure}
+\begin{tikzpicture}[p/.style={draw, rounded corners=2pt, minimum height=8mm, font=\scriptsize\ttfamily, inner sep=3pt},
+                    >={Stealth[length=2mm]}, node distance=6mm]
+\node[p] (a) {tail -n +2 loans.csv};
+\node[p, right=of a] (b) {cut -d, -f3};
+\node[p, right=of b] (c) {sort};
+\node[p, right=of c] (d) {uniq -c};
+\node[p, right=of d] (e) {sort -rn};
+\node[p, right=of e] (f) {head -5};
+\foreach \x/\y in {a/b, b/c, c/d, d/e, e/f} {\draw[->, thick] (\x) -- (\y);}
+\draw[->, thick] (f.east) -- ++(0.6,0) node[right, font=\scriptsize] {terminal};
+\foreach \x in {a,b,c,d,e,f} {\draw[->, omThm] (\x.south) -- ++(0,-0.55);}
+\node[font=\scriptsize, omThm] at (5.2,-1.2) {each standard error still goes to the terminal};
+\node[font=\scriptsize, align=center] at (1.0,0.9) {header dropped};
+\node[font=\scriptsize, align=center] at (3.25,0.9) {member ids};
+\node[font=\scriptsize, align=center] at (6.6,0.9) {\code{12 55}, \dots};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b1:the-shell:pipeline}{pipeline} of \cref{out:b1:the-shell:loans}: six programs running at once, each reading what the
+one before writes. \code{uniq -c} counts only adjacent equal lines, hence the \code{sort} before it.}
+\end{omfigure}
+
+A \omterm{def:b1:the-shell:pipeline}{pipeline} that answers a question deserves a check. The Python program below computes the same table from the same
+file; the chapter's test runs both and compares them.
+
+\omcode{code/bachelor-1/08-the-shell/listings/loans_check.py}{3}{20}{The same answer in
+Python}\label{lst:b1:the-shell:loans-check}
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/loans_py.txt}{Identical, ties included: \code{sort -rn} orders equal
+counts by the whole line, in reverse, which the key of \code{sorted} reproduces.}
+
+\section{Patterns: globs and regular expressions}\label{sec:b1:the-shell:patterns}
+
+Before running a command, the \omterm{def:b1:the-shell:shell}{shell} rewrites its words.
+
+\begin{definition}[Pathname expansion, quoting, word splitting]\label{def:b1:the-shell:expansion}
+\emph{Pathname expansion}\index{pathname expansion}\index{glob} replaces a word containing \code{*} (any string),
+\code{?} (any one character) or \code{[...]} (one character of a set) by the sorted names of the files that match it, a
+\emph{glob}; a pattern that matches nothing is left as it is, and names starting with a dot are matched only by a
+pattern starting with a dot. \emph{Word splitting}\index{word splitting} cuts the result of an unquoted variable
+expansion into several words at spaces, tabs and newlines. \emph{Quoting}\index{quoting} suspends both: between single
+quotes every character is literal; between double quotes \code{$} still expands variables but no splitting or
+pathname expansion happens; a backslash makes the next character literal.
+\end{definition}
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/globs.txt}{\omterm{def:b1:the-shell:expansion}{Globs} expand to file names; quoted, they stay patterns;
+braces are a \code{bash} expansion that makes words without looking at files.}\label{out:b1:the-shell:globs}
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/quoting.txt}{A file name with a space, unquoted and
+quoted.}\label{out:b1:the-shell:quoting}
+
+\begin{omfigure}
+\begin{tikzpicture}[s/.style={draw, rounded corners=2pt, font=\scriptsize, align=center, minimum height=11mm,
+                    text width=19mm, inner sep=2pt}, >={Stealth[length=2mm]}, node distance=4mm]
+\node[s, fill=black!5] (b) {braces\\\code{{a,b}.csv}};
+\node[s, fill=omCode!8, right=of b] (v) {variables, \code{$(...)}, \code{$((...))}};
+\node[s, fill=omCode!8, right=of v] (w) {word splitting (unquoted results)};
+\node[s, fill=omDef!12, right=of w] (g) {pathname expansion\\\code{*.csv}};
+\node[s, fill=omThm!12, right=of g] (q) {quote removal};
+\foreach \x/\y in {b/v, v/w, w/g, g/q} {\draw[->, thick] (\x) -- (\y);}
+\node[font=\scriptsize, anchor=north west, align=left] at (b.south west) {\code{bash} only};
+\end{tikzpicture}
+\par\smallskip{\small The order in which the \omterm{def:b1:the-shell:shell}{shell} rewrites a command line (the tilde \texttt{\textasciitilde} is expanded
+with the variables). Quotes act at every step after the first and are removed last: that is why \code{"$f"} reaches
+the program as one word with the variable's value, spaces and all.}
+\end{omfigure}
+
+A pattern of a different kind describes the lines of a file. \code{grep} prints the lines that match a regular
+expression; \code{sed} edits a stream line by line, here with its substitution \code{s/pattern/replacement/}; \code{find}
+walks a tree of directories and lists the files that pass its tests. Regular expressions are used here as the
+syntax of these tools: \code{.} is any character, \code{[0-9]} one digit, \code{x*} any number of \code{x}, \code{^}
+and \code{$} the start and end of a line, \code{a|b} either, and with \code{-E} parentheses group and \code{{4}}
+repeats. Their theory, and the automata that run them, belong to the Year~2 volume.
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/grep_sed.txt}{Counting, selecting and rewriting lines of the weather
+file.}\label{out:b1:the-shell:grep-sed}
+
+The two empty-or-error patterns, \code{,,} and \code{-99}, find the eight bad temperatures that
+\cref{ch:b1:c-strings-structs-files} counted. In the last command, \texttt{\textbackslash{}3} is the text matched by the
+third group: the date is rewritten day first.
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/find.txt}{\code{find} on a small tree: directories, files by name, by
+size, and a command run on all of them.}\label{out:b1:the-shell:find}
+
+\section{Shell scripts}\label{sec:b1:the-shell:scripts}
+
+\begin{definition}[Shell script]\label{def:b1:the-shell:script}
+A \emph{shell script}\index{shell script} is a file of \omterm{def:b1:the-shell:shell}{shell} commands run as a program. Its first line, \texttt{\#!/bin/bash},
+names the \omterm{def:b1:compilation-pipeline:interpreter}{interpreter} that runs it; made executable, it is started like any program. Inside it, \code{$1}, \code{$2},
+\dots{} are its arguments, \texttt{\$\#} their number and \code{"$@"} all of them, each kept as one word; its \omterm{def:b1:the-shell:exit-status}{exit status}
+is that of \code{exit}, or of its last command.
+\end{definition}
+
+\omcode{code/bachelor-1/08-the-shell/listings/check_csv.sh}{1}{27}{A script that checks the town's
+tables}\label{lst:b1:the-shell:check-csv}
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/run_check.txt}{Four good tables; a broken one and a missing one; no
+argument.}\label{out:b1:the-shell:run-check}
+
+\begin{method}[Writing a script that fails loudly]\label{met:b1:the-shell:script}
+\begin{enumerate}
+\item Start with \code{set -euo pipefail}: stop at the first failing command (\code{-e}), treat an unset variable as an
+error (\code{-u}), and give a \omterm{def:b1:the-shell:pipeline}{pipeline} the status of its first failing command (\code{pipefail}).
+\item Check the arguments first; print the usage on standard error and exit with 2.
+\item Quote every expansion: \code{"$f"}, \code{"$@"}, \code{"$(command)"}. An unquoted variable holding a name with a
+space becomes two arguments.
+\item Return a meaningful status: 0 when all is well, 1 for a negative answer, 2 for a misuse.
+\item Where a failing status is expected, say so: \code{grep -c} exits 1 when it counts zero lines, which \code{-e}
+would take for an error; \code{|| true} accepts it.
+\end{enumerate}
+\end{method}
+
+\code{$(command)} is replaced by the output of the command, \code{$((...))} computes in integers, and
+\texttt{\$\{\#commas\}} is the length of a variable's value. \code{if}, \code{for} and \code{while} test exit statuses:
+\code{[ "$rows" -eq 0 ]} is the program \code{[}, which compares and exits with 0 or 1.
+
+\section{Permissions and links}\label{sec:b1:the-shell:permissions}
+
+\begin{definition}[Permission bits]\label{def:b1:the-shell:permission-bits}
+The \emph{permission bits}\index{permission bits} of a file are nine bits, read (\code{r}), write (\code{w}) and execute
+(\code{x}) for its owner, for the members of its group, and for all other users, written \texttt{rwxr-{}x-{}-{}-{}} by
+\code{ls -l} or as three octal digits, one per class, each the sum of 4 (read), 2 (write) and 1 (execute): \code{750}.
+For a directory, \code{r} allows listing it, \code{w} creating and removing names in it, and \code{x} entering it.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=6.5mm, y=1mm]
+\newcommand{\permbit}[4]{\draw[fill=#3] (#1,0) rectangle (#1+1,7); \node[font=\small\ttfamily] at (#1+0.5,3.5) {#2};
+  \node[font=\scriptsize] at (#1+0.5,-3) {#4};}
+\permbit{0}{-}{black!8}{type}
+\permbit{1}{r}{omCode!10}{4} \permbit{2}{w}{omCode!10}{2} \permbit{3}{x}{omCode!10}{1}
+\permbit{4}{r}{omDef!12}{4} \permbit{5}{-}{omDef!12}{2} \permbit{6}{x}{omDef!12}{1}
+\permbit{7}{-}{omThm!12}{4} \permbit{8}{-}{omThm!12}{2} \permbit{9}{-}{omThm!12}{1}
+\foreach \a/\b/\t/\v in {1/4/owner/7, 4/7/group/5, 7/10/others/0} {
+  \draw[decorate, decoration={brace, amplitude=3pt}] (\a,9) -- (\b,9) node[midway, above=3pt, font=\scriptsize]
+  {\t: \v};}
+\end{tikzpicture}
+\par\smallskip{\small The mode \texttt{-{}rwxr-{}x-{}-{}-{}}, octal 750: the owner may read, write and execute; the group may read
+and execute; others have no access. The first character is the type: \code{-} for a file, \code{d} for a directory,
+\code{l} for a \omterm{def:b1:the-shell:links}{symbolic link}.}
+\end{omfigure}
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/perms.txt}{\code{chmod} in symbolic and octal form, a refused write, and
+the \code{umask}.}\label{out:b1:the-shell:perms}
+
+\code{chmod go-r} removes read for group and others; \code{chmod 640} sets all nine bits at once. Even the owner cannot
+write a file without its \code{w} bit, though the owner may give it back. A new file gets mode 666, a new directory
+777, minus the bits of the \code{umask}: with 022, files are created \texttt{rw-{}r-{}-{}r-{}-{}}. Plugging in a removable drive
+makes its file system appear as a directory of the tree, an operation called mounting, which requires the rights of the
+administrator; desktop systems do it on the user's behalf.
+
+\begin{definition}[Hard link, symbolic link]\label{def:b1:the-shell:links}
+A directory entry is a name for a file. A \emph{hard link}\index{hard link}, made by \code{ln a b}, is a second name for
+the same file: both names are equal, and the file disappears only when its last name is removed. A \emph{symbolic
+link}\index{symbolic link}, made by \code{ln -s a c}, is a small file that holds a path; opening it opens the file at
+that path, if there is one.
+\end{definition}
+
+\omoutput{code/bachelor-1/08-the-shell/outputs/links.txt}{The number after the mode is the number of names of the file;
+the \omterm{def:b1:the-shell:links}{symbolic link} survives its target and leads nowhere.}\label{out:b1:the-shell:links}
+
+\begin{omfigure}
+\begin{tikzpicture}[e/.style={draw, font=\scriptsize\ttfamily, minimum width=22mm, minimum height=6mm},
+                    d/.style={draw, rounded corners=3pt, fill=omDef!10, font=\scriptsize, align=center, minimum
+                    width=24mm, minimum height=12mm}, >={Stealth[length=2mm]}]
+\node[font=\scriptsize\bfseries] at (0,1.5) {directory entries};
+\node[e] (s) at (0,0.8) {station.txt};
+\node[e] (c) at (0,0.2) {copy.txt};
+\node[e] (l) at (0,-0.4) {shortcut.txt};
+\node[d] (f) at (4,0.5) {the file's data\\\code{Hilltop, 212 m}\\2 names};
+\node[draw, dashed, font=\scriptsize, align=center] (p) at (4,-1.0) {a tiny file holding\\the path \code{station.txt}};
+\draw[->, thick] (s.east) -- (f.west |- s.east);
+\draw[->, thick] (c.east) -- (f.west |- c.east);
+\draw[->, thick] (l.east) -- (p.west);
+\draw[->, dashed, omThm] (p.north) -- node[right, font=\scriptsize] {by name} (f.south);
+\end{tikzpicture}
+\par\smallskip{\small Two \omterm{def:b1:the-shell:links}{hard links} and a \omterm{def:b1:the-shell:links}{symbolic link}. Removing \code{station.txt} leaves the file with one name,
+\code{copy.txt}; the \omterm{def:b1:the-shell:links}{symbolic link} still holds the path \code{station.txt}, which now names nothing.}
+\end{omfigure}
+
+\begin{safety}
+Quote every variable in a script. Test a destructive command with \code{echo} in front of it before running it, and
+never write \code{rm -r} with a variable that might be empty. Keep your files \texttt{rw-{}r-{}-{}r-{}-{}} or stricter, and never
+make a file writable by others to make an error go away.
+\end{safety}
+
+\section{Exercises}\label{sec:b1:the-shell:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:the-shell:1}
+Predict what each line prints, with \code{weather.csv} the town's weather file.
+\omcode{code/bachelor-1/08-the-shell/listings/exo_status.sh}{3}{6}{Four exit statuses}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:the-shell:2}
+A directory holds \code{r1.csv}, \code{r2.csv}, \code{r10.csv}, \code{R3.csv}, \code{rain.txt} and \code{.r4.csv}. What do
+\code{echo r?.csv}, \code{echo r*.csv}, \code{echo *.csv} and \code{echo [Rr][0-9]*} print?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:the-shell:3}
+Predict the output of the three \omterm{def:b1:the-shell:pipeline}{pipelines}.
+\omcode{code/bachelor-1/08-the-shell/listings/exo_pipe.sh}{3}{6}{Three \omterm{def:b1:the-shell:pipeline}{pipelines} on six lines}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:the-shell:4}
+What does \code{ls -l} show as the mode of a file after \code{chmod 640}, \code{chmod 755}, \code{chmod 604}, and after
+\code{chmod 640} followed by \code{chmod u+x,o+r}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:the-shell:5}
+The script below works until someone saves a file named \code{members 2024.csv}. Explain the run, and correct the
+script.
+\omcode{code/bachelor-1/08-the-shell/listings/count_lines.sh}{1}{5}{Counting lines}
+\omoutput[2-5]{code/bachelor-1/08-the-shell/outputs/exo_space.txt}{The run.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:the-shell:6}
+Compare \code{ls nosuchfile > out1.txt 2>&1} with \code{ls nosuchfile 2>&1 > out2.txt}: where does the error message
+go in each case, and why?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:the-shell:7}
+Write a script \code{topk.sh FILE COL K} that prints the \code{K} most frequent values of column \code{COL} of a CSV file
+with a header, each with its count, and rejects bad arguments with status 2.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:the-shell:8}
+Write one \omterm{def:b1:the-shell:pipeline}{pipeline} that prints, for each station of the weather file, the line of its hottest day, ignoring missing
+values and error codes.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:the-shell:9}
+Among the 512 modes from \code{000} to \code{777}, how many let the owner read and let neither the group nor the others
+write? Justify by counting.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:the-shell:10}
+Write a script \code{dupes.sh DIR} that prints the groups of files with identical contents under \code{DIR}, using
+\code{find}, the checksum program \code{cksum} (which prints a checksum and a size) and \omterm{def:b1:the-shell:filter}{filters}. It must handle names
+with spaces. Why is a matching checksum not a proof of equal contents, and what would make the script faster on a
+large tree?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:the-shell:11}
+In an empty directory: \code{echo data > a; ln a b; ln -s a c; rm a}. Give the number of names of the file at each step,
+and what \code{cat b} and \code{cat c} print at the end. Then \code{echo new > a}: what do they print now? Justify each
+answer from the definitions.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:the-shell:12}
+With \code{f="a b"}, \code{g='*'}, a directory holding only \code{x.txt}, and \code{empty} unset, how many arguments
+does \code{printf} receive in each line below, and what does each line print? Justify with the order of expansions.
+\omcode{code/bachelor-1/08-the-shell/listings/exo_words.sh}{4}{7}{Counting words}
+\end{exercise}
+
+\section{Problem: A day's log in one line}\label{sec:b1:the-shell:problem}
+
+\begin{problem}[{Weekend problem --- A day's log in one line}]\label{pb:b1:the-shell:1}
+The library's server writes a line to its access log for each request: the date and time, the member (or \code{-}
+for an anonymous search), the action, the book, and a status, with a reason when it is an error. A generator with a
+fixed seed reproduces one day of that log. The session below explores it with \omterm{def:b1:the-shell:filter}{filters}, answers two questions with a
+\omterm{def:b1:the-shell:pipeline}{pipeline}, checks them with a Python program, and tries a script.
+\omcode{code/bachelor-1/08-the-shell/listings/make_log.py}{3}{35}{The log generator}\label{lst:b1:the-shell:make-log}
+\omcode{code/bachelor-1/08-the-shell/listings/logstat.sh}{1}{21}{A script for one hour of the log}\label{lst:b1:the-shell:logstat}
+\omcode{code/bachelor-1/08-the-shell/listings/log_check.py}{3}{20}{The Python reference}\label{lst:b1:the-shell:log-check}
+\omoutput{code/bachelor-1/08-the-shell/outputs/problem.txt}{The session.}\label{out:b1:the-shell:problem}
+
+\medskip\noindent\textbf{Part I --- Filters and counts.}
+\begin{enumerate}
+\item How many requests did the library receive, and how many of them were searches?
+\item Why does \code{cut -d" " -f4} give the action? What would \code{-f5} give?
+\item What fraction of the requests failed?
+\item Why does the \omterm{def:b1:the-shell:pipeline}{pipeline} of the actions not need \code{sort -rn} to be read, and why does it need \code{sort}?
+\item Write the \omterm{def:b1:the-shell:pipeline}{pipeline} that counts the requests of member 24.
+\item How many requests came between 12:00:00 and 13:59:59? Explain the pattern \code{"^.{11}1[23]:"}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Patterns.}
+\begin{enumerate}[resume]
+\item Explain the \code{sed} command of the error reasons, and why it is preceded by \code{grep status=error}.
+\item The three reasons sum to how many lines? Check against question 3.
+\item \code{grep -oE "member=[0-9]+"} prints only the matching part of each line. Why does it skip anonymous searches?
+\item How many requests were anonymous, and how many were made by members? Check the total.
+\item Give a \code{grep -E} pattern for the lines of an error during a borrow, and one for times from 18:30:00 on.
+\item The \code{cut -c12-13} of the busiest-hour \omterm{def:b1:the-shell:pipeline}{pipeline} counts on fixed columns. Which line of the generator guarantees
+that the hour is always at columns 12 and 13?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- A script with arguments and exit codes.}
+\begin{enumerate}[resume]
+\item What does \code{logstat.sh} check before reading the log, and with which status does it refuse?
+\item Why does it distinguish \code{07} (status 1) from \code{7am} (status 2)?
+\item The line \code{lines=$(grep -c ... || true)} is needed because of \code{set -e}. Explain.
+\item \code{"^.{11}$hour:"} is in double quotes. What would change with single quotes?
+\item The script reads the log twice. Rewrite it to read it once, with a temporary file or a single \omterm{def:b1:the-shell:pipeline}{pipeline}.
+\item The chapter's test runs the script on the generated log for the busiest hour, for \code{07}, for \code{7} and with
+one argument. Which statuses does it expect, and why is each case worth a test?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The pipeline against Python.}
+\begin{enumerate}[resume]
+\item Explain each stage of \code{cut -c12-13 access.log | sort | uniq -c | sort -rn | head -3}.
+\item If two hours tied for the most requests, which one would \code{head -1} print, and which one would
+\code{log_check.py}? Are they the same?
+\item Why does the distinct-member \omterm{def:b1:the-shell:pipeline}{pipeline} need \code{sort -u} rather than \code{uniq}?
+\item The generator chooses 42 visitors for the day. Why is it no surprise that 42 distinct members appear, and how
+large would \code{n} have to be for one of them to be likely missing?
+\item The \omterm{def:b1:the-shell:shell}{shell} and Python agree on this log. What does that agreement prove, and what does it not?
+\item State the named result of the problem, \emph{the \omterm{def:b1:the-shell:pipeline}{pipeline} theorem of the log}.
+\end{enumerate}
+\end{problem}

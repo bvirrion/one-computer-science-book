@@ -1,0 +1,120 @@
+\section*{Chapter \ref{ch:b3:type-systems} --- Type Systems and Type Inference}
+
+\begin{solution}{exo:b3:type-systems:1}
+$\mathtt{int} \to \mathtt{bool} \to \mathtt{int}$; $(\mathtt{int} \to \mathtt{int}) \to \mathtt{int} \to \mathtt{int}$; $\mathtt{bool}$ (\code{exercise_1_types_of_terms}).
+\end{solution}
+
+\begin{solution}{exo:b3:type-systems:2}
+Five judgements (\code{exercise_2_derivation}), written with the conclusion first:
+\begin{center}\small\ttfamily\frenchspacing\begin{tabular}{l}
+|- \textbackslash{}x:\ int.\ \textbackslash{}f:\ int -> bool.\ f x :\ int -> (int -> bool) -> bool \ [abs]\\
+\ \ x:\ int |- \textbackslash{}f:\ int -> bool.\ f x :\ (int -> bool) -> bool \ [abs]\\
+\ \ \ \ x:\ int, f:\ int -> bool |- f x :\ bool \ [app]\\
+\ \ \ \ \ \ x:\ int, f:\ int -> bool |- f :\ int -> bool \ [var]\\
+\ \ \ \ \ \ x:\ int, f:\ int -> bool |- x :\ int \ [var]
+\end{tabular}\end{center}
+\end{solution}
+
+\begin{solution}{exo:b3:type-systems:3}
+\texttt{\textbackslash{}x.\ x x}: none, the occurs check fails on $\alpha \doteq \alpha \to \beta$. \texttt{\textbackslash{}f.\ \textbackslash{}x.\ f x x}: $(\alpha \to \alpha \to \beta) \to \alpha \to \beta$. \texttt{\textbackslash{}p.\ fst p + snd p}: $\mathtt{int} \times \mathtt{int} \to \mathtt{int}$. \texttt{\textbackslash{}x.\ if x then x else 1}: none; the condition makes $x$ a $\mathtt{bool}$, and the branches have types $\mathtt{bool}$ and $\mathtt{int}$ (\code{exercise_3_typable_or_not}).
+\end{solution}
+
+\begin{solution}{exo:b3:type-systems:4}
+\texttt{twice    :\ forall \textquotesingle{}a.\textbackslash{} (\textquotesingle{}a -> \textquotesingle{}a) -> \textquotesingle{}a -> \textquotesingle{}a}: $f$ is applied to $x$ and to its own result, so its argument and result types are equal, and so is the type of $x$ (\code{exercise_4_twice}).
+\end{solution}
+
+\begin{solution}{exo:b3:type-systems:5}
+$x$ gets $\alpha$, and the application $x\,x$ asks $\alpha \doteq \alpha \to \beta$. Without the check, the binding $\alpha := \alpha \to \beta$ is stored. Resolving $\alpha$ replaces it by $\alpha \to \beta$, whose $\alpha$ is replaced again, without end: the type it describes is infinite. The test gives the resolution a budget of 1,000 nodes and sees it exhausted; with the check, \code{unify} refuses the equation (\code{exercise_5_occurs_check}). The check never refuses a solvable problem: if $\alpha$ occurs in $\tau \ne \alpha$, then for any substitution $U$, $U(\alpha)$ is a proper subterm of $U(\tau)$, hence smaller, so $U(\alpha) \ne U(\tau)$.
+\end{solution}
+
+\begin{solution}{exo:b3:type-systems:6}
+\begin{mathpar}
+\inferrule{\Gamma \vdash e_1 : \tau_1 \\ \Gamma \vdash e_2 : \tau_2}{\Gamma \vdash (e_1, e_2) : \tau_1 \times \tau_2}
+
+\inferrule{\Gamma \vdash e : \tau_1 \times \tau_2}{\Gamma \vdash \mathtt{fst}\ e : \tau_1}
+
+\inferrule{\Gamma \vdash e : \tau_1 \times \tau_2}{\Gamma \vdash \mathtt{snd}\ e : \tau_2}
+\end{mathpar}
+\code{exercises/ex6_pairs.rs} adds the three arms. The test types the example as $\mathtt{int}$, a pair holding a function as $\mathtt{int} \times (\mathtt{int} \to \mathtt{bool}) \to \mathtt{bool}$, and rejects \code{fst 3} (\code{exercise_6_pairs}).
+\end{solution}
+
+\begin{solution}{exo:b3:type-systems:7}
+Weakening first: if $\Gamma \vdash e : \tau$, then $\Gamma, \Delta \vdash e : \tau$ for bindings $\Delta$ of variables not free in $e$, by induction on the derivation (each rule only looks up the free variables of $e$). Now induct on the derivation of $\Gamma, x : \sigma \vdash e : \tau$. If $e$ is $x$, then $\tau = \sigma$ and $e[x := v] = v$, and weakening of $\vdash v : \sigma$ gives $\Gamma \vdash v : \sigma$. If $e$ is another variable or a constant, the substitution changes nothing and the binding of $x$ was not used. If $e = \lambda y{:}\tau_1.\,e_0$, rename $y$ so that $y \ne x$ ($v$ is closed, so $y$ is not free in it); the premise is $\Gamma, x : \sigma, y : \tau_1 \vdash e_0 : \tau_2$, which is also derivable with the two bindings exchanged, since they concern different names; the induction hypothesis gives $\Gamma, y : \tau_1 \vdash e_0[x := v] : \tau_2$, and \textsc{abs} concludes. Application, \code{let}, \code{if}, the operators and pairs substitute into each premise, and the induction hypothesis applies to each.
+\end{solution}
+
+\begin{solution}{exo:b3:type-systems:8}
+By induction on the term. A variable has the type of its last binding in the context, a constant its one type. For $\lambda x{:}\tau_1.\,e$, the annotation fixes $\tau_1$ and the induction hypothesis fixes the type of $e$ in the extended context, hence the arrow. For $e_1\,e_2$, the hypothesis fixes $e_1$'s type, which must be some $\tau_1 \to \tau_2$, and the result is that $\tau_2$. The other forms are alike: each has one rule, whose conclusion is determined by the types of the premises. Without annotations it fails at once: \texttt{\textbackslash{}x.\ x} has the types $\mathtt{int} \to \mathtt{int}$, $\mathtt{bool} \to \mathtt{bool}$, and every other $\tau \to \tau$. This is why the unannotated calculus needs \omterm{def:b3:type-systems:inference}{principal types}.
+\end{solution}
+
+\begin{solution}{exo:b3:type-systems:9}
+Bound by \code{let}, $\mathit{id}$ has the scheme $\forall \alpha.\,\alpha \to \alpha$, and each use takes a fresh instance: the function position $(\beta \to \beta) \to (\beta \to \beta)$, the argument $\beta \to \beta$. The result is $\beta \to \beta$, printed \code{'a -> 'a}. Bound by $\lambda$, $\mathit{id}$ has one type $\tau$ throughout the body, and $\mathit{id}\,\mathit{id}$ requires $\tau \doteq \tau \to \tau'$, which the occurs check refuses (\code{exercise_9_self_application}).
+\end{solution}
+
+\begin{solution}{exo:b3:type-systems:10}
+\begin{mathpar}
+\inferrule{\Gamma, f : \tau_1 \to \tau_2, x : \tau_1 \vdash e_1 : \tau_2 \\ \Gamma, f : \tau_1 \to \tau_2 \vdash e_2 : \tau}{\Gamma \vdash \mathtt{letrec}\ f = \lambda x.\,e_1\ \mathtt{in}\ e_2 : \tau}
+\end{mathpar}
+The step gives $e_2[f := u]$ with $u = \lambda x.\,\mathtt{letrec}\ f = \lambda x.\,e_1\ \mathtt{in}\ e_1$. By the substitution lemma applied to the second premise, it suffices that $\vdash u : \tau_1 \to \tau_2$. By \textsc{abs}, that is $x : \tau_1 \vdash \mathtt{letrec}\ f = \lambda x.\,e_1\ \mathtt{in}\ e_1 : \tau_2$, and by the rule itself it needs $x : \tau_1, f : \tau_1 \to \tau_2, x : \tau_1 \vdash e_1 : \tau_2$ and $x : \tau_1, f : \tau_1 \to \tau_2 \vdash e_1 : \tau_2$. The first premise of the original rule, with $\Gamma$ empty since the program is closed, gives both: the outer binding of $x$ is hidden by the inner one in the first, and the second is the same context in another order.
+\end{solution}
+
+\begin{solution}{exo:b3:type-systems:11}
+\texttt{let id = \textbackslash{}x.\ x in (id 1, id true)}. Without generalisation, $\mathit{id}$ keeps the type $\alpha \to \alpha$ with $\alpha$ a variable shared by both uses; \code{id 1} solves $\alpha = \mathtt{int}$, and \code{id true} then asks $\mathtt{int} \doteq \mathtt{bool}$, a clash. With generalisation, each use instantiates its own copy (\code{exercise_11_let_polymorphism_is_needed}). It is sound because \code{let x = e1 in e2} evaluates $e_1$ to a value $v$ and continues with $e_2[x := v]$: each occurrence of $x$ becomes its own copy of $v$, and since the generalised variables do not occur in $\Gamma$, the derivation of $v$'s type can be redone with any types put in their place, one instance per copy.
+\end{solution}
+
+\begin{solution}{exo:b3:type-systems:12}
+Take the program
+\begin{center}\texttt{let r = ref (\textbackslash{}x.\ x) in (r :=\ (\textbackslash{}n.\ n + 1); (!r) true)}\end{center}
+Generalising gives $r : \forall \alpha.\,(\alpha \to \alpha)\ \mathtt{ref}$; the assignment uses the instance $\alpha = \mathtt{int}$, the read the instance $\alpha = \mathtt{bool}$, and the program is typed. But there is one cell, not one per use: after the assignment it holds $\lambda n.\,n + 1$, and the program computes $\mathtt{true} + 1$, stuck. The argument of exercise~\ref{exo:b3:type-systems:11} broke because evaluating $e_1$ allocated a cell that all the copies share. The \emph{value restriction} generalises \code{let x = e1 in e2} only when $e_1$ is a value. Evaluating a value does nothing, so copies of it share nothing, and the argument of exercise~\ref{exo:b3:type-systems:11} applies again. \texttt{ref (\textbackslash{}x.\ x)} is an application, not a value, so $r$ keeps a single \omterm{def:b3:type-systems:polymorphism}{type variable}, and the program is rejected with a clash between $\mathtt{int}$ and $\mathtt{bool}$. Every definition of \cref{lst:b3:type-systems:poly} is an abstraction, a value, so all are still generalised.
+\end{solution}
+
+\begin{solution}{pb:b3:type-systems:1}
+The formulas are asserted in \code{tests/pb_test.rs}.
+
+\textbf{1.} $x : \alpha$; the pair has type $\alpha \times \alpha$; the abstraction $\alpha \to \alpha \times \alpha$. There is no application, so no equation at all.
+
+\textbf{2.} $f_0 : \forall \alpha.\,\alpha \to \alpha \times \alpha$. With $x : \beta$, the inner use is instantiated as $\gamma \to \gamma \times \gamma$, and $\gamma \to \gamma \times \gamma \doteq \beta \to \delta$ gives $\gamma = \beta$, $\delta = \beta \times \beta$. The outer use is instantiated afresh, $\epsilon \to \epsilon \times \epsilon$, and unifying with $\beta \times \beta \to \zeta$ gives $\epsilon = \beta \times \beta$. The type is $\beta \to (\beta \times \beta) \times (\beta \times \beta)$: the two instances are at $\beta$ and at $\beta \times \beta$.
+
+\textbf{3.} $(\mathtt{int} \times \mathtt{int}) \times (\mathtt{int} \times \mathtt{int})$.
+
+\textbf{4.} $f_0$ is a parameter, with one type. Its two uses force argument and result types to be equal, so $f_0 : \alpha \to \alpha$, and the argument then asks $\alpha \to \alpha \doteq \beta \to \beta \times \beta$, that is $\beta \doteq \beta \times \beta$, which the occurs check refuses.
+
+\textbf{5.} $T_1 = (\text{\ttfamily\textquotesingle a} \times \text{\ttfamily\textquotesingle a}) \times (\text{\ttfamily\textquotesingle a} \times \text{\ttfamily\textquotesingle a})$; $T_2 = (T_1 \times T_1) \times (T_1 \times T_1)$ with each $\text{\ttfamily\textquotesingle a}$ of $T_1$ replaced by $T_1$, that is $T_1[\text{\ttfamily\textquotesingle a} := T_1]$: 16 leaves.
+
+\textbf{6.} $25 + 26n$ characters: linearly.
+
+\textbf{7.} With $x : \beta$, the inner use of $f_{k-1}$ gives $T_{k-1}[\text{\ttfamily\textquotesingle a} := \beta]$, and the outer use is an instance applied to that, so its result is $T_{k-1}[\text{\ttfamily\textquotesingle a} := T_{k-1}[\text{\ttfamily\textquotesingle a} := \beta]]$; up to the name of $\beta$, $T_k = T_{k-1}[\text{\ttfamily\textquotesingle a} := T_{k-1}]$.
+
+\textbf{8.} Each of the $\ell_{k-1}$ leaves of $T_{k-1}$ is replaced by a copy of $T_{k-1}$: $\ell_k = \ell_{k-1}^2$, $\ell_0 = 2$, so $\ell_k = 2^{2^k}$.
+
+\textbf{9.} The depth doubles: $d_k = 2d_{k-1}$, $d_0 = 1$, so $d_k = 2^k$.
+
+\textbf{10.} $T_k$ is a complete binary tree of products, all of whose leaves are $\text{\ttfamily\textquotesingle a}$, so all its subtrees at the same depth are equal. There is one distinct subtree per depth, from the root to the leaves: $2^k + 1$.
+
+\textbf{11.} Leaves 2, 4, 16, 256, 65,536 are $2^{2^n}$; distinct subtrees 2, 3, 5, 9, 17 are $2^n + 1$; lengths 25, 51, 77, 103, 129 are $25 + 26n$.
+
+\textbf{12.} Length 155, 30 unify calls, $2^{32} = 4{,}294{,}967{,}296$ leaves, 33 distinct subtrees. The tree has more than eight billion nodes and does not fit in the laptop's memory.
+
+\textbf{13.} Each line $\lambda x.\,f_{k-1}\,(f_{k-1}\,x)$ has two applications; each unifies an instance of an arrow with $\tau \to \beta$, which is one call for the two arrows and two recursive calls for their children: 6 calls per line, and none for $f_0$.
+
+\textbf{14.} Into building and copying types: each instantiation copies the scheme's type, and each application of the substitution rebuilds the type it is applied to, at a cost proportional to its size as a tree, $2^{2^k}$ leaves at line $k$.
+
+\textbf{15.} A tree with $2^{32}$ leaves has $2^{33} - 1$ nodes, about $8.6 \times 10^9$, so about 137~GB.
+
+\textbf{16.} $2^n + 1$ nodes. Inference with shared types does work proportional to that size at each line, which is exponential in $n$, hence in the program's length: still not polynomial.
+
+\textbf{17.} Writing $T_n$ out as text takes at least $2^{2^n}$ symbols, doubly exponential in the program's length, so no algorithm that prints \omterm{def:b3:type-systems:inference}{principal types} in full can be faster on this family.
+
+\textbf{18.} That even the yes-or-no question, with no type to print, needs exponential time in the worst case: the cost is not an artefact of the output's size, and no representation makes typability polynomial, since the time hierarchy theorem separates polynomial from exponential time.
+
+\textbf{19.} All three are needed. Without pairs, $f_0 = \lambda x.\,x$ and every $T_k$ is $\text{\ttfamily\textquotesingle a}$. Without the doubling, $f_k = \lambda x.\,f_{k-1}\,x$ and $T_k = T_0$. Without \code{let} (parameters instead), the family is rejected, question 4: polymorphism is what lets $f_{k-1}$ be used at two types.
+
+\textbf{20.} Each definition is used at instances whose size the programmer has in mind, and chains in which every function squares the type of the previous one do not occur in code people write and read.
+
+\textbf{21.} The checker compares the inferred type with the annotation instead of propagating a free variable, but the annotation itself is $\text{\ttfamily\textquotesingle a} \to T_1$: annotating $f_n$ means writing a type of $2^{2^n}$ leaves, so the cost moves into the program.
+
+\textbf{22.} No polymorphism means one copy of each $f_{k-1}$ per type it is used at, with its parameter's type written out: the program itself would have to grow, doubly exponentially in its annotations, to compute the same thing.
+
+\textbf{23.} It names large types, prints them with sharing or elides their middle, and shows the smallest part that disagrees rather than the whole type.
+
+\textbf{24.} As a tree $T_n$ has $2^{2^n}$ leaves; as a graph $2^n + 1$ nodes. With trees, inference on this family takes time doubly exponential in the program's length; with sharing, exponential.
+\end{solution}

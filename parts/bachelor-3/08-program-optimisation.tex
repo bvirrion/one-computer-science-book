@@ -1,0 +1,401 @@
+\chapter{Program Analysis and Optimisation}\label{ch:b3:program-optimisation}
+
+The compiler of chapter~\ref{ch:b3:code-generation} is correct and slow: every temporary \omterm{def:b3:program-optimisation:liveness}{lives} in memory, every copy is executed, and a constant computed at compile time by a reader is computed at run time by the machine. This chapter makes it faster without making it wrong. Every optimisation rests on a fact about the program that holds on all its executions, such as ``this temporary is never read again'' or ``this temporary always holds 42'', and such facts are computed by one method: a system of equations over the control-flow graph, solved as a \omterm{def:b3:program-optimisation:lfp}{fixed point}. With them the chapter removes useless work from the \omterm{def:b3:code-generation:tac}{three-address code}, then gives the temporaries registers by colouring a graph, and counts on \code{rv} what each step saves.
+
+\section{Dataflow analysis as a fixed point}\label{sec:b3:program-optimisation:dataflow}
+
+Take the question ``which temporaries may still be read later?'' at every point of a function. A temporary is needed before an instruction if the instruction reads it, or if it is needed after the instruction and the instruction does not overwrite it. After a block, it is needed if it is needed at the start of some successor. These are equations, one pair per block, and a loop makes them circular: what is needed at the end of the loop body depends on what is needed at its top, which depends on the body. The equations are solved by starting from ``nothing is needed'' and applying them until nothing changes. Why this ends, and why it ends at the right answer, is a theorem about ordered sets.
+
+\begin{recall}
+A partial order $\sqsubseteq$ on a set is reflexive, antisymmetric and transitive. An upper bound of two elements is above both; their least upper bound, when it exists, is below every other upper bound.
+\end{recall}
+
+\begin{definition}[Dataflow lattice, height]\label{def:b3:program-optimisation:lattice}
+A \emph{dataflow lattice}\index{dataflow lattice} is a set of facts $L$ with a partial order $\sqsubseteq$, read ``is at most as informative a claim as'', in which every two facts $x, y$ have a least upper bound $x \sqcup y$, their \emph{join}, and which has a least element $\bot$. Its \emph{height} is the largest number of strict steps in a chain $x_0 \sqsubset x_1 \sqsubset \dots \sqsubset x_h$.
+\end{definition}
+
+For \omterm{def:b3:program-optimisation:liveness}{liveness}, the facts are sets of temporaries, ordered by inclusion, the join is union and $\bot$ is the empty set; with $m$ temporaries the height is $m$. For constants, the fact about one temporary is ``not yet seen'' ($\bot$), ``always the constant $k$'', or ``not a constant'' ($\top$), a lattice of height 2 however many constants there are (the figure below); for $m$ temporaries, take one such fact per temporary, height $2m$.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, x=10mm, y=11mm,
+  v/.style={font=\small, inner sep=2pt}]
+  \node[v] (top) at (0, 2) {$\top$ (not a constant)};
+  \foreach \k/\j in {-2/1, -1/2, 0/3, 1/4, 2/5}
+    \node[v] (c\j) at ({1.2*\k}, 1) {$\k$};
+  \node[v] at (-3.3, 1) {$\cdots$};
+  \node[v] at (3.3, 1) {$\cdots$};
+  \node[v] (bot) at (0, 0) {$\bot$ (not yet seen)};
+  \foreach \j in {1, ..., 5} {
+    \draw (c\j) -- (top.south);
+    \draw (c\j) -- (bot.north);
+  }
+  \begin{scope}[xshift=75mm]
+    \node[v] (abc) at (0, 3) {$\{n, s, i\}$};
+    \node[v] (ns) at (-1.4, 2) {$\{n, s\}$};
+    \node[v] (ni) at (0, 2) {$\{n, i\}$};
+    \node[v] (si) at (1.4, 2) {$\{s, i\}$};
+    \node[v] (n) at (-1.4, 1) {$\{n\}$};
+    \node[v] (s) at (0, 1) {$\{s\}$};
+    \node[v] (i) at (1.4, 1) {$\{i\}$};
+    \node[v] (e) at (0, 0) {$\emptyset$};
+    \draw (abc) -- (ns) (abc) -- (ni) (abc) -- (si);
+    \draw (ns) -- (n) (ns) -- (s) (ni) -- (n) (ni) -- (i) (si) -- (s) (si) -- (i);
+    \draw (n) -- (e) (s) -- (e) (i) -- (e);
+  \end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Two \omterm{def:b3:program-optimisation:lattice}{dataflow lattices}, smaller elements below. Left: the value of one temporary for \omterm{def:b3:program-optimisation:constprop}{constant propagation}; two different constants join to $\top$, so the height is 2. Right: the sets of three temporaries ordered by inclusion, the lattice of \omterm{def:b3:program-optimisation:liveness}{liveness}; its height is 3.}
+\end{omfigure}
+
+\begin{definition}[Transfer function, monotone framework]\label{def:b3:program-optimisation:framework}
+A \emph{transfer function}\index{transfer function} $f_B : L \to L$ gives the fact at one end of a block $B$ from the fact at the other: at the end from the start for a \emph{forward} analysis, at the start from the end for a \emph{backward} one. It is \emph{monotone} if $x \sqsubseteq y$ implies $f_B(x) \sqsubseteq f_B(y)$. A \emph{monotone framework}\index{monotone framework} is a \omterm{def:b3:program-optimisation:lattice}{dataflow lattice}, a direction, a monotone transfer function per block, and a fact at the boundary (the entry, or the exits). Its equations are $\mathit{in}(B) = \bigsqcup_{P} \mathit{out}(P) \sqcup \mathit{boundary}$, over the blocks $P$ the facts flow from, and $\mathit{out}(B) = f_B(\mathit{in}(B))$.
+\end{definition}
+
+Put all the blocks' facts in one vector $X \in L^n$, ordered componentwise. The equations say $X = F(X)$ for one function $F : L^n \to L^n$, monotone because joins and the $f_B$ are. A solution is a \omterm{def:b3:program-optimisation:lfp}{fixed point} of $F$, and the useful one is the least.
+
+\begin{definition}[Least fixed point]\label{def:b3:program-optimisation:lfp}
+A \emph{fixed point}\index{fixed point} of $F$ is an $X$ with $F(X) = X$. The \emph{least fixed point}\index{least fixed point} is a fixed point below every other.
+\end{definition}
+
+\begin{theorem}[Fixed points by iteration]\label{thm:b3:program-optimisation:kleene}
+Let $F$ be monotone on a lattice of finite height $h$ with least element $\bot$. The sequence $\bot, F(\bot), F(F(\bot)), \dots$ is increasing, becomes constant after at most $h$ strict steps, and its final value is the \omterm{def:b3:program-optimisation:lfp}{least fixed point} of $F$.
+\end{theorem}
+
+\begin{proof}
+$\bot \sqsubseteq F(\bot)$ since $\bot$ is least, and if $F^{k-1}(\bot) \sqsubseteq F^{k}(\bot)$ then monotonicity gives $F^{k}(\bot) \sqsubseteq F^{k+1}(\bot)$: the sequence increases. A strictly increasing chain has at most $h$ steps, so after at most $h$ strict steps two consecutive terms are equal, $F(X) = X$, and the sequence stays there. For leastness, let $Y$ be any \omterm{def:b3:program-optimisation:lfp}{fixed point}. $\bot \sqsubseteq Y$, and if $F^k(\bot) \sqsubseteq Y$ then $F^{k+1}(\bot) \sqsubseteq F(Y) = Y$; so $X \sqsubseteq Y$.
+\end{proof}
+
+Iterating $F$ on the whole vector recomputes every block when one has changed. The \emph{worklist algorithm}\index{worklist algorithm} recomputes only the blocks whose inputs changed: it keeps a queue of blocks, starts with all of them, and when a block's output changes, it queues the blocks its facts flow to (\cref{lst:b3:program-optimisation:solve}). It computes the same \omterm{def:b3:program-optimisation:lfp}{least fixed point}, since each recomputation is one component of $F$ applied to a vector below the \omterm{def:b3:program-optimisation:lfp}{fixed point}, and the values only grow; exercise~\ref{exo:b3:program-optimisation:7} bounds its work. \Cref{lst:b3:program-optimisation:trait} is the interface an analysis implements.
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/dataflow.rs}{13}{21}{A \omterm{def:b3:program-optimisation:framework}{monotone framework} as a Rust trait: the lattice (its least element and join), the direction, the boundary and the \omterm{def:b3:program-optimisation:framework}{transfer function}.}\label{lst:b3:program-optimisation:trait}
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/dataflow.rs}{40}{75}{The \omterm{thm:b3:program-optimisation:kleene}{worklist algorithm}, for both directions. A block is queued again only when a fact it reads has changed.}\label{lst:b3:program-optimisation:solve}
+
+\subsection{Liveness and reaching definitions}
+
+\begin{definition}[Live temporary]\label{def:b3:program-optimisation:liveness}
+A temporary is \emph{live}\index{liveness}\index{live temporary} at a point if some path from that point reads it before writing it. \emph{Liveness} is the backward analysis whose facts are sets of temporaries, joined by union, with the empty set at the exits, and $\mathit{live}_{\mathrm{before}}(i) = \mathit{uses}(i) \cup (\mathit{live}_{\mathrm{after}}(i) \setminus \mathit{def}(i))$ for each instruction $i$.
+\end{definition}
+
+The \omterm{def:b3:program-optimisation:framework}{transfer function} of a block applies this rule to its instructions from the last to the first (\cref{lst:b3:program-optimisation:liveness}). It is monotone, since a larger set after gives a larger set before. \Cref{out:b3:program-optimisation:live} runs it on the function \code{sumsq} of \code{loop.moor}, a sum of squares; the solution took 12 visits for 6 blocks, two passes over a loop.
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/liveness.rs}{34}{59}{\omterm{def:b3:program-optimisation:liveness}{Liveness}: one instruction, then a block, read backwards.}\label{lst:b3:program-optimisation:liveness}
+
+\omoutput{code/bachelor-3/08-program-optimisation/outputs/live_demo.txt}{The temporaries \omterm{def:b3:program-optimisation:liveness}{live} at the start and at the end of each block of \code{sumsq}. \code{n}, \code{s} and \code{i} stay \omterm{def:b3:program-optimisation:liveness}{live} around the loop; inside the body, \code{t3}, \code{sq}, \code{t5} and \code{t6} each \omterm{def:b3:program-optimisation:liveness}{live} for one instruction.}\label{out:b3:program-optimisation:live}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\ttfamily\scriptsize, >=Stealth,
+  b/.style={draw, fill=omDef!6, rounded corners=1pt, align=left, inner sep=3pt},
+  lv/.style={font=\scriptsize, text=omThm},
+  lab/.style={font=\sffamily\scriptsize\bfseries, text=omThm}]
+  \node[b] (b0) at (0, 0) {s = 0\\i = 0};
+  \node[b] (b1) at (0, -1.7) {L1:\\if i < n goto L2};
+  \node[b] (b3) at (3.6, -3.4) {L2:\\t3 = i * i\\sq = t3\\t5 = s + sq\\s = t5\\t6 = i + 1\\i = t6\\goto L1};
+  \node[b] (b2) at (-2.4, -3.1) {goto L3};
+  \node[b] (b4) at (-2.4, -4.6) {L3:\\return s};
+  \foreach \n/\k in {b0/B0, b1/B1, b2/B2, b4/B4}
+    \node[lab, anchor=south east] at (\n.north west) {\k};
+  \node[lab, anchor=north west] at (b3.north east) {B3};
+  \draw[->] (b0) -- (b1);
+  \draw[->] (b1) -- (b2);
+  \draw[->] (b1) -- (b3);
+  \draw[->] (b2) -- (b4);
+  \draw[->] (b3.north) |- (b1.east);
+  \node[lv, anchor=south west] at (b0.north east) {$\{n\}$};
+  \node[lv, anchor=north west] at (b0.south east) {$\{n, s, i\}$};
+  \node[lv, anchor=north east] at (b1.south west) {$\{n, s, i\}$};
+  \node[lv, anchor=north west] at (b2.south east) {$\{s\}$};
+  \node[lv, anchor=north west] at (b4.south east) {$\emptyset$};
+\end{tikzpicture}
+\par\smallskip{\small The control-flow graph of \code{sumsq} with the \omterm{def:b3:program-optimisation:liveness}{live} sets of \cref{out:b3:program-optimisation:live} in red, at the start of the function and after each block. The unreachable final \code{return} is not drawn.}
+\end{omfigure}
+
+\begin{definition}[Reaching definition]\label{def:b3:program-optimisation:reaching}
+A \emph{definition}\index{reaching definition} is an instruction that writes a temporary. It \emph{reaches} a point if some path from it to that point writes the same temporary nowhere else. Reaching definitions are a forward analysis on sets of instructions, joined by union: an instruction that writes $t$ adds itself and removes the other definitions of $t$.
+\end{definition}
+
+\code{reaching.rs} implements it in twenty lines with the same trait. At the top of the loop of \code{sumsq}, the \omterm{def:b3:program-optimisation:reaching}{definitions} that reach are $s = 0$ and $i = 0$ from the entry and the six of the loop body, which come round the back edge (test \code{reaching_definitions_of_the_loop}). Two \omterm{def:b3:program-optimisation:reaching}{definitions} of \code{i} reach the test \code{i < n}: from the entry and from the body. The next section gives each of them its own name.
+
+\section{Static single assignment}\label{sec:b3:program-optimisation:ssa}
+
+Most temporaries of chapter~\ref{ch:b3:code-generation} are written once, by construction. The exceptions are the variables, which every assignment writes again. An analysis about a variable must then ask which assignment it is talking about at each point, which is what \omterm{def:b3:program-optimisation:reaching}{reaching definitions} answer, at the price of a set per point. A form in which every temporary has one \omterm{def:b3:program-optimisation:reaching}{definition} makes the question vanish: the name tells the \omterm{def:b3:program-optimisation:reaching}{definition}.
+
+\begin{definition}[Static single assignment, phi-function]\label{def:b3:program-optimisation:ssa}
+A function is in \emph{static single assignment form}\index{static single assignment} if every temporary has exactly one \omterm{def:b3:program-optimisation:reaching}{definition} in its text. Where \omterm{def:b3:program-optimisation:reaching}{definitions} of one variable from different paths meet, at the start of a block, a \emph{$\phi$-function}\index{phi-function@$\phi$-function} $x_3 = \phi(B_1{:}\,x_1, B_2{:}\,x_2)$ defines a new name whose value is $x_1$ if control came from $B_1$ and $x_2$ if it came from $B_2$.
+\end{definition}
+
+The question is where to put the $\phi$-functions. Everywhere two paths join would do, and would put far too many. The right places are given by dominance.
+
+\begin{definition}[Dominator, dominance frontier]\label{def:b3:program-optimisation:dominator}
+A block $d$ \emph{dominates}\index{dominator} a block $b$ if every path from the entry to $b$ passes through $d$; every block dominates itself, and $d$ \emph{strictly} dominates $b$ if moreover $d \ne b$. The \emph{immediate dominator} of $b \ne$ entry is the strict dominator of $b$ that every other strict dominator of $b$ dominates. The \emph{dominance frontier}\index{dominance frontier} $\mathrm{DF}(x)$ is the set of blocks $y$ such that $x$ dominates a predecessor of $y$ but does not strictly dominate $y$. For a set $S$, $\mathrm{DF}^{+}(S)$ is the limit of $S_1 = \mathrm{DF}(S)$, $S_{k+1} = \mathrm{DF}(S \cup S_k)$, the \emph{iterated} frontier.
+\end{definition}
+
+The \omterm{def:b3:program-optimisation:dominator}{dominators} of $b$ are its own set plus those common to all its predecessors: $\mathrm{Dom}(b) = \{b\} \cup \bigcap_{p} \mathrm{Dom}(p)$, with $\mathrm{Dom}(\mathrm{entry}) = \{\mathrm{entry}\}$. This is again a \omterm{def:b3:program-optimisation:lfp}{fixed point}, a forward analysis whose join is intersection, started from ``all blocks'' (\cref{lst:b3:program-optimisation:dom}). The \omterm{def:b3:program-optimisation:dominator}{dominators} of a block form a chain, each dominating the next, so they are a path in a tree, the \emph{\omterm{def:b3:program-optimisation:dominator}{dominator} tree}, in which each block's parent is its immediate \omterm{def:b3:program-optimisation:dominator}{dominator}. The frontiers are computed by walking up that tree from each predecessor of a join (\cref{lst:b3:program-optimisation:df}).
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/ssa.rs}{21}{56}{\omterm{def:b3:program-optimisation:dominator}{Dominators} by iteration. Unreachable blocks are left out: no path reaches them, so nothing \omterm{def:b3:program-optimisation:dominator}{dominates} them.}\label{lst:b3:program-optimisation:dom}
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/ssa.rs}{71}{102}{\omterm{def:b3:program-optimisation:dominator}{Dominance frontiers}, and the iterated frontier of a set of blocks, where $\phi$-functions go.}\label{lst:b3:program-optimisation:df}
+
+\begin{lemma}[Leaving dominance]\label{lem:b3:program-optimisation:leave}
+Let $x = u_0, u_1, \dots, u_k = y$ be a path. If $x$ does not strictly dominate $y$, some $u_i$ with $i \ge 1$ is in $\mathrm{DF}(x)$.
+\end{lemma}
+
+\begin{proof}
+Let $i \ge 1$ be the least index such that $x$ does not strictly dominate $u_i$; it exists since $u_k = y$ qualifies. Then $x$ \omterm{def:b3:program-optimisation:dominator}{dominates} $u_{i-1}$: either $i - 1 = 0$ and $u_0 = x$, or $x$ strictly \omterm{def:b3:program-optimisation:dominator}{dominates} $u_{i-1}$ by the choice of $i$. So $x$ \omterm{def:b3:program-optimisation:dominator}{dominates} a predecessor of $u_i$ and does not strictly dominate $u_i$: $u_i \in \mathrm{DF}(x)$.
+\end{proof}
+
+\begin{theorem}[Placing phi-functions]\label{thm:b3:program-optimisation:phi}
+Let $S$ be the blocks that define a variable $v$, the entry included if $v$ is a parameter, and place a $\phi$-function for $v$ at the start of every block of $\mathrm{DF}^{+}(S)$. Then (a) at every use of $v$, the last \omterm{def:b3:program-optimisation:reaching}{definition} of $v$ (an original one or a $\phi$) is the same on every path from the entry, and its block \omterm{def:b3:program-optimisation:dominator}{dominates} the use. (b) Every $\phi$ placed this way is at a block where two paths from different \omterm{def:b3:program-optimisation:reaching}{definitions} of $v$ first meet, so no placement with fewer $\phi$-functions has property (a).
+\end{theorem}
+
+\begin{proof}
+We prove (a); (b) is admitted. Let $D = S \cup \mathrm{DF}^{+}(S)$, the blocks where $v$ is defined once the $\phi$-functions are placed. $D$ is closed under frontiers: $\mathrm{DF}(D) \subseteq D$, by the construction of the limit. Take a use of $v$ in block $y$, after any \omterm{def:b3:program-optimisation:reaching}{definition} of $v$ in $y$ (otherwise treat the start of $y$ the same way), and a path $\pi$ from the entry to $y$. Let $x$ be the last block of $D$ on $\pi$, $y$ included; it exists, since $v$ is defined before it is used. If $x \ne y$ and $x$ did not strictly dominate $y$, \cref{lem:b3:program-optimisation:leave} applied to the part of $\pi$ from $x$ to $y$ would give a later block of $\mathrm{DF}(x) \subseteq D$ on $\pi$, contradicting the choice of $x$. So $x$ \omterm{def:b3:program-optimisation:dominator}{dominates} $y$.
+
+Let $x'$ be the last block of $D$ on another path $\pi'$. Both dominate $y$, so one \omterm{def:b3:program-optimisation:dominator}{dominates} the other; suppose $x$ strictly \omterm{def:b3:program-optimisation:dominator}{dominates} $x'$. Since $x'$ does not dominate $x$, some path from the entry to $x$ avoids $x'$. Follow it, then the part of $\pi$ after its last visit to $x$: that part contains no block of $D$ but $x$, so it avoids $x'$ too, and the whole is a path from the entry to $y$ that avoids $x'$, which contradicts $x'$ dominating $y$. So $x = x'$: every path reaches the use through the same last \omterm{def:b3:program-optimisation:reaching}{definition}.
+\end{proof}
+
+Renaming then walks the \omterm{def:b3:program-optimisation:dominator}{dominator} tree from the entry, with a stack of current names per variable: a \omterm{def:b3:program-optimisation:reaching}{definition} pushes a fresh name, a use takes the name on top, and on the way out of a block the stacks are popped back. Before leaving a block, the walk fills in the arguments of the $\phi$-functions of its successors with the names current at its end. \Cref{out:b3:program-optimisation:ssa} shows the result for \code{sumsq}: \code{s} and \code{i} are each assigned twice, so each gets a $\phi$ at the loop's header, B1, which is the frontier of the body B3. The temporaries written once keep their names.
+
+\omoutput{code/bachelor-3/08-program-optimisation/outputs/ssa_demo.txt}{\omterm{def:b3:program-optimisation:dominator}{Dominators}, immediate \omterm{def:b3:program-optimisation:dominator}{dominators} and frontiers of \code{sumsq}, then its SSA form. Names are numbered from 0 per variable.}\label{out:b3:program-optimisation:ssa}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, x=13mm, y=10mm,
+  n/.style={draw, circle, fill=omDef!8, minimum size=7mm, inner sep=0pt, font=\sffamily\small}]
+  \node[n] (b0) at (0, 0) {B0};
+  \node[n] (b1) at (0, -1.2) {B1};
+  \node[n] (b2) at (-1, -2.4) {B2};
+  \node[n] (b3) at (1, -2.4) {B3};
+  \node[n] (b4) at (-1, -3.6) {B4};
+  \draw[->, thick] (b0) -- (b1);
+  \draw[->, thick] (b1) -- (b2);
+  \draw[->, thick] (b1) -- (b3);
+  \draw[->, thick] (b2) -- (b4);
+  \draw[->, densely dashed, omThm] (b3) to[bend right=40] node[right, font=\scriptsize] {DF(B3)} (b1);
+  \draw[->, densely dashed, omThm] (b1) to[loop left, min distance=9mm] node[left, font=\scriptsize] {DF(B1)} (b1);
+  \node[font=\scriptsize, align=left, anchor=west] at (1.8, -1.2) {$\phi$ for \texttt{s} and \texttt{i} at B1:\\$\mathrm{DF}^{+}(\{\mathrm{B0}, \mathrm{B3}\}) = \{\mathrm{B1}\}$};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:program-optimisation:dominator}{dominator} tree of \code{sumsq} (solid), each block below its immediate \omterm{def:b3:program-optimisation:dominator}{dominator}, and the two non-empty frontiers (dashed). \code{s} and \code{i} are defined in B0 and B3; the iterated frontier of these blocks is B1, the loop's header.}
+\end{omfigure}
+
+SSA is how optimising compilers hold a program between their passes: an analysis about a name is an analysis about one \omterm{def:b3:program-optimisation:reaching}{definition}, and many of the analyses of the next section become a single pass. The program in this chapter stays in \omterm{def:b3:code-generation:tac}{three-address code} and uses the dataflow equations; the SSA form is computed and printed, and the exercises use it.
+
+\section{The classic optimisations}\label{sec:b3:program-optimisation:optimisations}
+
+An optimisation is a transformation of the code that keeps its meaning, in the sense of chapter~\ref{ch:b3:code-generation}: on every input on which the original program terminates normally, the transformed one prints the same and exits with the same code. Each one below is justified by a fact computed by a dataflow analysis, and the fact is what the proof needs.
+
+\begin{definition}[Constant propagation]\label{def:b3:program-optimisation:constprop}
+\emph{Constant propagation}\index{constant propagation} is the forward analysis whose fact at each point maps each temporary to $\bot$, a constant $k$, or $\top$, joined pointwise in the lattice of the figure above; the parameters are $\top$ at the entry. Its transformation replaces a use of a temporary by $k$ where the fact says $k$, computes at compile time an operation whose operands are constants (\emph{constant folding}\index{constant folding}), and replaces a branch whose outcome is then known by a jump or by nothing.
+\end{definition}
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/opt.rs}{15}{29}{The lattice of one temporary, and its join, called \code{meet} by tradition.}\label{lst:b3:program-optimisation:lattice}
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/opt.rs}{140}{172}{\omterm{def:b3:program-optimisation:constprop}{Constant propagation}'s transformation: the facts are recomputed instruction by instruction from the start of each block.}\label{lst:b3:program-optimisation:constprop}
+
+\begin{theorem}[Constant propagation is sound]\label{thm:b3:program-optimisation:cpsound}
+If the \omterm{def:b3:program-optimisation:lfp}{least fixed point} maps $t$ to the constant $k$ at a point, then on every execution that reaches that point, $t$ holds $k$ there.
+\end{theorem}
+
+\begin{proof}
+Say a concrete state, a value for each temporary, \emph{agrees with} a fact if each temporary mapped to a constant holds that constant. By induction on the number of instructions executed, the state at each point agrees with the fact the solution gives there. At the entry, the fact maps only parameters, to $\top$, and every state agrees. One instruction: if the state before agrees with the fact before, the state after agrees with the transfer of that fact, because the transfer computes the same operation on the same constants, and gives $\top$ whenever an operand is not known; folding uses Moor's 32-bit arithmetic, the interpreter's. Along an edge, the fact at the target is the join of the facts of its predecessors, so it is above the fact of the edge taken, and a state that agrees with a fact agrees with every fact above it. A temporary mapped to $\bot$ at a reachable point has not been written on any path to it, and the \omterm{def:b3:lexical-analysis:phases}{front end} does not let it be read.
+\end{proof}
+
+Replacing a use by its constant then changes no value, so no output. A branch on two constants always goes the same way, so replacing it by a jump or deleting it changes no path that runs.
+
+\begin{definition}[Copy propagation, value numbering, dead code]\label{def:b3:program-optimisation:others}
+\emph{Copy propagation}\index{copy propagation} replaces a use of $x$ by $y$ where the copy $x = y$ is \emph{available}: on every path to the point, it was executed and neither $x$ nor $y$ was written since. \emph{Value numbering}\index{value numbering} gives each computed value a number, such that two operations with the same operator on operands with the same numbers get the same number; a computation whose value already has a temporary is replaced by a copy of it. An instruction is \emph{dead code}\index{dead code} if it can never run, or if it has no effect but writing a temporary that is not \omterm{def:b3:program-optimisation:liveness}{live} after it; \emph{dead-code elimination} removes it.
+\end{definition}
+
+Available copies are a forward analysis like the others, with one difference: a copy must hold on \emph{every} path, so the join is intersection, and the least element is ``every copy''. \code{opt.rs} numbers values within each block only, which is enough to find \code{a * b} computed twice in one expression. \Cref{lst:b3:program-optimisation:dce} removes \omterm{def:b3:program-optimisation:others}{dead code}, with the \omterm{def:b3:program-optimisation:liveness}{liveness} of the previous section. Each is proved correct the way \omterm{def:b3:program-optimisation:constprop}{constant propagation} was: the fact holds on every execution, and under the fact the transformation changes no value that is ever read.
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/opt.rs}{284}{310}{Dead-code elimination. A store, a call or a jump is never removed for being dead, since its effect is not a temporary.}\label{lst:b3:program-optimisation:dce}
+
+The passes feed each other. Folding \code{a * 7} with \code{a} known to be 6 gives 42; propagating it may decide a branch; the branch removed makes a block unreachable; the block removed makes some temporaries dead; their \omterm{def:b3:program-optimisation:reaching}{definitions} removed make more temporaries dead. \code{optimise} therefore runs the four passes in turn until a round changes nothing, which happens since each pass only removes instructions or replaces operands by constants. Exercise~\ref{exo:b3:program-optimisation:4} predicts the result on a program that folds entirely.
+
+\begin{remark}
+The \omterm{def:b3:program-optimisation:lfp}{fixed point} that \omterm{def:b3:program-optimisation:constprop}{constant propagation} computes is not the best possible fact. In \code{if c > 0 { a = 2; b = 3; } else { a = 3; b = 2; } x = a + b;}, $x$ is 5 on both paths, yet the join at the end of the \code{if} makes \code{a} and \code{b} both $\top$ before the addition, and $x$ is found $\top$. Exercise~\ref{exo:b3:program-optimisation:10} shows that this happens because the \omterm{def:b3:program-optimisation:framework}{transfer functions} of \omterm{def:b3:program-optimisation:constprop}{constant propagation} do not distribute over joins.
+\end{remark}
+
+One more transformation is told and left as exercise~\ref{exo:b3:program-optimisation:12}. In \code{while i < 100 { s = s + a * b + i; i = i + 1; }}, the product \code{a * b} is the same on every iteration, since nothing in the loop writes \code{a} or \code{b}. \emph{Loop-invariant code motion} computes it once, before the loop. The \omterm{def:b3:program-optimisation:dominator}{dominators} give the loops: an edge $b \to h$ such that $h$ \omterm{def:b3:program-optimisation:dominator}{dominates} $b$ is a \emph{back edge}, and the blocks that can reach $b$ without passing through $h$ form, with $h$, the loop it closes.
+
+\section{Register allocation by graph colouring}\label{sec:b3:program-optimisation:regalloc}
+
+\begin{definition}[Register allocation, interference graph]\label{def:b3:program-optimisation:regalloc}
+\emph{Register allocation}\index{register allocation} decides, for each temporary, whether it \omterm{def:b3:program-optimisation:liveness}{lives} in a register, and which, or in memory. Two temporaries \emph{interfere} if one is written at a point where the other is \omterm{def:b3:program-optimisation:liveness}{live} and may hold a different value; the \emph{interference graph}\index{interference graph} has the temporaries as vertices and an edge between each pair that interferes.
+\end{definition}
+
+Two temporaries that do not interfere can share a register: wherever one of them holds a value that will be read, the other holds nothing that will. The \omterm{def:b3:program-optimisation:reaching}{definition}'s exception is for copies: after \code{x = y}, the two hold the same value, and sharing a register is harmless, even useful (it makes the copy disappear). \Cref{lst:b3:program-optimisation:interference} builds the graph from the \omterm{def:b3:program-optimisation:liveness}{live} sets after each instruction. The parameters arrive together, in \code{a0}, \code{a1}, \dots, so they interfere with each other and with whatever is \omterm{def:b3:program-optimisation:liveness}{live} at the entry.
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/regalloc.rs}{31}{59}{The \omterm{def:b3:program-optimisation:regalloc}{interference graph}: each \omterm{def:b3:program-optimisation:reaching}{definition} against the temporaries \omterm{def:b3:program-optimisation:liveness}{live} after it, except the source of a copy.}\label{lst:b3:program-optimisation:interference}
+
+\begin{recall}
+The Year~1 volume coloured graphs: a colouring with $k$ colours gives each vertex one of $k$ colours so that the two ends of every edge differ. It encoded the question ``does a $k$-colouring exist?'' as a satisfiability problem.
+\end{recall}
+
+A $k$-colouring of the \omterm{def:b3:program-optimisation:regalloc}{interference graph} is an allocation with $k$ registers. Deciding whether a graph has one is NP-complete for every fixed $k \ge 3$, as chapter~\ref{ch:b3:np-completeness} proves for $k = 3$; the fewest colours that suffice, the graph's chromatic number, is as hard to compute. A compiler therefore uses a heuristic, built on one simple fact.
+
+\begin{proposition}[Simplify]\label{prop:b3:program-optimisation:simplify}
+If a vertex $v$ of $G$ has fewer than $k$ neighbours, then $G$ is $k$-colourable if and only if $G - v$ is.
+\end{proposition}
+
+\begin{proof}
+A colouring of $G$ restricts to one of $G - v$. Conversely, colour $G - v$; the neighbours of $v$ use at most $k - 1$ colours, so one of the $k$ is free for $v$.
+\end{proof}
+
+\begin{definition}[Spill]\label{def:b3:program-optimisation:spill}
+A \emph{spilled}\index{spill} temporary \omterm{def:b3:program-optimisation:liveness}{lives} in a slot of the frame instead of a register, and is loaded before each use and stored after each \omterm{def:b3:program-optimisation:reaching}{definition}. Its \emph{spill cost} estimates the memory accesses this adds: here, each use or \omterm{def:b3:program-optimisation:reaching}{definition} counts $10^{d}$, with $d$ the depth of the loops around it.
+\end{definition}
+
+The allocator (\cref{lst:b3:program-optimisation:colour}) repeats the proposition: while some vertex has fewer than $k$ neighbours, it removes it and pushes it on a stack (\emph{simplify}). When none has, it removes the vertex with the least \omterm{def:b3:program-optimisation:spill}{spill cost} per neighbour and marks it \omterm{def:b3:program-optimisation:spill}{spilled} (\emph{\omterm{def:b3:program-optimisation:spill}{spill}}). Then it pops the stack and gives each vertex the lowest colour its already coloured neighbours do not use (\emph{select}); by the proposition, one is always free. The registers are \code{s0}--\code{s11}, which a callee must preserve, so a value in one survives calls; each function saves the ones it uses. % ledger: b3:rv-preserved
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/regalloc.rs}{104}{137}{Simplify, \omterm{def:b3:program-optimisation:spill}{spill} and select. A \omterm{def:b3:program-optimisation:spill}{spilled} temporary is not coloured; it keeps a stack slot.}\label{lst:b3:program-optimisation:colour}
+
+\Cref{out:b3:program-optimisation:colour} optimises \code{sumsq}, builds its \omterm{def:b3:program-optimisation:regalloc}{interference graph} and colours it. \code{n}, \code{s}, \code{i} and \code{t3} are all \omterm{def:b3:program-optimisation:liveness}{live} after \code{t3 = i * i}, so they form a clique and need four registers; with three, one of them is \omterm{def:b3:program-optimisation:spill}{spilled}, and the cheapest per neighbour is \code{n}, read once per iteration and with five neighbours.
+
+\omoutput{code/bachelor-3/08-program-optimisation/outputs/color_demo.txt}{\code{sumsq} optimised (the copy \code{sq = t3} is gone), its \omterm{def:b3:program-optimisation:regalloc}{interference graph} with each temporary's \omterm{def:b3:program-optimisation:spill}{spill cost} and neighbours, and colourings with three and four registers.}\label{out:b3:program-optimisation:colour}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\ttfamily\small, x=14mm, y=12mm,
+  r/.style={circle, draw, minimum size=8mm, inner sep=0pt}]
+  \node[r, fill=omDef!25] (n) at (0, 0) {n};
+  \node[r, fill=omMeth!30] (s) at (1.5, 0.9) {s};
+  \node[r, fill=omThm!20] (i) at (1.5, -0.9) {i};
+  \node[r, fill=black!8] (t3) at (3, 0) {t3};
+  \node[r, fill=black!8] (t5) at (-1.5, -0.9) {t5};
+  \node[r, fill=black!8] (t6) at (-1.5, 0.9) {t6};
+  \draw (n) -- (s) (n) -- (i) (n) -- (t3) (n) -- (t5) (n) -- (t6);
+  \draw (s) -- (i) (s) -- (t3) (s) -- (t6);
+  \draw (i) -- (t3) (i) -- (t5);
+  \node[font=\scriptsize\rmfamily, align=left, anchor=west] at (3.6, 0) {colour 0: \texttt{t3}, \texttt{t5}, \texttt{t6}\\colour 1: \texttt{i}\\colour 2: \texttt{n}\\colour 3: \texttt{s}};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:program-optimisation:regalloc}{interference graph} of \code{sumsq}, 6 vertices and 10 edges as in \cref{out:b3:program-optimisation:colour}, coloured with four colours. \code{n}, \code{s}, \code{i} and \code{t3} form a clique, so three colours are not enough. The three short-lived temporaries share colour 0.}
+\end{omfigure}
+
+The selection of chapter~\ref{ch:b3:code-generation} is adapted in one place: an operand in a register is used where it is, and only a \omterm{def:b3:program-optimisation:spill}{spilled} one is loaded into a scratch register (\cref{lst:b3:program-optimisation:get}). A result is computed straight into its register, and stored only if it is \omterm{def:b3:program-optimisation:spill}{spilled}.
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/rvgen.rs}{35}{63}{Operands and results once temporaries have locations. The constant 0 is the register \code{zero}.}\label{lst:b3:program-optimisation:get}
+
+\begin{definition}[Register coalescing]\label{def:b3:program-optimisation:coalescing}
+\emph{Register coalescing}\index{register coalescing} merges the two vertices of a copy \code{x = y} that do not interfere into one, so that they get the same register and the copy becomes \code{mv r, r}, which is deleted.
+\end{definition}
+
+Our allocator does not coalesce, and its output shows the cost: in the loop of \code{sumsq}, \code{s = t5} and \code{i = t6} become \code{mv} instructions executed on every iteration. Merging vertices raises degrees and can turn a colourable graph into one that is not, so coalescing is done only when it cannot cause a \omterm{def:b3:program-optimisation:spill}{spill}, for instance when the merged vertex has fewer than $k$ neighbours of degree $k$ or more.
+
+\section{Measured}\label{sec:b3:program-optimisation:measured}
+
+\code{moorc_opt} compiles at three levels: \code{-O0} is chapter~\ref{ch:b3:code-generation}'s compiler, \code{-O1} runs the optimisations of this chapter and keeps every temporary on the stack, and \code{-O2} adds the allocator. \Cref{out:b3:program-optimisation:measured} runs three samples at each level on \code{rv}, which counts exactly; these are numbers of instructions, not times.
+
+\omoutput{code/bachelor-3/08-program-optimisation/outputs/before_after.txt}{Three samples of chapter~\ref{ch:b3:code-generation} compiled at the three levels: instructions executed, loads and stores. Every level prints the same and exits with the same code.}\label{out:b3:program-optimisation:measured}
+
+Three things stand out. First, \code{-O1} hardly helps these samples: their copies are loop variables, \omterm{def:b3:program-optimisation:liveness}{live} around the loop, which no pass here can remove. On straight-line code it helps a lot: \code{expr.moor} goes from 45 instructions to 13, because everything in it is a constant. Second, the allocator removes most memory accesses everywhere: \code{sum_array} from 263 to 34 loads and stores. Third, on \code{fib}, \code{-O2} executes \emph{more} instructions than \code{-O1}, 448,781 against 426,885, though it makes a quarter fewer memory accesses. Every call now saves and restores the \code{s} registers it uses, three of them and \code{ra}, and half of all calls are leaves that return at once: the leaf call went from 11 instructions to 16. A compiler that tests $n < 2$ before saving anything, as gcc did in chapter~\ref{ch:b3:code-generation}, avoids this cost; the technique, which places the saves only on the paths that need them, is called \emph{shrink-wrapping}.
+
+\begin{inpractice}[Count before you time]
+\code{rv}'s counts are exact and the same on every run, so a change of one instruction per iteration is visible, which no timing on a laptop would show. They are not times: on a real processor, a load costs more or less depending on where the data is, and the Year~2 volume's caches decide that. Counting tells whether an optimisation does what it means to; only timing on the target tells whether it matters.
+\end{inpractice}
+
+\begin{history}[Dataflow and colouring]
+Gary Kildall published a unified approach to global program optimisation in 1973, the analyses of this chapter as one algorithm over a lattice. % ledger: b3:kildall-1973
+John Kam and Jeffrey Ullman characterised monotone dataflow frameworks in 1977. % ledger: b3:kam-ullman-1977
+Gregory Chaitin described \omterm{def:b3:program-optimisation:regalloc}{register allocation} and spilling via graph colouring in 1982. % ledger: b3:chaitin-1982
+Ron Cytron, Jeanne Ferrante, Barry Rosen, Mark Wegman and Kenneth Zadeck published in 1991 how to compute \omterm{def:b3:program-optimisation:ssa}{static single assignment form} efficiently, with \omterm{def:b3:program-optimisation:dominator}{dominance frontiers}. % ledger: b3:cytron-1991
+\end{history}
+
+\section{Exercises}\label{sec:b3:program-optimisation:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:program-optimisation:1}
+In \code{sumsq} (\cref{out:b3:program-optimisation:live}), which temporaries are \omterm{def:b3:program-optimisation:liveness}{live} after \code{s = 0}, after \code{sq = t3} and after \code{t6 = i + 1}? Which is \omterm{def:b3:program-optimisation:liveness}{live} at the entry, and why only that one?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:program-optimisation:2}
+Give the \omterm{def:b3:program-optimisation:dominator}{dominators} and the immediate \omterm{def:b3:program-optimisation:dominator}{dominator} of each block of the function \code{f} of chapter~\ref{ch:b3:code-generation}'s exercise~\ref{exo:b3:code-generation:9}, a \code{while} loop with a \code{return} inside.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:program-optimisation:3}
+Place the $\phi$-functions of \texttt{fn f(n:\ int) -> int \{ var x = 0; var y = 1; if n > 0 \{ x = n; \} else \{ y = n; \} while x < 10 \{ x = x + y; \} return x; \}}, and give their arguments.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:program-optimisation:4}
+Predict the \omterm{def:b3:code-generation:tac}{three-address code} of \code{var a = 6; var b = a * 7; var c = b - 40; if c > 1 { print(b); } else { print(a); } return c * a;} after \code{optimise}, and the number of rounds it takes.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:program-optimisation:5}
+\code{exercises/ex5_wrong_way.rs} is \omterm{def:b3:program-optimisation:liveness}{liveness} with the direction set to forward and nothing else changed. On \code{sumsq} it says that nothing is \omterm{def:b3:program-optimisation:liveness}{live} at the entry and that \code{n}, \code{s} and \code{i} are \omterm{def:b3:program-optimisation:liveness}{live} after the final \code{return}. Explain both answers from the equations, and say what an allocator would do with them.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:program-optimisation:6}
+Write dead-store elimination for globals: a store \code{g = v} is removed if, later in the same block, \code{g} is stored again with no load of \code{g} and no call in between. Why must a call stop the search? Test it on \code{g = 1; h = 2; g = 3; print(g); g = 4; h = g; g = 5; return g + h;}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:program-optimisation:7}
+Prove that the \omterm{thm:b3:program-optimisation:kleene}{worklist algorithm} visits blocks at most $n + h \cdot e$ times, for $n$ blocks, $e$ edges and a lattice of height $h$ per block.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:program-optimisation:8}
+Colour the \omterm{def:b3:program-optimisation:regalloc}{interference graph} of \cref{out:b3:program-optimisation:colour} with three registers, or prove that a \omterm{def:b3:program-optimisation:spill}{spill} is needed.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:program-optimisation:9}
+A nest of $d$ \code{while} loops, each with its own counter \code{i0}, \dots, initialised just before it, increments one accumulator \code{s} in the innermost body. How many $\phi$-functions does the placement of \cref{thm:b3:program-optimisation:phi} put, as a function of $d$? How many are useful?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:program-optimisation:10}
+A framework is \emph{distributive} if $f(x \sqcup y) = f(x) \sqcup f(y)$ for every \omterm{def:b3:program-optimisation:framework}{transfer function}. Show that \omterm{def:b3:program-optimisation:constprop}{constant propagation} is not, with the program of the remark in \cref{sec:b3:program-optimisation:optimisations}, and prove that for a distributive framework the \omterm{def:b3:program-optimisation:lfp}{least fixed point} equals the join, over all paths to a point, of the facts computed along each path.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:program-optimisation:11}
+A graph is \emph{chordal} if every cycle of four or more vertices has a chord. Admit that the \omterm{def:b3:program-optimisation:regalloc}{interference graph} of a program in SSA form, with interference defined at \omterm{def:b3:program-optimisation:reaching}{definitions}, is chordal. Prove that a chordal graph has a vertex whose neighbours form a clique, deduce that simplify never gets stuck when $k$ is at least the largest clique, and conclude that such a program needs exactly as many registers as the most temporaries \omterm{def:b3:program-optimisation:liveness}{live} at one point.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:program-optimisation:12}
+Write loop-invariant code motion: move an operation whose operands no instruction of the loop writes, into a temporary written nowhere else, to just before the loop's header. Why is moving it safe even if the loop body might not run, given Moor's division? Test it on \code{while i < 100 { s = s + a * b + i; i = i + 1; }} and count the instructions saved.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:program-optimisation:problem}
+
+\begin{problem}[{Weekend problem --- A hot loop in the town's billing}]\label{pb:b3:program-optimisation:1}
+The library of the series' invented town fines late returns: 10 cents a day for the first week, 25 cents a day after it, at most 500. \code{billing.moor} reads the days late of each returned loan, then fines and totals them in one loop. The data are the \code{loans} table of the town (\code{data/town/loans.csv}). \Cref{out:b3:program-optimisation:pbgraph} gives the \omterm{def:b3:program-optimisation:regalloc}{interference graph} of the program after \code{-O1} and two colourings; \cref{out:b3:program-optimisation:pbcounts} compiles it at each level, with fewer and fewer registers, and counts.
+
+\omcode{code/bachelor-3/08-program-optimisation/listings/billing.moor}{15}{28}{The hot loop of \code{billing.moor}. The rates and the cap are variables set before it.}\label{lst:b3:program-optimisation:billing}
+
+\omoutput{code/bachelor-3/08-program-optimisation/outputs/pb_graph.txt}{The \omterm{def:b3:program-optimisation:regalloc}{interference graph} of \code{billing.moor} after \code{-O1}, and colourings with seven and six registers. \code{t0} is \code{n}: \omterm{def:b3:program-optimisation:others}{copy propagation} replaced \code{n} by the temporary returned by \code{read}.}\label{out:b3:program-optimisation:pbgraph}
+
+\omoutput{code/bachelor-3/08-program-optimisation/outputs/pb_billing.txt}{The program at \code{-O0}, \code{-O1}, and \code{-O2} with 12 down to 1 registers, run on the 378 returned loans: counts for the whole run, then for the hot loop alone. All print 87 late loans, 24,305 cents in fines, and a largest fine of 500.}\label{out:b3:program-optimisation:pbcounts}
+
+\medskip\noindent\textbf{Part I --- Liveness.}
+\begin{enumerate}
+\item Which of \code{n}, \code{i}, \code{days}, \code{fine}, \code{total}, \code{count}, \code{worst}, \code{day_rate}, \code{week_rate} and \code{cap} are \omterm{def:b3:program-optimisation:liveness}{live} at the top of the loop in the source, before any optimisation?
+\item After \code{-O1}, \code{day_rate}, \code{week_rate} and \code{cap} have disappeared from the graph. Which pass removed them, and what did it put in their place?
+\item Why is \code{fine} \omterm{def:b3:program-optimisation:liveness}{live} across the test \code{fine > cap}, and \code{days} not after the computation of \code{fine}?
+\item Which temporaries are \omterm{def:b3:program-optimisation:liveness}{live} at the point where most are, and how many are they?
+\item Why does \code{t3}, the value returned by \code{read} in the first loop, interfere with only two temporaries?
+\item What does the cost 82 of \code{i} count?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Colouring.}
+\begin{enumerate}[resume]
+\item Find a clique of seven vertices in the graph. What does it prove about the registers needed?
+\item Check that the colouring with seven registers is proper on the edges of \code{fine}.
+\item Why can the ten temporaries \code{t3}, \code{t4}, \code{t11}, \code{t14}, \dots, \code{t21} all share colour 0?
+\item With 12 registers available, how many does the allocator use, and which \code{s} registers must the function save?
+\item Explain why \code{total} and \code{count} cannot share a register, and why \code{t14} and \code{t16} can.
+\item Simulate simplify by hand with $k = 7$ for the first three vertices it removes.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Fewer registers.}
+\begin{enumerate}[resume]
+\item With six registers, which temporary is \omterm{def:b3:program-optimisation:spill}{spilled}, and why that one by the cost per neighbour?
+\item Count, from the program, the extra loads that spilling \code{t0} adds per iteration of each loop, and check against the table.
+\item With five registers, which temporaries would you expect to be \omterm{def:b3:program-optimisation:spill}{spilled} next? Check the table's loads and stores.
+\item Why do the counts with 12 and with 8 registers coincide, while 6 differ? (8 is not in the table; argue from the graph.)
+\item With one register, half the temporaries are \omterm{def:b3:program-optimisation:spill}{spilled}. Why is the count still well below \code{-O1}'s?
+\item Plot or tabulate the instructions against $k$. Where is the largest step?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The counts.}
+\begin{enumerate}[resume]
+\item In the hot loop, what fraction of \code{-O0}'s loads and stores does \code{-O1} remove, and what fraction of its instructions?
+\item In the hot loop, what fraction of \code{-O1}'s loads and stores does the allocator remove with 12 registers, and what fraction of its instructions? Compare with the whole run.
+\item Where do the 385 loads that remain in the whole run with 12 registers come from? And the 385 stores?
+\item How many instructions does one iteration of the hot loop execute at \code{-O1}, and at \code{-O2}, on average?
+\item What would coalescing save on this loop? Count the \code{mv} instructions in it.
+\item Sum up: the percentage of loads and stores, and of all instructions, that graph-colouring allocation removes on the billing loop, and what limits it.
+\end{enumerate}
+\end{problem}

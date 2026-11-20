@@ -1,0 +1,190 @@
+% Solutions of 03-c-functions-and-stack.
+\section*{Chapter \ref{ch:b1:c-functions-and-stack} --- Functions and the Call Stack}
+
+\begin{solution}{exo:b1:c-functions-and-stack:1}
+\code{reset} sets its own copy of \code{a} to 0, and the copy dies at the return: \code{a} stays 5. The \omterm{def:b1:compilation-pipeline:compiler}{compiler}
+noticed that the parameter is written and never read again, which is the sign of a function that does nothing.
+\code{reset_and_return} returns 0, and \code{main} stores it into \code{b}.
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/exo_reset.txt}{The output.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-functions-and-stack:2}
+In \code{f(x)}, the argument is the global \code{x} (10); inside \code{f}, \code{x} is the parameter, which becomes 11;
+the block's \code{x = 100} \omterm{def:b1:c-functions-and-stack:scope}{shadows} it and dies with the block; \code{f} returns 11. In \code{main}, the first
+\code{x} printed is the global, 10. The \code{for} declares its own \code{x}, whose \omterm{def:b1:c-functions-and-stack:scope}{scope} is the loop: it prints 0 and
+1; after the loop, \code{x} is the global again.
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/exo_shadow.txt}{The output.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-functions-and-stack:3}
+\code{total} is initialised once, to 100, and keeps its value between calls; each call returns the value before
+its addition: 100, then 105, then 115 (and \code{total} ends at 95).
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/exo_static.txt}{The output.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-functions-and-stack:4}
+The first time, \code{scale(3, 4)} runs from \code{area}. The second time is the call \code{scale(a, 2)} of
+\code{main}; \code{area} has returned and its frame is gone. From the bottom of the stack: the frame of \code{main}
+(\code{a = 12}, \code{b} not yet assigned), then the frame of \code{scale} (\code{v = 12}, \code{factor = 2},
+\code{r = 24}). The \omterm{def:b1:c-functions-and-stack:return-address}{return address} in the top frame points into \code{main}, to the instruction that stores the
+result into \code{b}.
+\end{solution}
+
+\begin{solution}{exo:b1:c-functions-and-stack:5}
+\code{text} is an automatic array of \code{greeting}: it dies when \code{greeting} returns, so the returned address
+names nothing, and using it is \omterm{def:b1:c-types-and-control:ub}{undefined behaviour}. GCC warned, then returned the null address; the C library's
+\code{printf} prints \code{(null)} for a null string, a courtesy that the standard does not promise. Two correct
+versions: declare \code{static char text[32];}, which lives for the whole run (but each call overwrites the previous
+greeting); or let the caller provide the room, with \code{void greeting(const char *name, char *out, size_t size)}
+writing into \code{out} by \code{snprintf(out, size, ...)}.
+\end{solution}
+
+\begin{solution}{exo:b1:c-functions-and-stack:6}
+\code{steps(7)} calls \code{steps(5)}, \code{steps(3)}, \code{steps(1)}, \code{steps(-1)}, \code{steps(-3)}, \dots: the
+argument jumps over 0 and the base case is never reached. At \code{-O0} every call pushes a frame, and the program
+is stopped by a \omterm{def:b1:c-functions-and-stack:stack-overflow}{stack overflow} after a few hundred thousand calls (status 139). At \code{-O2} the \omterm{def:b1:compilation-pipeline:compiler}{compiler} may turn
+the recursion into a loop, which would then run until \code{n - 2} overflows, an \omterm{def:b1:c-types-and-control:ub}{undefined behaviour}. The fix is to
+stop at every \code{n} $\leq 0$: \code{if (n <= 0) return 0;}. Then \code{steps(n)} $= \lceil n/2 \rceil$ for
+$n \geq 0$, and \code{steps(7)} $= 4$.
+\end{solution}
+
+\begin{solution}{exo:b1:c-functions-and-stack:7}
+The loop keeps the invariant: \code{sum} plus the digit sum of the current \code{n} equals the digit sum of the
+original number. It holds at the start (\code{sum} is 0), each turn moves the last digit from \code{n} to \code{sum},
+and at the end \code{n} is a single digit, its own digit sum. One frame, whatever the number of digits (tested in
+\code{tests/digit_sum_iter_test.c}):
+\omcode{code/bachelor-1/03-c-functions-and-stack/exercises/digit_sum_iter.c}{4}{12}{The digit sum by a loop}
+\end{solution}
+
+\begin{solution}{exo:b1:c-functions-and-stack:8}
+Let $C(n, k)$ be the number of calls. By induction on $n$. If $k = 0$ or $k = n$ the call is a leaf: $C = 1 =
+2\binom{n}{k} - 1$. Otherwise $0 < k < n$, and the call makes two calls whose arguments satisfy the hypothesis:
+$C(n, k) = 1 + C(n-1, k-1) + C(n-1, k) = 1 + 2\binom{n-1}{k-1} - 1 + 2\binom{n-1}{k} - 1 = 2\binom{n}{k} - 1$ by
+Pascal's rule. For \code{binom(30, 15)}: $2 \times 155\,117\,520 - 1 = 310\,235\,039$ calls, to compute a number that
+a table of 31 rows gives in under 500 additions. The test \code{tests/binom_test.c} checks the formula for every
+$n \leq 20$.
+\end{solution}
+
+\begin{solution}{exo:b1:c-functions-and-stack:9}
+Each call prints its name, then calls the other function on $n - 1$, until \code{is_even(0)} returns true; that
+value comes back unchanged through all eight frames, so \code{is_odd(7)} is true.
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/exo_parity.txt}{Eight calls.}
+\code{is_odd(-1)} never meets 0: the argument decreases without end, and the program ends with a \omterm{def:b1:c-functions-and-stack:stack-overflow}{stack overflow} (or,
+if the \omterm{def:b1:compilation-pipeline:compiler}{compiler} turned the calls into jumps, runs until $n - 1$ overflows, an \omterm{def:b1:c-types-and-control:ub}{undefined behaviour}).
+\end{solution}
+
+\begin{solution}{exo:b1:c-functions-and-stack:10}
+Calls: $C(0) = C(1) = 1$, which equals $2F(1) - 1$ and $2F(2) - 1$. For $n \geq 2$, $C(n) = 1 + C(n-1) + C(n-2) =
+1 + 2F(n) - 1 + 2F(n-1) - 1 = 2F(n+1) - 1$, by strong induction. Depth: the frames on the stack at one time are a
+path from the root of the \omterm{def:b1:c-functions-and-stack:call-tree}{tree of activations}; along it the argument drops by at least 1 at each level, starts at
+$n$, and a call with argument below 2 makes no call. A path therefore has at most $n$ nodes ($n, n-1, \dots, 1$),
+and the path that always takes the left child has exactly $n$. For $n = 30$: $2\,692\,537$ calls, never more than
+30 frames. The test \code{tests/test_fib_calls.py} checks both for $n \leq 21$.
+\end{solution}
+
+\begin{solution}{exo:b1:c-functions-and-stack:11}
+\omcode{code/bachelor-1/03-c-functions-and-stack/exercises/hanoi.c}{5}{18}{Hanoi, counting moves and depth}
+Moves: $M(0) = 0$ and $M(n) = 2M(n-1) + 1$, so $M(n) + 1 = 2(M(n-1) + 1)$ and $M(n) = 2^n - 1$. Depth: a call with
+$n$ discs at depth $t$ makes calls with $n - 1$ discs at depth $t + 1$, down to the calls with 0 discs, at depth
+$n + 1$; all calls at a given depth have the same number of discs, so no call goes deeper. The test
+\code{tests/hanoi_test.c} checks the move list for $n = 2$ and both formulas for $n \leq 20$.
+\end{solution}
+
+\begin{solution}{exo:b1:c-functions-and-stack:12}
+The frames of depths $0, \dots, d$ fit exactly when $c + (d + 1)s \leq S$, so $d = \lfloor (S - c)/s \rfloor - 1$.
+The four measurements constrain $c$: for $S = 512$~KiB, depth 500 is reached and 501 is not, so
+$501 \leq (524\,288 - c)/1040 < 502$, that is $2208 < c \leq 3248$. The other limits give $2144 < c \leq 3184$
+(256~KiB, depth 248), $2336 < c \leq 3376$ (1024~KiB, depth 1004) and $1552 < c \leq 2592$ (2048~KiB, depth 2013);
+together, $2336 < c \leq 2592$, about 2.5~KiB. Under 4096~KiB: $(4\,194\,304 - c)/1040$ lies between $4030.5$ and
+$4030.7$, so $d = 4029$. A run with another environment shifts $c$ by its size, and the depth by a level or so.
+\end{solution}
+
+\begin{solution}{pb:b1:c-functions-and-stack:1}
+\textbf{1.} 64 bytes. The addresses change from run to run (the system places the stack at a random place unless told
+otherwise), and they depend on the machine; the differences depend only on the frames.
+
+\textbf{2.} The \omterm{def:b1:c-functions-and-stack:return-address}{return address} (8 bytes) and the saved frame pointer (8), then 48 bytes: the parameter (4) and
+\code{local} (4), \code{here} (8), an 8-byte guard value, and 24 bytes of padding. At the entry, $rsp + 8$ is a
+multiple of 16; after the push of the frame pointer, $rsp$ is a multiple of 16, and subtracting 48 keeps it so.
+Then the call inside pushes 8 bytes, and the rule holds for the next frame. $8 + 8 + 48 = 64$.
+
+\textbf{3.} Besides the array, the frame holds the \omterm{def:b1:c-functions-and-stack:return-address}{return address}, the saved frame pointer, the parameter
+\code{depth} and the guard value: $1000 + 8 + 8 = 1016$ bytes below the frame pointer, rounded up to 1024 to keep
+the alignment, plus 16: 1040. Every frame is a multiple of 16 bytes, since the alignment rule holds at each entry.
+
+\textbf{4.} \code{main}'s frame has another size; the distance from a local of \code{main} to the array of
+\code{dive(0)} mixes the two. Between two calls of \code{dive}, the distance is exactly one frame of \code{dive}.
+
+\textbf{5.} At \code{-O2}, parameters and locals stay in registers, the frame pointer is not saved, and the guard is
+only kept where it is needed. The \omterm{def:b1:c-functions-and-stack:return-address}{return address} cannot disappear: a call that is not a jump must push it.
+
+\textbf{6.} When standard output is a file or a pipe, \code{printf} fills a buffer and writes it when it is full or
+at a normal exit. The crash is not a normal exit: without \code{fflush}, the last lines would be lost. In a file,
+\code{tail -n 1} shows only the last depth, out of hundreds of lines.
+
+\textbf{7.} \code{count_down(n, t)} makes one call with $n - 1$ at depth $t + 1$ unless $n = 0$. By induction the
+calls are \code{count_down(n, 1)}, \dots, \code{count_down(0, n+1)}: $n + 1$ calls, depth $n + 1$. Table: 21 and 21 for
+$n = 20$.
+
+\textbf{8.} Let $K(n)$ be the calls: $K(0) = 1$ and $K(n) = 1 + 2K(n-1)$, so $K(n) + 1 = 2(K(n-1) + 1)$ and
+$K(n) = 2^{n+1} - 1$. Depth: $D(0) = 1$, $D(n) = 1 + D(n-1)$, so $D(n) = n + 1$. Table: $2^{21} - 1 = 2\,097\,151$ and 21.
+
+\textbf{9.} $2 \times 8 - 1 = 15$.
+
+\textbf{10.} The calls with argument 1 are leaves at depth $n$ (root at depth 1), and the call with argument 0 at the
+same level as 1 is never deeper; the deepest path is $n, n-1, \dots, 1$: $n$ nodes.
+
+\textbf{11.} $21\,891 / 1973 \approx 11.10$, and $\varphi^5 \approx 11.09$: $F(n)$ grows like $\varphi^n$, and so do the
+calls.
+
+\textbf{12.} \code{count_down}: $21/21 = 1$. \code{fib}: $21\,891/20 \approx 1095$. \code{hanoi}: $2\,097\,151/21 \approx
+99\,864$. Memory follows the depth, time follows the calls.
+
+\textbf{13.} The leaves are the calls with $n = 0$, all at depth $n + 1$: $2^n$ of them, for $2^{n+1} - 1$ nodes.
+
+\textbf{14.} $10\,000\,001$ calls, and all of them on the stack at once at \code{-O0}, plus \code{main}. Each frame
+holds at least a \omterm{def:b1:c-functions-and-stack:return-address}{return address} and a saved frame pointer (16 bytes; 32 at \code{-O0} here), that is over 160~MB,
+far beyond the 8~MiB stack: a \omterm{def:b1:c-functions-and-stack:stack-overflow}{stack overflow}, and the system stops the program.
+
+\textbf{15.} A jump does not push a \omterm{def:b1:c-functions-and-stack:return-address}{return address} and \code{is_odd}, at \code{-O2}, has no frame: the \omterm{def:b1:c-functions-and-stack:return-address}{return address}
+on top of the stack stays \code{main}'s, and when \code{is_even} finally executes \code{ret}, control goes straight
+back to \code{main}. The stack does not grow with $n$.
+
+\textbf{16.} \code{main} still has work after the call: it passes the result to \code{printf}. It needs its \omterm{def:b1:c-functions-and-stack:return-address}{return
+address}.
+
+\textbf{17.} Neither: \code{fib} adds the two results after the calls return, and \code{count_down} adds 1 after its
+call returns.
+
+\textbf{18.} Pass the count so far as a second parameter, the accumulator:
+\code{long count_acc(int n, long acc)} returns \code{acc} when \code{n == 0}, and otherwise returns
+\code{count_acc(n - 1, acc + 1)}; the first call is \code{count_acc(n, 0)}.
+
+\textbf{19.} $\lfloor 524\,288 / 1040 \rfloor = 504$; $504 - 500 = 4$.
+
+\textbf{20.} $\lfloor 262\,144/1040 \rfloor = 252$, $252 - 248 = 4$; $\lfloor 1\,048\,576/1040 \rfloor = 1008$,
+$1008 - 1004 = 4$; $\lfloor 2\,097\,152/1040 \rfloor = 2016$, $2016 - 2013 = 3$. Not always the same: the cost is a
+fixed number of bytes $c$, and $d = \lfloor (S - c)/s \rfloor - 1$ (\cref{exo:b1:c-functions-and-stack:12}). How many
+levels $c$ removes depends on the fractional part of $S/s$, which is $0.06$, $0.12$, $0.25$ and $0.49$ for the four
+limits: with the largest, $c$ costs one level fewer.
+
+\textbf{21.} The stack holds more than the frames of \code{dive}: the program's arguments and environment strings
+(almost none here, the environment being empty), the information the system passes at start-up, the frames of the
+start-up code and of \code{main}, and, at the deepest level, the frames of \code{printf}. The four measurements give
+$2336 < c \leq 2592$ bytes (\cref{exo:b1:c-functions-and-stack:12}): about 2.5~KiB.
+
+\textbf{22.} $(8\,388\,608 - c)/1040$ with $2336 < c \leq 2592$ lies between $8063.4$ and $8063.8$: $d = 8062$.
+
+\textbf{23.} About $8\,388\,608/64 \approx 131\,000$ levels, a little less for the start-up cost.
+
+\textbf{24.} Each pair costs $3 \times 48 = 144$ bytes: $8\,388\,608 / 144 \approx 58\,000$ nested parentheses.
+A text of 60\,000 opening parentheses would crash the evaluator: a program that reads untrusted text must limit
+the nesting depth it accepts (and report an error beyond it), or use an explicit stack in a loop.
+
+\textbf{25.} \emph{The depth bound.} A recursion with frames of $s$ bytes, under a stack limit of $S$ bytes, reaches
+at most $d_{\max} = \lfloor S/s \rfloor$ levels; precisely $d = \lfloor (S - c)/s \rfloor - 1$, where $c$ is
+the stack used before the first call. Here, with $s = 1040$ bytes, the last depths reached for limits of 256 to
+2048~KiB were 248, 500, 1004 and 2013, 3 or 4 below $\lfloor S/s \rfloor$, all explained by one start-up cost $c$
+between 2337 and 2592 bytes. Calls cost time and depth costs stack: binary recursion
+makes exponentially many calls with linear depth, and a tail call compiled as a jump costs no depth at all.
+\end{solution}

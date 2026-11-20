@@ -1,0 +1,180 @@
+% Solutions of Book 4, chapter 7 (rust-enums-and-errors).
+\section*{Chapter \ref{ch:b2:rust-enums-and-errors} --- Enums, Pattern Matching and Error Handling}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:1}
+\omoutput{code/bachelor-2/07-rust-enums-and-errors/outputs/exo_match.txt}{The five lines.}
+$-3$ fails \code{0}, then passes the guard. 12 fails every literal and range and falls to \code{_}. In the second
+\code{match}, \code{(false, large)} binds the second component, so one arm covers both odd cases. Moving
+\code{0 => "zero"} after \code{1..=9} changes nothing: no earlier arm matches 0 (the guard \code{x < 0} is false for it). Moved
+after \code{_}, it can never be reached: the compiler warns \emph{unreachable \omterm{def:b2:rust-enums-and-errors:matching}{pattern}} and 0 prints \code{other}.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:2}
+\omoutput[2-6,13-15]{code/bachelor-2/07-rust-enums-and-errors/outputs/exo_new_variant.txt}{The error.}
+Add the arm \code{LoanState::Lost => 2000}. With a last arm \code{_ => 0} in place of \code{Returned}, the program
+would have compiled, and a lost book would have cost nothing: the wildcard silently took the variant written after
+it. Exhaustiveness checks only the variants that are not already covered by a wildcard.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:3}
+\omcode{code/bachelor-2/07-rust-enums-and-errors/exercises/checked.rs}{2}{16}{Impossible cases as \code{None}}
+\code{a / b} \omterm{def:b2:rust-enums-and-errors:panic}{panics} when \code{b == 0} (\emph{attempt to divide by zero}) and when \code{a == i32::MIN} and \code{b ==
+-1}: the quotient $2^{31}$ does not fit, and Rust \omterm{def:b2:rust-enums-and-errors:panic}{panics} on this overflow in every build mode. The standard library
+already has \code{i32::checked_div}, with the same contract.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:4}
+\code{(bool, bool, u8)}: $2 \cdot 2 \cdot 256 = 1024$. \code{Option<Option<bool>>}: $(2 + 1) + 1 = 4$.
+\code{Result<bool, Option<u8>>}: $2 + (256 + 1) = 259$. The traffic light: $1 + 1 + 1 + 2 = 5$. \code{[bool; 2]}:
+$2^2 = 4$. \code{Option<Option<bool>>} and \code{[bool; 2]} both have 4 values, so a bijection exists, for example
+\code{None}, \code{Some(None)}, \code{Some(Some(false))}, \code{Some(Some(true))} to \code{[false, false]}, \dots{}
+Equal counts say only that some renaming exists; which one is meant is the programmer's choice.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:5}
+\omoutput{code/bachelor-2/07-rust-enums-and-errors/outputs/exo_question.txt}{The three calls.}
+First call: both \code{?} pass (\code{trim} removes the space), both lines printed, \code{Ok(198)}. Second: the
+first \code{?} in \code{total} returns the \code{Err} built by \code{map_err}, before any print. Third: the first
+value prints, then \code{parse_pages("0")} returns its own \code{Err} by \code{return}, and the second \code{?}
+returns it from \code{total}.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:6}
+\code{"Bridge Way".split_once(',')} is \code{None}: there is no comma. \code{unwrap} on \code{None} \omterm{def:b2:rust-enums-and-errors:panic}{panics}, at line
+11, column 53, the column of \code{unwrap}. The loop becomes \code{for (i, line) in lines.iter().enumerate()}. A
+\code{let}-\code{else}, \code{let Some((street, number)) = line.split_once(',') else {...}}, whose \code{else}
+block reports \emph{line 3: no comma} and continues the loop, replaces the first \code{unwrap}; and \code{match number.parse::<u32>()} adds \code{n} on \code{Ok(n)} and reports the parse error on
+\code{Err(e)}. The sum is then 23, over the three good lines, and the bad one is named.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:7}
+\omcodes{code/bachelor-2/07-rust-enums-and-errors/exercises/json.rs}{3-10,26-35}{The type and the start of the
+printer}
+The arrays and objects recurse through \code{write}, which appends to one \code{String} instead of building and
+concatenating a string per node. \code{quote} escapes the three characters. The test in \code{tests/enums} prints a
+book record with \code{The "Silent" Code} as its title and compares the whole line.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:8}
+\code{mirror(Leaf) = Leaf}; \code{mirror(Node(l, k, r)) = Node(mirror(r), k, mirror(l))}. By structural induction. Leaf: $\mathrm{mirror}(\mathrm{mirror}(\mathrm{Leaf})) = \mathrm{Leaf}$. Node, with $m$
+for \code{mirror} and $N$ for \code{Node}:
+\[ m(m(N(l, k, r))) = m(N(m(r), k, m(l))) = N(m(m(l)), k, m(m(r))) = N(l, k, r), \]
+by the hypothesis on $l$ and $r$. For the walk, write $w$ for the in-order walk and $\overline{u}$ for a reversed
+sequence: $w(\mathrm{Leaf})$ is empty, and
+\[ w(m(N(l, k, r))) = w(m(r))\,k\,w(m(l)) = \overline{w(r)}\,k\,\overline{w(l)} = \overline{w(l)\,k\,w(r)}, \]
+by the hypothesis and the rule $\overline{uv} = \overline{v}\,\overline{u}$. The crate
+tests the first property on 200 random trees.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:9}
+\omcode{code/bachelor-2/07-rust-enums-and-errors/exercises/list.rs}{28}{36}{Reversal by moving}
+\code{rev} takes the list by value: it owns every node, so \code{while let Cons(x, rest) = cur} moves \code{x} out
+and \code{cur = *rest} moves the rest out of its \omterm{def:b2:rust-enums-and-errors:recursive}{box}; each value goes into a new node with no copy. \code{len} and
+\code{rev} are loops, so a long list does not grow the stack. \code{map} recurses, one frame per node, which is
+fine for the tests' lists; note that dropping a very long list recurses too, as the \code{Stack} of
+\cref{ch:b2:rust-ownership} showed.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:10}
+\omcode{code/bachelor-2/07-rust-enums-and-errors/exercises/diff.rs}{29}{41}{The derivative}
+The central difference has error about $h^2 |f'''|/6$ from the formula and about $\varepsilon |f| / h$ from
+rounding, with $\varepsilon \approx 10^{-16}$; for $h = 10^{-5}$ and functions of moderate size both are below
+$10^{-9}$, so a relative tolerance of $10^{-4}$ leaves a wide margin while still catching a wrong sign or a missing
+factor (those give errors of order 1). The test checks 500 random functions at five points. \code{simplify} never
+grows a tree: each arm returns either a node built from the simplified children, by induction no larger, or a
+child, or a single number, all no larger than the original.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:11}
+(a) \code{eval} recurses only on the fields of the matched variant, and its other operations, additions and
+multiplications, terminate: by \cref{prop:b2:rust-enums-and-errors:structural} it terminates. It is called exactly
+once on each node, by induction: $C(\text{leaf}) = 1$ and $C(\mathrm{Add}(a, b)) = 1 + C(a) + C(b)$, the number of
+nodes. (b) \code{Mul(a, b)}, with $\llbracket S(a) \rrbracket = \llbracket a \rrbracket$ and $\llbracket S(b)
+\rrbracket = \llbracket b \rrbracket$. Arm 1, both numbers: $m n$, the product. Arm 2, a zero: $0$, and $0 \cdot v =
+v \cdot 0 = 0$ in the ring. Arm 3, a one: the other side, and $1 \cdot v = v \cdot 1 = v$. Arm 4: \code{Mul(S(a),
+S(b))}, of value $\llbracket S(a) \rrbracket \llbracket S(b) \rrbracket$. Every arm gives $\llbracket a \rrbracket
+\llbracket b \rrbracket$. (c) The zero arm: with \code{f64}, \code{Mul(Num(0), Mul(X, X))} at $x = 10^{200}$ is $0
+\cdot \infty$, which is NaN, but simplifies to 0.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-enums-and-errors:12}
+\omcode{code/bachelor-2/07-rust-enums-and-errors/exercises/config.rs}{31}{54}{The parser}
+The closure \code{err} builds an error at the current line, so each check is one line. \code{ok_or} turns the
+\code{Option} of \code{split_once} into a \code{Result} for \code{?}. \code{insert} returns the previous value, so a
+duplicate key is detected without a second lookup. The tests check each kind and the \code{Display} message.
+\end{solution}
+
+\begin{solution}{pb:b2:rust-enums-and-errors:1}
+\textbf{1.} A misspelt station cannot be stored, and every \code{match} on a station is checked for both. The
+derived order is the order of declaration, Hilltop before Riverside, so stations can be sorted and used in a
+\code{BTreeMap} key.
+
+\textbf{2.} A \code{Reading} is built only when all five fields parsed; a line without a temperature becomes a
+\code{LineError} instead. The type says: every reading has a temperature.
+
+\textbf{3.} \code{FieldCount}: not five fields. \code{UnknownStation}: a name other than the two. \code{Missing}:
+an empty field. \code{BadNumber}: text that is not a number. \code{ErrorCode}: the value $-99.0$.
+
+\textbf{4.} 2 and 3 values. One byte each: the tag of \code{Station} uses 2 of the 256 \omterm{def:b2:rust-enums-and-errors:matching}{patterns} of its byte, and
+\code{None} takes a third, as for \code{Option<bool>}.
+
+\textbf{5.} It is the same rule for every field: written once in \code{number}, it cannot be forgotten by one of the
+three callers.
+
+\textbf{6.} An \code{int} status and the reading through a pointer, with codes such as $-1$ to $-5$ by convention;
+the caller can ignore the status and read an unfilled struct, and nothing ties the code to the data it describes
+(a field name, the bad text).
+
+\textbf{7.} None after it: the \code{?} on \code{temp_c} returns, so rain and wind are not read. The date and the
+station were read before.
+
+\textbf{8.} \code{impl From<std::io::Error> for LogError}: \code{?} calls \code{From::from} on the error.
+
+\textbf{9.} A bad line must not end the reading: \code{?} would return at the first rejected line and lose the
+whole log. The \code{match} records the error and continues.
+
+\textbf{10.} \code{seen.insert} returns \code{false} when the pair was already there, so the guard holds exactly for
+a repeated reading, which goes to \code{duplicates}; the call also records a new pair. If the plain \code{Ok(r)} arm
+came first, it would take every reading and no duplicate would be found.
+
+\textbf{11.} \emph{cannot read wether.csv}. The \code{io::Error} is made inside \code{read_to_string}, converted and
+returned by the \code{?} of \code{read_log}, and matched in \code{main}: through \code{read_log}, from the standard
+library to \code{main}.
+
+\textbf{12.} A variant \code{BadDate(String)}, built in \code{parse_line}. No \code{match} on \code{LineError} exists
+in the program (it is printed with \code{Debug}, derived), so none must change; a hand-written \code{Display}, as in
+\cref{exo:b2:rust-enums-and-errors:12}, would have to, and the compiler would say so.
+
+\textbf{13.} Tuples compare lexicographically: the station first, then the month, and \code{Hilltop} is smaller.
+
+\textbf{14.} \omcode{code/bachelor-2/07-rust-enums-and-errors/exercises/monthly.rs}{20}{32}{One lookup per reading}
+
+\textbf{15.} 24 keys, 2 stations times 12 months, and 722 readings, those kept by \code{read_log}.
+
+\textbf{16.} 30: June has 30 days, and the 31st line is the duplicate of 14 June, set aside before the aggregation.
+
+\textbf{17.} Hilltop: January, August and December. Riverside: January, April, November (two) and December. Eight
+readings in all, those of the eight rejected lines.
+
+\textbf{18.} Sum and count are what combine: two aggregates merge by adding them, and the mean is derived at the
+end. A running mean must be rescaled at each reading, with a rounding each time, and cannot be merged without the
+counts anyway.
+
+\textbf{19.} $722 + 8 + 1 = 731$.
+
+\textbf{20.} \code{every_planted_defect}: it expects 722 readings and six \code{Missing}; with zeros there would be
+728 readings and no \code{Missing}.
+
+\textbf{21.} $-99.0$ becomes $-990$ tenths, a valid answer accepted silently. A missing field gives $-1$, which the
+caller cannot tell from $-0.1$\,\textdegree C.
+
+\textbf{22.} Rejected from the readings but reported: the two lines are identical, so merging would change nothing in
+the data, but counting it twice would bias June's mean towards 14 June, and a repeated line is a symptom of the
+logger worth reporting.
+
+\textbf{23.} \code{3,9} splits into two fields: the line has six, and is rejected as \code{FieldCount(6)}. Not
+accepted silently, though the error names the symptom rather than the cause.
+
+\textbf{24.} Every planted defect found --- six missing temperatures, two error codes, one duplicate --- and none
+accepted silently: the 731 lines are 722 readings, 8 rejected lines with their reasons, and 1 duplicate.
+\end{solution}

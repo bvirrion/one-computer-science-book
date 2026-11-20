@@ -1,0 +1,470 @@
+% Book 4, Year 2, chapter 9 -- Functional programming.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 9.
+\chapter{Functional Programming}\label{ch:b2:functional-programming}
+
+The sum of the squares of the odd readings, written twice: as a loop that changes a variable, and as one expression
+that says what is computed.
+
+\omcode{code/bachelor-2/09-functional-programming/listings/odd_squares.rs}{3}{14}{A loop and a
+pipeline}\label{lst:b2:functional-programming:odd}
+
+\omoutput{code/bachelor-2/09-functional-programming/outputs/odd_squares.txt}{$7^2 + 3^2 + 9^2 + 15^2 = 364$, twice.}
+
+The second form reads like a spreadsheet formula, \emph{sum the squares of the odd cells}: no counter, no variable
+that changes, no order of steps to follow. Functional programming builds programs from such expressions, functions
+passed to functions, and data that is never modified. This chapter shows the ideas in Rust, which \omterm{def:b2:rust-ownership:borrow}{borrows} them
+freely, and what each costs.
+
+\begin{recall}
+Book 2: a recursive function calls itself on a smaller input, and each pending call occupies a frame of the stack.
+Book 3: lists and trees are inductive sets, and a property of all of them is proved by structural induction.
+\Cref{ch:b2:rust-ownership,ch:b2:rust-enums-and-errors,ch:b2:rust-traits-and-generics}: \omterm{def:b2:rust-ownership:ownership}{ownership} and borrowing,
+recursive enums with \code{Box}, \omterm{def:b2:rust-traits-and-generics:trait}{traits} and \omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects}.
+\end{recall}
+
+\section{Functions as values}\label{sec:b2:functional-programming:closures}
+
+\begin{definition}[First-class function, higher-order function]\label{def:b2:functional-programming:higher-order}
+Functions are \emph{first-class}\index{first-class function} in a language if they are values: stored in variables
+and data structures, passed as arguments, returned as results. A \emph{higher-order function}\index{higher-order
+function} takes a function as argument or returns one.
+\end{definition}
+
+\begin{definition}[Closure, captured environment]\label{def:b2:functional-programming:closure}
+A \emph{closure}\index{closure} is a function value written inline, \code{|x| x * rate}, that may use variables of
+the scope where it is written. Those variables form its \emph{captured environment}\index{captured environment}: the
+closure stores a reference to each, a mutable reference, or the value itself (\code{move}). By what its body does with
+them, a Rust closure implements \code{Fn} (it only reads them, and may be called any number of times), \code{FnMut}
+(it modifies them: called through a mutable \omterm{def:b2:rust-ownership:borrow}{borrow}), or only \code{FnOnce} (it gives a captured value away: callable
+once).
+\end{definition}
+
+\omcode{code/bachelor-2/09-functional-programming/listings/closures.rs}{2}{30}{Three kinds of capture, and \omterm{def:b2:functional-programming:closure}{closures}
+returned}\label{lst:b2:functional-programming:closures}
+
+\omoutput{code/bachelor-2/09-functional-programming/outputs/closures.txt}{The fines of 30 days with 21 and 14 days of
+grace.}\label{out:b2:functional-programming:closures}
+
+\code{make_fine} returns a \omterm{def:b2:functional-programming:closure}{closure}: its parameters die with the call, so the \omterm{def:b2:functional-programming:closure}{closure} must own copies, hence
+\code{move}. Each \omterm{def:b2:functional-programming:closure}{closure} has its own anonymous type, which is why \code{make_fine} declares its result as
+\code{impl Fn(u32) -> u32}, and why \omterm{def:b2:functional-programming:closure}{closures} of different bodies can share a vector only as \code{Box<dyn Fn>},
+\omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects} (\cref{ch:b2:rust-traits-and-generics}). A \omterm{def:b2:functional-programming:closure}{closure} that gives its capture away cannot run twice:
+
+\omoutput[2-7,9-13]{code/bachelor-2/09-functional-programming/outputs/fn_once_error.txt}{\code{fn_once_error.rs} calls
+\code{give} twice.}\label{out:b2:functional-programming:once}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, c/.style={draw, minimum width=19mm, minimum height=5mm}]
+\node[font=\scriptsize\bfseries] at (1,1.0) {\texttt{fine}: borrows};
+\node[c, fill=omDef!10] (f1) at (1,0.2) {\texttt{\&rate}};
+\node[text=black!60] at (1,-0.45) {8 bytes, \texttt{Fn}};
+\node[c, fill=omThm!10] (r) at (1,-1.6) {\texttt{rate = 10}};
+\node[text=black!60, anchor=north] at (1,-1.9) {in \texttt{main}'s frame};
+\draw[ptr] (f1.west) to[out=200, in=160] (r.west);
+\begin{scope}[xshift=5cm]
+\node[font=\scriptsize\bfseries] at (1,1.0) {\texttt{count}: borrows mutably};
+\node[c, fill=omDef!10] (f2) at (1,0.2) {\texttt{\&mut calls}};
+\node[text=black!60] at (1,-0.45) {8 bytes, \texttt{FnMut}};
+\node[c, fill=omThm!10] (c) at (1,-1.6) {\texttt{calls = 0}, then 2};
+\draw[ptr] (f2.west) to[out=200, in=160] (c.west);
+\end{scope}
+\begin{scope}[xshift=10cm]
+\node[font=\scriptsize\bfseries] at (1,1.0) {\texttt{make\_fine(10, 21)}: owns};
+\node[c, fill=omDef!10, minimum width=30mm] (f3) at (1,0.2) {\texttt{cents\_per\_day = 10}};
+\node[c, fill=omDef!10, minimum width=30mm, below=0pt of f3] {\texttt{grace = 21}};
+\node[text=black!60] at (1,-0.75) {8 bytes, \texttt{Fn}, outlives the call};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b2:functional-programming:closure}{closure} is a struct of its captures plus a function that receives that struct. The first two
+hold references into \code{main}'s frame and may not outlive it; the third holds its own copies.}
+\end{omfigure}
+
+\section{Map, filter, fold and lazy iterators}\label{sec:b2:functional-programming:fold}
+
+\begin{definition}[Map operation, filter, fold]\label{def:b2:functional-programming:fold}
+On a sequence $[x_1, \dots, x_n]$, the \emph{map operation}\index{map operation} with a function $f$ gives $[f(x_1),
+\dots, f(x_n)]$; the \emph{filter}\index{filter} with a predicate $p$ keeps the $x_i$ with $p(x_i)$ true, in order; the
+\emph{fold}\index{fold} from $z$ with a two-argument function $g$ gives $g(\dots g(g(z, x_1), x_2) \dots, x_n)$ (a left
+fold; the right fold is $g(x_1, g(x_2, \dots g(x_n, z)))$). Sums, counts, maxima, and the building of collections are
+folds.
+\end{definition}
+
+\begin{definition}[Lazy iterator, iterator adaptor]\label{def:b2:functional-programming:lazy}
+A Rust iterator is \emph{lazy}\index{lazy iterator}: it computes the next element only when \code{next} is called.
+An \emph{iterator adaptor}\index{iterator adaptor} (\code{map}, \code{filter}, \code{take}, \dots) wraps an iterator
+into a new one and does no work when created; a consumer (\code{sum}, \code{collect}, \code{count}, a \code{for} loop)
+calls \code{next} until the end or until it has enough.
+\end{definition}
+
+\omcode{code/bachelor-2/09-functional-programming/listings/lazy.rs}{3}{16}{\omterm{def:b2:functional-programming:pure}{Side effects} that show when each step
+runs}\label{lst:b2:functional-programming:lazy}
+
+\omoutput{code/bachelor-2/09-functional-programming/outputs/lazy.txt}{One element at a time, and the last page
+count is never read.}\label{out:b2:functional-programming:lazy}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, s/.style={draw, rounded corners=2pt, fill=omDef!10, minimum width=20mm, minimum height=7mm, align=center}]
+\node[s, fill=black!5] (src) at (0,0) {\texttt{pages.iter()}};
+\node[s] (m) at (3.2,0) {\texttt{map}\\ \texttt{p * 2}};
+\node[s] (f) at (6.4,0) {\texttt{filter}\\ \texttt{d > 300}};
+\node[s] (t) at (9.6,0) {\texttt{take(2)}};
+\node[s, fill=omThm!10] (c) at (12.6,0) {\texttt{collect}};
+\foreach \a/\b in {c/t, t/f, f/m, m/src}
+  \draw[ptr, dashed] ([yshift=2mm]\a.west) -- node[above, text=black!60] {\texttt{next}} ([yshift=2mm]\b.east);
+\foreach \a/\b in {src/m, m/f, f/t, t/c}
+  \draw[ptr] ([yshift=-2mm]\a.east) -- ([yshift=-2mm]\b.west);
+\node[text=black!60, align=center] at (4.8,-1.0) {65 $\to$ 130, refused; 133 $\to$ 266, refused;\\ 412 $\to$ 824, passed up};
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b2:functional-programming:lazy}{lazy} pipeline is pulled by its consumer. \code{collect} asks \code{take} for an element,
+which asks \code{filter}, which asks \code{map} until one passes; after two, \code{take} stops asking, and 320 is
+never mapped.}
+\end{omfigure}
+
+Laziness makes infinite sequences usable, as long as the consumer stops:
+
+\omcode{code/bachelor-2/09-functional-programming/listings/infinite.rs}{3}{17}{Three infinite
+iterators}\label{lst:b2:functional-programming:infinite}
+
+\omoutput{code/bachelor-2/09-functional-programming/outputs/infinite.txt}{Each sequence is computed only as far as
+asked.}\label{out:b2:functional-programming:infinite}
+
+On real data, a pipeline states the cleaning rules one per line. The weather log of
+\cref{ch:b2:rust-enums-and-errors} gives each station's mean temperature:
+
+\omcode{code/bachelor-2/09-functional-programming/listings/pipeline.rs}{5}{12}{A mean as a
+\omterm{def:b2:functional-programming:fold}{fold}}\label{lst:b2:functional-programming:pipeline}
+
+\omoutput[2-4]{code/bachelor-2/09-functional-programming/outputs/run_pipeline.txt}{The duplicated Riverside line is
+counted here, unlike in \cref{ch:b2:rust-enums-and-errors}.}\label{out:b2:functional-programming:pipeline}
+
+The whole pipeline is one loop over the lines, with no intermediate vector: each line is split, tested, parsed and
+added before the next is read. Rust compiles such chains to the loop one would write by hand.
+
+\section{Immutable data}\label{sec:b2:functional-programming:persistent}
+
+A functional program does not modify data: an update builds a new value. Done naively, every update copies
+everything. Done well, the new value shares all the parts it did not change with the old one.
+
+\begin{definition}[Persistent data structure, structural sharing, path copying]\label{def:b2:functional-programming:persistent}
+A data structure is \emph{persistent}\index{persistent data structure} if an update returns a new version and leaves
+every old version intact and usable. \emph{Structural sharing}\index{structural sharing} is the use of the same
+nodes by several versions; \emph{path copying}\index{path copying} implements an update of a tree by copying only the
+nodes on the path from the root to the place of the change, the new nodes pointing to the old, unchanged subtrees.
+\end{definition}
+
+Sharing needs \omterm{def:b2:cpp-copy-move:shared-ptr}{shared ownership}: a node with several \omterm{def:b2:rust-ownership:ownership}{owners} must be freed only when the last one goes.
+\code{Rc<T>} (reference counted) does this: \code{Rc::clone} copies the pointer and increments a count stored next
+to the value; dropping an \code{Rc} decrements it, and the value is freed at zero.
+
+\omcode{code/bachelor-2/09-functional-programming/listings/persistent_list.rs}{5}{36}{Two lists with one
+tail}\label{lst:b2:functional-programming:plist}
+
+\omoutput{code/bachelor-2/09-functional-programming/outputs/persistent_list.txt}{The tail is shared, never
+copied.}\label{out:b2:functional-programming:plist}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, n/.style={draw, minimum width=8mm, minimum height=5mm, fill=omDef!10}]
+\node[n, fill=omThm!10] (a) at (0,0.7) {10};
+\node[n, fill=omThm!10] (b) at (0,-0.7) {20};
+\node[n] (t3) at (2.2,0) {3};
+\node[n] (t2) at (3.8,0) {2};
+\node[n] (t1) at (5.4,0) {1};
+\node[n, fill=black!5] (nil) at (7.0,0) {Nil};
+\draw[ptr] (a.east) -- (t3.west); \draw[ptr] (b.east) -- (t3.west);
+\draw[ptr] (t3) -- (t2); \draw[ptr] (t2) -- (t1); \draw[ptr] (t1) -- (nil);
+\node[anchor=east] at (-0.6,0.7) {\texttt{a}}; \node[anchor=east] at (-0.6,-0.7) {\texttt{b}};
+\node[above=1mm of t3, text=black!60] {count 3: \texttt{tail}, \texttt{a}, \texttt{b}};
+\end{tikzpicture}
+\par\smallskip{\small Two \omterm{def:b2:functional-programming:persistent}{persistent} lists sharing a tail. Adding an element at the front costs one node, whatever
+the length; neither list can change the shared part, since nothing modifies a node once built.}
+\end{omfigure}
+
+A search tree is shared the same way. Inserting into a \omterm{def:b2:functional-programming:persistent}{persistent} tree rebuilds the path to the new leaf and points
+everything else at the old version:
+
+\omcode{code/bachelor-2/09-functional-programming/listings/persistent_bst.rs}{13}{26}{Insertion by \omterm{def:b2:functional-programming:persistent}{path
+copying}}\label{lst:b2:functional-programming:pbst}
+
+\omoutput{code/bachelor-2/09-functional-programming/outputs/persistent_bst.txt}{Inserting 140: four new nodes, four
+shared; \code{v1} still has its seven keys.}\label{out:b2:functional-programming:pbst}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, o/.style={draw, rounded corners=2pt, fill=omDef!10, minimum width=9mm, minimum height=5mm}, c/.style={o, fill=omThm!15, thick}]
+\node[o] (r1) at (0,0) {189};
+\node[o] (a1) at (-1.8,-1) {65};
+\node[o] (b1) at (1.8,-1) {251};
+\node[o] (a2) at (-2.6,-2) {98};
+\node[o] (a3) at (-1.0,-2) {133};
+\node[o] (b2) at (2.6,-2) {412};
+\node[o] (b3) at (2.0,-3) {320};
+\draw[ptr] (r1) -- (a1); \draw[ptr] (r1) -- (b1); \draw[ptr] (a1) -- (a2); \draw[ptr] (a1) -- (a3);
+\draw[ptr] (b1) -- (b2); \draw[ptr] (b2) -- (b3);
+\node[above=1mm of r1] {\texttt{v1}};
+\node[c] (r2) at (-5.4,0) {189};
+\node[c] (c1) at (-6.2,-1) {65};
+\node[c] (c3) at (-5.4,-2) {133};
+\node[c] (new) at (-4.8,-3) {140};
+\node[above=1mm of r2] {\texttt{v2}};
+\draw[ptr, omThm] (r2) -- (c1); \draw[ptr, omThm] (c1) -- (c3); \draw[ptr, omThm] (c3) -- (new);
+\draw[ptr, omThm, dashed] (r2.north) to[out=50, in=110] (b1.north);
+\draw[ptr, omThm, dashed] (c1.east) -- (a2.west);
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b2:functional-programming:persistent}{Path copying}, from \cref{out:b2:functional-programming:pbst}. \code{v2} owns three copies (189,
+65, 133) and the new 140; its dashed pointers lead into \code{v1}'s nodes 251 and 98, with all that hangs below
+them. \code{v1} is untouched.}
+\end{omfigure}
+
+\begin{proposition}[Path copying]\label{prop:b2:functional-programming:path-copy}
+Inserting a key absent from a \omterm{def:b2:functional-programming:persistent}{persistent} search tree, at depth $d$ (the root at depth 0), creates exactly $d + 1$
+nodes: copies of the $d$ nodes on the path and the new leaf. Every other node of the old version is shared by the new
+one.
+\end{proposition}
+
+\begin{proof}
+By induction on $d$. If $d = 0$, the tree is empty and \code{insert} creates one node. If $d \ge 1$, the root is
+not the key; \code{insert} creates one copy of the root and calls itself on one subtree, where the key will be at
+depth $d - 1$: by induction that call creates $d$ nodes and shares every other node of that subtree. The copy of the
+root points to the other subtree unchanged (\code{n.right.clone()} or \code{n.left.clone()}, a pointer copy). In
+all, $1 + d$ new nodes, and every old node off the path is reachable from the new root.
+\end{proof}
+
+\section{Recursion and tail calls}\label{sec:b2:functional-programming:tail}
+
+Without loops that update variables, functional programs repeat by recursion. Each pending call costs a stack frame.
+
+\begin{definition}[Tail call, tail recursion]\label{def:b2:functional-programming:tail}
+A call is a \emph{tail call}\index{tail call} if it is the last action of the calling function: its result is
+returned as it is, with nothing left to compute. A function is \emph{tail-recursive}\index{tail recursion} if its
+recursive calls are tail calls. A compiler that performs \emph{tail-call elimination} turns a tail call into a jump,
+reusing the frame.
+\end{definition}
+
+\omcode{code/bachelor-2/09-functional-programming/listings/deep_recursion.rs}{3}{15}{A sum with one frame per
+element}\label{lst:b2:functional-programming:deep}
+
+\omoutput{code/bachelor-2/09-functional-programming/outputs/run_deep.txt}{A million frames do not fit in 1\,MiB, with
+or without optimisation. Status 134 is the abort signal: $128 + 6$.}\label{out:b2:functional-programming:deep}
+
+\code{first + sum_rec(rest)} is not a \omterm{def:b2:functional-programming:tail}{tail call}: the addition waits for the result. Rust does not promise \omterm{def:b2:functional-programming:tail}{tail-call
+elimination} even for real \omterm{def:b2:functional-programming:tail}{tail calls}; the optimiser may do it, but a program that depends on it is fragile. The
+remedy is a method.
+
+\begin{method}[The accumulator transformation]\label{met:b2:functional-programming:accumulator}
+To make a recursion that combines its result with pending work into a loop:
+\begin{enumerate}
+\item add a parameter, the accumulator, that carries the work done so far, and start it at the neutral value of the
+combination (0 for a sum);
+\item in the recursive case, do the pending work on the accumulator \emph{before} the call, so that the call becomes a
+\omterm{def:b2:functional-programming:tail}{tail call}: \code{sum_acc(rest, acc + first)};
+\item return the accumulator in the base case;
+\item replace the \omterm{def:b2:functional-programming:tail}{tail call} by updating the parameters and jumping back to the start: a \code{loop} or
+\code{while}.
+\end{enumerate}
+The transformation is correct when the combination is associative, since it regroups $x_1 + (x_2 + (\dots))$ as
+$((0 + x_1) + x_2) + \dots$.
+\end{method}
+
+\omcode{code/bachelor-2/09-functional-programming/listings/tail_loop.rs}{2}{17}{Steps 1--3, then step
+4}\label{lst:b2:functional-programming:tail}
+
+\omoutput{code/bachelor-2/09-functional-programming/outputs/tail_loop.txt}{The loop sums the million numbers on the
+same 1\,MiB stack; the accumulator version is run on the first thousand.}\label{out:b2:functional-programming:tail}
+
+\section{Reasoning by equations}\label{sec:b2:functional-programming:equations}
+
+\begin{definition}[Pure function, side effect, referential transparency]\label{def:b2:functional-programming:pure}
+A \emph{side effect}\index{side effect} is any effect of a call besides its result: a change to a variable outside
+it, an input or output, a \omterm{def:b2:rust-enums-and-errors:panic}{panic}. A function is \emph{pure}\index{pure function} if its result depends only on its
+arguments and it has no side effect. An expression is \emph{referentially transparent}\index{referential
+transparency} if replacing it by its value does not change the program.
+\end{definition}
+
+\begin{definition}[Equational reasoning]\label{def:b2:functional-programming:equational}
+\emph{Equational reasoning}\index{equational reasoning} proves properties of \omterm{def:b2:functional-programming:pure}{pure} programs by rewriting: each
+defining equation of a function may be used, left to right or right to left, as an equality of values, as in
+algebra.
+\end{definition}
+
+Write a list as $[\,]$ or $x : xs$, an element in front of a list. The \omterm{def:b2:functional-programming:fold}{map operation} and the right \omterm{def:b2:functional-programming:fold}{fold} are defined by
+the equations
+\begin{align*}
+\mathrm{map}\,f\,[\,] &= [\,], & \mathrm{map}\,f\,(x : xs) &= f\,x : \mathrm{map}\,f\,xs,\\
+\mathrm{foldr}\,g\,z\,[\,] &= z, & \mathrm{foldr}\,g\,z\,(x : xs) &= g\,x\,(\mathrm{foldr}\,g\,z\,xs).
+\end{align*}
+
+\begin{theorem}[Map fusion]\label{thm:b2:functional-programming:map-fusion}
+For all functions $f$, $g$ and every finite list $xs$, $\mathrm{map}\,f\,(\mathrm{map}\,g\,xs) = \mathrm{map}\,(f
+\circ g)\,xs$.
+\end{theorem}
+
+\begin{proof}
+By structural induction on $xs$. For $[\,]$: both sides are $[\,]$ by the first equation. For $x : xs$, assuming the
+claim for $xs$:
+\begin{align*}
+\mathrm{map}\,f\,(\mathrm{map}\,g\,(x : xs)) &= \mathrm{map}\,f\,(g\,x : \mathrm{map}\,g\,xs)
+= f\,(g\,x) : \mathrm{map}\,f\,(\mathrm{map}\,g\,xs)\\
+&= (f \circ g)\,x : \mathrm{map}\,(f \circ g)\,xs,
+\end{align*}
+by the second equation twice and the hypothesis; the right-hand side is $\mathrm{map}\,(f \circ g)\,(x : xs)$.
+\end{proof}
+
+For Rust this says that \code{.map(g).map(f)} and \code{.map(|x| f(g(x)))} give the same elements, provided
+\code{f} and \code{g} are \omterm{def:b2:functional-programming:pure}{pure}: with \omterm{def:b2:functional-programming:pure}{side effects} the order of the effects changes (\cref{out:b2:functional-programming:lazy}
+shows them interleaved). Compilers use such laws to merge passes; programmers use them to restructure code
+without retesting by hand. The test crate \code{tests/functional} checks this law, \omterm{def:b2:functional-programming:fold}{filter} fusion and the \omterm{def:b2:functional-programming:fold}{fold} laws on
+500 generated lists.
+
+\begin{proposition}[Map and filter are folds]\label{prop:b2:functional-programming:fold-cons}
+For every finite list $xs$, $\mathrm{map}\,f\,xs = \mathrm{foldr}\,(\lambda x\,acc.\ f\,x : acc)\,[\,]\,xs$, and
+$\mathrm{filter}\,p\,xs = \mathrm{foldr}\,(\lambda x\,acc.\ \text{if } p\,x \text{ then } x : acc \text{ else }
+acc)\,[\,]\,xs$.
+\end{proposition}
+
+\begin{proof}
+For the map, by induction on $xs$. For $[\,]$ both sides are $[\,]$. For $x : xs$, the right side is $(\lambda x\,acc.\
+f\,x : acc)\,x\,(\mathrm{foldr}\,\dots\,xs) = f\,x : \mathrm{foldr}\,\dots\,xs = f\,x : \mathrm{map}\,f\,xs$ by the
+hypothesis, which is $\mathrm{map}\,f\,(x : xs)$. For the \omterm{def:b2:functional-programming:fold}{filter}, with $\mathrm{filter}\,p\,(x : xs) = x :
+\mathrm{filter}\,p\,xs$ if $p\,x$ and $\mathrm{filter}\,p\,xs$ otherwise, the same induction with two cases.
+\end{proof}
+
+\begin{inpractice}[Iterators in practice]
+Prefer a chain of adaptors to an index loop when each step has a name (\code{filter}, \code{map}, \code{sum}): it
+cannot read out of bounds, and it is as fast. Keep the \omterm{def:b2:functional-programming:closure}{closures} \omterm{def:b2:functional-programming:pure}{pure}; put \omterm{def:b2:functional-programming:pure}{side effects} at the end of the chain, in a
+\code{for} loop or a \code{for_each}. Reach for \code{Rc} and \omterm{def:b2:functional-programming:persistent}{persistent} structures when several versions must live
+together (undo, snapshots, concurrent readers); for one version updated in place, a plain \code{Vec} or
+\code{HashMap} is simpler and faster.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b2:functional-programming:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:functional-programming:1}
+Predict the lines printed, in order, then check in the solution. How many elements of \code{v} are read?
+\omcode{code/bachelor-2/09-functional-programming/listings/exo_lazy_order.rs}{3}{8}{A \omterm{def:b2:functional-programming:lazy}{lazy} chain with
+\code{inspect}}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:functional-programming:2}
+The program does not compile. Read the error in the solution, fix it in the signature of \code{for_each_loan}, and
+explain why the compiler cannot accept \code{Fn} here.
+\omcode{code/bachelor-2/09-functional-programming/listings/exo_fnmut.rs}{3}{17}{Counting late loans}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:functional-programming:3}
+Write \code{compose(f, g)}, which returns the \omterm{def:b2:functional-programming:closure}{closure} $x \mapsto f(g(x))$, generic over the three types involved.
+Then write \code{compose_all}, which composes a vector of boxed functions of one type, the last applied first.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:functional-programming:4}
+Predict the three sizes printed, on a target with 8-byte pointers, from what each \omterm{def:b2:functional-programming:closure}{closure} captures and how.
+\omcode{code/bachelor-2/09-functional-programming/listings/exo_sizes.rs}{5}{13}{Three \omterm{def:b2:functional-programming:closure}{closures}}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:functional-programming:5}
+Predict the four values. Which of the four \omterm{def:b2:functional-programming:fold}{folds} would give the same result as a right \omterm{def:b2:functional-programming:fold}{fold} with the same function,
+arguments swapped?
+\omcode{code/bachelor-2/09-functional-programming/listings/exo_folds.rs}{2}{9}{Four \omterm{def:b2:functional-programming:fold}{folds}}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:functional-programming:6}
+The program means to print the number of long titles, then the titles. Explain the error, and give two fixes: one
+that builds the filtered iterator twice, one that collects it once.
+\omcode{code/bachelor-2/09-functional-programming/listings/exo_twice.rs}{3}{10}{An iterator used twice}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:functional-programming:7}
+Write \code{frequencies(text) -> HashMap<String, u32>} as a single chain ending with a \omterm{def:b2:functional-programming:fold}{fold}, words split at
+non-alphanumeric characters and lowercased, and \code{top(text, k)}, the $k$ most frequent words, ties broken
+alphabetically.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:functional-programming:8}
+Prove by structural induction that $\mathrm{foldr}\,(:)\,[\,]\,xs = xs$ for every finite list: the right \omterm{def:b2:functional-programming:fold}{fold} of
+the list \omterm{def:b2:cpp-classes-raii:constructor}{constructor} is the identity. What does the left \omterm{def:b2:functional-programming:fold}{fold} of $(\lambda acc\,x.\ x : acc)$ from $[\,]$ give?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:functional-programming:9}
+Write a \omterm{def:b2:functional-programming:persistent}{persistent} queue from two \omterm{def:b2:functional-programming:persistent}{persistent} lists: \code{push} adds to the back list, \code{pop} takes from the front
+list, and when the front is empty, reverses the back into the front. Test first-in first-out order and that an old
+version still holds its elements.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:functional-programming:10}
+Prove the \omterm{def:b2:functional-programming:fold}{filter} fusion law, $\mathrm{filter}\,p\,(\mathrm{filter}\,q\,xs) = \mathrm{filter}\,(\lambda x.\ q\,x \wedge
+p\,x)\,xs$, by structural induction, then the law $\mathrm{map}\,f\,(\mathrm{filter}\,(p \circ f)\,xs) =
+\mathrm{filter}\,p\,(\mathrm{map}\,f\,xs)$. Why do both need $p$, $q$ and $f$ \omterm{def:b2:functional-programming:pure}{pure}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:functional-programming:11}
+Write a \omterm{def:b2:functional-programming:persistent}{persistent} map from \code{u32} keys to values by \omterm{def:b2:functional-programming:persistent}{path copying}, where inserting an existing key replaces its
+value in the new version only. Test it by inserting 1000 random pairs, keeping every version, and checking a sample of
+versions against a \code{BTreeMap} snapshot taken at the same step.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:functional-programming:12}
+In the queue of \cref{exo:b2:functional-programming:9}, used one version after the other, each element is \omterm{def:b2:rust-ownership:move}{moved
+from} the back to the front once, so $n$ operations cost $O(n)$ in all: $O(1)$ amortised. Show that this bound fails
+for \omterm{def:b2:functional-programming:persistent}{persistent} use: give a sequence of operations on a queue of $n$ elements, reusing an old version, in which each of
+$m$ pops costs $n$ steps, so $m$ pops cost $mn$. Which assumption of the amortised argument breaks?
+\end{exercise}
+
+\section{Problem: A spreadsheet that never forgets}\label{sec:b2:functional-programming:problem}
+
+\begin{problem}[{Weekend problem --- A spreadsheet that never forgets}]\label{pb:b2:functional-programming:1}
+A spreadsheet's undo button needs every earlier state of the sheet. Saving a full copy at each edit costs $n$ cells
+per edit. This problem builds a sheet whose cells are kept in a \omterm{def:b2:functional-programming:persistent}{persistent} balanced search tree, with formulas as
+\omterm{def:b2:functional-programming:closure}{closures} evaluated only when asked, and counts what a thousand versions really cost.
+
+\medskip\noindent\textbf{Part I --- Formulas as closures.}\par\nopagebreak
+\omcode{code/bachelor-2/09-functional-programming/listings/sheet.rs}{6}{26}{Cells, nodes and versions}
+\begin{enumerate}[beginpenalty=10000]
+\item What is the type of a formula? Why does it take a \code{&Sheet} rather than capturing one?
+\item Why is a formula an \code{Rc<dyn Fn>} and not a \code{Box<dyn Fn>}? (Look at what \code{set} does to the cells
+on its path.)
+\item Which \omterm{def:b2:rust-traits-and-generics:trait}{trait} among \code{Fn}, \code{FnMut} and \code{FnOnce} must a formula implement, and why not the others?
+\item In \code{sheet_demo.rs}, each column total is \code{move |s| (0..9).map(|r| s.value(10 * r + c)).sum()}. What
+does it capture, and why must it be \code{move}?
+\item Is a formula a \omterm{def:b2:functional-programming:pure}{pure function} of the sheet? What would break if it modified a captured variable?
+\item What does a formula that reads its own cell do when evaluated?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Cells evaluated lazily.}\par\nopagebreak
+\omcodes{code/bachelor-2/09-functional-programming/listings/sheet.rs}{50-57,70-80}{Making a version, and reading a
+value}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item How many formulas run when the sheet is built? Check against the output.
+\item Reading the total of column 5 runs how many formulas? How many cells are read?
+\item The counter \code{evaluations} is a \code{Cell<u32>} behind an \code{Rc}. Why not a plain \code{u32}?
+\item After the edits, \code{value(95)} is asked of version 0 and of version 1000. Explain the two answers.
+\item A formula's value is recomputed at each request. Describe a cache, and the condition on versions under which a
+cached value stays valid.
+\item Why is laziness useful when most of a thousand versions are never displayed?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Every version kept.}\par\nopagebreak
+\omcode{code/bachelor-2/09-functional-programming/listings/sheet.rs}{38}{48}{Setting a cell by \omterm{def:b2:functional-programming:persistent}{path copying}}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item \code{set} differs from \code{insert} of \cref{lst:b2:functional-programming:pbst}: the key always exists.
+How many nodes does setting a cell at depth $d$ create, by \cref{prop:b2:functional-programming:path-copy}?
+\item \code{build} puts the middle key at the root. Prove that a tree built this way from $n$ keys has at most
+$\lfloor \log_2 n \rfloor + 1$ levels.
+\item What does \code{cell.clone()} cost for a \code{Num}, and for a \code{Formula}?
+\item \code{distinct_nodes} walks every version but stops at nodes already seen. Why is its cost proportional to the
+number of distinct nodes, plus the number of versions?
+\item Which nodes do version 0 and version 1000 share? (Think of the cells never edited, and of their
+ancestors.)
+\item The edits go to cells $37i \bmod 90$. Why are all 90 number cells edited, and how often each?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Memory, proved and measured.}\par\nopagebreak
+\omoutput[2-8]{code/bachelor-2/09-functional-programming/outputs/run_sheet.txt}{100 cells, 1000 edits, all versions
+kept.}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Prove that $k$ edits of an $n$-cell sheet built by \code{build} create at most $k(\lfloor \log_2 n \rfloor + 1)$
+nodes, so that all versions hold at most $n + k(\lceil \log_2 n \rceil + 1)$ nodes.
+\item Compare with the count printed. Why is the count below the bound?
+\item Full copies would hold $(k + 1)n$ nodes. What is the ratio here, and how does it grow with $n$?
+\item At 40 bytes per node, how much memory do the thousand versions take? Is the \code{Rc} count included in the 40?
+\item Old versions that nobody holds are freed. Which line of \code{sheet_demo.rs} keeps them all alive?
+\item State the result of the problem.
+\end{enumerate}
+\end{problem}

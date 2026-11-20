@@ -1,0 +1,103 @@
+\section*{Chapter \ref{ch:b3:bottom-up-parsing} --- Bottom-Up Parsing}
+
+\begin{solution}{exo:b3:bottom-up-parsing:1}
+The dot is before $E$, so the closure adds $E \to \cdot\,E + T$ and $E \to \cdot\,T$; the dot is now also before $T$, which adds $T \to \cdot\,T * F$ and $T \to \cdot\,F$; then $F$ adds $F \to \cdot\,(\,E\,)$ and $F \to \cdot\,\mathtt{id}$. With the kernel, 7 items: this is state I4, the state after \code{(} (\code{exercise_1_closure} in \code{tests/lr_test.rs}).
+\end{solution}
+
+\begin{solution}{exo:b3:bottom-up-parsing:2}
+In state 8 on \code{)}: shift 11. In state 11 on \code{*}: reduce $F \to (\,E\,)$, popping three states back to 0, and $\mathrm{goto}[0, F] = 3$. In state 3 on \code{*}: reduce $T \to F$, goto 2. The parse then shifts \code{*} and \code{id} and reduces $F \to \mathtt{id}$, $T \to T * F$ and $E \to T$. Over the whole parse the rules reduced are 6, 4, 2, 5, 4, 6, 3, 2, and the parser accepts (\code{a_rightmost_derivation_in_reverse}).
+\end{solution}
+
+\begin{solution}{exo:b3:bottom-up-parsing:3}
+In $E + T * F$, the \omterm{def:b3:bottom-up-parsing:shift-reduce}{handle} is $T \to T * F$ on $T * F$ (positions 3 to 5): the previous form is $E + T$. In $T * F + \mathtt{id}$, it is $T \to T * F$ again, on the first three symbols; the \code{id} on the right is reduced later, which is what ``rightmost derivation in reverse'' means. In $E + F * \mathtt{id}$, it is $T \to F$ on the $F$: the previous form is $E + T * \mathtt{id}$. The first and third forms are lines of \cref{out:b3:bottom-up-parsing:trace}; the test checks the order of reductions on \code{id * id + id}.
+\end{solution}
+
+\begin{solution}{exo:b3:bottom-up-parsing:4}
+(a) On \code{c} both reductions apply: a \omterm{def:b3:bottom-up-parsing:slr}{reduce--reduce conflict}; on \code{d} only $B \to z$, no conflict. (b) On \code{=} the state shifts and, since $= \in \mathrm{FOLLOW}(R)$, also reduces by $R \to L$: a \omterm{def:b3:bottom-up-parsing:slr}{shift--reduce conflict}. (c) No conflict: the completed start item gives accept on \$ only, and the other item shifts on \code{+}.
+\end{solution}
+
+\begin{solution}{exo:b3:bottom-up-parsing:5}
+The goto moves the dot but does not take the closure. Only the start state is closed (the automaton builds it with \code{closure}); every other state holds only its kernel. The state after \code{+} is $\{E \to E + \cdot\,T\}$: it has no item with the dot before \code{id}, so the table has no shift there, and the parse of \code{id + id} fails in state 6; likewise after \code{*} in state 7. The 12 states are not the right 12: for instance the target of $T$ from state 6 is $\{E \to E + T\,\cdot\}$ alone, without $T \to T \cdot * F$, so even with the shift a sum followed by a product would fail. The parse of \code{id} succeeds because it only passes through the start state, which is closed, and through states whose single item is complete. The fix is \code{closure(g, &moved)} as the last line of goto, which is \cref{lst:b3:bottom-up-parsing:items}; \code{exercise_5_goto_needs_the_closure} checks that the goto from state 1 on \code{+} is then the 5-item state 6.
+\end{solution}
+
+\begin{solution}{exo:b3:bottom-up-parsing:6}
+\code{exercises/ex6_prec.rs}. For each cell holding a shift and a reduce by rule $r$, take the precedence $p_t$ of the token and $p_r$ of the rule's last terminal; if either has none, keep the conflict. If $p_t > p_r$, or they are equal and the operator is right-associative, keep the shift; if $p_t < p_r$, or they are equal and left-associative, keep the reduce; if they are equal and non-associative, empty the cell. The plain \omterm{def:b3:bottom-up-parsing:slr}{SLR table} of \code{ambig.grammar} has 25 conflicting cells (every state $E \to E\,\mathit{op}\,E\,\cdot$ meets every operator token); after resolution, none. The tests check \code{id + id * id} $\mapsto$ \texttt{(+ id (* id id))}, \code{id - id - id} $\mapsto$ \texttt{(- (- id id) id)}, \texttt{id \textasciicircum{} id \textasciicircum{} id} $\mapsto$ \texttt{(\textasciicircum{} id (\textasciicircum{} id id))}, a parenthesised operand, and that \code{id == id == id} is refused at the second \code{==}.
+\end{solution}
+
+\begin{solution}{exo:b3:bottom-up-parsing:7}
+Six states. I0 $= \{\mathit{Start} \to \cdot\,S,\ S \to \cdot\,(\,S\,)\,S,\ S \to \cdot\}$; on $S$, I1 $= \{\mathit{Start} \to S\,\cdot\}$; on \code{(}, I2 $= \{S \to (\,\cdot\,S\,)\,S\}$ plus the two items of $S$; on $S$ from I2, I3 $= \{S \to (\,S\,\cdot\,)\,S\}$; on \code{)}, I4 $= \{S \to (\,S\,)\,\cdot\,S\}$ plus the two items of $S$; on $S$ from I4, I5 $= \{S \to (\,S\,)\,S\,\cdot\}$. From I2 and I4, \code{(} leads back to I2. $\mathrm{FOLLOW}(S) = \{), \$\}$ and the only shift in I0, I2 and I4 is on \code{(}, so the grammar is SLR (\code{exercise_7_parentheses}). The item $S \to \cdot$ is complete without having read anything: the parser reduces an empty $S$, pushing a nonterminal that covers no input, whenever the next token is \code{)} or \$, that is, wherever a balanced word may end.
+\end{solution}
+
+\begin{solution}{exo:b3:bottom-up-parsing:8}
+Let $G$ be SLR and $w \in L(G)$. Take any rightmost derivation of $w$; we show that the SLR parser follows it in reverse, so that it is determined by the parser's run, which is unique since each cell holds at most one action. Suppose the parser has followed it so far: its stack holds $\gamma$, the input left is $x$, and $\gamma x$ is a form of the derivation. If the derivation's \omterm{def:b3:bottom-up-parsing:shift-reduce}{handle} ends inside $\gamma$, it ends at its top (everything to its right is terminal and still unread), so it is $A \to \beta$ with $\gamma = \alpha\beta$, and $A \to \beta\,\cdot$ is valid for $\gamma$; by \cref{thm:b3:bottom-up-parsing:viable} it is in the state on top, and the next token $a$ (or \$) follows $A$ in the previous form, so $a \in \mathrm{FOLLOW}(A)$: the table says reduce by this production. Otherwise the \omterm{def:b3:bottom-up-parsing:shift-reduce}{handle} ends to the right of $\gamma$, so $\gamma a$ is still a \omterm{def:b3:bottom-up-parsing:automaton}{viable prefix}; by the theorem there is a move on $a$ from the top state, and the table says shift. So two different rightmost derivations of $w$ would make the parser take two different actions in the same configuration, which cannot happen. Hence $w$ has one rightmost derivation, and one parse tree.
+\end{solution}
+
+\begin{solution}{exo:b3:bottom-up-parsing:9}
+On \code{id + * id}: shift 5, reduce $F \to \mathtt{id}$, $T \to F$, $E \to T$, shift \code{+} to state 6, and in state 6 there is no action on \code{*}: the error is found at the \code{*}, the first token that cannot continue a \omterm{def:b3:bottom-up-parsing:automaton}{viable prefix}. On \code{( id + id}: the parser shifts \code{(}, reduces the first \code{id} to $E$, shifts \code{+} and \code{id}, and on \$ reduces $F \to \mathtt{id}$, $T \to F$ and $E \to E + T$, ending in state 8, where \$ has no action. The three last reductions take place on \$ because \$ is in the \omterm{def:b3:top-down-parsing:first-follow}{FOLLOW sets} of $F$, $T$ and $E$; they are correct reductions (in any completion of the input they would also happen), so the error is still found at the first token, \$, where the missing \code{)} could have been. The tests assert both messages.
+\end{solution}
+
+\begin{solution}{exo:b3:bottom-up-parsing:10}
+Let $A \to \beta \cdot \delta$ be valid for $\gamma = \alpha\beta$ through $\mathit{Start} \Rightarrow^n_{\mathrm{rm}} \alpha A w \Rightarrow_{\mathrm{rm}} \alpha\beta\delta w$. We show by induction on $n$ that the path labelled $\alpha$ exists and ends in a state holding $A \to \cdot\,\beta\delta$. Then the moves on the symbols of $\beta$ exist, since each state on the way holds the item with the dot before the next symbol, and goto carries the item along: the path labelled $\gamma$ ends in a state holding $A \to \beta \cdot \delta$. If $n = 0$, then $A = \mathit{Start}$, $\alpha = \varepsilon$, and $\mathit{Start} \to \cdot\,S$ is in the start state. If $n > 0$, the occurrence of $A$ was created by some earlier step $\mathit{Start} \Rightarrow^m_{\mathrm{rm}} \alpha' B w' \Rightarrow_{\mathrm{rm}} \alpha'\eta A \theta w'$, with $m < n$, $\alpha = \alpha'\eta$, and $\theta \Rightarrow^* x$ with $w = x w'$ (the steps in between rewrite only what is right of $A$, since the derivation is rightmost and $A$ is still there). So $B \to \eta \cdot A\theta$ is valid for $\alpha'\eta = \alpha$ through a derivation of length $m$, and by induction the path labelled $\alpha$ ends in a state holding it, hence, by closure, holding $A \to \cdot\,\beta\delta$.
+\end{solution}
+
+\begin{solution}{exo:b3:bottom-up-parsing:11}
+After the start state reads a nonempty word $u$ of $a$'s, call \emph{alive} the indices $i$ that do not occur in $u$ before its last letter: only for them is an item $X_i \to \dots$ still in progress, since reading $a_i$ ends $X_i$ (there is no $X_i \to a_i X_i$). If the last letter is $a_j$, the kernel is $\{X_i \to a_j \cdot X_i : i \text{ alive}, i \ne j\}$, plus $X_j \to a_j\,\cdot$ if $j$ is alive. Every set $A$ of alive indices occurs (read each letter outside $A$ once, then $a_j$), and for a fixed $j$ the kernel determines $A$; it is empty only for $A = \emptyset$, which gives no state. So there are $2^n - 1$ states per letter $j$, $n(2^n - 1)$ in all. Add the start state, $\{\mathit{Start} \to S\,\cdot\}$, the $n$ states $\{S \to X_i\,\cdot\}$, and the $n(n-1)$ states $\{X_i \to a_j X_i\,\cdot\}$: $n\,2^n - n + 2 + n + n^2 - n = n\,2^n + n^2 - n + 2$. The test checks the formula for $n = 1$ to 7 (4, 12, 32, 78, 182, 416, 940 states) against grammars of $n^2 + n$ productions: the automaton is exponential in the size of the grammar.
+\end{solution}
+
+\begin{solution}{exo:b3:bottom-up-parsing:12}
+\code{exercises/ex12_lalr_prop.rs}. Give each item of each LR(0) state an empty set, and \$ to $\mathit{Start} \to \cdot\,S$ in the start state. Repeat until no set grows: for each item $A \to \beta \cdot X \delta$ with set $L$ in state $I$, add $L$ to the set of $A \to \beta X \cdot \delta$ in $\mathrm{goto}(I, X)$; and if $X$ is a nonterminal, add $\mathrm{FIRST}(\delta)$, and $L$ too if $\delta$ is \omterm{def:b3:top-down-parsing:first-follow}{nullable}, to every $X \to \cdot\,\eta$ in $I$. The test compares the sets with those of the merged LR(1) states on six grammars, Moor's expressions included: they are equal. It is cheaper because it never builds the LR(1) automaton, which has more states (22 against 12 for the expression grammar, and more for real languages), and it stores one set per item of the small automaton.
+\end{solution}
+
+\begin{solution}{pb:b3:bottom-up-parsing:1}
+The numbers are asserted in \code{tests/pb_test.rs}.
+
+\textbf{1.} The \code{else} belongs to the inner \code{if}: $S \to \mathrm{if}\ c\ \mathrm{then}\ S$ whose $S$ is $\mathrm{if}\ c\ \mathrm{then}\ \mathit{other}\ \mathrm{else}\ \mathit{other}$. Or to the outer one: $S \to \mathrm{if}\ c\ \mathrm{then}\ S\ \mathrm{else}\ \mathit{other}$ whose first $S$ is $\mathrm{if}\ c\ \mathrm{then}\ \mathit{other}$.
+
+\textbf{2.} Nine states: the start state; after $S$; after \code{if}; after \code{other}; after \code{if c}; after \code{if c then}; after \code{if c then S}; after \code{else}; after \code{else S}.
+
+\textbf{3.} State 6, after \code{if c then S}: $S \to \mathrm{if}\ c\ \mathrm{then}\ S\,\cdot$ and $S \to \mathrm{if}\ c\ \mathrm{then}\ S \cdot \mathrm{else}\ S$.
+
+\textbf{4.} No: state 6 must look at the next token to choose between reducing and shifting.
+
+\textbf{5.} $\mathrm{FOLLOW}(S) = \{\mathrm{else}, \$\}$: \$ because $S$ is the start symbol, \code{else} from $S \to \mathrm{if}\ c\ \mathrm{then}\ S\ \mathrm{else}\ S$.
+
+\textbf{6.} The table of the figure in \cref{sec:b3:bottom-up-parsing:conflicts}: one conflict, in state 6 on \code{else}, shift 7 against reduce by rule 1.
+
+\textbf{7.} The inner one: the parser shifts the \code{else} while the inner \code{if} is on top of the stack, and reduces the outer \code{if} last, without \code{else}.
+
+\textbf{8.} On the \code{else}, the inner \code{if} is reduced without it. The parser is back in state 6 for the outer \code{if}, with \code{else} next, and reduces again; in state 1 the \code{else} has no action: error. On \code{if c then other else other} the same happens at once. Resolving by reduction makes rule 2 unusable: no \code{else} is ever accepted.
+
+\textbf{9.} 16 LR(1) states and one conflict. The grammar is ambiguous, and an ambiguous grammar is LR($k$) for no $k$: the word of question 1 has two rightmost derivations, and a deterministic parser can follow only one, so some table cell must offer both.
+
+\textbf{10.} $S \to M \mid U$; $M \to \mathrm{if}\ c\ \mathrm{then}\ M\ \mathrm{else}\ M \mid \mathit{other}$; $U \to \mathrm{if}\ c\ \mathrm{then}\ S \mid \mathrm{if}\ c\ \mathrm{then}\ M\ \mathrm{else}\ U$. A statement between \code{then} and \code{else} must be matched, so the \code{else} can only go to the nearest \code{if}. It is SLR, with 13 LR(0) states (\code{exercises/ifelse_mu.grammar}).
+
+\textbf{11.} Every statement that ends with a statement (\code{while}, \code{for}, labelled statements) needs a matched and an unmatched version, which doubles part of the grammar; and the shift gives exactly the reading programmers expect, so the one conflict is known, documented and harmless.
+
+\textbf{12.} A statement is an assignment $L = R$ or a bare value $R$, where a left side is a name under any number of stars and a value is a left side. The sentences of at most three tokens are \code{id}, \code{* id}, \code{* * id} and \code{id = id}.
+
+\textbf{13.} The presence of \code{=} decides between $S \to L = R$ and $S \to R$. The number of stars in front of the name decides the derivation of an $L$: $k$ uses of $L \to * R$, each followed by $R \to L$, then $L \to \mathtt{id}$; and $R$ has one production. So each sentence has one tree.
+
+\textbf{14.} Ten states.
+
+\textbf{15.} $\mathrm{FOLLOW}(R) = \{=, \$\}$. \$ comes from $S \to R$ and $S \to L = R$; the \code{=} comes from $L \to * R$, which puts $\mathrm{FOLLOW}(L)$ into $\mathrm{FOLLOW}(R)$, and $S \to L = R$ puts \code{=} into $\mathrm{FOLLOW}(L)$.
+
+\textbf{16.} State 2, $\{S \to L \cdot = R,\ R \to L\,\cdot\}$, on \code{=}: shift 6 against reduce by $R \to L$.
+
+\textbf{17.} State 2 is reached from the start state on $L$ only, so the stack holds a single $L$ at the start of the statement. Reducing would make the form start with $R =$. But an $R$ at the start of a right sentential form comes only from $S \to R$, and is then followed by nothing; the other productions put $R$ after \code{*} or after \code{=}. So the reduction is never part of a rightmost derivation.
+
+\textbf{18.} $[\mathit{Start} \to \cdot\,S, \$]$, $[S \to \cdot\,L = R, \$]$, $[S \to \cdot\,R, \$]$, $[R \to \cdot\,L, \$]$, and $[L \to \cdot * R, a]$ and $[L \to \cdot\,\mathtt{id}, a]$ for $a$ in $\{=, \$\}$ (look-ahead \code{=} from $S \to \cdot\,L = R$, \$ from $R \to \cdot\,L$): 8 items.
+
+\textbf{19.} $\{[S \to L \cdot = R, \$],\ [R \to L\,\cdot, \$]\}$: shift on \code{=}, reduce by $R \to L$ on \$ only. No conflict.
+
+\textbf{20.} 14 states.
+
+\textbf{21.} Four pairs: the states of $L \to * \cdot R$, $L \to \mathtt{id}\,\cdot$, $R \to L\,\cdot$ and $L \to * R\,\cdot$, each reached once before the \code{=} (look-aheads \code{=} and \$) and once after it (\$ only). Merging leaves $14 - 4 = 10$ states, those of the \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton}, and no conflict: the merged states hold one complete item each.
+
+\textbf{22.} Let a merged state have a shift on $a$ and a reduction $[B \to \gamma\,\cdot, a]$. The reduction comes from one of the merged LR(1) states, $P$. A shift on $a$ comes from an item $[A \to \alpha \cdot a\beta, b]$, and whether it is present depends only on the core: all merged states have the same core, so $P$ holds $A \to \alpha \cdot a\beta$ with some look-ahead, and shifts on $a$ too. So $P$ already had the conflict.
+
+\textbf{23.} Reductions depend on the look-aheads, and the union mixes look-aheads that came from different contexts: two states with the same core $\{A \to c\,\cdot,\ B \to c\,\cdot\}$ may reduce $A$ on $x$ and $B$ on $y$ in one, $A$ on $y$ and $B$ on $x$ in the other; merged, both reductions apply on $x$ and on $y$.
+
+\textbf{24.} LALR: its tables have the size of the \omterm{def:b3:bottom-up-parsing:automaton}{LR(0) automaton} (12 states here against 22), it \omterm{def:b3:bottom-up-parsing:shift-reduce}{handles} grammars such as the assignment grammar that SLR refuses, and the \omterm{def:b3:bottom-up-parsing:slr}{reduce--reduce conflicts} it can add are rare; canonical LR(1) is worth its size only when LALR reports such a conflict.
+
+\textbf{25.} The \code{if} grammar has its conflict under SLR, LR(1) and LALR alike, because it is ambiguous; the report is real, and the generator's shift gives the \code{else} to the nearest \code{if}, which is what the teachers want: they can keep the grammar and document the conflict, or rewrite it as in question 10. The assignment grammar has one SLR conflict and none under LR(1) or LALR; the conflict was an artefact of FOLLOW, and an LALR generator, as bison's run in \cref{out:b3:bottom-up-parsing:bison} shows, reports nothing.
+\end{solution}

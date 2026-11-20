@@ -1,0 +1,322 @@
+\chapter{Computer Graphics: From Triangles to Pixels}\label{ch:b3:computer-graphics}
+
+A picture on a screen is a grid of pixels, and a three-dimensional scene is a list of triangles in space. Computer graphics turns the second into the first. Each triangle is moved into place, seen through a camera, projected onto the screen and broken into the pixels it covers; where two triangles cover the same pixel, the nearer one wins; each pixel then receives a colour from the light that falls on the surface. The chapter writes every step in a few dozen lines of C, with no graphics library, and writes its images to files: a cube's corners through the whole chain of matrices, a rasteriser in exact integers whose fill rule draws every pixel of a mesh exactly once, a \omterm{def:b3:computer-graphics:visibility}{depth buffer}, two kinds of shading, and a small scene traced ray by ray.
+
+\begin{recall}
+Vectors, the dot and cross products, matrices and their products, and the composition of linear maps come from the mathematics volumes, as do barycentres and barycentric coordinates: a point of a triangle $ABC$ is $\lambda_A A + \lambda_B B + \lambda_C C$ with $\lambda_A + \lambda_B + \lambda_C = 1$, and the coordinates are ratios of signed areas. An image is a grid of pixels, each with a red, a green and a blue intensity (grade~10 volume). Floating-point numbers round, and two computations of the same value can differ in their last bits (grade~10 volume). Structures, fixed-size arrays and integers in C come from the Year~1 and Year~2 volumes.
+\end{recall}
+
+\section{Coordinates and transformations}\label{sec:b3:computer-graphics:transforms}
+
+A cube of side 2 centred at the origin has the eight corners $(\pm1, \pm1, \pm1)$. To show it, the program must turn it, place it in front of a camera, and find where each corner lands on a screen of $320 \times 240$ pixels. Turning is a linear map, a $3 \times 3$ matrix; placing is a translation, which is not linear, since it moves the origin. One more coordinate makes both of them matrices.
+
+\begin{definition}[Homogeneous coordinates]\label{def:b3:computer-graphics:homogeneous}
+The \emph{homogeneous coordinates}\index{homogeneous coordinates} of a point $(x, y, z)$ of space are $(x, y, z, 1)$, and those of a direction $(x, y, z)$ are $(x, y, z, 0)$. More generally, $(x, y, z, w)$ with $w \neq 0$ stands for the point $(x/w, y/w, z/w)$: all non-zero multiples of a 4-vector stand for the same point.
+\end{definition}
+
+In \omterm{def:b3:computer-graphics:homogeneous}{homogeneous coordinates} the translation by $(t_x, t_y, t_z)$ and the rotation by an angle $a$ about the $y$ axis are
+\[
+T = \begin{pmatrix} 1 & 0 & 0 & t_x \\ 0 & 1 & 0 & t_y \\ 0 & 0 & 1 & t_z \\ 0 & 0 & 0 & 1 \end{pmatrix},
+\qquad
+R_y(a) = \begin{pmatrix} \cos a & 0 & \sin a & 0 \\ 0 & 1 & 0 & 0 \\ -\sin a & 0 & \cos a & 0 \\ 0 & 0 & 0 & 1 \end{pmatrix}.
+\]
+$T$ adds $w$ times $(t_x, t_y, t_z)$: it moves a point, whose $w$ is 1, and leaves a direction, whose $w$ is 0, as it was, which is right, since a direction has no position to move. A scaling by the factors $(s_x, s_y, s_z)$ is the diagonal matrix of entries $s_x, s_y, s_z, 1$. A product of such matrices applies the right-hand factor first: $T R_y(a)$ turns a point, then moves it, and the order matters, since $R_y(a) T$ moves it first and then turns it about the origin, with the translation turned too (Exercise~\ref{exo:b3:computer-graphics:5}).
+
+\begin{definition}[Model transform, view transform, projection matrix]\label{def:b3:computer-graphics:transforms}
+The \emph{model transform}\index{model transform} of an object is the matrix that takes the coordinates in which the object was modelled to the coordinates of the scene. The \emph{view transform}\index{view transform} takes scene coordinates to camera coordinates, in which the camera sits at the origin and looks down the negative $z$ axis, with $y$ up. The \emph{projection matrix}\index{projection matrix} takes camera coordinates to clip coordinates, a 4-vector whose division by its last coordinate gives the position on the screen and a depth.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, box/.style={draw, fill=omDef!8, rounded corners=2pt, align=center, minimum height=0.9cm, text width=1.75cm}, ar/.style={-{Stealth}}]
+  \node[box] (m) at (0,0) {model\\ coordinates};
+  \node[box] (w) at (3.6,0) {scene\\ coordinates};
+  \node[box] (c) at (7.2,0) {camera\\ coordinates};
+  \node[box] (k) at (10.8,0) {clip\\ coordinates};
+  \node[box] (n) at (7.2,-2.0) {NDC};
+  \node[box, fill=omThm!10] (p) at (3.6,-2.0) {pixels};
+  \draw[ar] (m) -- node[above] {model} node[below] {$M$} (w);
+  \draw[ar] (w) -- node[above] {view} node[below] {$V$} (c);
+  \draw[ar] (c) -- node[above] {projection} node[below] {$P$} (k);
+  \draw[ar] (k) |- node[pos=0.25, right] {divide by $w$} (n);
+  \draw[ar] (n) -- node[above] {viewport} (p);
+\end{tikzpicture}
+\par\smallskip{\small The chain that takes a corner of the cube to a pixel. The three matrices multiply into one, $PVM$; the division by $w$ and the viewport are applied to each point after it.}
+\end{omfigure}
+
+The chain is the same for every vertex of every object; only $M$ changes from object to object, and $V$ when the camera moves. Interactive computer graphics goes back to Sketchpad, the drawing program that Ivan Sutherland wrote in 1963. % ledger: b3:sketchpad-1963
+
+\subsection*{Perspective}
+
+In camera coordinates, a point at height $y$ and distance $d = -z$ in front of the camera is seen in the direction of slope $y/d$: twice as far, it must be twice as high to be seen in the same direction. This division by the distance is perspective.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, scale=0.95]
+  \draw[-{Stealth}] (0,0) -- (8.6,0) node[right] {$d = -z$};
+  \draw[-{Stealth}] (0,-0.3) -- (0,3.2) node[above] {$y$};
+  \fill (0,0) circle (1.5pt) node[below left] {camera};
+  \draw[omDef, thick] (1,-0.9) -- (1,0.9) node[above, black] {$d = 1$};
+  \draw[black!50, dashed] (0,0) -- (8.2,{8.2*0.577});
+  \draw[black!50, dashed] (0,0) -- (8.2,{-8.2*0.577});
+  \draw[black!60] (2,-1.155) -- (2,1.155);
+  \node[below left, black!70, inner sep=1pt] at (2,-1.2) {near, $d = n$};
+  \draw[black!60] (7.5,-4.33) -- (7.5,4.33);
+  \node[right, black!70] at (7.5,-3.6) {far, $d = f$};
+  \fill[omThm] (6,2.4) circle (2pt) node[right, black] {$(y, d)$};
+  \draw[omThm] (0,0) -- (6,2.4);
+  \fill[omThm] (1,0.4) circle (1.6pt);
+  \node[below right, black, inner sep=1.5pt] at (1,0.4) {$y/d$};
+  \draw (2.6,0) arc (0:30:2.6);
+  \node at (3.05,0.42) {\scriptsize $\theta/2$};
+\end{tikzpicture}
+\par\smallskip{\small A side view of the camera. A point at height $y$ and distance $d$ is seen where its line of sight crosses the plane $d = 1$, at height $y/d$, by similar triangles. The dashed lines bound the field of view, of angle $\theta$; with the near and far planes they bound the volume the camera shows.}
+\end{omfigure}
+
+\begin{definition}[Perspective projection, view frustum, perspective division]\label{def:b3:computer-graphics:projection}
+A \emph{perspective projection}\index{perspective projection} maps a point of camera coordinates at distance $d = -z$ in front of the camera to the screen position $(x/d, y/d)$, scaled so that the edges of the field of view map to $\pm1$. The \emph{view frustum}\index{view frustum} is the truncated pyramid of points that the camera shows: inside the field of view, between a near plane $d = n$ and a far plane $d = f$. The \omterm{def:b3:computer-graphics:transforms}{projection matrix} leaves the division undone: it puts $d$ into the fourth coordinate $w$, and the \emph{perspective division}\index{perspective division} divides by it, giving the normalised device coordinates (NDC), each in $[-1, 1]$ inside the frustum.
+\end{definition}
+
+With the vertical field of view $\theta$, the aspect ratio $\alpha$ (width over height) and $c = 1/\tan(\theta/2)$, the \omterm{def:b3:computer-graphics:transforms}{projection matrix} is
+\[
+P = \begin{pmatrix} c/\alpha & 0 & 0 & 0 \\ 0 & c & 0 & 0 \\ 0 & 0 & \dfrac{f + n}{n - f} & \dfrac{2fn}{n - f} \\ 0 & 0 & -1 & 0 \end{pmatrix}.
+\]
+An orthographic projection, for technical drawings, skips the division: it scales $x$ and $y$ directly, so that parallel lines stay parallel and far objects keep their size; its last row is $(0, 0, 0, 1)$. The perspective matrix's last row puts $w = -z = d$. Its first two rows scale $x$ and $y$ so that, after the division, the top of the field of view, where $y/d = \tan(\theta/2)$, lands at $1$. Its third row gives the depth $\bigl((f+n)/(f-n)\bigr) - \bigl(2fn/(f-n)\bigr)/d$ after the division: $-1$ on the near plane, $+1$ on the far plane, and growing with $d$ in between, which is all a depth test needs. The listing writes it in C, with $m[i][j]$ the entry of row $i$ and column $j$.
+
+\omcode{code/bachelor-3/31-computer-graphics/listings/vec.h}{53}{64}{The \omterm{def:b3:computer-graphics:transforms}{projection matrix}, as in the formula above. The other functions of \code{vec.h}, all a few lines long, are the vector operations, the product of matrices and the translation and rotation matrices.}\label{lst:b3:computer-graphics:perspective}
+
+The program below sends the eight corners through the whole chain. The cube is turned by $20^\circ$ about $x$, then by $30^\circ$ about $y$, then pushed 6 units in front of the camera; the camera has a field of view of $60^\circ$, the aspect ratio $4/3$, and the planes $n = 1$ and $f = 20$. The viewport, the last step, maps $x_{\mathrm{NDC}} \in [-1, 1]$ to $[0, 320]$ and $y_{\mathrm{NDC}}$ to $[240, 0]$, since rows of pixels are counted from the top.
+
+\omcode{code/bachelor-3/31-computer-graphics/listings/transform.c}{9}{24}{The eight corners through the model, view and projection matrices, the \omterm{def:b3:computer-graphics:projection}{perspective division} and the viewport. The view matrix is the identity: the camera stays where camera coordinates put it.}\label{lst:b3:computer-graphics:transform}
+
+\omoutput{code/bachelor-3/31-computer-graphics/outputs/transform.txt}{The corners, with $w$ between 4.39 and 7.61: their distances from the camera. The nearest corner, $(-1, 1, 1)$, has the smallest depth, 0.626.}\label{out:b3:computer-graphics:transform}
+
+The first corner checks by hand: its $w$ is its distance, 6.610, and its depth is $(21 - 40/6.610)/19 = 0.787$. The four corners with $z = 1$ in the cube's own coordinates have $w$ from 4.39 to 5.98, against 6.02 to 7.61 for the other four, and their pixels spread over 82 columns, against 64 for the far face: perspective makes the near face look bigger.
+
+\section{Rasterisation}\label{sec:b3:computer-graphics:raster}
+
+Once its three corners are pixels, a triangle must be broken into the pixels it covers. The test for one pixel uses three signed areas.
+
+\begin{definition}[Rasterisation, edge function, top-left rule]\label{def:b3:computer-graphics:raster}
+\emph{Rasterisation}\index{rasterisation} is the computation of the set of pixels that a shape covers; a pixel is covered by a triangle when its centre is inside the triangle. The \emph{edge function}\index{edge function} of the directed edge from $a$ to $b$ is
+\[
+E_{ab}(p) = (b_x - a_x)(p_y - a_y) - (b_y - a_y)(p_x - a_x),
+\]
+twice the signed area of the triangle $(a, b, p)$; it is zero on the line $ab$ and has opposite signs on its two sides. The \emph{top-left rule}\index{top-left rule} decides the centres that lie exactly on an edge: such a centre is drawn only if the edge is a top edge, horizontal with the triangle below it, or a left edge, with the triangle to its right.
+\end{definition}
+
+With $y$ pointing down the screen and a triangle $(a, b, c)$ listed clockwise, the three \omterm{def:b3:computer-graphics:raster}{edge functions} $E_{ab}$, $E_{bc}$ and $E_{ca}$ are all positive inside the triangle, and their sum at any point is $E_{ab}(c)$, twice the area: divided by it, they are the barycentric coordinates of the point. Juan Pineda described \omterm{def:b3:computer-graphics:raster}{rasterisation} by \omterm{def:b3:computer-graphics:raster}{edge functions} in 1988, as a test that every pixel can run at the same time; the older line-drawing algorithm of Bresenham, from 1965, was written for a digital plotter. % ledger: b3:pineda-1988, b3:bresenham-1965
+
+The rasteriser below works in exact integers: coordinates are counted in sixteenths of a pixel, so that the centre of pixel $(i, j)$ is $(16i + 8, 16j + 8)$, and an \omterm{def:b3:computer-graphics:raster}{edge function} is a product of integers, exactly zero when a centre is on an edge. With floating-point numbers, the same centre could fall on one side of an edge for one triangle and on the other side for its neighbour.
+
+\omcode{code/bachelor-3/31-computer-graphics/listings/raster.h}{18}{40}{The \omterm{def:b3:computer-graphics:raster}{edge function} and the two tests: the naive one draws every centre with $E \geq 0$ for the three edges; the \omterm{def:b3:computer-graphics:raster}{top-left rule} refuses a centre on an edge that is neither top nor left.}\label{lst:b3:computer-graphics:raster}
+
+The programs of this chapter test every pixel of the image, which keeps them short; a rasteriser tests only the pixels of the triangle's bounding box, the smallest rectangle of pixels around its three corners. For a clockwise triangle on a screen whose $y$ points down, an edge running up the screen has the inside on its right, which is the triangle's left edge; a horizontal edge running to the right has the inside below it, which is its top edge. That is all \code{top_left} tests. \code{raster.c} draws one triangle, of corners $(3.2, 2.5)$, $(28.7, 9.1)$ and $(9.4, 21.8)$, on a grid of $32 \times 24$ pixels, as text.
+
+\omoutput{code/bachelor-3/31-computer-graphics/outputs/raster.txt}{One triangle rasterised: a pixel is drawn, \texttt{\#}, when its centre is inside. The count of pixels is close to the area, without being equal to it.}\label{out:b3:computer-graphics:raster}
+
+The edge between two triangles of a mesh is where the rule matters. \code{shared_edge.c} splits a $9 \times 6$ square, whose corners are pixel centres, along its diagonal, and marks each pixel with the triangle that drew it: 1, 2, or X for both.
+
+\omoutput{code/bachelor-3/31-computer-graphics/outputs/shared_edge.txt}{The naive test draws the four centres on the diagonal twice, and also the right column and the bottom row, which belong to the next squares of a mesh. The \omterm{def:b3:computer-graphics:raster}{top-left rule} draws each of the $9 \times 6 = 54$ pixels of the square exactly once.}\label{out:b3:computer-graphics:shared}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, scale=0.62]
+  \foreach \i in {0,...,9} \foreach \j in {0,...,6} \fill[black!25] (\i,\j) circle (1.4pt);
+  \coordinate (A) at (1,6); \coordinate (B) at (9,6); \coordinate (C) at (3,0);
+  \fill[omDef!10] (A) -- (B) -- (C) -- cycle;
+  \draw[omThm, very thick] (A) -- node[above=2pt] {top edge, drawn} (B);
+  \draw[black!60, thick] (B) -- node[right=4pt] {right edge, not drawn} (C);
+  \draw[omThm, very thick] (C) -- node[pos=0.3, left=4pt] {left edge, drawn} (A);
+  \foreach \p in {(1,6),(2,6),(3,6),(4,6),(5,6),(6,6),(7,6),(8,6),(2,3)} \fill[omThm] \p circle (3pt);
+  \foreach \p in {(9,6),(8,5),(7,4),(6,3),(5,2),(4,1),(3,0)} \draw[black, fill=white] \p circle (3pt);
+  \node[below] at (C) {$c$};
+  \node[above left] at (A) {$a$};
+  \node[above right] at (B) {$b$};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:computer-graphics:raster}{top-left rule} on a triangle drawn with $y$ up for reading. Dots are pixel centres. Of the centres on the triangle's edges, those on the top and left edges are drawn, filled, and those on the right edge are not, hollow: the neighbour across that edge draws them. A corner is drawn only if both its edges are top or left: $a$ is, $b$ and $c$ are not.}
+\end{omfigure}
+
+The rule draws each centre on a shared edge once because the two triangles run along it in opposite directions: an edge that runs up the screen for one runs down for the other, so it is a left edge for exactly one of them; a horizontal edge has the inside below it for exactly one of them. Exercise~\ref{exo:b3:computer-graphics:10} proves it, and the weekend problem counts the pixels of whole meshes.
+
+\section{Visibility}\label{sec:b3:computer-graphics:visibility}
+
+Where two triangles cover the same pixel, the pixel shows the nearer one. Sorting the triangles from far to near and drawing them in that order, the painter's way, fails when two triangles cross: each is in front of the other in part of the image. The \omterm{def:b3:computer-graphics:visibility}{depth buffer} decides pixel by pixel.
+
+\begin{definition}[Depth buffer, back-face culling]\label{def:b3:computer-graphics:visibility}
+A \emph{depth buffer}\index{depth buffer}, or z-buffer, holds one depth per pixel, initialised to the far plane; a triangle's pixel is drawn only if its depth at that pixel is smaller than the one stored, which it then replaces. \emph{Back-face culling}\index{back-face culling} drops, before \omterm{def:b3:computer-graphics:raster}{rasterisation}, every triangle of a closed surface that faces away from the camera; with the triangles of every surface listed in the same order seen from outside, it is the triangles whose screen order is reversed.
+\end{definition}
+
+The z-buffer was first described in 1974 by Wolfgang Stra\ss er, in his doctoral thesis, and the same year by Edwin Catmull, to whom it is most often attributed. % ledger: b3:zbuffer-1974
+The depth of a pixel inside a triangle is interpolated from the depths of its corners with the pixel's barycentric coordinates, the \omterm{def:b3:computer-graphics:raster}{edge functions} divided by twice the area. In NDC the depth is an affine function of the screen position over a flat triangle, so the interpolation is exact (Exercise~\ref{exo:b3:computer-graphics:11}).
+
+\omcode{code/bachelor-3/31-computer-graphics/listings/zbuffer.c}{16}{38}{Drawing one triangle into the \omterm{def:b3:computer-graphics:visibility}{depth buffer}. The corners are put in clockwise order with their depths; each covered pixel gets its interpolated depth, and is drawn if it is nearer than what is there.}\label{lst:b3:computer-graphics:zbuffer}
+
+\code{zbuffer.c} draws two triangles that cross: a red one whose depth goes from 0.2 on its left to 0.8 on the right, and a blue one going the other way.
+
+\omoutput{code/bachelor-3/31-computer-graphics/outputs/zbuffer.txt}{Of the 3,486 pixels covered by both triangles, the red one is in front at 1,830 and the blue one at 1,656: neither triangle is in front of the other.}\label{out:b3:computer-graphics:zbuffer}
+
+\omimg{book5/b3-31-zbuffer.png}{0.5\linewidth}{The image that \code{zbuffer.c} writes: the two triangles cross along the line where their depths are equal, and each is darker where it is farther. No order of drawing the two whole triangles would give this picture.}
+
+\omterm{def:b3:computer-graphics:visibility}{Back-face culling} halves the work for a closed object: a cube shows at most three faces, and its other three are hidden by the first ones, so they need not be rasterised at all (Exercise~\ref{exo:b3:computer-graphics:6}). It does not replace the \omterm{def:b3:computer-graphics:visibility}{depth buffer}, which must still order the faces that remain, and the faces of other objects.
+
+\section{Shading}\label{sec:b3:computer-graphics:shading}
+
+The colour of a pixel depends on the light that leaves the surface towards the eye. Three terms give a usable picture: a constant ambient term for light coming from everywhere; a diffuse term for a matt surface, which scatters light equally in all directions; and a specular term for a shiny one, which sends it mainly in the mirror direction. For a surface of unit normal $\mathbf n$, lit from the unit direction $\mathbf L$ and seen from the unit direction $\mathbf V$, the diffuse term is proportional to $\max(0, \mathbf n \cdot \mathbf L)$, the cosine of the angle of incidence, and the specular term to $\max(0, \mathbf r \cdot \mathbf V)^s$, where $\mathbf r = 2(\mathbf n \cdot \mathbf L)\mathbf n - \mathbf L$ is the mirror image of $\mathbf L$ about the normal and the shininess $s$ narrows the highlight as it grows. Bui Tuong Phong published this reflection model in 1975. % ledger: b3:phong-1975
+
+\omcode{code/bachelor-3/31-computer-graphics/listings/shade.c}{18}{27}{The light leaving a point of normal \code{n}: an ambient term 0.08, a diffuse term of weight 0.75, and a white specular term of weight 0.6 with the shininess 40. The light comes from the upper left, the viewer looks down $-z$.}\label{lst:b3:computer-graphics:light}
+
+\begin{definition}[Lambertian shading, Gouraud shading, Phong shading]\label{def:b3:computer-graphics:shading}
+\emph{Lambertian shading}\index{Lambertian shading} colours a point in proportion to $\max(0, \mathbf n \cdot \mathbf L)$, as a matt surface that scatters light equally in every direction. \emph{Gouraud shading}\index{Gouraud shading} computes the light at the vertices of each triangle, with the vertex normals, and interpolates the colours across the triangle. \emph{Phong shading}\index{Phong shading} interpolates the normals instead, renormalises them, and computes the light at every pixel.
+\end{definition}
+
+Henri Gouraud published his interpolation in 1971. % ledger: b3:gouraud-1971
+\code{shade.c} lights the front half of a sphere both ways. On the left, the half-sphere is a mesh of $8 \times 8$ cells of two triangles each, lit at its vertices and interpolated; on the right, each pixel takes the sphere's exact normal, which is what \omterm{def:b3:computer-graphics:shading}{Phong shading} approaches as it interpolates the vertex normals of a fine enough mesh. The brightest point should be where $\mathbf r = \mathbf V$, that is where the normal is the unit vector halfway between $\mathbf L$ and $\mathbf V$.
+
+\omoutput{code/bachelor-3/31-computer-graphics/outputs/shade.txt}{The brightest pixel of each half, by its green intensity. Per pixel, the highlight is where the formula puts it, and reaches 1.008 before clipping to 1; the interpolated mesh peaks at 0.806 elsewhere.}\label{out:b3:computer-graphics:shade}
+
+\omimg{book5/b3-31-shade.png}{0.8\linewidth}{The two halves of \code{shade.c}. On the left, the highlight falls between vertices and is smeared over a few triangles, whose edges show in the shading; on the right, it is a small bright spot.}
+
+The left half shows the weakness of \omterm{def:b3:computer-graphics:shading}{Gouraud shading}: a highlight narrower than a triangle is lost if no vertex sees it, and drawn too wide if one does. The cost is the reason it was used: the light is computed once per vertex instead of once per pixel.
+
+\begin{inpractice}
+The images of this chapter are written by the C programs themselves, as binary PPM files: the two characters \code{P6}, the width, the height and the maximum value 255 in ASCII decimal, then three bytes per pixel, row by row. A Python script of under 60 lines then writes each one as a PNG file, which is what the book prints: the 8-byte signature, then chunks, each with its length, its four-letter type, its data and a CRC computed over the type and the data, from the header chunk \code{IHDR} to the end chunk \code{IEND}, with the pixels compressed by \code{zlib} in between. A test decodes every PNG back and compares it with the PPM, pixel for pixel. Before storing, \code{ppm.h} raises each intensity $v \in [0, 1]$ to the power $1/2.2$, a gamma encoding, and rounds $255\,v^{1/2.2}$ to a byte. % ledger: b3:ppm-png
+\end{inpractice}
+
+\section{Ray tracing}\label{sec:b3:computer-graphics:rays}
+
+\omterm{def:b3:computer-graphics:raster}{Rasterisation} starts from the triangles and asks which pixels they cover. \omterm{def:b3:computer-graphics:rays}{Ray tracing} starts from the pixels and asks what each one sees.
+
+\begin{definition}[Ray tracing, primary ray, shadow ray]\label{def:b3:computer-graphics:rays}
+\emph{Ray tracing}\index{ray tracing} computes the colour of each pixel by following rays of light backwards, from the eye into the scene. The \emph{primary ray}\index{primary ray} of a pixel starts at the eye and passes through the pixel; its colour is that of the nearest surface it meets. A \emph{shadow ray}\index{shadow ray} starts at a point of a surface and goes towards a light: if it meets a surface before the light, the point is in shadow.
+\end{definition}
+
+A ray is $o + t\mathbf d$, with origin $o$, unit direction $\mathbf d$ and $t > 0$. It meets the sphere of centre $c$ and radius $r$ where $|o + t\mathbf d - c|^2 = r^2$; with $\mathbf v = o - c$ and $b = \mathbf v \cdot \mathbf d$, that is the quadratic $t^2 + 2bt + |\mathbf v|^2 - r^2 = 0$, whose roots are $t = -b \pm \sqrt{b^2 - |\mathbf v|^2 + r^2}$. A negative discriminant means a miss; otherwise the smaller positive root is the visible hit. A ray meets the floor plane $y = y_0$ at $t = (y_0 - o_y)/d_y$.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, scale=0.9]
+  \fill (0,0) circle (1.6pt) node[below left] {$o$};
+  \draw[omDef!80, fill=omDef!8] (5,0.6) circle (1.5);
+  \fill (5,0.6) circle (1.4pt) node[below right] {$c$};
+  \draw (5,0.6) -- node[above right, pos=0.6] {$r$} ({5+1.5*cos(70)},{0.6+1.5*sin(70)});
+  \draw[-{Stealth}, thick] (0,0) -- (1.4,0) node[above] {$\mathbf d$};
+  \draw[black!60] (1.4,0) -- (8.2,0);
+  \pgfmathsetmacro{\h}{sqrt(1.5*1.5-0.36)}
+  \fill[omThm] ({5-\h},0) circle (2pt) node[below left, black] {$t_1$};
+  \fill[black!50] ({5+\h},0) circle (2pt) node[below right, black] {$t_2$};
+  \draw[dashed] (5,0.6) -- (5,0) node[below] {$-b$};
+  \fill[omThm!70] (2.2,3.2) circle (3pt) node[above, black] {light};
+  \draw[-{Stealth}, omThm] ({5-\h},0) -- (2.4,3.0);
+  \node[omThm, left] at (2.85,1.5) {shadow ray};
+  \draw[-{Stealth}] ({5-\h},0) -- ++({-\h/1.5*1.1},{-0.6/1.5*1.1}) node[left] {$\mathbf n$};
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b3:computer-graphics:rays}{primary ray} from the eye $o$ meets a sphere at $t_1$ and $t_2$; the nearer, $t_1$, is seen. The point $t = -b$ is the foot of the perpendicular from the centre. From the hit, a \omterm{def:b3:computer-graphics:rays}{shadow ray} goes to the light; the normal $\mathbf n$ points from the centre through the hit.}
+\end{omfigure}
+
+The scene of \code{rt.h} has three spheres over a checkered floor and one point light. \code{trace} finds the nearest hit, sends a \omterm{def:b3:computer-graphics:rays}{shadow ray} from just off the surface, and lights the point by Lambert's term if the light is not blocked; its last lines trace a reflected ray when a depth budget remains, which Exercise~\ref{exo:b3:computer-graphics:12} uses.
+
+\omcode{code/bachelor-3/31-computer-graphics/listings/rt.h}{51}{82}{Tracing one ray: the nearest hit, its normal and colour, a \omterm{def:b3:computer-graphics:rays}{shadow ray} to the light, then, for a mirror and a depth left, the reflected ray, traced the same way. \code{hit_sphere} solves the quadratic above.}\label{lst:b3:computer-graphics:trace}
+
+\code{raytrace.c} sends one \omterm{def:b3:computer-graphics:rays}{primary ray} through the centre of each pixel of a $320 \times 240$ image, from a camera at the origin with the same field of view of $60^\circ$ as before, and with no reflection.
+
+\omoutput{code/bachelor-3/31-computer-graphics/outputs/raytrace.txt}{One \omterm{def:b3:computer-graphics:rays}{primary ray} per pixel, and one \omterm{def:b3:computer-graphics:rays}{shadow ray} for each \omterm{def:b3:computer-graphics:rays}{primary ray} that meets something: $76{,}800 - 31{,}630 = 45{,}170$.}\label{out:b3:computer-graphics:raytrace}
+
+\omimg{book5/b3-31-raytrace.png}{0.6\linewidth}{The image that \code{raytrace.c} writes. Shadows on the floor and on the spheres come from the \omterm{def:b3:computer-graphics:rays}{shadow rays}; the light is to the upper left.}
+
+Turner Whitted showed in 1980 how to trace recursive rays for mirror reflection and refraction, which is what the last lines of \code{trace} do for reflection. % ledger: b3:whitted-1980
+The cost of \omterm{def:b3:computer-graphics:rays}{ray tracing} is in the search for the nearest hit: each ray here tests three spheres and a plane, but a scene of many thousands of triangles keeps them in a tree of bounding boxes, so that a ray tests only the few triangles near its path. \omterm{def:b3:computer-graphics:raster}{Rasterisation} pays per triangle, \omterm{def:b3:computer-graphics:rays}{ray tracing} per pixel and per ray; shadows and reflections, which a rasteriser must fake, come to a ray tracer from the same function called once more.
+
+\section{Exercises}\label{sec:b3:computer-graphics:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:computer-graphics:1}
+Compute $T(2, 0, 0)$ applied to the point $(1, 1, 1)$ and to the direction $(1, 1, 1)$, in \omterm{def:b3:computer-graphics:homogeneous}{homogeneous coordinates}, and $R_y(\pi/2)$ applied to the point $(1, 0, 0)$. Which way does $R_y(\pi/2)$ turn the $x$ axis, seen from above?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:computer-graphics:2}
+With the camera of \code{transform.c}, find the NDC height of the points $(0, 1, -2)$ and $(0, 2, -4)$ of camera coordinates, and the row of pixels on which they land. Why must they land on the same pixel?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:computer-graphics:3}
+Take $a = (0, 0)$, $b = (8, 0)$ and $c = (0, 8)$ on a screen whose $y$ points down. Is $(a, b, c)$ clockwise? Compute $E_{ab}$, $E_{bc}$ and $E_{ca}$ at $p = (2, 3)$, their sum, and the barycentric coordinates of $p$. Show that the sum of the three \omterm{def:b3:computer-graphics:raster}{edge functions} is the same at every point.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:computer-graphics:4}
+Rasterise by hand, with the \omterm{def:b3:computer-graphics:raster}{top-left rule}, the triangle $(1, 1)$, $(7, 2)$, $(2, 6)$ on a grid of $8 \times 7$ pixels. How many pixels are drawn, against which area? One pixel centre lies exactly on an edge: which, and is it drawn?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:computer-graphics:5}
+A spinning cube is drawn with the model matrix $R_y(a)\,T(0, 0, -6)$ instead of $T(0, 0, -6)\,R_y(a)$. Where is its centre for $a = 0, \pi/4, \pi/2, \pi$? Describe what the viewer sees, and write the rule for the order of the factors.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:computer-graphics:6}
+Add \omterm{def:b3:computer-graphics:visibility}{back-face culling} to the cube of \code{transform.c}: list its 12 triangles counterclockwise seen from outside, project them, and keep those whose screen order shows their front. How many are kept? Why is culling enough to draw one convex object correctly with no \omterm{def:b3:computer-graphics:visibility}{depth buffer}, and not two?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:computer-graphics:7}
+With $n = 1$ and $f = 20$, compute the NDC depth at the distances $d = 1, 2, 10, 20$. What part of the depth range $[-1, 1]$ is left to the far half of the frustum, $10 \leq d \leq 20$? A \omterm{def:b3:computer-graphics:visibility}{depth buffer} stores the depth with a fixed number of bits: where does it tell near surfaces apart best, and how does moving the near plane closer change it?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:computer-graphics:8}
+Find by hand the pixel where the highlight of the right half of \code{shade.c} should be: the sphere has radius 70 pixels and centre $(240, 80)$, $\mathbf L$ is the unit vector of $(-1, 1, 1)$, $\mathbf V = (0, 0, 1)$. Why is the highlight where $\mathbf n$ is halfway between $\mathbf L$ and $\mathbf V$? Why does the Gouraud half miss it?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:computer-graphics:9}
+Derive the quadratic of the ray--sphere test. Compute $t$ for the ray from $(0, 0, 0)$ along $(0, 0, -1)$ against the sphere of centre $(0, 0, -5)$ and radius 1, and for a ray from that sphere's centre along $(1, 0, 0)$. At which angle from the $-z$ axis do rays from the origin stop meeting the sphere?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:computer-graphics:10}
+Two clockwise triangles share the edge $pq$, on opposite sides of it. Prove that a pixel centre lying on $pq$ strictly between $p$ and $q$ is drawn by exactly one of them under the \omterm{def:b3:computer-graphics:raster}{top-left rule}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:computer-graphics:11}
+Show that the NDC depth of the points of a flat triangle is an affine function of their NDC position $(x, y)$, so that interpolating the corners' depths with screen-space barycentric coordinates is exact. Show that the distance $d$ is not affine in $(x, y)$, but $1/d$ is. What does this mean for a texture or a colour interpolated across a triangle seen at a slant?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:computer-graphics:12}
+Make the three spheres of \code{rt.h} partial mirrors and trace the image with a depth limit of 0 to 4. Count the primary, reflected and \omterm{def:b3:computer-graphics:rays}{shadow rays} for each limit. Explain the number of reflected rays at limit 1, why the counts stop growing quickly, and why a limit is needed at all.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:computer-graphics:problem}
+
+\begin{problem}[{Weekend problem --- How many pixels does a triangle cover?}]\label{pb:b3:computer-graphics:1}
+A triangle of area 225.74 pixels covered 226 pixels. The problem asks how close the count of pixels is to the area, when it is exact, and why the \omterm{def:b3:computer-graphics:raster}{top-left rule} makes it exact for a whole mesh. \code{mesh.c} draws six random triangles whose corners are pixel centres, so that Pick's theorem applies, then five meshes that cover an image of $64 \times 48$ pixels, each with both rules. Pick's theorem, from 1899, says that a polygon whose corners have integer coordinates has the area $A = I + B/2 - 1$, where $I$ counts the integer points strictly inside it and $B$ those on its boundary. % ledger: b3:pick-1899
+
+\omoutput{code/bachelor-3/31-computer-graphics/outputs/mesh.txt}{Above, six lattice triangles: their area, their centres strictly inside and on the boundary, Pick's formula, and the pixels each rule draws. Below, five meshes of 40 to 144 triangles over $64 \times 48 = 3{,}072$ pixels, with the pixels drawn, the pixels drawn more than once, and those never drawn.}\label{out:b3:computer-graphics:mesh}
+
+\medskip\noindent\textbf{Part I --- One triangle, one square.}
+\begin{enumerate}
+  \item Why does the count of drawn pixels of \code{raster.c} differ from the area, and by how much can it differ for a triangle of that size?
+  \item Why does the rasteriser count in sixteenths of a pixel with integers? What could go wrong with floating-point coordinates on a shared edge?
+  \item In the naive grid of \code{shared_edge.c}, which four pixels are drawn twice, and why exactly those?
+  \item Which pixels does the naive test draw outside the square's 54, and which neighbouring square of a mesh would draw them too?
+  \item Name each edge of the two triangles of the square as top, left, or neither, and check the top-left grid against it.
+  \item Check Pick's theorem on the $9 \times 6$ square, whose corners are pixel centres.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Lattice triangles.}
+\begin{enumerate}[resume]
+  \item Check Pick's formula on the first triangle of the table.
+  \item Why is the naive count always $I + B$? Check it on the fourth row.
+  \item The second triangle has an area of 28.5 and the \omterm{def:b3:computer-graphics:raster}{top-left rule} draws only 20 pixels. Where are its 23 boundary points, and which of them does the rule keep?
+  \item For a lattice triangle, show that the top-left count lies between $I$ and $I + B$, and that it can be above or below the area.
+  \item The third triangle has no boundary points but its corners. What does Pick's theorem give for it, and why is its top-left count then within one pixel of the area?
+  \item Why does no single triangle's count tell whether a rule is right?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Meshes.}
+\begin{enumerate}[resume]
+  \item How are the meshes made, and why are a third of the inner vertices put on pixel centres?
+  \item Why does the \omterm{def:b3:computer-graphics:raster}{top-left rule} draw exactly 3,072 pixels for every mesh?
+  \item For the first mesh, the naive rule draws 3,159 pixels, with 66 drawn more than once. Why is $3{,}159 - 3{,}072 = 87$ larger than 66?
+  \item Why does the naive rule never leave a pixel undrawn?
+  \item A rule that drew only centres with all three $E > 0$: what would it leave in a mesh, and how would it show?
+  \item Why does a pixel drawn twice matter for a half-transparent surface, even though the \omterm{def:b3:computer-graphics:visibility}{depth buffer} hides it for an opaque one?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Exactly once.}
+\begin{enumerate}[resume]
+  \item Prove that a centre on a shared edge, strictly between its ends, is drawn by exactly one of the two triangles (Exercise~\ref{exo:b3:computer-graphics:10} may be quoted).
+  \item Show that a centre strictly inside one triangle of a mesh is drawn by that triangle alone.
+  \item The proof leaves out centres exactly on a vertex. What does the table say about them, given that the meshes put many vertices on centres?
+  \item Explain the rule in one dimension: a segment of pixels split at points, each piece drawing the half-open interval $[x_0, x_1)$.
+  \item Why must the rule depend only on the edge, and not on which triangle is drawn first?
+  \item Sum up: how many pixels does a single triangle cover compared with its area, and how many does a mesh covering the image draw under each rule?
+\end{enumerate}
+\end{problem}

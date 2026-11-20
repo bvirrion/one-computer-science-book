@@ -1,0 +1,43 @@
+$ python3 make_log.py > access.log
+$ wc -l access.log
+640 access.log
+$ head -3 access.log
+2025-11-14 08:00:38 member=27 action=search book=9 status=ok
+2025-11-14 08:02:49 member=- action=search book=69 status=ok
+2025-11-14 08:06:22 member=3 action=return book=30 status=ok
+$ grep status=error access.log | head -2
+2025-11-14 08:09:17 member=24 action=return book=66 status=error reason=card-expired
+2025-11-14 08:53:08 member=51 action=borrow book=55 status=error reason=card-expired
+$ cut -d" " -f4 access.log | sort | uniq -c
+    147 action=borrow
+     58 action=renew
+    157 action=return
+    278 action=search
+$ grep -c status=error access.log
+22
+$ grep -E "^.{11}1[23]:" access.log | wc -l
+104
+$ grep status=error access.log | sed -E "s/.*reason=//" | sort | uniq -c | sort -rn
+      8 no-such-book
+      7 limit-reached
+      7 card-expired
+$ cut -c12-13 access.log | sort | uniq -c | sort -rn | head -3
+     92 11
+     84 10
+     79 16
+$ grep -oE "member=[0-9]+" access.log | sort -u | wc -l
+42
+$ grep -c "member=-" access.log
+114
+$ python3 log_check.py access.log
+640 lines; busiest hour 11 with 92 lines; 42 distinct members
+$ chmod +x logstat.sh
+$ ./logstat.sh access.log 10; echo "exit status $?"
+hour 10: 84 lines, 34 distinct members
+exit status 0
+$ ./logstat.sh access.log 07; echo "exit status $?"
+no line at hour 07
+exit status 1
+$ ./logstat.sh access.log 7am; echo "exit status $?"
+./logstat.sh: hour must have two digits, got '7am'
+exit status 2

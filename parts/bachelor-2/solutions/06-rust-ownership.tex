@@ -1,0 +1,199 @@
+% Solutions of Book 4, chapter 6 (rust-ownership).
+\section*{Chapter \ref{ch:b2:rust-ownership} --- Rust: Ownership and Borrowing}
+
+\begin{solution}{exo:b2:rust-ownership:1}
+\omoutput{code/bachelor-2/06-rust-ownership/outputs/run_compile.txt}{Each snippet built alone.}
+a: two shared \omterm{def:b2:rust-ownership:borrow}{borrows} in use together, allowed. b: \code{first} \omterm{def:b2:rust-ownership:borrow}{borrows} \code{v}, \code{push} needs an exclusive
+\omterm{def:b2:rust-ownership:borrow}{borrow} while \code{first} is still to be printed: refused (and rightly: the push may reallocate). c: \code{i32} is a
+\omterm{def:b2:rust-ownership:copy-type}{copy type}, so \code{n} stays usable. d: \code{s} moved into \code{calc}, then used: refused. e: the exclusive \omterm{def:b2:rust-ownership:borrow}{borrow}
+\code{r} is last used on the line before \code{t} is created, so the two are never in use together: allowed.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-ownership:2}
+\code{shortest} is a shared \omterm{def:b2:rust-ownership:borrow}{borrow} of an element of \code{names}, in use until the \code{println!}; \code{push}
+needs an exclusive \omterm{def:b2:rust-ownership:borrow}{borrow} of \code{names} in between. The push may reallocate the vector's buffer, and
+\code{shortest} would dangle. Fix 1, shorten: push before computing \code{shortest}, or print first and push after.
+Fix 2, clone: \code{let shortest = names.iter().min_by_key(|n| n.len()).unwrap().clone();}, an owned copy of one
+short string. A third, restructure: keep the index of the shortest name and read \code{names[i]} after the push.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-ownership:3}
+\omcode{code/bachelor-2/06-rust-ownership/exercises/first_word.rs}{2}{8}{The first word, borrowed}
+One reference parameter: by the elision rules the result \omterm{def:b2:rust-ownership:borrow}{borrows} from \code{s}. \code{find} returns the byte index at
+which a character begins (here the whitespace), so \code{&s[..i]} ends on a boundary. The tests cover Café,
+a tab, a single word and a leading space, which gives the empty string.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-ownership:4}
+\omoutput{code/bachelor-2/06-rust-ownership/outputs/exo_clones.txt}{The count.}
+\code{String::from} 1, \code{a.clone()} 2, \code{Vec::new()} none, the first \code{push} 3 (room for four),
+\code{a.clone()} 4, \code{v[0].clone()} 5; \code{+ " Lane"} appends to that clone, whose buffer of exactly 4 bytes is
+enlarged: the reallocation. \code{&c} allocates nothing; \code{to_uppercase} builds a new string: 6. \omterm{def:b2:rust-ownership:move}{Moves}
+(\code{v.push(b)}, the result of \code{+}) allocate nothing.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-ownership:5}
+\omoutput{code/bachelor-2/06-rust-ownership/outputs/exo_drop.txt}{The ten lines.}
+\code{let _ = Noisy("c");} binds nothing: the pattern \code{_} does not take \omterm{def:b2:rust-ownership:ownership}{ownership}, so the temporary is dropped at
+the end of the statement, first of all. \code{b} \omterm{def:b2:rust-ownership:move}{moves} into \code{consume} and is dropped at the end of that function.
+\code{f} at the end of its block. \code{drop(v)} \omterm{def:b2:rust-ownership:drop}{drops} the vector, whose elements are dropped in order, \code{d} then
+\code{e}. The second \code{_a} shadows the first without dropping it (a name starting with \code{_} still owns); at
+the end of \code{main} the locals are dropped in reverse order of declaration: \code{a2}, then \code{a}.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-ownership:6}
+\code{line} is a \code{String} owned by \code{joined} and dropped when it returns; \code{&line} would point to a
+freed buffer. The fix: return the owned value, \code{fn joined(names: &[String]) -> String}, with \code{line} as the
+last expression; the buffer \omterm{def:b2:rust-ownership:move}{moves} to the caller. The C version, returning a \code{char *} to a \code{malloc}ed
+buffer that it freed, or to a local array, compiles; the caller reads freed memory or a dead stack frame, which
+usually still holds the right bytes until the next call overwrites them, so the bug shows later and elsewhere.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-ownership:7}
+\omcode{code/bachelor-2/06-rust-ownership/exercises/split.rs}{2}{20}{Two halves, two exclusive \omterm{def:b2:rust-ownership:borrow}{borrows}}
+The \omterm{def:b2:rust-ownership:checker}{borrow checker} reasons on whole values: \code{&mut v[..m]} \omterm{def:b2:rust-ownership:borrow}{borrows} \code{v}, and so does \code{&mut v[m..]},
+whatever the ranges. \code{split_at_mut} is a library function whose body uses \code{unsafe} code to build the two
+\omterm{def:b2:rust-ownership:slice}{slices} from one pointer; its signature returns two \code{&mut [T]} that \omterm{def:b2:rust-ownership:borrow}{borrow} \code{v}, and the library guarantees,
+by construction, that they do not overlap. \code{tests/ownership} checks both functions, including an odd length,
+equal largest elements and an empty \omterm{def:b2:rust-ownership:slice}{slice}.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-ownership:8}
+The signature promises that the result is valid wherever \code{x} is, and says nothing of \code{y}, whose lifetime
+is unrelated. A caller may thus keep the result after \code{y} is dropped:
+\code{let r; { let t = String::from("tmp"); r = f(&a, &t); } println!("{r}");} compiles. If \code{f} returned
+\code{y}, \code{r} would dangle; the compiler refuses the body instead. Giving both the same lifetime,
+\code{fn f<'a>(x: &'a str, y: &'a str) -> &'a str}, allows returning either; the caller loses the call above, which is
+then refused because \code{t} does not live long enough.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-ownership:9}
+\omcode{code/bachelor-2/06-rust-ownership/exercises/reverse_words.rs}{2}{10}{Words reversed in place}
+Let the text be $w_1\,w_2 \dots w_k$, words separated by spaces. Reversing all bytes gives
+$\overline{w_k}\,\dots\,\overline{w_1}$, each word's bytes in reverse order; reversing each word gives back
+$w_k \dots w_1$. Each multi-byte character lies inside one word, so its bytes are reversed twice and recover their
+order; spaces are single bytes. The final bytes are therefore the concatenation of valid encoded characters, valid
+UTF-8, and \code{from_utf8} succeeds without copying. \code{into_bytes} and \code{from_utf8} reuse the buffer: the
+test compares the addresses.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-ownership:10}
+\omcodes{code/bachelor-2/06-rust-ownership/exercises/stack.rs}{1-30,49-57}{A stack of boxed nodes}
+\code{self.head} cannot be moved out of a borrowed \code{self}, since \code{self} would be left without a head;
+\code{take} \omterm{def:b2:rust-ownership:move}{moves} the value out and puts \code{None} in its place, a legal exclusive use of the field. The default \omterm{def:b2:rust-ownership:drop}{drop}
+of a \code{Box<Node>} \omterm{def:b2:rust-ownership:drop}{drops} its \code{next} field, which \omterm{def:b2:rust-ownership:drop}{drops} the next box, and so on: one nested call per node, and
+a million nested calls overflow the 8\,MB stack of the main thread. The \code{Drop} above detaches each node before
+dropping it, so each node is dropped with no successor. The test pushes a million values and \omterm{def:b2:rust-ownership:drop}{drops} the stack, and
+compares 10\,000 random operations with a \code{Vec}.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-ownership:11}
+(a) A loop over a vector holds an iterator, which is a shared \omterm{def:b2:rust-ownership:borrow}{borrow} of the vector (or an exclusive one, for
+\code{iter_mut}), in use from the start of the loop to its last iteration. \code{push} takes \code{&mut self}, an
+exclusive \omterm{def:b2:rust-ownership:borrow}{borrow}; a call inside the body would make it in use together with the iterator's \omterm{def:b2:rust-ownership:borrow}{borrow}, which the
+\omterm{def:b2:rust-ownership:borrow}{borrowing rule} forbids. Without \code{unsafe}, there is no other path to the vector. (b)
+\omoutput[2-12]{code/bachelor-2/06-rust-ownership/outputs/invalidation.txt}{The same loop, in Rust.}
+The message names exactly the two \omterm{def:b2:rust-ownership:borrow}{borrows}. (c) Collect the renewals in a new vector, with \code{iter},
+\code{filter} and \code{map} and a final \code{collect}, then append them after the loop with \code{due.extend}.
+That was the first fix of the C++ chapter; it is now the one the compiler accepts. The index loop works too, since
+\code{due[i]} \omterm{def:b2:rust-ownership:borrow}{borrows} only for the duration of the expression.
+\end{solution}
+
+\begin{solution}{exo:b2:rust-ownership:12}
+\code{seen.clone()} copies the vector and every string in it, at every step. With $n = 2m$ names, the first $m$
+distinct, step $i$ clones $k_i = \min(i, m)$ strings, which costs $k_i + 1$ allocations when $k_i > 0$ (the strings and
+the vector's buffer). Adding the $m$ clones pushed and the $g = 1 + \lceil \log_2 (m / 4) \rceil$ buffers of
+\code{seen}, the total is $\sum_{k=1}^{m-1} (k+1) + m(m+1) + m + g = \frac{3}{2}m^2 + \frac{5}{2}m - 1 + g$: 3879,
+15\,255 and 60\,506 for $n = 100$, 200 and 400, the printed values, and $\Theta(n^2)$. The clone was never needed:
+\code{seen.contains(n)} \omterm{def:b2:rust-ownership:borrow}{borrows} \code{seen} only for the call, so \code{seen.push} after it is legal.
+\omcode{code/bachelor-2/06-rust-ownership/exercises/distinct.rs}{4}{18}{Without the clones, then with a hash set}
+\code{distinct} still compares each name with the list, $O(nm)$ comparisons but only $m$ allocations;
+\code{distinct_fast} keeps borrowed \code{&str}s in a hash set and is $O(n)$ expected. The test checks that both
+give the same names in the order of first appearance.
+\end{solution}
+
+\begin{solution}{pb:b2:rust-ownership:1}
+\textbf{1.} This counter is case-sensitive: \code{The} and \code{the} are two words. The previous chapter lowered every
+word first.
+
+\textbf{2.} \code{first}, the pointer to the counter of \code{The}, at line 18. The block was freed by \code{grow},
+called by \code{dict_count} at line 17 when inserting a new word into a half-full table.
+
+\textbf{3.} It reads freed memory only if an insertion grew the table between line 16 and line 18. An input whose
+distinct words never reach half the capacity, say one line \code{The The}, never grows the table of 8 slots.
+
+\textbf{4.} The table: \code{dict_count} stored a \code{strdup} copy, and \code{dict_free} frees it. \code{best} only
+\omterm{def:b2:rust-ownership:borrow}{borrows} it. \code{main} frees it, then \code{dict_free} frees it again.
+
+\textbf{5.} Into \code{line}, the buffer of \code{getline}, which is overwritten by every new line and freed after the
+loop. Every stored word points into that one buffer, so after the next line is read the old words have changed: the
+comparisons of later lookups compare with the wrong text, and counts go to the wrong words.
+
+\textbf{6.} Version 1 increments, or here only reads, a freed slot that \code{malloc} may have given to another
+use: silent corruption. Version 2 corrupts the allocator's own lists, a crash later or an exploitable state. Version
+3 prints wrong counts, or garbage, with no crash at all. Version 3 is the most dangerous: it is wrong on every input
+and may look plausible.
+
+\textbf{7.} Each \code{String} is owned by its slot, the slots by the vector, the vector by the \code{Dict}. When the
+\code{Dict} is dropped, the vector \omterm{def:b2:rust-ownership:drop}{drops} each \code{Option}, which \omterm{def:b2:rust-ownership:drop}{drops} each \code{String}, freeing its buffer, then
+the vector frees its own buffer.
+
+\textbf{8.} \code{mem::replace} \omterm{def:b2:rust-ownership:move}{moves} the old vector out of \code{self.slots}, leaving the new empty one, so the
+function now owns the old one; \code{into_iter} \omterm{def:b2:rust-ownership:move}{moves} each pair out of it, and moving a \code{String} copies its three
+words, not its bytes. Reading \code{self.slots} while writing a new vector stored in \code{self.slots} would need two
+\omterm{def:b2:rust-ownership:borrow}{borrows} of the same field, one exclusive; after the replace they are two different vectors.
+
+\textbf{9.} The result \omterm{def:b2:rust-ownership:borrow}{borrows} from \code{self} (a method with \code{&mut self}): the \code{Dict} stays exclusively
+borrowed for as long as the returned counter is used.
+
+\textbf{10.} The \code{Dict} is dropped automatically at the end of \code{main}, and the \omterm{def:b2:rust-ownership:drop}{drop} of its fields frees
+everything: the compiler wrote \code{dict_free}.
+
+\textbf{11.} \code{count} copies the word (\code{to_string}) when it creates a slot, and only compares it otherwise;
+the \omterm{def:b2:rust-ownership:borrow}{borrow} \code{&str} is needed only during the call, which ends before the line is dropped.
+
+\textbf{12.} The 34 \code{String} buffers, one by one in the order of the slots, then the slots' buffer; the three
+words of \code{d} on the stack disappear with the frame of \code{main}.
+
+\textbf{13.} \code{first} is an exclusive \omterm{def:b2:rust-ownership:borrow}{borrow} of \code{d}, in use until line 12; the second \code{count} needs
+another. The comment's rule, valid until the next insertion, is exactly this \omterm{def:b2:rust-ownership:borrow}{borrow}: the Rust signature makes it a
+rule the compiler checks.
+
+\textbf{14.} Only the \omterm{def:b2:rust-ownership:ownership}{owner} frees: a \code{String} is freed when its \omterm{def:b2:rust-ownership:ownership}{owner} \omterm{def:b2:rust-ownership:drop}{drops} it. Through \code{&String} nothing
+can take \omterm{def:b2:rust-ownership:ownership}{ownership}, so nothing can free it: E0507.
+
+\textbf{15.} The map stores \code{&str} borrowed from \code{line}, which is dropped at the end of each iteration while
+the map lives on: E0597, the lifetime of the \omterm{def:b2:rust-ownership:borrow}{borrow} exceeds that of the \omterm{def:b2:rust-ownership:ownership}{owner}.
+
+\textbf{16.} 1: finish with \code{first} before inserting, or call \code{count("The")} again when needed. 2: clone
+the word if an owned copy is needed: \code{let mine = best.clone();}. 3: store owned words,
+\code{HashMap<String, u32>}, inserting \code{w.to_string()} when a word is new, as \code{Dict} does.
+
+\textbf{17.} Version 3 disappears with \code{std::string} keys, which own copies. Versions 1 and 2 remain: a pointer
+or reference into an \code{unordered_map} is stable across rehashes (the nodes do not \omterm{def:b2:rust-ownership:move}{move}), so version 1 would even
+be correct there, but with a \code{vector} of slots it reads freed memory; and \code{delete} on a pointer obtained
+from \code{c_str()} compiles. C++ checks neither.
+
+\textbf{18.} The comment states a rule for humans; the signature
+\code{fn count(&mut self, word: &str) -> &mut u32} states the same rule in a form the compiler enforces at every call.
+
+\textbf{19.} Both print 100\,000 different words and the same count for \code{w7}: same generator, same counts.
+
+\textbf{20.} On the printed run, both means are about a third of a second and lie within 5\,\% of each other, while
+the three runs of one program differ by up to about 25\,\%: the difference between the means is smaller than the
+spread.
+
+\textbf{21.} The index is masked with \code{cap - 1}, and the check is one comparison with the length, predicted
+correctly every time; the probing loop is dominated by hashing, string comparison and cache misses.
+
+\textbf{22.} Formatting the word (\code{snprintf} against \code{write!}), the hash written as a fold, \code{strcmp}
+against a \omterm{def:b2:rust-ownership:slice}{slice} comparison that first compares lengths, and the allocators' handling of 100\,000 small blocks.
+
+\textbf{23.} Many runs on a quiet machine, the order of the runs alternated, the median and its spread reported, and
+both programs compiled by the same back end (\code{gcc} and \code{rustc} optimise differently).
+
+\textbf{24.} \emph{Three memory errors refused at compile time, same speed within a measured margin}: the use after
+free across an insertion (E0499), the double free of a borrowed word (E0507) and the words borrowed from a dead
+buffer (E0597) are all compile-time errors in Rust; and on the laptop the two versions run within 5\,\% of each other,
+inside the run-to-run spread.
+\end{solution}

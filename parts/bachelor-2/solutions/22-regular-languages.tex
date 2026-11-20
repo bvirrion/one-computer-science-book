@@ -1,0 +1,179 @@
+% Solutions of Book 4, chapter 22 (regular expressions and the limits of regular languages).
+\section*{Chapter \ref{ch:b2:regular-languages} --- Regular Expressions and the Limits of Regular Languages}
+
+\begin{solution}{exo:b2:regular-languages:1}
+\omoutput{code/bachelor-2/22-regular-languages/outputs/exo_match.txt}{The seven words.}
+$(ab \mid b)^*$ is the words in which every $a$ is immediately followed by a $b$, and the final $a?$ allows one more
+$a$ at the end. So $\varepsilon$, $a$, $bab$, $abba$ and $babab$ match; $aa$ and $aab$ do not, since their first $a$
+is followed by an $a$.
+\end{solution}
+
+\begin{solution}{exo:b2:regular-languages:2}
+\omoutput{code/bachelor-2/22-regular-languages/outputs/exo_ident.txt}{The two patterns on six names.}
+\code{[a-z0-9_]+} accepts \code{9lives} and \code{2}, which start with a digit. The pattern \code{[a-z_][a-z0-9_]*}
+asks for one letter or underscore, then any number of letters, digits or underscores: it rejects them, and still
+rejects the empty name.
+\end{solution}
+
+\begin{solution}{exo:b2:regular-languages:3}
+\omoutput{code/bachelor-2/22-regular-languages/outputs/exo_decimal.txt}{The expression against the hook's automaton.}
+The expression is \code{[+-]?[0-9]+(.[0-9]+)?([eE][+-]?[0-9]+)?}: an optional sign, at least one digit, an optional
+group of a point and at least one digit, and an optional exponent with its own optional sign. It agrees with the
+automaton on all 137\,257 strings of length at most 6 over the seven characters, 1\,854 of which are numbers. A check
+on a finite set is not a proof; the proof is \cref{exo:b2:regular-languages:9}'s checker, run on the two automata.
+\end{solution}
+
+\begin{solution}{exo:b2:regular-languages:4}
+\omoutput{code/bachelor-2/22-regular-languages/outputs/exo_count.txt}{$c_0$ to $c_{12}$, from the denotation.}
+A nonempty word of the language starts either with $b$, followed by any word of the language of length $n - 1$, or
+with $ab$, followed by one of length $n - 2$; the two cases do not overlap, since the first letter tells them apart.
+So $c_n = c_{n-1} + c_{n-2}$ with $c_0 = c_1 = 1$: the Fibonacci numbers.
+\end{solution}
+
+\begin{solution}{exo:b2:regular-languages:5}
+\omoutput{code/bachelor-2/22-regular-languages/outputs/exo_follow.txt}{The sets of $a_1(b_2a_3 \mid b_4)^*a_5$.}
+The star's body has $\mathrm{First} = \{2, 4\}$ and $\mathrm{Last} = \{3, 4\}$; the star adds $\{2, 4\}$ to the follow
+sets of 3 and 4. The concatenation of $a_1$ with the star (nullable) gives $\mathrm{Follow}(1) = \{2, 4\}$, and the
+concatenation with $a_5$ adds 5 to the follow sets of 1, 3 and 4. Inside $b_2a_3$, $\mathrm{Follow}(2) = \{3\}$. The
+automaton has states 0 to 5: $0 \xrightarrow{a} 1$; from 1, 3 and 4: $b$ to 2, $b$ to 4 and $a$ to 5; $2
+\xrightarrow{a} 3$; state 5 accepts.
+\end{solution}
+
+\begin{solution}{exo:b2:regular-languages:6}
+\omoutput{code/bachelor-2/22-regular-languages/outputs/exo_min_bug.txt}{The classes found, and four words on the
+merged automaton.}
+States 1 and 2 both have one successor, in the accepting class, so the program merges them; it forgot that state 1
+moves on $b$ and state 2 on $a$. The merged automaton accepts $aa$ and $bb$ as well as $ab$ and $ba$. The fix is to
+complete the automaton first, with a sink, and to compare the successors letter by letter, as in
+\cref{lst:b2:regular-languages:moore}: then 1 goes to the sink on $a$ and 2 goes to 3, and round 1 separates them.
+\end{solution}
+
+\begin{solution}{exo:b2:regular-languages:7}
+\omoutput{code/bachelor-2/22-regular-languages/outputs/exo_eliminate.txt}{The expression found by \code{eliminate}, and
+its check.}
+State 0 (even) is the start and accepts; $r_{00} = b$, $r_{01} = a$, $r_{10} = a$, $r_{11} = b$, with $S
+\xrightarrow{\varepsilon} 0$ and $0 \xrightarrow{\varepsilon} E$. Removing 0 gives $r_{SE} = b^*$, $r_{S1} = b^*a$,
+$r_{11} = b \mid ab^*a$ and $r_{1E} = ab^*$. Removing 1 gives $r_{SE} = b^* \mid b^*a(b \mid ab^*a)^*ab^*$: no $a$,
+or a first $a$, blocks with an even number of $a$, and a last $a$.
+\end{solution}
+
+\begin{solution}{exo:b2:regular-languages:8}
+Let $L = \{a^nb^m : n \le m\}$. Pumping: if a DFA with $p$ states recognised $L$, then $w = a^pb^p \in L$ would split
+as $xyz$ with $|xy| \le p$, so $y = a^j$ with $j \ge 1$, and $xy^2z = a^{p+j}b^p$ would be in $L$; it is not, since
+$p + j > p$. \omterm{def:b2:regular-languages:residual}{Residuals}: for $i < j$, $b^i$ is in $(a^i)^{-1}L$ but not in $(a^j)^{-1}L$, so the words $a^0, a^1,
+a^2, \dots$ have pairwise different \omterm{def:b2:regular-languages:residual}{residuals}, infinitely many, and \cref{thm:b2:regular-languages:myhill-nerode}
+concludes.
+\end{solution}
+
+\begin{solution}{exo:b2:regular-languages:9}
+\omcode{code/bachelor-2/22-regular-languages/listings/dfa.rs}{94}{113}{A breadth-first search over pairs of states}
+The search starts from the pair of start states and follows each letter in both automata at once: this is the \omterm{def:b2:finite-automata:product}{product
+automaton}, built only as far as it is reached. Each pair is entered once, with the word that first reached it; since a
+breadth-first search reaches pairs in order of the length of that word, the first pair with different acceptance
+gives a shortest word on which the languages differ. If no such pair is reached, the languages are equal
+(\cref{prop:b2:regular-languages:decisions}). The cost is at most $n_A n_B |\Sigma|$ steps. \Cref{out:b2:regular-languages:equivalent}
+shows it on five pairs of expressions.
+\end{solution}
+
+\begin{solution}{exo:b2:regular-languages:10}
+If $u^{-1}L = v^{-1}L$, then $(ua)^{-1}L = a^{-1}(u^{-1}L) = a^{-1}(v^{-1}L) = (va)^{-1}L$, since $x \in (ua)^{-1}L$
+iff $uax \in L$ iff $ax \in u^{-1}L$. So $\sim_L$ is a right congruence. By definition, the classes of $\sim_L$ are in
+bijection with the \omterm{def:b2:regular-languages:residual}{residuals}, by $[u] \mapsto u^{-1}L$. By \cref{cor:b2:regular-languages:unique-minimal}, the \omterm{def:b2:regular-languages:minimal}{minimal
+automaton} is the \omterm{def:b2:regular-languages:residual}{residual} automaton, whose run on $u$ ends in $u^{-1}L$
+(\cref{thm:b2:regular-languages:myhill-nerode}). So $u$ and $v$ lead it to the same state exactly when $u^{-1}L =
+v^{-1}L$, that is, when $u \sim_L v$, and the number of classes, the \emph{index} of $\sim_L$, is the number of states
+of the \omterm{def:b2:regular-languages:minimal}{minimal automaton}.
+\end{solution}
+
+\begin{solution}{exo:b2:regular-languages:11}
+\omcode{code/bachelor-2/22-regular-languages/exercises/hopcroft.rs}{21}{52}{Hopcroft's loop: splitters, the states
+entering them, and the smaller half}
+\omoutput{code/bachelor-2/22-regular-languages/outputs/minimise_bench.txt}{Moore and Hopcroft on automata of up to
+49\,153 states, on the laptop.}
+The predecessor lists \code{inv} let a splitter $(B, a)$ cost the number of transitions entering $B$ on $a$. A state
+$q$ lies in a splitter on the list once per time its class is put there, and after its first time it is put there
+only as the smaller half, at most half of the previous class: at most $1 + \log_2 n$ times per letter. Summed over the
+states, the work is proportional to $n|\Sigma| \log n$. The tests check that the classes are Moore's on every sample.
+Here Hopcroft's algorithm gains less than a factor of 2, and on other runs of the same program it lost at the
+largest size: Moore's method needs only $k + 1$ rounds on these automata, about $\log_2 n$, so both do about $n \log
+n$ work, and Hopcroft's bookkeeping (a set of splitters, predecessor lists, sorting) costs more per step. On an automaton that is a chain of $n$ states, Moore needs about $n$ rounds and the
+difference becomes large.
+\end{solution}
+
+\begin{solution}{exo:b2:regular-languages:12}
+Let $L$ be the words with as many $a$ as $b$. \omterm{def:b2:regular-languages:residual}{Residuals}: for $i \ne j$, $b^i \in (a^i)^{-1}L$ and $b^i \notin
+(a^j)^{-1}L$, so $L$ has infinitely many \omterm{def:b2:regular-languages:residual}{residuals}. Intersection: $L \cap a^*b^* = \{a^nb^n\}$, which is not \omterm{def:b2:regular-languages:regular}{regular}
+(\cref{prop:b2:regular-languages:nonregular}); since $a^*b^*$ is \omterm{def:b2:regular-languages:regular}{regular} and \omterm{def:b2:regular-languages:regular}{regular languages} are closed under
+intersection, $L$ cannot be \omterm{def:b2:regular-languages:regular}{regular}.
+\end{solution}
+
+\begin{solution}{pb:b2:regular-languages:1}
+\textbf{1.} 4 end in Road, 5 in Row and 5 in Way: the 14 of the second line.
+
+\textbf{2.} \code{[A-Z]} is an alternation of 26 letters, \code{[a-z]*} the star of 26 more, then the space and the
+four letters of Road: $26 + 26 + 1 + 4 = 57$.
+
+\textbf{3.} \code{[A-Z][a-z]* (Lane|Avenue)}: the 6 lanes and the 3 avenues, 9 names.
+
+\textbf{4.} Bridge Road, Bridge Way, Castle Road, Castle Row, Castle Way, Garden Lane, Garden Road, Station Row.
+
+\textbf{5.} The alternation of the names, each written as a concatenation of its letters, denotes the set.
+
+\textbf{6.} $\Sigma^* e \Sigma^*$, with $\Sigma$ written as a class of every character that can occur in a name.
+
+\textbf{7.} $a_1 b_2 b_3 c_4$; $\mathrm{Null}$ is false, $\mathrm{First} = \{1, 3, 4\}$, $\mathrm{Last} = \{4\}$,
+$\mathrm{Follow}(1) = \{2\}$, $\mathrm{Follow}(2) = \mathrm{Follow}(3) = \{1, 3, 4\}$, $\mathrm{Follow}(4) =
+\emptyset$.
+
+\textbf{8.} 5 states, and $3 + 1 + 3 + 3 + 0 = 10$ transitions.
+
+\textbf{9.} $\{0\} \xrightarrow{b} \{3\} \xrightarrow{a} \{1\} \xrightarrow{b} \{2\} \xrightarrow{b} \{3\}
+\xrightarrow{c} \{4\}$: accepted, after 5 unions, one per letter, since each set holds one state.
+
+\textbf{10.} The next set is masked by the positions holding the letter just read; equivalently, every transition into
+a position carries that position's letter.
+
+\textbf{11.} At most $(57 + 1) \times 12 = 696$ (\cref{prop:b2:regular-languages:linear}).
+
+\textbf{12.} A set of states is the bits of one 128-bit integer, state 0 included. With a vector of 64-bit words as the
+set, a union costs one OR per word, $\lceil (m + 1)/64 \rceil$ in all.
+
+\textbf{13.} Six states: $\{0\}$; $\{1\}$, $\{3\}$ and $\{4\}$, reached by $a$, $b$ and $c$; $\{2\}$, reached from
+$\{1\}$ by $b$; and the sink $\emptyset$. $\{2\}$ and $\{3\}$ have the transitions of $\{0\}$.
+
+\textbf{14.} Round 0: $\{4\}$ against the rest. Round 1: $\{0\}$, $\{2\}$ and $\{3\}$ go to $\{4\}$ on $c$, the others
+do not: three classes. Round 2: $\{1\}$ goes to $\{2\}$ on $b$, $\emptyset$ to $\emptyset$, which are now in different
+classes: four classes. Round 3 splits nothing. The \omterm{def:b2:regular-languages:minimal}{minimal automaton} has 4 states.
+
+\textbf{15.} $L$ (by $\varepsilon$, $b$, $ab$, \dots), $bL$ (by $a$), $\{\varepsilon\}$ (by $c$) and $\emptyset$ (by
+$aa$, $cc$, \dots): the classes $\{\{0\}, \{2\}, \{3\}\}$, $\{1\}$, $\{4\}$ and $\emptyset$.
+
+\textbf{16.} Both denote the words over $\{a, b\}$ in which every $a$ is immediately followed by a $b$, then $c$. Such
+a word is a block of $b$'s, then blocks starting with $ab$ followed by $b$'s, which is $b^*(abb^*)^*$; and every word of
+$b^*(abb^*)^*$ has each $a$ followed by $b$. The checker of \cref{exo:b2:regular-languages:9} confirms it.
+
+\textbf{17.} $c$: it is in the first language and lacks the $b$ before $c$ in the second. No shorter word differs,
+since $\varepsilon$, $a$ and $b$ are in neither.
+
+\textbf{18.} By \cref{cor:b2:regular-languages:unique-minimal}, patterns with the same language have the same \omterm{def:b2:regular-languages:minimal}{minimal
+automaton} up to the names of the states. Renumbering its states in the order a breadth-first search from the start
+meets them, letters in a fixed order, makes the transition table and the \omterm{def:b2:finite-automata:dfa}{accepting states} a canonical key.
+
+\textbf{19.} $2^n$: each $a$ is read by the left or the right branch.
+
+\textbf{20.} Every way reaches the end of the text without a $b$ and fails; the engine then returns to its last choice
+and tries the other branch, so it tries all $2^n$. One more $a$ doubles the ways, and the measured ratios are close
+to 2.
+
+\textbf{21.} About $6.6 \times 2^{13} \approx 54\,000$ s, 15 hours.
+
+\textbf{22.} One union for the first letter, from $\{0\}$, then two for each later one, from $\{1, 2\}$: $2n - 1$, as
+the output shows (39 for 20 letters, 1\,999 for 1\,000).
+
+\textbf{23.} About 7.3 ns a letter: some 0.3 $\mu$s for 40 letters, and 73 ms for ten million.
+
+\textbf{24.} \emph{From exponential to \omterm{def:b2:regular-languages:local}{linear}}: on $(a \mid a)^*b$ and $a^n$, the backtracking engine's time doubles
+with each $a$, as measured, reaching 6.6 s at $n = 27$; the Glushkov matcher makes at most $(m + 1)n$ unions on any
+pattern of $m$ positions and any text of $n$ letters, as proved, here $2n - 1$, and answers ten million letters in
+73 ms.
+\end{solution}

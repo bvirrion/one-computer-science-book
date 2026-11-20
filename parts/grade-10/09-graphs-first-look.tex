@@ -1,0 +1,357 @@
+% Provenance (never printed): SNT "Les reseaux sociaux" (graphs, distance, diameter, radius, centre, small worlds)
+% and "Localisation, cartographie et mobilite" (positioning, road maps as graphs, NMEA frames, routes).
+% See sources/book2/BRIEFS.md.
+\chapter{Graphs: Networks of Roads and People}\label{ch:g10:graphs-first-look}
+
+A rumour starts in Brenmoor: the library will open on Sundays. Each person who hears it tells their friends the next
+day. If it starts with the right person, how many days until everyone who can hear it has heard it? And who is the
+right person?
+
+The question is not about anyone's personality: it is about the shape of the network of friendships. The same shape
+appears in the roads between places, the links between web pages and the cables between computers. This chapter
+names that shape, a \emph{\omterm{def:g10:graphs-first-look:graph}{graph}}, stores it in Python, measures \omterm{def:g10:graphs-first-look:distance}{distances} in it, and finds its \omterm{def:g10:graphs-first-look:eccentricity}{centre}.
+
+\begin{recall}
+A dictionary maps keys to values, and a set holds values without order or repetition (Book 1, grade 8, and the
+chapter on tuples and sets). The Earth and space sciences book explains how a satellite receiver works out its own
+position on the Earth (grade 9); a map then turns that position into a route.
+\end{recall}
+
+\section{Vertices and edges}\label{sec:g10:graphs-first-look:graphs}
+
+\begin{definition}[Graph, vertex, edge]\label{def:g10:graphs-first-look:graph}
+A \emph{graph}\index{graph} is a set of \emph{vertices}\index{vertex} together with a set of
+\emph{edges}\index{edge}, each edge joining two different vertices. Two vertices joined by an edge are
+\emph{adjacent}.
+\end{definition}
+
+In the friendship \omterm{def:g10:graphs-first-look:graph}{graph} of Brenmoor the \omterm{def:g10:graphs-first-look:graph}{vertices} are the people $1$ to $40$, and an \omterm{def:g10:graphs-first-look:graph}{edge} joins two friends. In the
+road \omterm{def:g10:graphs-first-look:graph}{graph} the \omterm{def:g10:graphs-first-look:graph}{vertices} are the $30$ places, and an \omterm{def:g10:graphs-first-look:graph}{edge} is a road.
+
+\begin{definition}[Degree, neighbour]\label{def:g10:graphs-first-look:degree}
+The \emph{neighbours}\index{neighbour} of a \omterm{def:g10:graphs-first-look:graph}{vertex} are the \omterm{def:g10:graphs-first-look:graph}{vertices} adjacent to it. Its
+\emph{degree}\index{degree} is the number of its neighbours.
+\end{definition}
+
+\begin{definition}[Directed graph, weighted graph]\label{def:g10:graphs-first-look:directed}
+In a \emph{directed graph}\index{directed graph} each \omterm{def:g10:graphs-first-look:graph}{edge} goes from one \omterm{def:g10:graphs-first-look:graph}{vertex} to another, like a one-way street: an
+\omterm{def:g10:graphs-first-look:graph}{edge} from $a$ to $b$ does not let you go from $b$ to $a$. A \omterm{def:g10:graphs-first-look:graph}{vertex} then has an \emph{\omterm{def:g10:graphs-first-look:degree}{out-degree}}, the number of \omterm{def:g10:graphs-first-look:graph}{edges}
+leaving it, and an \emph{\omterm{def:g10:graphs-first-look:degree}{in-degree}}, the number of \omterm{def:g10:graphs-first-look:graph}{edges} arriving. In a \emph{weighted graph}\index{weighted graph}
+each \omterm{def:g10:graphs-first-look:graph}{edge} carries a number, its \emph{weight}: a \omterm{def:g10:graphs-first-look:path}{length} in metres, a time, a price.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize]
+  \begin{scope}
+    \node[gnode] (a) at (0,1.2) {A}; \node[gnode] (b) at (1.6,1.2) {B};
+    \node[gnode] (c) at (0,0) {C}; \node[gnode] (d) at (1.6,0) {D};
+    \draw[gedge] (a) -- (b) (a) -- (c) (b) -- (c) (b) -- (d);
+    \node at (0.8,-0.8) {undirected};
+    \node[font=\scriptsize, text=omDef, anchor=west] at (1.95,1.2) {degree 3};
+  \end{scope}
+  \begin{scope}[xshift=45mm]
+    \node[gnode] (a) at (0,1.2) {A}; \node[gnode] (b) at (1.6,1.2) {B};
+    \node[gnode] (c) at (0,0) {C}; \node[gnode] (d) at (1.6,0) {D};
+    \draw[ptr, black] (a) -- (b); \draw[ptr, black] (c) -- (a); \draw[ptr, black] (b) -- (c);
+    \draw[ptr, black] (b) -- (d);
+    \node at (0.8,-0.8) {directed};
+    \node[font=\scriptsize, text=omDef, align=left, anchor=west] at (2.0,1.2) {B: in 1, out 2};
+  \end{scope}
+  \begin{scope}[xshift=90mm]
+    \node[gnode] (a) at (0,1.2) {A}; \node[gnode] (b) at (1.6,1.2) {B};
+    \node[gnode] (c) at (0,0) {C}; \node[gnode] (d) at (1.6,0) {D};
+    \draw[gedge] (a) -- node[wedge, above] {4} (b) (a) -- node[wedge, left] {2} (c)
+      (b) -- node[wedge] {1} (c) (b) -- node[wedge, right] {5} (d);
+    \node at (0.8,-0.8) {weighted};
+  \end{scope}
+\end{tikzpicture}
+
+{\small The same four \omterm{def:g10:graphs-first-look:graph}{vertices} and four \omterm{def:g10:graphs-first-look:graph}{edges}, as an undirected \omterm{def:g10:graphs-first-look:graph}{graph}, a \omterm{def:g10:graphs-first-look:directed}{directed graph} and a \omterm{def:g10:graphs-first-look:directed}{weighted graph}.}
+\end{omfigure}
+
+\section{A graph in Python}\label{sec:g10:graphs-first-look:python}
+
+A \omterm{def:g10:graphs-first-look:graph}{graph} is stored as a dictionary from each \omterm{def:g10:graphs-first-look:graph}{vertex} to the set of its \omterm{def:g10:graphs-first-look:degree}{neighbours}. An undirected \omterm{def:g10:graphs-first-look:graph}{edge} is written at
+both of its ends; a \omterm{def:g10:graphs-first-look:graph}{vertex} without any \omterm{def:g10:graphs-first-look:graph}{edge} still gets an empty set, so that it is not forgotten.
+
+\omcode{code/grade-10/09-graphs-first-look/listings/load_friends.py}{1}{19}{The friendship \omterm{def:g10:graphs-first-look:graph}{graph} as a dictionary of
+sets.}\label{lst:g10:graphs-first-look:load-friends}
+
+\omoutput{code/grade-10/09-graphs-first-look/outputs/load_friends.txt}{Person $40$ is a \omterm{def:g10:graphs-first-look:graph}{vertex} with no
+\omterm{def:g10:graphs-first-look:graph}{edge}.}\label{out:g10:graphs-first-look:load-friends}
+
+\omcode{code/grade-10/09-graphs-first-look/listings/degree_table.py}{1}{11}{How many people have each number of
+friends.}\label{lst:g10:graphs-first-look:degree-table}
+
+\omoutput{code/grade-10/09-graphs-first-look/outputs/degree_table.txt}{The \omterm{def:g10:graphs-first-look:degree}{degrees} add up to $100$, twice the $50$
+friendships.}\label{out:g10:graphs-first-look:degree-table}
+
+\begin{proposition}[Sum of the degrees]\label{prop:g10:graphs-first-look:handshake}
+In an undirected \omterm{def:g10:graphs-first-look:graph}{graph}, the sum of the \omterm{def:g10:graphs-first-look:degree}{degrees} of the \omterm{def:g10:graphs-first-look:graph}{vertices} is twice the number of \omterm{def:g10:graphs-first-look:graph}{edges}.
+\end{proposition}
+
+The proof is \cref{exo:g10:graphs-first-look:12}. A road \omterm{def:g10:graphs-first-look:graph}{graph} needs weights, and one-way roads make it directed: the
+listing stores a dictionary of \omterm{def:g10:graphs-first-look:degree}{neighbours} with their \omterm{def:g10:graphs-first-look:distance}{distances}, and writes a two-way road as two directed \omterm{def:g10:graphs-first-look:graph}{edges}.
+
+\omcode{code/grade-10/09-graphs-first-look/listings/load_roads.py}{1}{21}{The road \omterm{def:g10:graphs-first-look:graph}{graph}, directed and
+weighted.}\label{lst:g10:graphs-first-look:load-roads}
+
+\omoutput{code/grade-10/09-graphs-first-look/outputs/load_roads.txt}{$53$ roads give $105$ directed \omterm{def:g10:graphs-first-look:graph}{edges}: one road,
+from the Town Square to the Library, is one-way.}\label{out:g10:graphs-first-look:load-roads}
+
+A program that builds a \omterm{def:g10:graphs-first-look:graph}{graph} by hand can forget one end of an \omterm{def:g10:graphs-first-look:graph}{edge}. The check is short: every \omterm{def:g10:graphs-first-look:graph}{edge} must have its
+reverse, except the one-way roads.
+
+\omcode{code/grade-10/09-graphs-first-look/listings/check_symmetric.py}{1}{11}{Finding the \omterm{def:g10:graphs-first-look:graph}{edges} without a
+reverse.}\label{lst:g10:graphs-first-look:check-symmetric}
+
+\omoutput{code/grade-10/09-graphs-first-look/outputs/check_symmetric.txt}{The friendships are symmetric; among the
+roads, only road $1$ is not.}\label{out:g10:graphs-first-look:check-symmetric}
+
+\section{Paths and distance}\label{sec:g10:graphs-first-look:paths}
+
+\begin{definition}[Path, length of a path]\label{def:g10:graphs-first-look:path}
+A \emph{path}\index{path (graph)} is a sequence of \omterm{def:g10:graphs-first-look:graph}{vertices} in which each one is adjacent to the next (in a \omterm{def:g10:graphs-first-look:directed}{directed
+graph}, joined by an \omterm{def:g10:graphs-first-look:graph}{edge} going from it to the next). Its \emph{length}\index{length of a path} is its number of
+\omterm{def:g10:graphs-first-look:graph}{edges}, or, in a \omterm{def:g10:graphs-first-look:directed}{weighted graph}, the sum of the weights of its \omterm{def:g10:graphs-first-look:graph}{edges}.
+\end{definition}
+
+\begin{definition}[Distance]\label{def:g10:graphs-first-look:distance}
+The \emph{distance}\index{distance (graph)} from a \omterm{def:g10:graphs-first-look:graph}{vertex} $a$ to a \omterm{def:g10:graphs-first-look:graph}{vertex} $b$ is the \omterm{def:g10:graphs-first-look:path}{length} of a shortest \omterm{def:g10:graphs-first-look:path}{path} from
+$a$ to $b$. If there is no such \omterm{def:g10:graphs-first-look:path}{path}, there is no distance.
+\end{definition}
+
+\begin{definition}[Connected graph, component]\label{def:g10:graphs-first-look:connected}
+An undirected \omterm{def:g10:graphs-first-look:graph}{graph} is \emph{connected}\index{connected graph} if there is a \omterm{def:g10:graphs-first-look:path}{path} between any two of its \omterm{def:g10:graphs-first-look:graph}{vertices}. A
+\emph{connected component}\index{connected component} is a largest set of \omterm{def:g10:graphs-first-look:graph}{vertices} joined to one another by \omterm{def:g10:graphs-first-look:path}{paths}.
+\end{definition}
+
+Computing \omterm{def:g10:graphs-first-look:distance}{distances} in a large \omterm{def:g10:graphs-first-look:graph}{graph} is an algorithm of its own, written in grade 12. Here two functions are given,
+in the file \code{given_graphs.py} of the grade's folder, and used without reading them: \code{distances(g, a)}
+returns the dictionary of the \omterm{def:g10:graphs-first-look:distance}{distances}, in \omterm{def:g10:graphs-first-look:graph}{edges}, from \code{a} to every \omterm{def:g10:graphs-first-look:graph}{vertex} it can reach, and
+\code{components(g)} returns the components, largest first.
+
+\omcode{code/grade-10/09-graphs-first-look/listings/components.py}{1}{8}{The components of the friendship
+\omterm{def:g10:graphs-first-look:graph}{graph}.}\label{lst:g10:graphs-first-look:components}
+
+\omoutput{code/grade-10/09-graphs-first-look/outputs/components.txt}{Three components: $29$ people, $10$ people,
+and person $40$ alone.}\label{out:g10:graphs-first-look:components}
+
+\begin{omfigure}
+\begin{tikzpicture}[scale=0.82, transform shape]
+  \input{code/grade-10/09-graphs-first-look/figures/friends_graph.tex}
+\end{tikzpicture}
+
+{\small The friendship \omterm{def:g10:graphs-first-look:graph}{graph} of people $1$ to $40$, drawn in three groups by number. The orange \omterm{def:g10:graphs-first-look:graph}{edges} join two
+groups. Persons $1$ and $28$, shaded, are the \omterm{def:g10:graphs-first-look:eccentricity}{centre} of the largest component; the group on the right is a
+component of its own, except $18$, $20$ and $25$, whose friends are elsewhere.}
+\end{omfigure}
+
+On a small weighted map, a shortest route can be found by hand with a \emph{frontier}: keep the \omterm{def:g10:graphs-first-look:distance}{distance} from the
+start of every place reached so far, and repeatedly settle the unsettled place with the smallest one, then look at
+the roads leaving it.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, x=11mm, y=11mm]
+  \node[gnode, fill=omDef!20] (3) at (0,0) {3};
+  \node[gnode] (24) at (2.4,-1.2) {24}; \node[gnode] (26) at (2.4,1.4) {26};
+  \node[gnode] (1) at (5,0) {1}; \node[gnode, fill=omProp!25] (23) at (7.6,0) {23};
+  \node[gnode] (16) at (4.4,-2.6) {16}; \node[gnode] (21) at (4.4,2.8) {21};
+  \draw[gedge] (3) -- node[wedge] {1040} (24);
+  \draw[gedge] (3) -- node[wedge] {1790} (26);
+  \draw[gedge] (24) -- node[wedge] {1590} (1);
+  \draw[gedge] (26) -- node[wedge] {1560} (1);
+  \draw[gedge] (1) -- node[wedge] {1210} (23);
+  \draw[gedge] (24) -- node[wedge] {1390} (16);
+  \draw[gedge] (26) -- node[wedge] {1360} (21);
+  \draw[ptr, black] (1) -- node[wedge, above=1pt] {1360, one-way} (3);
+  \draw[omProp, line width=2.2pt, opacity=0.35] (3.center) -- (24.center) -- (1.center) -- (23.center);
+  \node[anchor=west, align=left] at (8.3,0.9) {settled in order:\\3 (0), 24 (1040),\\26 (1790), 16 (2430),\\
+    1 (2630), 21 (3150),\\23 (3840)};
+\end{tikzpicture}
+
+{\small Part of the town's road map, \omterm{def:g10:graphs-first-look:path}{lengths} in metres, from the Library (3) to the North Bridge (23). The route
+3--24--1--23 is $3840$~m. The road from the Town Square (1) to the Library is one-way, so the way back,
+23--1--3, is only $2570$~m.}
+\end{omfigure}
+
+\section{Radius, diameter and centre}\label{sec:g10:graphs-first-look:centre}
+
+\begin{definition}[Eccentricity, radius, diameter, centre]\label{def:g10:graphs-first-look:eccentricity}
+In a \omterm{def:g10:graphs-first-look:connected}{connected graph}, the \emph{eccentricity}\index{eccentricity} of a \omterm{def:g10:graphs-first-look:graph}{vertex} is its largest \omterm{def:g10:graphs-first-look:distance}{distance} to another
+\omterm{def:g10:graphs-first-look:graph}{vertex}. The \emph{radius}\index{radius (graph)} of the \omterm{def:g10:graphs-first-look:graph}{graph} is the smallest eccentricity, its
+\emph{diameter}\index{diameter (graph)} the largest one, and its \emph{centre}\index{centre (graph)} the set of the
+\omterm{def:g10:graphs-first-look:graph}{vertices} whose eccentricity is the radius.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, x=14mm, y=12mm]
+  \foreach \v/\x/\y/\e in {A/0/0/4, B/1/0/3, C/2/0/2, D/3/0/3, E/4/0/4, F/2/-1/3, G/2/-2/4}
+    \node[gnode, label={[text=omDef]above right:\e}] (\v) at (\x,\y) {\v};
+  \node[gnode, fill=omProp!30] at (C) {C};
+  \draw[gedge] (A) -- (B) -- (C) -- (D) -- (E) (C) -- (F) -- (G);
+\end{tikzpicture}
+
+{\small Each \omterm{def:g10:graphs-first-look:graph}{vertex} with its \omterm{def:g10:graphs-first-look:eccentricity}{eccentricity}. The \omterm{def:g10:graphs-first-look:eccentricity}{radius} is $2$, the \omterm{def:g10:graphs-first-look:eccentricity}{diameter} $4$, and the \omterm{def:g10:graphs-first-look:eccentricity}{centre} is C alone: from C,
+every \omterm{def:g10:graphs-first-look:graph}{vertex} is at most two \omterm{def:g10:graphs-first-look:graph}{edges} away.}
+\end{omfigure}
+
+The rumour of the opening question is a question about \omterm{def:g10:graphs-first-look:eccentricity}{eccentricity}: started by a person of \omterm{def:g10:graphs-first-look:eccentricity}{eccentricity} $e$, it
+reaches everyone in that person's component after $e$ days. On the largest component of the friendship \omterm{def:g10:graphs-first-look:graph}{graph}:
+
+\omcode{code/grade-10/09-graphs-first-look/listings/distances_given.py}{1}{15}{\omterm{def:g10:graphs-first-look:distance}{Distances} from person $1$, then the
+\omterm{def:g10:graphs-first-look:eccentricity}{radius}, \omterm{def:g10:graphs-first-look:eccentricity}{diameter} and \omterm{def:g10:graphs-first-look:eccentricity}{centre}.}\label{lst:g10:graphs-first-look:distances-given}
+
+\omoutput{code/grade-10/09-graphs-first-look/outputs/distances_given.txt}{Persons $1$ and $28$ reach the whole
+component in $4$ days; from the worst place it takes $7$.}\label{out:g10:graphs-first-look:distances-given}
+
+\begin{remark}
+$29$ people, each with at most $5$ friends, and yet everyone is within $7$ steps of everyone in the component. In
+large networks of people the \omterm{def:g10:graphs-first-look:distance}{distances} are surprisingly small, a property called the \emph{small world}: since each
+person has many friends, the number of people within $k$ steps grows very fast with $k$.
+\end{remark}
+
+\begin{method}[Finding the centre of a small graph by hand]\label{met:g10:graphs-first-look:centre}
+\begin{enumerate}
+  \item For each \omterm{def:g10:graphs-first-look:graph}{vertex}, write the \omterm{def:g10:graphs-first-look:distance}{distance} to every other \omterm{def:g10:graphs-first-look:graph}{vertex}, by layers: its \omterm{def:g10:graphs-first-look:degree}{neighbours} at $1$, their new
+    \omterm{def:g10:graphs-first-look:degree}{neighbours} at $2$, and so on.
+  \item Its \omterm{def:g10:graphs-first-look:eccentricity}{eccentricity} is the number of the last layer.
+  \item The \omterm{def:g10:graphs-first-look:eccentricity}{radius} is the smallest \omterm{def:g10:graphs-first-look:eccentricity}{eccentricity}, the \omterm{def:g10:graphs-first-look:eccentricity}{diameter} the largest; the \omterm{def:g10:graphs-first-look:eccentricity}{centre} is the \omterm{def:g10:graphs-first-look:graph}{vertices} of
+    \omterm{def:g10:graphs-first-look:eccentricity}{eccentricity} equal to the \omterm{def:g10:graphs-first-look:eccentricity}{radius}.
+\end{enumerate}
+\end{method}
+
+A map application turns a satellite position into a \omterm{def:g10:graphs-first-look:graph}{vertex} of the road \omterm{def:g10:graphs-first-look:graph}{graph}, and a route into a shortest \omterm{def:g10:graphs-first-look:path}{path}. The
+receiver gives its position as text, in a standard sentence format: \cref{exo:g10:graphs-first-look:11} decodes one.
+
+\section{Exercises}\label{sec:g10:graphs-first-look:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g10:graphs-first-look:1}
+A \omterm{def:g10:graphs-first-look:graph}{graph} has $5$ \omterm{def:g10:graphs-first-look:graph}{vertices} with \omterm{def:g10:graphs-first-look:degree}{degrees} $3$, $2$, $2$, $2$ and $1$. How many \omterm{def:g10:graphs-first-look:graph}{edges} does it have? Can a \omterm{def:g10:graphs-first-look:graph}{graph} have
+\omterm{def:g10:graphs-first-look:degree}{degrees} $3$, $3$, $1$?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:graphs-first-look:2}
+Write the dictionary of sets of the undirected \omterm{def:g10:graphs-first-look:graph}{graph} of the first drawing of the chapter (\omterm{def:g10:graphs-first-look:graph}{vertices} A, B, C, D).
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:graphs-first-look:3}
+In the \omterm{def:g10:graphs-first-look:graph}{graph} of eccentricities, give the \omterm{def:g10:graphs-first-look:distance}{distance} from A to G and from E to F. Give two different shortest \omterm{def:g10:graphs-first-look:path}{paths}
+from B to D, or explain why there is only one.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:graphs-first-look:4}
+A \omterm{def:g10:graphs-first-look:graph}{graph} has the \omterm{def:g10:graphs-first-look:graph}{edges} $1$--$2$, $2$--$3$, $4$--$5$ and the \omterm{def:g10:graphs-first-look:graph}{vertices} $1$ to $6$. List its components. How many \omterm{def:g10:graphs-first-look:graph}{edges}
+would make it \omterm{def:g10:graphs-first-look:connected}{connected}, at least?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:graphs-first-look:5}
+Write \code{degree(g, v)}, and use it to print the people of the friendship \omterm{def:g10:graphs-first-look:graph}{graph} whose \omterm{def:g10:graphs-first-look:degree}{degree} is $1$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:graphs-first-look:6}
+A function \code{add_friendship(g, a, b)} only writes \code{g[a].add(b)}. After building the \omterm{def:g10:graphs-first-look:graph}{graph} with it, which
+listing of the chapter detects the problem, and what does it print? Correct the function.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:graphs-first-look:7}
+Write \code{is_path(g, seq)}, which says whether a list of \omterm{def:g10:graphs-first-look:graph}{vertices} is a \omterm{def:g10:graphs-first-look:path}{path} of \code{g}. Check that
+\code{[3, 2, 10, 1, 28]} is a \omterm{def:g10:graphs-first-look:path}{path} of the friendship \omterm{def:g10:graphs-first-look:graph}{graph} and \code{[3, 1]} is not.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:graphs-first-look:8}
+Draw the \omterm{def:g10:graphs-first-look:graph}{graph} with \omterm{def:g10:graphs-first-look:graph}{edges} $1$--$2$, $2$--$3$, $3$--$4$, $4$--$1$, $1$--$5$. Give the \omterm{def:g10:graphs-first-look:eccentricity}{eccentricity} of each \omterm{def:g10:graphs-first-look:graph}{vertex},
+the \omterm{def:g10:graphs-first-look:eccentricity}{radius}, the \omterm{def:g10:graphs-first-look:eccentricity}{diameter} and the \omterm{def:g10:graphs-first-look:eccentricity}{centre}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:graphs-first-look:9}
+In the directed drawing of the chapter, give the \omterm{def:g10:graphs-first-look:degree}{in-degree} and \omterm{def:g10:graphs-first-look:degree}{out-degree} of every \omterm{def:g10:graphs-first-look:graph}{vertex}. Check that the \omterm{def:g10:graphs-first-look:degree}{in-degrees}
+and the \omterm{def:g10:graphs-first-look:degree}{out-degrees} have the same sum, and say why that is always so.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:graphs-first-look:10}
+Write \code{edges_from_dict(g)}, which returns the set of the \omterm{def:g10:graphs-first-look:graph}{edges} of an undirected \omterm{def:g10:graphs-first-look:graph}{graph}, each written once as a
+pair (smaller, larger). Check the sum of the \omterm{def:g10:graphs-first-look:degree}{degrees} on the friendship \omterm{def:g10:graphs-first-look:graph}{graph}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:graphs-first-look:11}
+% ledger: g10:nmea-gga
+A satellite receiver sends lines of text such as
+
+\smallskip\noindent\hspace*{1em}\texttt{\$GPGGA,093015.00,4807.0381,N,00131.5240,W,1,08,0.9,62.4,M,47.2,M,,*41}
+
+\smallskip\noindent The fields after \texttt{GPGGA} are the time (hours, minutes, seconds), the latitude as \omterm{def:g10:graphs-first-look:degree}{degrees}
+and minutes (\texttt{ddmm.mmmm}), \texttt{N} or \texttt{S}, the longitude as \texttt{dddmm.mmmm}, \texttt{E} or
+\texttt{W}, then the quality of the fix, the number of satellites and the altitude. Give the time, and the latitude
+and longitude in decimal \omterm{def:g10:graphs-first-look:degree}{degrees}, west and south counted negative. The two digits after \texttt{*} are a check: the
+exclusive or of the codes of all characters between \texttt{\$} and \texttt{*}, in hexadecimal. What is it for?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:graphs-first-look:12}
+Prove that in an undirected \omterm{def:g10:graphs-first-look:graph}{graph} the sum of the \omterm{def:g10:graphs-first-look:degree}{degrees} is twice the number of \omterm{def:g10:graphs-first-look:graph}{edges}. Deduce that the number of
+\omterm{def:g10:graphs-first-look:graph}{vertices} of odd \omterm{def:g10:graphs-first-look:degree}{degree} is even.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:graphs-first-look:13}
+Prove that in a \omterm{def:g10:graphs-first-look:connected}{connected graph}, $\text{radius} \le \text{diameter} \le 2 \times \text{radius}$. For the second
+inequality, take a \omterm{def:g10:graphs-first-look:graph}{vertex} $c$ of the \omterm{def:g10:graphs-first-look:eccentricity}{centre} and two \omterm{def:g10:graphs-first-look:graph}{vertices} $a$ and $b$, and go from $a$ to $b$ through $c$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:graphs-first-look:14}
+Write \code{common_friends(g, a, b)} with a set intersection, then \code{triangles(g)}, the number of groups of three
+people who are all friends with one another. Why does adding the common friends of the two ends of every \omterm{def:g10:graphs-first-look:graph}{edge} count
+each triangle three times? How many triangles has the friendship \omterm{def:g10:graphs-first-look:graph}{graph}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:graphs-first-look:15}
+A tiny web has five pages, P1 to P5, and links P1$\to$P2, P1$\to$P3, P2$\to$P3, P4$\to$P3, P5$\to$P4, P3$\to$P1.
+Rank the pages by \omterm{def:g10:graphs-first-look:degree}{in-degree}. Then give each page one vote, which it shares equally among the pages it links to, and
+add the votes each page receives. Which page is first in each ranking? Explain why a search engine would rather
+count a link from an important page as worth more.
+\end{exercise}
+
+\section{Problem: Handshakes across Brenmoor}\label{sec:g10:graphs-first-look:problem}
+
+\begin{problem}[{Weekend problem --- how far apart the people of the largest group are}]\label{pb:g10:graphs-first-look:1}
+The program \code{exercises/handshakes.py} uses the given functions to compute the \omterm{def:g10:graphs-first-look:eccentricity}{radius}, the \omterm{def:g10:graphs-first-look:eccentricity}{diameter} and the
+\omterm{def:g10:graphs-first-look:eccentricity}{centre} of the largest component of the friendship \omterm{def:g10:graphs-first-look:graph}{graph}, then again with one \omterm{def:g10:graphs-first-look:graph}{edge} removed.
+
+\medskip\noindent\textbf{Part I --- The graph.}
+\begin{enumerate}
+  \item How many \omterm{def:g10:graphs-first-look:graph}{vertices} and \omterm{def:g10:graphs-first-look:graph}{edges} has the friendship \omterm{def:g10:graphs-first-look:graph}{graph}? Check the sum of the \omterm{def:g10:graphs-first-look:degree}{degrees}.
+  \item Which people have the most friends? Which have exactly one?
+  \item How many \omterm{def:g10:graphs-first-look:graph}{vertices} have an odd \omterm{def:g10:graphs-first-look:degree}{degree}? Is that consistent with \cref{exo:g10:graphs-first-look:12}?
+  \item Give the \omterm{def:g10:graphs-first-look:degree}{neighbours} of person $28$.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Components.}
+\begin{enumerate}[resume]
+  \item List the sizes of the components.
+  \item Can the rumour, started by person $1$, reach person $23$? Why?
+  \item Which four \omterm{def:g10:graphs-first-look:graph}{edges} join two of the three groups of numbers? Which of them join two components?
+  \item How many \omterm{def:g10:graphs-first-look:graph}{edges}, at least, would make the whole \omterm{def:g10:graphs-first-look:graph}{graph} \omterm{def:g10:graphs-first-look:connected}{connected}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Eccentricities.}
+\begin{enumerate}[resume]
+  \item Using the output of the \omterm{def:g10:graphs-first-look:distance}{distance} listing, give the \omterm{def:g10:graphs-first-look:eccentricity}{eccentricity} of person $1$.
+  \item Find two people at \omterm{def:g10:graphs-first-look:distance}{distance} $7$ from each other, and a shortest \omterm{def:g10:graphs-first-look:path}{path} between them.
+  \item Which people are at \omterm{def:g10:graphs-first-look:distance}{distance} $4$ from person $1$?
+  \item How many days does the rumour take from person $3$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The centre, and a missing bridge.}
+\begin{enumerate}[resume]
+  \item Give the \omterm{def:g10:graphs-first-look:eccentricity}{radius}, the \omterm{def:g10:graphs-first-look:eccentricity}{diameter} and the \omterm{def:g10:graphs-first-look:eccentricity}{centre} of the largest component. Check
+    $\text{radius} \le \text{diameter} \le 2 \times \text{radius}$.
+  \item Run the program. What happens to the components, the \omterm{def:g10:graphs-first-look:eccentricity}{radius} and the \omterm{def:g10:graphs-first-look:eccentricity}{diameter} when the friendship $1$--$28$
+    ends?
+  \item Why does the \omterm{def:g10:graphs-first-look:eccentricity}{centre} move to $5$ and $37$?
+  \item Why does removing $5$--$37$ change nothing, while removing $1$--$28$ does?
+  \item What does removing $12$--$20$ do?
+  \item If the library could ask one person to spread its news, whom should it ask, and how many days would the news
+    take to reach the $29$ people?
+  \item State the result: the \omterm{def:g10:graphs-first-look:eccentricity}{diameter} of the largest component, its \omterm{def:g10:graphs-first-look:eccentricity}{centre}, and what the loss of the friendship
+    between the two central people does to the \omterm{def:g10:graphs-first-look:eccentricity}{diameter}.
+\end{enumerate}
+\end{problem}

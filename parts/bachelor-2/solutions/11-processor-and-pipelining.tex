@@ -1,0 +1,190 @@
+% Solutions of Book 4, chapter 11 (processor-and-pipelining).
+\section*{Chapter \ref{ch:b2:processor-and-pipelining} --- The Processor: Datapath, Control and Pipelining}
+
+\begin{solution}{exo:b2:processor-and-pipelining:1}
+By \cref{prop:b2:processor-and-pipelining:speedup}, $n + 4$ cycles: 12 for 8 instructions. The pipeline has
+$12 \times 5 = 60$ stage slots in those cycles and the instructions use $8 \times 5 = 40$: two thirds. The empty
+slots are the filling at the start and the draining at the end, which matter less as $n$ grows.
+\end{solution}
+
+\begin{solution}{exo:b2:processor-and-pipelining:2}
+In an S-type word, bits 11 to 7 are the low five bits of the immediate, not a register. For \code{sw t2, 12(sp)}
+they hold 12, so the \omterm{def:b2:assembly-and-calling-convention:register}{register file} writes register \code{x12}, which is \code{a2}. MemtoReg is 0, so the value
+written is the ALU result, the address $\code{sp} + 12$. The store itself is correct; \code{a2} is silently
+overwritten, and the bug shows only when a caller later reads \code{a2}. That is why RegWrite must be 0 for every
+instruction without a destination, while the ``don't care'' signals may be anything.
+\end{solution}
+
+\begin{solution}{exo:b2:processor-and-pipelining:3}
+\code{lui rd, imm} writes $\mathit{imm} \cdot 2^{12}$ to \code{rd}: RegWrite 1, ALUSrc 1, MemRead 0, MemWrite 0,
+MemtoReg 0, Branch 0. Two changes are needed. The immediate generator learns the U format (the upper 20 bits of the
+word, low bits zero). And the ALU's first input must be 0, not \code{rs1}, since bits 19 to 15 of a U-type word
+belong to the immediate: a new multiplexer on that input, driven by a new signal, with the ALU adding.
+\omcode{code/bachelor-2/11-processor-and-pipelining/exercises/datapath_more.py}{4}{10}{The new signals for
+\code{lui}, \code{jal} and \code{jalr}}
+The chapter's test runs a program with \code{lui} (through \code{li}) and checks the model against \code{rv}.
+\end{solution}
+
+\begin{solution}{exo:b2:processor-and-pipelining:4}
+For $k = 5$: $50/14 \approx 3.57$ for $n = 10$, $500/104 \approx 4.81$ for $n = 100$, $5000/1004 \approx 4.98$ for
+$n = 1000$. For $k = 10$, $n = 10$: $100/19 \approx 5.26$, still far from 10, as filling and draining a deep pipeline
+cost more. For 90\,\% of 5: $5n/(n + 4) \ge 4.5$ gives $0.5n \ge 18$, so $n \ge 36$.
+\end{solution}
+
+\begin{solution}{exo:b2:processor-and-pipelining:5}
+\omoutput{code/bachelor-2/11-processor-and-pipelining/outputs/run_exo_diagram.txt}{The model's diagram.}
+The \code{addi t1} uses \code{t0} just after it is loaded: one \omterm{def:b2:processor-and-pipelining:stall}{stall}, by
+\cref{prop:b2:processor-and-pipelining:load-use}, and the next \code{addi} waits one cycle in IF. \code{add t3}
+gets \code{t1} from MEM/WB and \code{t2} from EX/MEM. Five instructions take $5 + 4 + 1 = 10$ cycles.
+\end{solution}
+
+\begin{solution}{exo:b2:processor-and-pipelining:6}
+\omoutput[9-13]{code/bachelor-2/11-processor-and-pipelining/outputs/run_forwarding.txt}{The faulty unit on
+\code{exo_x0.S}.}
+\code{addi zero, t0, 1} computes 42 and, since it writes \code{x0}, the \omterm{def:b2:assembly-and-calling-convention:register}{register file} ignores it. But the faulty unit
+sees \code{rd == 0 == rs} in the next instruction and forwards 42 from EX/MEM to both inputs of \code{add a0, zero,
+zero}, which computes 84 instead of 0. Writes to \code{x0} are rare in compiled code, but a \code{nop} is
+\code{addi zero, zero, 0}, and any instruction can be used as a no-op that way.
+\end{solution}
+
+\begin{solution}{exo:b2:processor-and-pipelining:7}
+\omcode{code/bachelor-2/11-processor-and-pipelining/exercises/btfn.py}{5}{16}{Backward taken, forward not taken}
+The predictor decodes the branch's offset; it needs no memory and no warm-up. On the three programs it mispredicts 1,
+72 and 158 branches (two-bit: 2, 60 and 161), for CPIs of 1.279, 1.297 and 1.322. It wins on \code{loop_sum.S}, whose
+only branch closes a loop, and on \code{collatz.S}, whose backward \code{bge} closes the outer loop; it loses on the
+sort, where the forward branch \code{bge t4, t3, keep} is taken 55 times out of 120, which a counter
+follows better than a fixed rule. The test checks the case of \code{loop_sum.S}.
+\end{solution}
+
+\begin{solution}{exo:b2:processor-and-pipelining:8}
+Let a load be in EX at cycle $x$. In the model a consumer may be in EX at $x + 2$ at the earliest (the word leaves
+data memory at the end of MEM, cycle $x + 1$, and reaches the ALU input through MEM/WB). Instructions enter EX in
+order, at most one per cycle, and without \omterm{def:b2:processor-and-pipelining:hazard}{hazards} each enters EX one cycle after the one before. If the consumer
+follows the load directly, it would be in EX at $x + 1$; the rule holds it one cycle, to $x + 2$, and nothing else
+delays it by this dependence: exactly one \omterm{def:b2:processor-and-pipelining:stall}{stall}. If it comes $j \ge 2$ instructions later, it cannot be in EX before
+$x + j \ge x + 2$, since the instructions between enter EX in the cycles in between: the rule asks nothing more, no
+\omterm{def:b2:processor-and-pipelining:stall}{stall}. (The test checks both cases with an ALU instruction, a store and a branch as the consumer.)
+\end{solution}
+
+\begin{solution}{exo:b2:processor-and-pipelining:9}
+The \code{addi t0, t0, 4} does not depend on the load; moving it between the load and the add puts the use two
+places after the load:
+\omcode{code/bachelor-2/11-processor-and-pipelining/exercises/loop_sum_sched.S}{9}{12}{The reordered loop}
+The \code{bltu} still reads \code{t0} one instruction after the \code{addi}, which \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} handles. The model gives
+202 cycles instead of 234, the 32 load-use \omterm{def:b2:processor-and-pipelining:stall}{stalls} removed, with the same 136 instructions. Compilers do this
+reordering, called instruction scheduling, for exactly this reason.
+\end{solution}
+
+\begin{solution}{exo:b2:processor-and-pipelining:10}
+Per instruction, the branches cost $0.2 \times 0.1 \times 2 = 0.04$ cycle and the load-uses $0.25 \times 0.4 \times 1
+= 0.10$ cycle: $\text{CPI} = 1 + 0.04 + 0.10 = 1.14$. Halving the misprediction rate saves $0.02$ (CPI 1.12); halving
+the load-uses saves $0.05$ (CPI 1.09). Here the reordering is worth more, because load-uses are more frequent than
+mispredictions, even with a smaller penalty.
+\end{solution}
+
+\begin{solution}{exo:b2:processor-and-pipelining:11}
+Within one execution the branch is taken $m - 1 \ge 1$ times, then not taken. Suppose the counter is at least 2 when
+an execution starts. The taken outcomes are predicted taken and push the counter to 3, where it stays; the final
+not-taken outcome is predicted taken, wrongly, and brings the counter down to 2. So the execution has exactly one
+misprediction and the next one starts at 2. Once the counter has reached 3 in one execution, that execution ends at
+2, and by induction every later one starts at 2 and has one misprediction. With one bit, an execution starts after a
+not-taken outcome: its first outcome, taken, is mispredicted, the next $m - 2$ are right, and the exit is wrong
+again: two per execution. For $m = 1$ the branch is never taken; the counter falls to 0 and never errs again, while
+the hypothesis (reaching 3) is never met: the proposition does not apply, and the loop costs nothing once warm.
+\end{solution}
+
+\begin{solution}{exo:b2:processor-and-pipelining:12}
+\code{jal rd, imm} writes $\mathit{pc} + 4$ to \code{rd} and jumps to $\mathit{pc} + \mathit{imm}$ (J format);
+\code{jalr rd, imm(rs1)} writes $\mathit{pc} + 4$ and jumps to $(\code{rs1} + \mathit{imm})$ with bit 0 cleared. The
+datapath needs a third input on the write-back multiplexer, $\mathit{pc} + 4$ from the existing adder (signal
+\code{pc4_to_reg}); the J format in the immediate generator, whose result goes to the existing branch adder; and a
+third input on the PC multiplexer, the ALU result with bit 0 cleared (signal \code{jump}, three values: none,
+\code{jal}, \code{jalr}).
+\omcode{code/bachelor-2/11-processor-and-pipelining/exercises/datapath_more.py}{25}{39}{The extended cycle}
+The test runs a program with a \code{call}, a \code{ret} and an indirect \code{jalr} through a register: the model
+agrees with \code{rv} on every instruction but the \code{auipc} of \code{la} and the final \code{ecall}, and on every
+program of the chapter it now covers the \code{ret}s too.
+\end{solution}
+
+\begin{solution}{pb:b2:processor-and-pipelining:1}
+\textbf{1.} Five without a swap (\code{lw}, \code{lw}, \code{bge}, \code{addi}, \code{bltu}); seven with one, the two
+stores added.
+
+\textbf{2.} Six: \code{blez}, \code{mv}, \code{slli}, \code{add}, then \code{addi} and \code{j} after the inner loop.
+
+\textbf{3.} The \code{addi} before the loop runs once. The outer loop runs for $i = n - 1$ down to 1, and turn $i$
+executes 6 instructions and $i$ inner turns of 5, plus 2 per swap: $\sum_{i=1}^{n-1} (6 + 5i) = 6(n - 1) +
+\frac{5}{2}n(n-1)$, and $2S$ for the swaps. The last test \code{blez}, taken, and the \code{ret} add 2. In all
+$\frac{5}{2}n(n-1) + 6(n-1) + 2S + 3$; for $n = 1$, the three instructions \code{addi}, \code{blez}, \code{ret}.
+
+\textbf{4.} A swap exchanges two adjacent values $a_j > a_{j+1}$. The relative order of every other pair is unchanged,
+so the number of inversions falls by exactly one. At the end the array is sorted, with no inversion; every swap
+removed one, so $S$ equals the initial number of inversions.
+
+\textbf{5.} $600 + 90 + 130 + 3 = 823$ for \code{sort}, and $823 + 141 = 964$, the count of
+\cref{out:b2:processor-and-pipelining:cpi}.
+
+\textbf{6.} Loads: 2 per inner turn, 240, the 16 of the printing loop and the \code{lw ra}: 257. Stores: 2 per swap,
+130, and \code{sw ra}: 131.
+
+\textbf{7.} \code{bge t4, t3} uses \code{t4}, loaded just before, and \code{t3}, two before; \code{bltu t1, t2} uses
+\code{t1}, set by the \code{addi} just before. The two stores use the loaded values two and three places after their
+loads.
+
+\textbf{8.} Without \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} the consumer reads in ID, at the earliest in the producer's WB cycle, $x + 2$, so it is
+in EX at $x + 3$. Placed $j$ after, it would naturally be in EX at $x + j$: it waits $3 - j$ cycles, 2 for $j = 1$, 1
+for $j = 2$, none beyond.
+
+\textbf{9.} Each inner turn \omterm{def:b2:processor-and-pipelining:stall}{stalls} 2 at the \code{bge} and 2 at the \code{bltu}: $4 \times 120 = 480$. The stores are
+not stalled, the \code{bge} having waited already. The printing loop's \code{bltu} follows its \code{addi}: $2
+\times 16 = 32$. Each outer turn's \code{add t2, a0, t2} follows the \code{slli}: $2 \times 15 = 30$. Five pairs
+occur once (the \code{sw ra} after \code{addi sp}; the two \code{la}, \code{addi} after \code{auipc}; the
+\code{addi t1, t0, 64} after the second \code{la}; the first \code{blez} after \code{addi t0}): 10. Total $480 + 32 +
+30 + 10 = 552$.
+
+\textbf{10.} The taken branches each lose 2: 105 of the inner \code{bltu}, 55 of the swap test, 15 of the printing
+loop and the last outer test, 176 in all, 352 cycles. The 16 \code{jal} (one \code{call}, 15 \code{j}) lose 1 each,
+and \code{sort}'s \code{ret} loses 2; \code{main}'s \code{ret} is the last instruction and loses nothing. $352 + 16 +
+2 = 370$.
+
+\textbf{11.} $964 + 4 + 552 + 370 = 1890$ cycles, CPI $1890/964 \approx 1.961$.
+
+\textbf{12.} The data \omterm{def:b2:processor-and-pipelining:hazard}{hazards}, 552 cycles against 370.
+
+\textbf{13.} Only the load-use of \code{t4} by the \code{bge}, one cycle per inner turn: 120.
+
+\textbf{14.} Move \code{addi t1, t1, 4} up between \code{lw t4} and the \code{bge}, and write the stores as
+\code{sw t4, -4(t1)} and \code{sw t3, 0(t1)}: the \code{bge} is then two places after the load, and no \omterm{def:b2:processor-and-pipelining:stall}{stall}
+remains, for the same number of instructions; 120 cycles saved. A further change saves loads too: after the compare
+the larger value is at \code{p[1]}, so it can stay in a register as the next turn's \code{p[0]}, one load instead of
+two per turn.
+
+\textbf{15.} The swap test depends on the data and is wrong 41 times out of 120. The inner \code{bltu} is wrong at
+each of the 15 exits and once at the very first turn, when its counter still says ``not taken'': 16, as
+\cref{prop:b2:processor-and-pipelining:two-bit} predicts. The printing loop's is wrong at its first turn and at its
+exit: 2. The outer \code{blez} is not taken 15 times and taken once, at the end: 1.
+
+\textbf{16.} Its outcome is whether two neighbours are out of order, a property of the data, not of the loop's
+structure; only as the sorted tail grows does it become regular.
+
+\textbf{17.} $2 \times 60 + 16 + 2 = 138$.
+
+\textbf{18.} $964 + 4 + 120 + 138 = 1226$ cycles, CPI $\approx 1.272$.
+
+\textbf{19.} Single-cycle: $964 \times 800\,\text{ps} = 771.2$\,ns. Pipeline: $1890 \times 200 = 378.0$\,ns without
+\omterm{def:b2:processor-and-pipelining:forwarding}{forwarding}, $1458 \times 200 = 291.6$\,ns with it, $1226 \times 200 = 245.2$\,ns with the predictor too.
+
+\textbf{20.} $771.2 / 245.2 \approx 3.15$ times faster. The cycle is 4 times shorter but the CPI is 1.272 instead of 1:
+$4 / 1.272 \approx 3.15$.
+
+\textbf{21.} Pipelining acts on the cycle time (and raises the CPI from 1); \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} and prediction act on the CPI.
+None changes the number of instructions.
+
+\textbf{22.} Only the jumps would lose cycles, 18: $(964 + 4 + 120 + 18)/964 = 1106/964 \approx 1.147$.
+
+\textbf{23.} With no \omterm{def:b2:processor-and-pipelining:stall}{stall} either: $986/964 \approx 1.023$, close to the ideal.
+
+\textbf{24.} In the five-stage model, \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} and a two-bit predictor take the CPI of the \omterm{def:b2:processor-and-pipelining:stall}{bubble} sort \emph{from
+1.961 to 1.272}: \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} removes 432 of the 552 \omterm{def:b2:processor-and-pipelining:stall}{stall} cycles, the predictor 232 of the 370 cycles lost to branches
+and jumps, and the run takes 1226 cycles instead of 1890, 35\,\% fewer.
+\end{solution}

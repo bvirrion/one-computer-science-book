@@ -1,0 +1,323 @@
+% Provenance (never printed): see sources/outline_sources.md and sources/book1/BRIEFS.md (g7/02).
+% Data: code/grade-7/02-lists/figures/town_tables.py writes the rainfall lists from data/town/weather.csv.
+\chapter{Lists}\label{ch:g7:lists}
+
+The weather station at Hilltop, on the edge of the town, measures the rain
+every day. For January, that makes thirty-one numbers. A \omterm{def:g4:programs-and-operating-system:program}{program} could keep
+them in thirty-one \omterm{def:g6:variables-and-input:value}{variables}, \code{day1}, \code{day2}, and so on to
+\code{day31}, but adding them up would take a line thirty-one names long, and
+the whole year would need 365 \omterm{def:g6:variables-and-input:value}{variables}. Python keeps such numbers together,
+in order, under a single name.
+
+\begin{recall}
+A \code{for} \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop} repeats its block, and \code{range(n)} counts from 0 to
+$n - 1$ (\cref{ch:g6:for-loops-turtle}). A \omterm{def:g6:while-loops:counter}{counter} and a \omterm{def:g6:while-loops:counter}{running total} start at
+0 and grow at each turn (\cref{ch:g6:while-loops}). To find the largest card,
+keep the best one so far and compare it with each new card
+(\cref{ch:g4:algorithms-repeat-and-decide}).
+\end{recall}
+
+\section{A list holds many values in order}
+
+\begin{definition}[List, item, index, length]\label{def:g7:lists:list}
+A \emph{list}\index{list} is a \omterm{def:g6:variables-and-input:value}{value} that holds other \omterm{def:g6:variables-and-input:value}{values} in order. It is
+written between square brackets, with commas: \code{[0.0, 0.7, 6.9]}. Each
+\omterm{def:g6:variables-and-input:value}{value} is an \emph{item}\index{item (of a list)} of the list. The position of an
+item is its \emph{index}\index{index}, counted from 0: \code{L[0]} is the first
+item, \code{L[1]} the second. The \emph{length}\index{length (of a list)} of a
+list is its number of items, given by \code{len(L)}.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1cm, y=1cm, font=\footnotesize]
+  \node[anchor=east] at (-0.2,0.35) {\code{rain}};
+  \foreach \v [count=\i from 0] in {0.0, 0.0, 0.7, 0.0, 6.9, 0.0} {
+    \draw[black!60, fill=ocBlue!8] (1.25*\i,0) rectangle ++(1.25,0.7);
+    \node at (1.25*\i+0.625,0.35) {\v};
+    \node[ocRed!80!black] at (1.25*\i+0.625,-0.3) {\i};
+  }
+  \draw[black!60, fill=black!3] (7.5,0) rectangle ++(1.25,0.7); \node at (8.125,0.35) {\dots};
+  \draw[black!60, fill=ocBlue!8] (8.75,0) rectangle ++(1.25,0.7); \node at (9.375,0.35) {0.0};
+  \node[ocRed!80!black] at (9.375,-0.3) {30};
+  \node[ocRed!80!black, anchor=east] at (-0.2,-0.3) {index};
+  \draw[decorate, decoration={brace, amplitude=5pt}] (0,0.85) -- (10,0.85) node[midway, above=5pt] {\code{len(rain)} is 31};
+\end{tikzpicture}
+
+{\small A \omterm{def:g7:lists:list}{list} is a row of cells. The indices, under the cells, run from 0 to
+$\code{len(rain)} - 1 = 30$.}
+\end{omfigure}
+
+Here is the January \omterm{def:g7:lists:list}{list}. A \omterm{def:g4:programs-and-operating-system:program}{program} in this chapter's \code{figures} \omterm{def:g3:files-and-folders:folder}{folder}
+wrote it from the town's weather table, and a test checks that the two agree.
+
+\omcode{code/grade-7/02-lists/listings/rain.py}{1}{12}{January's rainfall at
+Hilltop, in millimetres.}\label{lst:g7:lists:rain}
+
+\Needspace*{8\baselineskip}
+\omoutput{code/grade-7/02-lists/outputs/rain.txt}{The first, the twelfth and the
+last day.}\label{out:g7:lists:rain}
+
+The twelfth day has \omterm{def:g7:lists:list}{index} 11, and the last day \omterm{def:g7:lists:list}{index} 30, which is
+\code{len(rain) - 1}: an \omterm{def:g7:lists:list}{index} is always one less than the day's number.
+Python also counts from the end with negative indices: \code{rain[-1]} is the
+last \omterm{def:g7:lists:list}{item}. An \omterm{def:g7:lists:list}{index} past the end does not exist, and asking for it is an error:
+
+\Needspace*{7\baselineskip}
+\omcode{code/grade-7/02-lists/listings/index_error.py}{1}{4}{\omterm{def:g7:lists:list}{Index} 31 of a \omterm{def:g7:lists:list}{list}
+of 31 \omterm{def:g7:lists:list}{items}.}\label{lst:g7:lists:index-error}
+
+\Needspace*{11\baselineskip}
+\omoutput{code/grade-7/02-lists/outputs/index_error_run.txt}{An
+\code{IndexError}: the indices stop at 30.}\label{out:g7:lists:index-error}
+
+The first line of \cref{lst:g7:lists:index-error} takes the \omterm{def:g7:lists:list}{list} from the \omterm{def:g3:files-and-folders:file}{file}
+\code{rain.py}, as in the remark of \cref{ch:g7:functions}.
+
+\section{Walking through a list}
+
+\begin{definition}[List traversal]\label{def:g7:lists:traversal}
+A \emph{list traversal}\index{list traversal}, or walk through a \omterm{def:g7:lists:list}{list}, visits
+its \omterm{def:g7:lists:list}{items} one after another, from the first to the last. \code{for x in L:}
+runs its block once for each \omterm{def:g7:lists:list}{item}, with \code{x} set to that \omterm{def:g7:lists:list}{item}.
+\end{definition}
+
+\Needspace*{6\baselineskip}
+\omcode{code/grade-7/02-lists/listings/walk.py}{1}{3}{A walk through one
+week.}\label{lst:g7:lists:walk}
+
+\Needspace*{11\baselineskip}
+\omoutput{code/grade-7/02-lists/outputs/walk.txt}{One line per \omterm{def:g7:lists:list}{item}, in
+order.}\label{out:g7:lists:walk}
+
+When the position matters too, the walk goes over the indices with
+\code{range(len(L))}, and reads each \omterm{def:g7:lists:list}{item} as \code{L[i]}:
+
+\Needspace*{7\baselineskip}
+\omcode{code/grade-7/02-lists/listings/positions.py}{1}{4}{A walk over the
+indices.}\label{lst:g7:lists:positions}
+
+\Needspace*{6\baselineskip}
+\omoutput{code/grade-7/02-lists/outputs/positions.txt}{\omterm{def:g7:lists:list}{Index} 2 is day 3, \omterm{def:g7:lists:list}{index} 4
+is day 5.}\label{out:g7:lists:positions}
+
+\section{Appending and removing}
+
+A \omterm{def:g7:lists:list}{list} can change. A few \omterm{def:g1:instructions-in-order:instruction}{instructions}, written after the \omterm{def:g7:lists:list}{list}'s name and a
+point, add or remove \omterm{def:g7:lists:list}{items}.
+
+\omcode{code/grade-7/02-lists/listings/shopping.py}{1}{12}{A shopping \omterm{def:g7:lists:list}{list} that
+changes.}\label{lst:g7:lists:shopping}
+
+\Needspace*{10\baselineskip}
+\omoutput{code/grade-7/02-lists/outputs/shopping.txt}{The \omterm{def:g7:lists:list}{list} after each
+change.}\label{out:g7:lists:shopping}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1cm, y=1cm, font=\scriptsize\ttfamily]
+  \foreach \row/\y/\items in {before/0/{bread,milk,apples}, {insert(0, ...)}/-1.1/{eggs,bread,milk,apples}, {pop()}/-2.2/{eggs,bread,milk}} {
+    \node[anchor=east, font=\footnotesize\ttfamily] at (-0.2,\y+0.3) {\row};
+    \foreach \t [count=\i from 0] in \items {
+      \draw[black!60, fill=ocBlue!8] (1.7*\i,\y) rectangle ++(1.7,0.6);
+      \node at (1.7*\i+0.85,\y+0.3) {\t};
+      \node[font=\tiny\sffamily, ocRed!80!black] at (1.7*\i+0.85,\y-0.12) {\i};
+    }
+  }
+  \fill[ocMint!60] (0,-1.1) rectangle ++(1.7,0.6); \node at (0.85,-0.8) {eggs};
+  \draw[black!60] (0,-1.1) rectangle ++(1.7,0.6);
+\end{tikzpicture}
+
+{\small \code{insert(0, ...)} puts a new \omterm{def:g7:lists:list}{item} at \omterm{def:g7:lists:list}{index} 0 and moves every other
+\omterm{def:g7:lists:list}{item} one place along (their indices grow by 1); \code{pop()} takes away the
+last \omterm{def:g7:lists:list}{item}.}
+\end{omfigure}
+
+\section{Computed by walking}
+
+Most questions about a \omterm{def:g7:lists:list}{list} are answered by one walk, with a \omterm{def:g6:variables-and-input:value}{variable} that
+keeps what has been found so far: a \omterm{def:g6:while-loops:counter}{running total}, the largest \omterm{def:g6:variables-and-input:value}{value} so far,
+or a \omterm{def:g6:while-loops:counter}{counter} of the \omterm{def:g7:lists:list}{items} that pass a test.
+
+\omcode{code/grade-7/02-lists/listings/total_max_count.py}{1}{18}{Three walks
+through January.}\label{lst:g7:lists:total-max-count}
+
+\Needspace*{7\baselineskip}
+\omoutput{code/grade-7/02-lists/outputs/total_max_count.txt}{The month's rain,
+its wettest day and its dry days. \code{round(x, 1)} keeps one
+decimal.}\label{out:g7:lists:total-max-count}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1cm, y=1cm, font=\footnotesize]
+  \foreach \v/\t [count=\i from 0] in {0.0/0.0, 0.0/0.0, 0.7/0.7, 0.0/0.7, 6.9/7.6, 0.0/7.6} {
+    \draw[black!60, fill=ocBlue!8] (1.5*\i,0) rectangle ++(1.5,0.6);
+    \node at (1.5*\i+0.75,0.3) {\v};
+    \node[ocRed!80!black] at (1.5*\i+0.75,1.05) {\t};
+    \draw[-{Stealth[length=1.8mm]}, ocRed!70] (1.5*\i+0.75,0.85) -- (1.5*\i+0.75,0.65);
+  }
+  \node[anchor=east, ocRed!80!black] at (-0.2,1.05) {\code{total}};
+  \draw[-{Stealth[length=2.5mm]}, thick, black!70] (0.2,-0.35) -- (8.8,-0.35) node[right] {walk};
+\end{tikzpicture}
+
+{\small A walk with a \omterm{def:g6:while-loops:counter}{running total}: above each \omterm{def:g7:lists:list}{item}, the \omterm{def:g6:variables-and-input:value}{value} of
+\code{total} once that \omterm{def:g7:lists:list}{item} has been added.}
+\end{omfigure}
+
+To know \emph{which} day was the wettest, the walk keeps the \omterm{def:g7:lists:list}{index} of the best
+\omterm{def:g7:lists:list}{item} so far rather than its \omterm{def:g6:variables-and-input:value}{value}:
+
+\Needspace*{10\baselineskip}
+\omcode{code/grade-7/02-lists/listings/position_of_max.py}{1}{7}{The position of
+the largest \omterm{def:g6:variables-and-input:value}{value}.}\label{lst:g7:lists:position-of-max}
+
+\Needspace*{5\baselineskip}
+\omoutput{code/grade-7/02-lists/outputs/position_of_max.txt}{\omterm{def:g7:lists:list}{Index} 11: the
+twelfth of January.}\label{out:g7:lists:position-of-max}
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[width=12cm, height=4.6cm, ybar, bar width=4pt, bar shift=0pt, ymin=0, xmin=0.3, xmax=31.7,
+      xtick={1,5,10,15,20,25,31}, xlabel={day of January}, ylabel={rain (mm)},
+      tick label style={font=\scriptsize}, label style={font=\footnotesize},
+      axis x line*=bottom, axis y line*=left, clip=false]
+    \addplot[fill=ocBlue!55, draw=none] table[x=day, y=rain] {code/grade-7/02-lists/figures/out/january.dat};
+    \addplot[ybar, fill=ocRed!75, draw=none] coordinates {(12,16.1)};
+    \node[anchor=south, font=\scriptsize, ocRed!80!black] at (axis cs:12,16.1) {wettest};
+  \end{axis}
+\end{tikzpicture}
+
+{\small January's rainfall at Hilltop, drawn from the \omterm{def:g7:lists:list}{list} of
+\cref{lst:g7:lists:rain}. The dry days have no bar.}
+\end{omfigure}
+
+\section{A list is changed in place}
+
+\code{append}, \code{insert}, \code{remove} and \code{pop} do not make a new
+\omterm{def:g7:lists:list}{list}: they change the \omterm{def:g7:lists:list}{list} itself. A \omterm{def:g4:programs-and-operating-system:program}{program} can therefore start with an empty
+\omterm{def:g7:lists:list}{list}, \code{[]}, and fill it as it goes:
+
+\Needspace*{8\baselineskip}
+\omcode{code/grade-7/02-lists/listings/in_place.py}{1}{5}{Filling an empty
+\omterm{def:g7:lists:list}{list}.}\label{lst:g7:lists:in-place}
+
+\Needspace*{8\baselineskip}
+\omoutput{code/grade-7/02-lists/outputs/in_place.txt}{The same \omterm{def:g7:lists:list}{list} grows by one
+\omterm{def:g7:lists:list}{item} at each turn.}\label{out:g7:lists:in-place}
+
+\section{Exercises}
+
+\begin{exercise}[$\star$]\label{exo:g7:lists:1}
+With \code{L = [4, 8, 15, 16, 23, 42]}, what are \code{L[0]}, \code{L[2]},
+\code{L[-1]} and \code{len(L)}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g7:lists:2}
+What does this \omterm{def:g4:programs-and-operating-system:program}{program} print?
+
+\omcode{code/grade-7/02-lists/exercises/three_ops.py}{1}{5}{Three
+changes.}\label{lst:g7:lists:three-ops}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g7:lists:3}
+What does \code{for x in [3, 1, 4]: print(x * 2)} print?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g7:lists:4}
+Write a \omterm{def:g4:programs-and-operating-system:program}{program} that prints the average daily rainfall of January at Hilltop.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g7:lists:5}
+This \omterm{def:g4:programs-and-operating-system:program}{program} prints four numbers, then stops with an error. Why? Fix it.
+
+\omcode{code/grade-7/02-lists/exercises/off_by_one.py}{1}{3}{One turn too
+many.}\label{lst:g7:lists:off-by-one}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g7:lists:6}
+This \omterm{def:g4:programs-and-operating-system:program}{program} should print the highest of four winter temperatures, all below
+zero. It prints 0. Why? Fix it.
+
+\omcode{code/grade-7/02-lists/exercises/largest_bug.py}{1}{6}{The largest of
+four temperatures?}\label{lst:g7:lists:largest-bug}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g7:lists:7}
+Write a \omterm{def:g4:programs-and-operating-system:program}{program} that counts the January days with some rain. Check that
+rainy days and dry days make 31 together.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g7:lists:8}
+Write a \omterm{def:g4:programs-and-operating-system:program}{program} that builds a new \omterm{def:g7:lists:list}{list} with the January amounts above 5
+millimetres, and prints it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g7:lists:9}
+How many \omterm{def:g6:if-else:comparison}{comparisons} \code{amount > largest} does the second walk of
+\cref{lst:g7:lists:total-max-count} make? And how many \omterm{def:g6:if-else:comparison}{comparisons} does
+\cref{lst:g7:lists:position-of-max} make? Why one fewer?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g7:lists:10}
+Write a \omterm{def:g4:programs-and-operating-system:program}{program} that builds a \omterm{def:g7:lists:list}{list} with the \omterm{def:g7:lists:list}{items} of another \omterm{def:g7:lists:list}{list} in the
+opposite order, by walking through it once.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g7:lists:11}
+Explain why the walk with \code{largest} always ends with the largest \omterm{def:g6:variables-and-input:value}{value} of
+the \omterm{def:g7:lists:list}{list}. Hint: say what \code{largest} holds after each turn.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g7:lists:12}
+Write a \omterm{def:g7:functions:function}{function} \code{longest_equal_run(values)} that returns the \omterm{def:g7:lists:list}{length} of the
+longest run of equal neighbouring \omterm{def:g7:lists:list}{items}: 3 for \code{[1, 2, 2, 2, 5, 5]}. Check
+it on three examples.
+\end{exercise}
+
+\section{Problem: Dry Spells at Hilltop}
+
+\begin{problem}[{Weekend problem --- the longest dry spell of the year}]\label{pb:g7:lists:1}
+A \emph{dry spell} is a run of days in a row with no rain at all. Gardeners and
+farmers watch them closely.
+
+\medskip\noindent\textbf{Part I --- By hand,} with the January \omterm{def:g7:lists:list}{list} of
+\cref{lst:g7:lists:rain}.
+\begin{enumerate}
+  \item Which day was the wettest, and how much rain fell?
+  \item How many days were dry?
+  \item Find the longest run of dry days in a row. On which day does it start?
+  \item How did you do it? Describe your method as a walk, with what you
+    keep in your head at each day.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- A program for January.}
+
+\omcode{code/grade-7/02-lists/listings/dry_spell.py}{1}{15}{The longest dry run
+of January.}\label{lst:g7:lists:dry-spell}
+
+\begin{enumerate}[resume]
+  \item What does \code{run} hold after each day? Why is it set back to 0 on a
+    rainy day?
+  \item Why does line 11 keep the \omterm{def:g7:lists:list}{index} of the \emph{last} day of the run, and
+    how does line 14 find its first day?
+  \item Run the \omterm{def:g4:programs-and-operating-system:program}{program}. Does it agree with your answer to question 3?
+  \item If two dry runs have the same \omterm{def:g7:lists:list}{length}, which one does the \omterm{def:g4:programs-and-operating-system:program}{program}
+    report? Why?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The whole year.} The \omterm{def:g3:files-and-folders:file}{file}
+\code{hilltop_2025.py}, written by the same script, holds the rainfall of every
+day of 2025 in one \omterm{def:g7:lists:list}{list} of 365 \omterm{def:g7:lists:list}{items}, and \code{month_days}, the number of days
+of each month.
+
+\omcode{code/grade-7/02-lists/listings/dry_year.py}{1}{30}{The longest dry spell
+of 2025.}\label{lst:g7:lists:dry-year}
+
+\begin{enumerate}[resume]
+  \item The \omterm{def:g7:functions:function}{function} \code{date} turns an \omterm{def:g7:lists:list}{index} of the year into a date. What
+    does it return for the \omterm{def:g7:lists:list}{index} 0? For 31? For 58 and 59?
+  \item Run the \omterm{def:g4:programs-and-operating-system:program}{program}. How long was the longest dry spell of 2025, and when
+    was it?
+  \item Could the \omterm{def:g4:programs-and-operating-system:program}{program} find a dry spell that starts in one month and ends in
+    the next? Why is it easier with one \omterm{def:g7:lists:list}{list} for the year than with twelve
+    \omterm{def:g7:lists:list}{lists}, one per month?
+  \item State the result.
+\end{enumerate}
+\end{problem}

@@ -1,0 +1,150 @@
+% Solutions of 29-relational-model.
+\section*{Chapter \ref{ch:b1:relational-model} --- The Relational Model, Relational Algebra and SQL}
+
+\begin{solution}{exo:b1:relational-model:1}
+$\sigma_{\text{age} < 35}(r)$ keeps Ana, Bo and Cy, so the first answer is $\{(\text{Lyon}), (\text{Oslo})\}$, two \omterm{def:b1:relational-model:relation}{tuples},
+the duplicate Lyon merged. The second is $\{(\text{Lyon}, 31), (\text{Oslo}, 25), (\text{Lyon}, 25)\}$. The two
+expressions differ because the second projects on $\text{age}$ too; with the same final \omterm{def:b1:relational-model:selection}{projection} they would be equal,
+since a \omterm{def:b1:relational-model:selection}{selection} on age commutes with a \omterm{def:b1:relational-model:selection}{projection} that keeps age.
+\end{solution}
+
+\begin{solution}{exo:b1:relational-model:2}
+$a \bowtie b = \{(1, p, 10), (1, p, 20)\}$ over $(x, y, z)$. The \omterm{def:b1:relational-model:join}{left outer join} adds $(2, q, \text{NULL})$ and $(3, r,
+\text{NULL})$; $(s, 30)$ matches nothing and, $b$ being the right side, disappears.
+\end{solution}
+
+\begin{solution}{exo:b1:relational-model:3}
+$x = 3$ is $u$; $y = 3 \vee x = 3$ is $\max(1, u) = 1$; $y = 4 \wedge x = 3$ is $\min(0, u) = 0$; $\neg(x = 3)$ is $u$;
+\code{x IS NULL} is 1, since \code{IS NULL} is never unknown. \code{WHERE} keeps a row only for the second and the last
+conditions.
+\end{solution}
+
+\begin{solution}{exo:b1:relational-model:4}
+The genres whose average is above 280: science (289), adventure (359), sport (284) and mystery (292), in an order SQL
+does not promise without \code{ORDER BY}.
+\end{solution}
+
+\begin{solution}{exo:b1:relational-model:5}
+\code{WHERE} selects \omterm{def:b1:relational-model:relation}{tuples} before the grouping, when there is no group to count. The condition is on groups:
+\code{SELECT genre, count(*) FROM books GROUP BY genre HAVING count(*) >= 10}, which keeps science, adventure, history and
+comics (\cref{out:b1:relational-model:aggregates}).
+\end{solution}
+
+\begin{solution}{exo:b1:relational-model:6}
+The subquery's answer contains NULL, the return dates of the 22 loans still out. For a date $d$ that is no return date,
+\code{d NOT IN (...)} is $\neg(d = v_1 \vee \dots \vee d = \text{NULL})$, that is $\neg(0 \vee \dots \vee u) = \neg u =
+u$: never true, so no row is kept. \code{NOT EXISTS} asks whether a set of rows is empty; the rows whose return date is
+NULL make the inner condition $u$, so they are not in that set, which is what the question means. Writing \code{WHERE
+return_date IS NOT NULL} inside the \code{NOT IN} repairs the first query.
+\end{solution}
+
+\begin{solution}{exo:b1:relational-model:7}
+\omcode{code/bachelor-1/29-relational-model/exercises/late_members.py}{13}{18}{Late returns, grouped and selected}
+The late loans are $\ell = \sigma_{\text{return\_date} > \text{due\_date}}(\text{loans})$, and the answer is
+\[ \sigma_{\text{late} > 3}\big(\gamma_{\text{member\_id};\ \text{count}(\text{loan\_id}) \to \text{late}}(\ell)\big). \]
+Both
+the program and the SQL of \code{late_members.sql} find seven members, 37, 38, 41, 42, 46, 50 and 51, with four late
+returns each.
+\end{solution}
+
+\begin{solution}{exo:b1:relational-model:8}
+\omcode{code/bachelor-1/29-relational-model/exercises/division.py}{11}{14}{One \omterm{def:b1:relational-model:division}{division} per author}
+$\pi_{\text{member\_id}, \text{book\_id}}(\text{loans}) \div \pi_{\text{book\_id}}(\sigma_{\text{author} = a}(\text{books}))$
+for each author $a$. Only two answers are not empty: member 39 read both books by Ivo Northworth, member 3 both by Kofi
+Elmwick.
+\end{solution}
+
+\begin{solution}{exo:b1:relational-model:9}
+A \omterm{def:b1:relational-model:keys}{superkey} is a set of \omterm{def:b1:relational-model:schema}{attributes} containing the key; the other $n - k$ \omterm{def:b1:relational-model:schema}{attributes} may be added or not: $2^{n - k}$. With
+two disjoint keys $K$ and $L$, the \omterm{def:b1:relational-model:keys}{superkeys} contain $K$ or $L$; by inclusion--exclusion there are $2^{n - k} + 2^{n - l}
+- 2^{n - k - l}$. The program \code{superkeys.py} checks the first count by \omterm{def:b1:backtracking:exhaustive}{brute force} for $n \leq 6$.
+\end{solution}
+
+\begin{solution}{exo:b1:relational-model:10}
+When $c$ mentions only \omterm{def:b1:relational-model:schema}{attributes} of $r$, yes. Each \omterm{def:b1:relational-model:relation}{tuple} of the \omterm{def:b1:relational-model:join}{left outer join} comes from one \omterm{def:b1:relational-model:relation}{tuple} $t$ of $r$, joined or
+padded, and whether it satisfies $c$ depends on $t$ alone; so selecting before or after keeps the same \omterm{def:b1:relational-model:relation}{tuples} of $r$, with
+the same partners. When $c$ mentions only \omterm{def:b1:relational-model:schema}{attributes} of $s$, no. Take $r = \{(1)\}$ over $(x)$, $s = \{(1, 5)\}$ over $(x,
+y)$, and $c$: $y > 9$. The \omterm{def:b1:relational-model:join}{left outer join} is $\{(1, 5)\}$, and $\sigma_c$ of it is empty; but $\sigma_c(s)$ is empty and
+the \omterm{def:b1:relational-model:join}{left outer join} of $r$ with it is $\{(1, \text{NULL})\}$. This is the \code{ON} versus \code{WHERE} difference of
+\cref{sec:b1:relational-model:sql}.
+\end{solution}
+
+\begin{solution}{exo:b1:relational-model:11}
+With $r$ over $U$ and $s$ over $V$, $r \bowtie s$ is the set of \omterm{def:b1:relational-model:relation}{tuples} $w$ over $U \cup V$ with $w[U] \in r$ and $w[V] \in
+s$; the definition is symmetric in $r$ and $s$, and \omterm{def:b1:relational-model:schema}{attributes} are named, not ordered: $r \bowtie s = s \bowtie r$. For
+$t$ over $W$, $w$ over $U \cup V \cup W$ is in $(r \bowtie s) \bowtie t$ iff $w[U \cup V] \in r \bowtie s$ and $w[W] \in
+t$, iff $w[U] \in r$, $w[V] \in s$ and $w[W] \in t$, since $w[U \cup V][U] = w[U]$. The same steps give the same condition
+for $r \bowtie (s \bowtie t)$.
+\end{solution}
+
+\begin{solution}{exo:b1:relational-model:12}
+\omcode{code/bachelor-1/29-relational-model/exercises/er_schema.sql}{4}{17}{The school}
+The 1--1 \omterm{def:b1:relational-model:er}{relationship} is a \code{UNIQUE NOT NULL} \omterm{def:b1:relational-model:keys}{foreign key} in \code{teacher}; the 1--* one a \code{NOT NULL} \omterm{def:b1:relational-model:keys}{foreign key}
+in \code{class}; the *--* one the \omterm{def:b1:relational-model:association-table}{association table} \code{attends}, whose \omterm{def:b1:relational-model:keys}{primary key} is the pair. The five inserts at
+the end of the file are refused: a second teacher in office 1 (UNIQUE), a class of teacher 7 (\omterm{def:b1:relational-model:keys}{foreign key}), a student
+attending the same class twice (\omterm{def:b1:relational-model:keys}{primary key}), student 3 (\omterm{def:b1:relational-model:keys}{foreign key}), a class with no teacher (NOT NULL).
+\end{solution}
+
+\begin{solution}{pb:b1:relational-model:1}
+\textbf{1.} \code{book_id}, \code{member_id}, \code{loan_id}. \code{members.person_id} could be a second key of
+\code{members}, if a person may join only once; the town's schema does not say so.
+
+\textbf{2.} \code{book_id} references \code{books} and \code{member_id} references \code{members}.
+
+\textbf{3.} A member may borrow the same book twice; it happens 12 times in the town.
+
+\textbf{4.} \code{CHECK (return_date IS NULL OR return_date >= out_date)}, as in \cref{lst:b1:relational-model:schema}.
+
+\textbf{5.} \code{return_date}: NULL means the book has not come back.
+
+\textbf{6.} Loan 1 references book 100; deleting the book would break \omterm{def:b1:relational-model:integrity}{referential integrity}.
+
+\textbf{7.} $\sigma_{\text{return\_date IS NULL}}(\text{loans})$, the condition read with \code{IS NULL}.
+
+\textbf{8.} $\sigma_{\text{return\_date} > \text{due\_date}}(\text{loans})$. For a loan still out the condition is unknown
+and the loan is left out, even if its due date has passed: lateness of those loans needs today's date.
+
+\textbf{9.} $\pi_{\text{member\_id}}(\sigma_{\text{genre} = \text{poetry}}(\text{loans} \bowtie \text{books}))$, the left
+tree of the figure in \cref{sec:b1:relational-model:algebra}.
+
+\textbf{10.} $\pi_{\text{member\_id}}(\text{loans} \bowtie \sigma_{\text{genre} = \text{poetry}}(\text{books}))$, by
+\cref{prop:b1:relational-model:pushdown}~(iii), the condition mentioning only \omterm{def:b1:relational-model:schema}{attributes} of \code{books}.
+
+\textbf{11.} $\pi_{\text{member\_id}}(\text{members}) - \pi_{\text{member\_id}}(\sigma_{\text{genre} =
+\text{poetry}}(\text{loans} \bowtie \text{books}))$.
+
+\textbf{12.} The difference is defined for \omterm{def:b1:relational-model:relation}{relations} over the same \omterm{def:b1:relational-model:schema}{attributes}.
+
+\textbf{13.} It is $m - p$ with the \omterm{def:b1:relational-model:selection}{projections} of question 11, \code{EXCEPT} being the difference of sets.
+
+\textbf{14.} The subquery: it mentions \code{m.member_id}, so it is evaluated, at least in principle, once per member.
+
+\textbf{15.} The members padded with NULL: those with no poetry loan.
+
+\textbf{16.} \code{= NULL} is unknown on every row; only \code{IS NULL} tests for the marker.
+
+\textbf{17.} \code{WHERE member_id NOT IN (SELECT member_id FROM poetry_loans)}. It is wrong if the subquery may contain
+NULL; here \code{loans.member_id} is never NULL, so it also prints 28.
+
+\textbf{18.} \cref{out:b1:relational-model:laws} counts 32 poetry readers; $32 + 28 = 60$, all the members.
+
+\textbf{19.} \code{EXCEPT} returns the set of the rows of the first answer that are not rows of the second: $m - p$.
+
+\textbf{20.} The inner query is empty iff no $u \in p$ equals $t$, the comparison being true or false, never unknown,
+since neither side is NULL. So the outer \omterm{def:b1:relational-model:relation}{tuple} is kept iff $t \notin p$.
+
+\textbf{21.} A member $t$ with partners in $p$ gives one row per partner, each with a non-NULL \code{p.member_id}, all
+removed by the \code{WHERE}; a member with none gives one padded row, kept. The kept rows are those of $m - p$, once each.
+
+\textbf{22.} \code{EXCEPT} works on sets; \code{NOT EXISTS} only tests emptiness; the left join multiplies only members
+that are then removed.
+
+\textbf{23.} \code{loans.member_id} is never NULL and is the join attribute, so a NULL in the result can only come from
+padding.
+
+\textbf{24.} When the subquery's answer contains NULL: then \code{NOT IN} is never true, as in
+\cref{exo:b1:relational-model:6}.
+
+\textbf{25.} \emph{The three anti-joins are equivalent}: \code{EXCEPT}, \code{NOT EXISTS} and \code{LEFT JOIN ... IS NULL}
+all compute $m - p$ (questions 19--21), and \code{NOT IN} does too as long as the subquery has no NULL. All three print 28.
+\end{solution}

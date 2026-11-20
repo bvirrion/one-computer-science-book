@@ -1,0 +1,41 @@
+$ python sqlrun.py trigger.sql
+sql> CREATE TRIGGER five_books_out BEFORE INSERT ON loans
+...> WHEN (SELECT count(*) FROM loans
+...>       WHERE member_id = NEW.member_id AND return_date IS NULL) >= 5
+...> BEGIN
+...>   SELECT RAISE(ABORT, 'member already has five books out');
+...> END;
+OK
+
+sql> SELECT count(*) AS out_now FROM loans WHERE member_id = 41 AND return_date IS NULL;
++---------+
+| out_now |
++---------+
+| 0       |
++---------+
+(1 row)
+
+sql> SELECT count(*) AS out_now FROM loans WHERE member_id = 41 AND return_date IS NULL;
++---------+
+| out_now |
++---------+
+| 4       |
++---------+
+(1 row)
+
+sql> INSERT INTO loans (book_id, member_id, out_date, due_date)
+...>   VALUES (5, 41, '2025-12-02', '2025-12-23');
+OK (1 row changed)
+
+sql> INSERT INTO loans (book_id, member_id, out_date, due_date)
+...>   VALUES (6, 41, '2025-12-02', '2025-12-23');
+Error: member already has five books out
+
+sql> SELECT count(*) AS out_now FROM loans WHERE member_id = 41 AND return_date IS NULL;
++---------+
+| out_now |
++---------+
+| 5       |
++---------+
+(1 row)
+

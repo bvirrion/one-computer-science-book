@@ -1,0 +1,440 @@
+% Book 4, Year 2, chapter 21 -- Finite automata.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 21.
+\chapter{Finite Automata}\label{ch:b2:finite-automata}
+
+Is a typed string a decimal number, such as \code{-12.5e3}? A program can decide with one table and one loop:
+
+\omcode{code/bachelor-2/21-finite-automata/listings/dfa_demo.rs}{1}{37}{A decimal number recogniser: eight states,
+four classes of characters}\label{lst:b2:finite-automata:hook}
+
+\omoutput{code/bachelor-2/21-finite-automata/outputs/dfa_demo.txt}{Nine strings and the states they
+visit.}\label{out:b2:finite-automata:hook}
+
+The program remembers nothing about the string but one number from 0 to 7, its \emph{state}, and it reads each
+character once. Such a device is a \emph{finite automaton}. This chapter defines automata exactly, gives them a
+power they seem to lack, guessing, shows that guessing adds nothing but costs states, sometimes exponentially many,
+and builds automata for combinations of conditions. The next chapter connects them with the patterns of regular
+expressions, and finds what no finite automaton can do.
+
+\begin{recall}
+The Year 1 volume: a finite-state machine has a finite set of states, a start state, and a \omterm{def:b2:finite-automata:dfa}{transition function} from a
+state and an input to the next state; it may also produce outputs. Proofs by induction on the length of a \omterm{def:b2:finite-automata:word}{word}, or by
+structural induction. Sets, maps, and the set of subsets of a set, which has $2^n$ elements when the set has $n$.
+\end{recall}
+
+\section{Words and languages}\label{sec:b2:finite-automata:words}
+
+\begin{definition}[Alphabet, word]\label{def:b2:finite-automata:word}
+An \emph{alphabet}\index{alphabet} is a finite nonempty set $\Sigma$, whose elements are \emph{letters}. A
+\emph{word}\index{word (language)} over $\Sigma$ is a finite sequence of letters $w = a_1 a_2 \cdots a_n$; its
+\emph{length} is $|w| = n$. The \emph{empty word} $\varepsilon$\index{empty word} has length 0. The set of all words
+is $\Sigma^*$, and there are $|\Sigma|^n$ words of length $n$.
+\end{definition}
+
+The \emph{concatenation} of $u$ and $v$ is the \omterm{def:b2:finite-automata:word}{word} $uv$, $u$ followed by $v$: it is associative, $\varepsilon$ is
+neutral, and $|uv| = |u| + |v|$. In the hook, $\Sigma$ is the set of characters, and the program reads
+\code{"-12.5e3"} as a \omterm{def:b2:finite-automata:word}{word} of length 7.
+
+\begin{definition}[Language]\label{def:b2:finite-automata:language}
+A \emph{language}\index{language (formal)} over $\Sigma$ is a set of \omterm{def:b2:finite-automata:word}{words}, finite or infinite. For languages $L$
+and $M$, the \emph{concatenation} is $LM = \{uv : u \in L,\ v \in M\}$; the \emph{powers} are $L^0 = \{\varepsilon\}$
+and $L^{n+1} = L^n L$; and the \emph{star} of $L$ is $L^* = \bigcup_{n \ge 0} L^n$, the \omterm{def:b2:finite-automata:word}{words} made by concatenating
+any number of \omterm{def:b2:finite-automata:word}{words} of $L$, none included.
+\end{definition}
+
+For example, $\{a, b\}^*$ is every \omterm{def:b2:finite-automata:word}{word} over $\{a, b\}$, $\{ab\}^* = \{\varepsilon, ab, abab, \dots\}$, and
+$\{a\}\{b\}^*$, written $ab^*$, is the \omterm{def:b2:finite-automata:word}{words} made of one $a$ and then any number of $b$'s.
+
+\begin{definition}[Prefix, suffix, factor, subword]\label{def:b2:finite-automata:factor}
+Let $w = uxv$ with $u, x, v$ \omterm{def:b2:finite-automata:word}{words}. Then $u$ is a \emph{prefix}\index{prefix (word)} of $w$, $v$ a
+\emph{suffix}\index{suffix (word)}, and $x$ a \emph{factor}\index{factor (word)}: a block of consecutive letters. A
+\emph{subword}\index{subword} of $w$ is a \omterm{def:b2:finite-automata:word}{word} obtained by deleting letters of $w$, not necessarily consecutive.
+\end{definition}
+
+The \omterm{def:b2:finite-automata:word}{word} $abca$ has the \omterm{def:b2:finite-automata:factor}{prefixes} $\varepsilon, a, ab, abc, abca$; $bc$ is a \omterm{def:b2:finite-automata:factor}{factor}; $aa$ is a \omterm{def:b2:finite-automata:factor}{subword} but not a
+\omterm{def:b2:finite-automata:factor}{factor}. A \omterm{def:b2:finite-automata:word}{word} of length $n$ has $n + 1$ \omterm{def:b2:finite-automata:factor}{prefixes} and $n + 1$ \omterm{def:b2:finite-automata:factor}{suffixes}.
+
+\section{Deterministic automata}\label{sec:b2:finite-automata:dfa}
+
+\begin{definition}[Deterministic finite automaton]\label{def:b2:finite-automata:dfa}
+A \emph{deterministic finite automaton}\index{deterministic finite automaton} (DFA) is $A = (Q, \Sigma, \delta, q_0,
+F)$: a finite set of \emph{states} $Q$, an \omterm{def:b2:finite-automata:word}{alphabet} $\Sigma$, a \emph{transition function}\index{transition function}
+$\delta$, a partial map from $Q \times \Sigma$ to $Q$, a start state $q_0$, and a set $F \subseteq Q$ of
+\emph{accepting states}\index{accepting state}. The \emph{extended} transition function $\delta^*$ on \omterm{def:b2:finite-automata:word}{words} is defined
+by $\delta^*(q, \varepsilon) = q$ and $\delta^*(q, wa) = \delta(\delta^*(q, w), a)$, undefined as soon as one step is.
+$A$ \emph{accepts} $w$ when $\delta^*(q_0, w)$ is defined and lies in $F$, and the \emph{\omterm{def:b2:finite-automata:language}{language} recognised} by $A$
+is $L(A)$, the set of \omterm{def:b2:finite-automata:word}{words} it accepts.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[->, >={Stealth[length=1.8mm]}, node distance=17mm, every state/.style={minimum size=7mm,
+    inner sep=1pt}, font=\scriptsize, auto]
+\node[state, initial, initial text=] (0) {0};
+\node[state] (1) [above right=8mm and 6mm of 0] {1};
+\node[state, accepting] (2) [right=32mm of 0] {2};
+\node[state] (3) [right of=2] {3};
+\node[state, accepting] (4) [right of=3] {4};
+\node[state] (5) [below=12mm of 3] {5};
+\node[state] (6) [right=14mm of 5] {6};
+\node[state, accepting] (7) [right=14mm of 6] {7};
+\path (0) edge node {sign} (1) (0) edge node[below] {digit} (2) (1) edge node[pos=0.4] {digit} (2)
+  (2) edge[loop above] node {digit} () (2) edge node {point} (3) (3) edge node {digit} (4)
+  (4) edge[loop above] node {digit} () (2) edge node[below left] {e} (5) (4) edge node[above left] {e} (5)
+  (5) edge node {sign} (6) (5) edge[bend right=30] node[below] {digit} (7) (6) edge node {digit} (7)
+  (7) edge[loop above] node {digit} ();
+\end{tikzpicture}
+\par\smallskip{\small The automaton of the hook. A missing arrow is a missing transition: the string is rejected
+there. The \omterm{def:b2:finite-automata:dfa}{accepting states} have a double circle.}
+\end{omfigure}
+
+\begin{proposition}[Reading in two parts]\label{prop:b2:finite-automata:extended}
+For every state $q$ and \omterm{def:b2:finite-automata:word}{words} $u, v$: $\delta^*(q, uv) = \delta^*(\delta^*(q, u), v)$, both sides being defined or
+undefined together.
+\end{proposition}
+
+\begin{proof}
+By induction on $|v|$. For $v = \varepsilon$ both sides are $\delta^*(q, u)$. If $v = wa$, then $\delta^*(q, uwa) =
+\delta(\delta^*(q, uw), a) = \delta(\delta^*(\delta^*(q, u), w), a) = \delta^*(\delta^*(q, u), wa)$, by the definition,
+the hypothesis for $w$, and the definition again; each equality holds also when one side is undefined.
+\end{proof}
+
+This is what makes an automaton a streaming program: after reading $u$, the state $\delta^*(q_0, u)$ is all that is
+needed to continue, whatever $u$ was. The \code{run_from} method of \code{automaton.rs}, the library of this
+chapter's listings, is $\delta^*$ written as a \omterm{def:b2:functional-programming:fold}{fold} over the letters.
+
+\begin{definition}[Complete automaton]\label{def:b2:finite-automata:complete}
+A DFA is \emph{complete}\index{complete automaton} if $\delta(q, a)$ is defined for every state $q$ and letter $a$.
+Any DFA is made complete, with the same \omterm{def:b2:finite-automata:language}{language}, by adding a non-accepting \emph{sink} state $s$ and sending every
+missing transition, and every letter from $s$, to $s$.
+\end{definition}
+
+\begin{definition}[Accessible, co-accessible, trim]\label{def:b2:finite-automata:trim}
+A state $q$ is \emph{accessible}\index{accessible state} if $q = \delta^*(q_0, u)$ for some \omterm{def:b2:finite-automata:word}{word} $u$, and
+\emph{co-accessible}\index{co-accessible state} if $\delta^*(q, v) \in F$ for some \omterm{def:b2:finite-automata:word}{word} $v$. An automaton is
+\emph{trim}\index{trim automaton} if all its states are both.
+\end{definition}
+
+\begin{proposition}[Trimming]\label{prop:b2:finite-automata:trim}
+Removing from a DFA every state that is not both \omterm{def:b2:finite-automata:trim}{accessible} and \omterm{def:b2:finite-automata:trim}{co-accessible}, with the transitions that touch it,
+leaves the recognised \omterm{def:b2:finite-automata:language}{language} unchanged. Both sets are computed by a graph search, in time linear in the number of
+transitions.
+\end{proposition}
+
+\begin{proof}
+If $w$ is accepted, every state on its run is \omterm{def:b2:finite-automata:trim}{accessible} (by a \omterm{def:b2:finite-automata:factor}{prefix} of $w$) and \omterm{def:b2:finite-automata:trim}{co-accessible} (by the rest of $w$),
+so the run survives the removal. Conversely, removing states and transitions can only remove runs, so no new \omterm{def:b2:finite-automata:word}{word} is
+accepted. \omterm{def:b2:finite-automata:trim}{Accessible states} are those reachable from $q_0$ in the graph of the transitions; \omterm{def:b2:finite-automata:trim}{co-accessible states} are
+those from which $F$ is reachable, that is, those reachable from $F$ in the reversed graph.
+\end{proof}
+
+\begin{definition}[Recognisable language]\label{def:b2:finite-automata:recognisable}
+A \omterm{def:b2:finite-automata:language}{language} is \emph{recognisable}\index{recognisable language} if some finite automaton recognises it.
+\end{definition}
+
+\section{Nondeterministic automata}\label{sec:b2:finite-automata:nfa}
+
+Consider the \omterm{def:b2:finite-automata:word}{words} over $\{a, b\}$ whose third letter from the end is $a$. Reading from the left, a program cannot
+know which letter will be third from the end. It would be easy if it could \emph{guess}: on each $a$, guess ``this
+is the one'', then check that exactly two letters follow.
+
+\begin{definition}[Nondeterministic finite automaton]\label{def:b2:finite-automata:nfa}
+A \emph{nondeterministic finite automaton}\index{nondeterministic finite automaton} (NFA) is $A = (Q, \Sigma, \Delta,
+I, F)$ where $\Delta \subseteq Q \times \Sigma \times Q$ is a set of transitions, so that a state may have several
+transitions, or none, on the same letter, and $I \subseteq Q$ is a set of start states. A \emph{run} on $w = a_1
+\cdots a_n$ is a sequence $q_0 q_1 \cdots q_n$ with $q_0 \in I$ and $(q_{i-1}, a_i, q_i) \in \Delta$; $A$
+\emph{accepts} $w$ if \emph{some} run on $w$ ends in $F$.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[->, >={Stealth[length=1.8mm]}, node distance=18mm, every state/.style={minimum size=7mm,
+    inner sep=1pt}, font=\scriptsize, auto]
+\node[state, initial, initial text=] (0) {0};
+\node[state] (1) [right of=0] {1}; \node[state] (2) [right of=1] {2};
+\node[state, accepting] (3) [right of=2] {3};
+\path (0) edge[loop above] node {$a, b$} () (0) edge node {$a$} (1) (1) edge node {$a, b$} (2)
+  (2) edge node {$a, b$} (3);
+\begin{scope}[xshift=78mm]
+\node[state, initial, initial text=] (p) {0}; \node[state] (q) [right of=p] {1};
+\node[state, accepting] (r) [right of=q] {2};
+\path (p) edge[loop above] node {$a$} () (q) edge[loop above] node {$b$} () (r) edge[loop above] node {$c$} ()
+  (p) edge[dashed] node {$\varepsilon$} (q) (q) edge[dashed] node {$\varepsilon$} (r);
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Left: an NFA for ``the third letter from the end is $a$''; state 0 has two transitions on $a$.
+Right: an NFA for $a^*b^*c^*$ with \omterm{def:b2:finite-automata:epsilon}{spontaneous transitions} (dashed).}
+\end{omfigure}
+
+A nondeterministic automaton is not a program that guesses well; it is a definition by existence of a run. It is
+also convenient to allow moves that read nothing.
+
+\begin{definition}[Spontaneous transition, closure]\label{def:b2:finite-automata:epsilon}
+An NFA \emph{with spontaneous transitions} also has a set of pairs $(p, q)$, written $p \xrightarrow{\varepsilon}
+q$\index{spontaneous transition}, which a run may take without reading a letter. The
+\emph{$\varepsilon$-closure}\index{epsilon-closure@$\varepsilon$-closure} of a set $S$ of states is the set of states
+reachable from $S$ by spontaneous transitions alone, $S$ included: the states reachable from $S$ in the graph of
+those transitions.
+\end{definition}
+
+\omcode{code/bachelor-2/21-finite-automata/listings/automaton.rs}{106}{124}{The closure by a graph search, and one
+letter followed by the closure}\label{lst:b2:finite-automata:closure}
+
+\begin{proposition}[Removing spontaneous transitions]\label{prop:b2:finite-automata:epsilon}
+Let $\mathrm{cl}(q)$ be the closure of $\{q\}$. The NFA with the same states and start states, the transitions $(q, a,
+r)$ for every $r$ in the closure of $\{r' : (p, a, r') \in \Delta,\ p \in \mathrm{cl}(q)\}$, no \omterm{def:b2:finite-automata:epsilon}{spontaneous
+transition}, and the \omterm{def:b2:finite-automata:dfa}{accepting states} $\{q : \mathrm{cl}(q) \cap F \ne \emptyset\}$, recognises the same \omterm{def:b2:finite-automata:language}{language}.
+\end{proposition}
+
+\begin{proof}
+A run of the original automaton on $a_1 \cdots a_n$ is a sequence of spontaneous moves, a letter, spontaneous moves,
+and so on. Cut it just before each letter: from state $q_{i-1}$ at the cut, it moves spontaneously within
+$\mathrm{cl}(q_{i-1})$, reads $a_i$, then moves spontaneously to the next cut $q_i$, which is exactly a new transition
+$(q_{i-1}, a_i, q_i)$; after the last letter it moves spontaneously to $F$, which makes $q_n$ accepting in the new
+automaton. Conversely, each new transition and each new \omterm{def:b2:finite-automata:dfa}{accepting state} unfolds into such moves of the original
+one.
+\end{proof}
+
+\omoutput{code/bachelor-2/21-finite-automata/outputs/epsilon.txt}{The closures of $a^*b^*c^*$'s states, the automaton
+without \omterm{def:b2:finite-automata:epsilon}{spontaneous transitions}, and a check on every \omterm{def:b2:finite-automata:word}{word} up to length 6.}\label{out:b2:finite-automata:epsilon}
+
+\section{The subset construction}\label{sec:b2:finite-automata:subset}
+
+An NFA can be run by a program that keeps the \emph{set} of states it might be in. That set takes finitely many
+values, which makes it the state of a DFA.
+
+\begin{method}[The subset construction]\label{met:b2:finite-automata:subset}
+Given an NFA $(Q, \Sigma, \Delta, I, F)$, build a DFA whose states are sets of NFA states. The start state is
+$\mathrm{cl}(I)$. From a set $S$ and a letter $a$, the transition goes to $\mathrm{cl}(\{r : (p, a, r) \in \Delta,\
+p \in S\})$. A set is accepting if it contains a state of $F$. Build only the sets reachable from the start, with a
+queue.\index{subset construction}
+\end{method}
+
+\omcode{code/bachelor-2/21-finite-automata/listings/automaton.rs}{138}{159}{The \omterm{met:b2:finite-automata:subset}{subset construction}: each new set
+gets a number and joins the queue}\label{lst:b2:finite-automata:subset}
+
+\begin{theorem}[The subset construction is correct]\label{thm:b2:finite-automata:subset-correct}
+For every \omterm{def:b2:finite-automata:word}{word} $w$, the state of the DFA after reading $w$ is the set of NFA states at which some run on $w$ can end.
+Hence the DFA recognises the \omterm{def:b2:finite-automata:language}{language} of the NFA, and a \omterm{def:b2:finite-automata:language}{language} is \omterm{def:b2:finite-automata:recognisable}{recognisable} by an NFA if and only if it is
+\omterm{def:b2:finite-automata:recognisable}{recognisable} by a DFA.
+\end{theorem}
+
+\begin{proof}
+By induction on $|w|$. For $w = \varepsilon$, the runs on $\varepsilon$ are the spontaneous moves from $I$, which end
+exactly in $\mathrm{cl}(I)$, the start state. Suppose the claim holds for $w$, with set $S$. A run on $wa$ is a run on
+$w$, ending in some $p \in S$, then a transition $(p, a, r)$, then spontaneous moves: it ends exactly in the closure
+of the $r$'s, which is the transition of the DFA from $S$ on $a$. So the DFA's state after $w$ contains a state of $F$
+if and only if some run on $w$ ends in $F$. Conversely a DFA is an NFA with one start state and at most one
+transition per state and letter.
+\end{proof}
+
+\omoutput{code/bachelor-2/21-finite-automata/outputs/subset.txt}{The determinisation of ``the third letter from the
+end is $a$'': eight sets of states.}\label{out:b2:finite-automata:subset}
+
+The DFA remembers which of the last three letters were $a$: the set $\{0, 2, 3\}$ means the last letter was $b$ and
+the two before it were $a$. That needs $2^3$ states, and no DFA can do with fewer.
+
+\begin{theorem}[The blow-up is unavoidable]\label{thm:b2:finite-automata:blowup}
+Let $L_k$ be the \omterm{def:b2:finite-automata:word}{words} over $\{a, b\}$ whose $k$-th letter from the end is $a$. An NFA with $k + 1$ states recognises
+$L_k$, and every DFA that recognises $L_k$ has at least $2^k$ states; the \omterm{met:b2:finite-automata:subset}{subset construction} produces exactly
+$2^k$.
+\end{theorem}
+
+\begin{proof}
+Let $u \ne v$ be two \omterm{def:b2:finite-automata:word}{words} of length $k$, and $i$ the first position, counting from 0, where they differ; say $u$ has
+$a$ there and $v$ has $b$. Append $b^i$: in $ub^i$ and $vb^i$, that position is now $k$-th from the end, so $ub^i
+\in L_k$ and $vb^i \notin L_k$. In a DFA recognising $L_k$, if $\delta^*(q_0, u) = \delta^*(q_0, v)$ then by
+\cref{prop:b2:finite-automata:extended} $\delta^*(q_0, ub^i) = \delta^*(q_0, vb^i)$, and the two \omterm{def:b2:finite-automata:word}{words} would be both
+accepted or both rejected. So the $2^k$ \omterm{def:b2:finite-automata:word}{words} of length $k$ lead to $2^k$ different states. The NFA of the figure has
+$k + 1$ states; the reachable sets of the \omterm{met:b2:finite-automata:subset}{subset construction} are $\{0\} \cup T$ for the $2^k$ sets $T \subseteq \{1,
+\dots, k\}$ of positions among the last $k$ letters that hold an $a$, all reached.
+\end{proof}
+
+\omoutput{code/bachelor-2/21-finite-automata/outputs/blowup.txt}{For $k = 1$ to 12, the states of both automata, and
+the proof's argument checked on every pair of \omterm{def:b2:finite-automata:word}{words} of length $k$.}\label{out:b2:finite-automata:blowup}
+
+A set of \omterm{def:b2:finite-automata:word}{words} that must lead to pairwise different states, as here, is a \emph{fooling set}; it gives a lower bound on
+the size of every DFA for the \omterm{def:b2:finite-automata:language}{language} (\cref{exo:b2:finite-automata:10}).
+
+\begin{history}
+% ledger: b2:kleene-1956
+% ledger: b2:rabin-scott-1959
+Finite automata come from the 1950s. Stephen Kleene's paper of 1956, in the collection \emph{Automata Studies},
+started from models of nerve nets and characterised the ``events'' a finite automaton can recognise; that result is
+the next chapter's main theorem. In 1959 Michael Rabin and Dana Scott defined nondeterministic automata and proved
+that the \omterm{met:b2:finite-automata:subset}{subset construction} removes the nondeterminism, the theorem of this section.
+\end{history}
+
+\section{Combining automata}\label{sec:b2:finite-automata:closure}
+
+\begin{definition}[Product automaton]\label{def:b2:finite-automata:product}
+The \emph{product}\index{product automaton} of two \omterm{def:b2:finite-automata:complete}{complete} DFAs $(P, \Sigma, \delta, p_0, F)$ and $(Q, \Sigma,
+\gamma, q_0, G)$ has the states $P \times Q$, the start $(p_0, q_0)$ and the transitions $(p, q) \xrightarrow{a}
+(\delta(p, a), \gamma(q, a))$: it runs both automata at once.
+\end{definition}
+
+\begin{proposition}[Closure under the Boolean operations]\label{prop:b2:finite-automata:closure}
+If $L$ and $M$ are \omterm{def:b2:finite-automata:recognisable}{recognisable}, so are $\Sigma^* \setminus L$, $L \cup M$ and $L \cap M$.
+\end{proposition}
+
+\begin{proof}
+Take \omterm{def:b2:finite-automata:complete}{complete} DFAs for $L$ and $M$. Swapping accepting and other states of the first gives the complement: the run on
+every \omterm{def:b2:finite-automata:word}{word} is defined and ends in exactly one state, accepting in one automaton if and only if not in the other. By
+induction on $|w|$, the \omterm{def:b2:finite-automata:product}{product}'s state after $w$ is the pair of the two states after $w$; so with \omterm{def:b2:finite-automata:dfa}{accepting states} $F
+\times G$ it recognises $L \cap M$, and with $(F \times Q) \cup (P \times G)$ it recognises $L \cup M$.
+\end{proof}
+
+Completeness matters for the complement: an incomplete automaton rejects some \omterm{def:b2:finite-automata:word}{words} by having no run at all, and
+swapping its \omterm{def:b2:finite-automata:dfa}{accepting states} leaves them rejected (\cref{exo:b2:finite-automata:2}). The \omterm{def:b2:finite-automata:product}{product} of ``even length''
+and ``starts with $a$'' has six states, and not all of them are useful:
+
+\omoutput{code/bachelor-2/21-finite-automata/outputs/product.txt}{The \omterm{def:b2:finite-automata:product}{product} for the intersection, its useless
+states, and the number of accepted \omterm{def:b2:finite-automata:word}{words} of each length.}\label{out:b2:finite-automata:product}
+
+\begin{omfigure}
+\begin{tikzpicture}[->, >={Stealth[length=1.8mm]}, node distance=20mm, every state/.style={minimum size=9mm,
+    inner sep=0pt}, font=\scriptsize, auto, g/.style={draw=gray!60, text=gray!70}]
+\node[state, initial, initial text=] (00) {0,0};
+\node[state] (11) [right=24mm of 00] {1,1};
+\node[state, accepting] (01) [right=24mm of 11] {0,1};
+\node[state, g] (12) [below=13mm of 11] {1,2};
+\node[state, g] (02) [right=24mm of 12] {0,2};
+\node[state, g] (10) [below=13mm of 00] {1,0};
+\path (00) edge node {$a$} (11) (00) edge node[below left] {$b$} (12)
+  (11) edge[bend left=15] node {$a, b$} (01) (01) edge[bend left=15] node {$a, b$} (11)
+  (12) edge[bend left=15, gray] node {$a, b$} (02) (02) edge[bend left=15, gray] node {$a, b$} (12)
+  (10) edge[gray] node[below] {$b$} (12) (10) edge[gray, bend right=50] node[below, pos=0.3] {$a$} (01);
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b2:finite-automata:product}{product} of ``even length'' (first component) and ``starts with $a$'' (0: start, 1: began
+with $a$, 2: began with $b$). Grey: $(1, 0)$ is not \omterm{def:b2:finite-automata:trim}{accessible}; $(1, 2)$ and $(0, 2)$ cannot reach the \omterm{def:b2:finite-automata:dfa}{accepting
+state}. The \omterm{def:b2:finite-automata:trim}{trim automaton} keeps three states.}
+\end{omfigure}
+
+The counts, $2^{n-1}$ \omterm{def:b2:finite-automata:word}{words} of every even length $n \ge 2$, are computed from the automaton by dynamic programming:
+the number of \omterm{def:b2:finite-automata:word}{words} leading to each state, letter after letter (\cref{exo:b2:finite-automata:4}).
+
+\section{Automata as programs}\label{sec:b2:finite-automata:programs}
+
+A DFA runs in constant time per letter: one table lookup, as in the hook. An NFA can be run either by building the
+DFA first, or by simulating it on the fly, keeping the set of possible states, which costs up to the number of NFA
+states per letter but builds nothing. With at most 64 states, the set fits in the bits of one machine \omterm{def:b2:finite-automata:word}{word}, and
+a step is a few shifts and ORs (\cref{exo:b2:finite-automata:11}). On $L_k$, over two million letters:
+
+\omoutput{code/bachelor-2/21-finite-automata/outputs/simulate_vs_determinise.txt}{Simulating $L_k$'s NFA with sets as
+ordered trees or as bits, or building its DFA and running it, on the laptop.}\label{out:b2:finite-automata:measured}
+
+The DFA wins while it is small. At $k = 16$ it has 65\,536 states, takes 80 ms to build, and runs slower than the
+simulation by bits, since its table no longer fits in the processor's caches and each letter costs a memory access
+(\cref{ch:b2:caches}). Programs that search text with patterns face the same choice, and many build the DFA lazily,
+one state the first time it is needed.
+
+\section{Exercises}\label{sec:b2:finite-automata:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:finite-automata:1}
+Give the run of the automaton of \cref{lst:b2:finite-automata:hook} on \code{0.0}, \code{-.5}, \code{1E+10},
+\code{7e3.5} and \code{+}, and say which are accepted.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:finite-automata:2}
+The DFA with states 0 and 1, start 0, accepting 1, and the transitions $0 \xrightarrow{a} 1$ and $1 \xrightarrow{b}
+1$ recognises $ab^*$. Swap its accepting and other states: which \omterm{def:b2:finite-automata:language}{language} do you get? Which \omterm{def:b2:finite-automata:word}{words} are missing from
+the complement, and how is it repaired?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:finite-automata:3}
+Build a DFA with three states that recognises the binary writings of the multiples of 3 (the \omterm{def:b2:finite-automata:word}{empty word} standing for
+0), and prove it correct.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:finite-automata:4}
+Build a \omterm{def:b2:finite-automata:complete}{complete} DFA for the \omterm{def:b2:finite-automata:word}{words} over $\{a, b\}$ that do not contain the \omterm{def:b2:finite-automata:factor}{factor} $bb$, and find a recurrence for the
+number $c_n$ of such \omterm{def:b2:finite-automata:word}{words} of length $n$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:finite-automata:5}
+Apply the \omterm{met:b2:finite-automata:subset}{subset construction} to the NFA with states 0, 1, 2, start 0, accepting 2, and the transitions $0
+\xrightarrow{a, b} 0$, $0 \xrightarrow{a} 1$ and $1 \xrightarrow{b} 2$. Which \omterm{def:b2:finite-automata:language}{language} is it?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:finite-automata:6}
+A program computes the closure of a set by adding, once, the targets of the \omterm{def:b2:finite-automata:epsilon}{spontaneous transitions} of its states. On
+the automaton of $a^*b^*c^*$, which \omterm{def:b2:finite-automata:word}{words} does it get wrong, and why?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:finite-automata:7}
+Build a DFA with four states for the \omterm{def:b2:finite-automata:word}{words} over $\{a, b\}$ that contain the \omterm{def:b2:finite-automata:factor}{factor} $aba$, and explain what each state
+remembers.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:finite-automata:8}
+The \emph{reverse} of $w = a_1 \cdots a_n$ is $a_n \cdots a_1$. Show that if $L$ is \omterm{def:b2:finite-automata:recognisable}{recognisable}, the set of the
+reverses of its \omterm{def:b2:finite-automata:word}{words} is \omterm{def:b2:finite-automata:recognisable}{recognisable}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:finite-automata:9}
+For integers $n \ge 1$ and $b \ge 2$, build a DFA with $n$ states that recognises the writings in base $b$ of the
+multiples of $n$, and test it.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:finite-automata:10}
+A \emph{fooling set} for $L$ is a set $S$ of \omterm{def:b2:finite-automata:word}{words} such that for any two $u \ne v$ in $S$ there is a \omterm{def:b2:finite-automata:word}{word} $z$ with
+exactly one of $uz$ and $vz$ in $L$. Show that every DFA recognising $L$ has at least $|S|$ \omterm{def:b2:finite-automata:trim}{accessible states}. Find a
+fooling set of size 3 for the \omterm{def:b2:finite-automata:language}{language} of \cref{exo:b2:finite-automata:3}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:finite-automata:11}
+Write an NFA simulation that keeps the set of states as the bits of a 64-bit \omterm{def:b2:finite-automata:word}{word}, and compare its speed with the
+determinised automaton for $L_k$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:finite-automata:12}
+Show that if $L$ is \omterm{def:b2:finite-automata:recognisable}{recognisable}, the set of the \omterm{def:b2:finite-automata:factor}{prefixes} of its \omterm{def:b2:finite-automata:word}{words} is \omterm{def:b2:finite-automata:recognisable}{recognisable}.
+\end{exercise}
+
+\section{Problem: Decoding the lighthouse's light signals}\label{sec:b2:finite-automata:problem}
+
+\begin{problem}[{Weekend problem --- Decoding the lighthouse's light signals}]\label{pb:b2:finite-automata:1}
+The lighthouse sends messages as flashes, short ($s$) or long ($l$). A message is a \omterm{def:b2:finite-automata:word}{word} over $\{s, l\}$; the harbour
+reads it as it comes.
+
+\medskip\noindent\textbf{Part I --- Signals as words.}\par\nopagebreak
+\begin{enumerate}
+\item How many messages of length 10 are there, and how many of length at most 10?
+\item List the \omterm{def:b2:finite-automata:factor}{prefixes}, \omterm{def:b2:finite-automata:factor}{suffixes} and \omterm{def:b2:finite-automata:factor}{factors} of length 2 of $sllsl$.
+\item Is $ss$ a \omterm{def:b2:finite-automata:factor}{subword} of $slsl$? A \omterm{def:b2:finite-automata:factor}{factor}?
+\item Describe $\{s, l\}^* l \{s, l\}^*$ and $\{ss, l\}^*$ in \omterm{def:b2:finite-automata:word}{words}.
+\item Show that $L^* L^* = L^*$ for every \omterm{def:b2:finite-automata:language}{language} $L$.
+\item Is $\{s\}^* \{l\}^* = \{s, l\}^*$? Give a \omterm{def:b2:finite-automata:word}{word} that tells.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Valid messages.}\par\nopagebreak
+A message is \emph{valid} if it has an even number of long flashes and never three short flashes in a row.
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Build a \omterm{def:b2:finite-automata:complete}{complete} DFA $P$ with two states for ``an even number of $l$''.
+\item Build a \omterm{def:b2:finite-automata:complete}{complete} DFA $N$ with four states for ``no \omterm{def:b2:finite-automata:factor}{factor} $sss$''.
+\item How many states has their \omterm{def:b2:finite-automata:product}{product}, and which are accepting?
+\item Which states of the \omterm{def:b2:finite-automata:product}{product} are not \omterm{def:b2:finite-automata:trim}{co-accessible}? How many states does the \omterm{def:b2:finite-automata:trim}{trim automaton} keep?
+\item Run it on $slslss$ and $lssslsl$.
+\item Write the recurrence that counts valid messages, state by state, and compute the counts for lengths 0 to 6.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- A pattern near the end.}\par\nopagebreak
+The harbour must react when the fourth flash from the end is long.
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Draw an NFA with 5 states for it.
+\item What does its \omterm{met:b2:finite-automata:subset}{subset construction} remember after each flash?
+\item How many states does the DFA have, and what is its start state?
+\item Give two messages of length 4 that lead to different DFA states, and a \omterm{def:b2:finite-automata:factor}{suffix} that tells them apart.
+\item Is the NFA's on-the-fly simulation cheaper than the DFA here? Use \cref{out:b2:finite-automata:measured}.
+\item Why can the harbour not use an automaton that reads the message backwards?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The blow-up.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item For ``the $k$-th flash from the end is long'', how many states do the NFA and the DFA need?
+\item Which $2^k$ \omterm{def:b2:finite-automata:word}{words} form a fooling set, and why does that prove the bound?
+\item Could a different NFA with fewer than $k + 1$ states recognise the \omterm{def:b2:finite-automata:language}{language}?
+\item To check also that the message is valid, the harbour runs the \omterm{def:b2:finite-automata:product}{product} of the DFA of question 19 with the \omterm{def:b2:finite-automata:trim}{trim
+automaton} of question 10. At most how many states does it have for $k = 4$?
+\item How does \cref{out:b2:finite-automata:blowup} check the proof for $k \le 12$?
+\item State the result: the $2^k$ law, exactly $2^k$ states, none removable.
+\end{enumerate}
+\end{problem}

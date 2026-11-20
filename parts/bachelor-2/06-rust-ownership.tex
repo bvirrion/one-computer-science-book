@@ -1,0 +1,516 @@
+% Book 4, Year 2, chapter 6 -- Rust: ownership and borrowing.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 6.
+\chapter{Rust: Ownership and Borrowing}\label{ch:b2:rust-ownership}
+
+Last year's most frequent error, in five lines of C: a block is freed through one pointer and read through another.
+The compiler accepts it; only the sanitizer, at run time, on the input that reaches the line, notices.
+
+\omcode{code/bachelor-2/06-rust-ownership/listings/use_after_free.c}{9}{13}{Freed through one pointer, read through
+another}\label{lst:b2:rust-ownership:uaf-c}
+
+\omoutput[1-5,7-7]{code/bachelor-2/06-rust-ownership/outputs/run_use_after_free.txt}{A use after free, found by the
+sanitizer while the program runs.}\label{out:b2:rust-ownership:uaf-c}
+
+The same program in Rust, the language of this part of the book:
+
+\omcode{code/bachelor-2/06-rust-ownership/listings/use_after_free.rs}{3}{8}{The same program in
+Rust}\label{lst:b2:rust-ownership:uaf-rs}
+
+\omoutput[1-12,22-22]{code/bachelor-2/06-rust-ownership/outputs/use_after_free.txt}{Refused by the compiler: no
+program is produced.}\label{out:b2:rust-ownership:uaf-rs}
+
+The compiler has found, without running anything, that the string is given back while a reference to it is still
+to be used, and it names the three lines involved. It did so by applying a few rules about who owns each value and
+who may use it when. This chapter states them; they forbid the use after free, the double free and, as
+\cref{ch:b2:threads-and-synchronisation} will show, the data race, in every program that compiles.
+
+\begin{recall}
+Book 3: a block of the heap is obtained with \code{malloc} and given back with \code{free}; using it afterwards
+(use after free) or freeing it twice (double free) is undefined behaviour, which the address sanitizer detects at
+run time. \cref{ch:b2:cpp-classes-raii,ch:b2:cpp-copy-move}: in C++, an object that owns a resource frees it in its
+\omterm{def:b2:cpp-classes-raii:constructor}{destructor} (RAII), and a \omterm{def:b2:rust-ownership:move}{move} transfers the resource, leaving the source empty but still usable.
+\end{recall}
+
+\section{Rust in a few pages}\label{sec:b2:rust-ownership:basics}
+
+Rust is a compiled language, like C and C++: \code{rustc file.rs} produces an executable, with no garbage collector
+and no run-time system beyond C's. Its syntax will look familiar.
+
+\omcode{code/bachelor-2/06-rust-ownership/listings/hello.rs}{2}{19}{Bindings, types, functions, a loop and a
+vector}\label{lst:b2:rust-ownership:hello}
+
+\omoutput{code/bachelor-2/06-rust-ownership/outputs/hello.txt}{The fines of four loans, and integer overflow made
+visible.}\label{out:b2:rust-ownership:hello}
+
+A few points differ from C. \code{let} introduces a \emph{binding}, immutable unless declared \code{mut}. Types are
+written after the name (\code{total: u32}) and are inferred where possible: \code{u8} to \code{u64} and \code{i8} to
+\code{i64} are the integers with their sizes in bits, \code{usize} the size of a pointer, \code{f64} the
+\code{double}. There is no implicit conversion between numeric types: \code{as} converts. A block is an expression
+whose value is its last expression, written without a semicolon, which is how \code{fine_cents} returns. An
+arithmetic overflow stops the program in a debug build; \code{checked_add} returns \code{None} instead of
+overflowing and \code{wrapping_add} wraps modulo $2^8$ on purpose. \code{println!} is a \emph{macro}, hence the
+\code{!}, whose \code{{}} are replaced by the arguments or by the variables named inside them. Tests live in a
+\emph{crate}, Rust's unit of compilation, managed by the tool \code{cargo}; the tests of this chapter form the crate
+\code{tests/ownership}. Rust 2021 is the edition of the language used throughout, the one that came with Rust
+1.56 in October 2021.
+% ledger: b2:rust-2021
+
+\section{Ownership}\label{sec:b2:rust-ownership:ownership}
+
+\begin{definition}[Owner, ownership]\label{def:b2:rust-ownership:ownership}
+In Rust, every value has exactly one \emph{owner}\index{owner (Rust)}, the variable (or the field, or the element of
+a collection) that holds it. When the owner goes out of scope, the value is dropped. \emph{Ownership}\index{ownership}
+is this relation, and the rule that it is unique at every moment.
+\end{definition}
+
+\begin{definition}[Drop]\label{def:b2:rust-ownership:drop}
+To \emph{drop}\index{drop (Rust)} a value is to run its clean-up code, its \code{Drop} implementation if it has one,
+then to drop its fields, and finally to free its memory. The compiler inserts the drops, at the end of the \omterm{def:b2:rust-ownership:ownership}{owner}'s
+scope, in the reverse order of declaration; \code{drop(x)} drops \code{x} earlier.
+\end{definition}
+
+A \code{String} is three words on the stack, a pointer, a length and a capacity, and a buffer on the heap, which it
+owns. Assigning it to another variable does not copy the buffer.
+
+\begin{definition}[Move]\label{def:b2:rust-ownership:move}
+A \emph{move}\index{move (Rust)} transfers \omterm{def:b2:rust-ownership:ownership}{ownership} of a value: an assignment \code{let b = a;}, the passing of
+\code{a} as an argument by value, or its return from a function copies the bytes of \code{a}'s stack part to the
+destination, which becomes the \omterm{def:b2:rust-ownership:ownership}{owner}. The source is then \emph{moved from}: the compiler refuses any later use of
+it, and does not \omterm{def:b2:rust-ownership:drop}{drop} it.
+\end{definition}
+
+\omcode{code/bachelor-2/06-rust-ownership/listings/move_string.rs}{2}{19}{A \omterm{def:b2:rust-ownership:move}{move}, a copy and a
+clone}\label{lst:b2:rust-ownership:move}
+
+\omoutput{code/bachelor-2/06-rust-ownership/outputs/move_string.txt}{After \code{clone}, two
+buffers.}\label{out:b2:rust-ownership:move}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize]
+\begin{scope}
+\node[font=\footnotesize\bfseries, anchor=west] at (-0.2,1.5) {before \texttt{let b = a;}};
+\node[cell, minimum width=12mm] (ap) at (0.8,0.6) {ptr};
+\node[cell, minimum width=12mm, below=0mm of ap] (al) {len 11};
+\node[cell, minimum width=12mm, below=0mm of al] (ac) {cap 11};
+\node[left=1mm of al, font=\scriptsize\ttfamily] {a};
+\node[cell, minimum width=30mm, fill=omDef!10, font=\scriptsize\ttfamily] (buf) at (3.6,-2.0) {Quay Street};
+\draw[ptr] (ap.east) to[out=0, in=90] (buf.north);
+\node[font=\scriptsize, text=black!60] at (0.8,-2.0) {stack};
+\node[font=\scriptsize, text=black!60] at (3.6,-2.65) {heap};
+\end{scope}
+\begin{scope}[xshift=7.0cm]
+\node[font=\footnotesize\bfseries, anchor=west] at (-0.2,1.5) {after};
+\node[cell, minimum width=12mm, fill=black!8, text=black!45] (ap) at (0.8,0.6) {ptr};
+\node[cell, minimum width=12mm, fill=black!8, text=black!45, below=0mm of ap] (al) {len 11};
+\node[cell, minimum width=12mm, fill=black!8, text=black!45, below=0mm of al] (ac) {cap 11};
+\node[left=1mm of al, font=\scriptsize\ttfamily, text=black!45] {a};
+\node[cell, minimum width=12mm] (bp) at (3.0,0.6) {ptr};
+\node[cell, minimum width=12mm, below=0mm of bp] (bl) {len 11};
+\node[cell, minimum width=12mm, below=0mm of bl] (bc) {cap 11};
+\node[left=1mm of bl, font=\scriptsize\ttfamily] {b};
+\node[cell, minimum width=30mm, fill=omDef!10, font=\scriptsize\ttfamily] (buf) at (5.0,-2.0) {Quay Street};
+\draw[ptr] (bp.east) to[out=0, in=90] (buf.north);
+\node[align=center, font=\scriptsize, text=black!60] at (0.8,-2.1) {moved from: unusable,\\ not dropped};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b2:rust-ownership:move}{move} of a \code{String}. The three words of \code{a} are copied into \code{b}; the buffer
+stays where it is, with one \omterm{def:b2:rust-ownership:ownership}{owner}, \code{b}. The compiler forbids any use of \code{a} afterwards and \omterm{def:b2:rust-ownership:drop}{drops} only
+\code{b}, so the buffer is freed exactly once. In C++, a \omterm{def:b2:rust-ownership:move}{move} would also have emptied \code{a}, and run its
+\omterm{def:b2:cpp-classes-raii:constructor}{destructor} later; in Rust nothing runs on \code{a} at all.}
+\end{omfigure}
+
+\omoutput[2-10,20-20]{code/bachelor-2/06-rust-ownership/outputs/use_after_move.txt}{Using \code{a} after
+\code{let b = a;} is refused.}\label{out:b2:rust-ownership:use-after-move}
+
+\begin{definition}[Copy type]\label{def:b2:rust-ownership:copy-type}
+A \emph{copy type}\index{copy type (Rust)} is a type whose values are duplicated by copying their bytes, with no
+resource to free, and that implements the \code{Copy} trait: the integers, \code{f64}, \code{bool}, \code{char},
+shared references, and tuples and arrays of copy types. For a copy type, assignment and passing by value copy, and
+the source stays usable. A type that owns a resource, such as \code{String} or \code{Vec}, cannot be \code{Copy}.
+\end{definition}
+
+A deliberate copy of a \code{String} is a \code{clone}: a new buffer with the same bytes. Clones are visible in the
+code, which is the point: a C++ \omterm{def:b2:cpp-copy-move:copy}{copy constructor} runs silently at an assignment, a Rust clone is written.
+
+\section{Borrowing}\label{sec:b2:rust-ownership:borrowing}
+
+Moving every value into every function that reads it would be impractical. A function can instead
+\emph{\omterm{def:b2:rust-ownership:borrow}{borrow}} it.
+
+\begin{definition}[Borrow]\label{def:b2:rust-ownership:borrow}
+A \emph{borrow}\index{borrow (Rust)} is a reference to a value that does not take \omterm{def:b2:rust-ownership:ownership}{ownership} of it. A \emph{shared
+borrow} \code{&x}, of type \code{&T}, allows reading the value; a \emph{mutable}, or \emph{exclusive}, borrow
+\code{&mut x}, of type \code{&mut T}, allows changing it. The \emph{borrowing rule}: at any point of the program, a
+value has either any number of shared borrows in use, or exactly one exclusive borrow in use, but not both; and no
+borrow is used after the value is moved or dropped.
+\end{definition}
+
+A \omterm{def:b2:rust-ownership:borrow}{borrow} is \emph{in use} from its creation to its last use, not to the end of its block: the compiler follows the
+program's paths, line by line.
+
+\omcode{code/bachelor-2/06-rust-ownership/listings/borrow_rules.rs}{2}{23}{Shared \omterm{def:b2:rust-ownership:borrow}{borrows} to read, an exclusive one to
+change}\label{lst:b2:rust-ownership:borrow-rules}
+
+\omoutput{code/bachelor-2/06-rust-ownership/outputs/borrow_rules.txt}{Every \omterm{def:b2:rust-ownership:borrow}{borrow} ended before the next exclusive
+one began.}\label{out:b2:rust-ownership:borrow-rules}
+
+\omoutput[2-10]{code/bachelor-2/06-rust-ownership/outputs/two_mut.txt}{Two exclusive \omterm{def:b2:rust-ownership:borrow}{borrows} in use at once: refused
+(the program is \code{two_mut.rs}).}\label{out:b2:rust-ownership:two-mut}
+
+\begin{definition}[Borrow checker]\label{def:b2:rust-ownership:checker}
+The \emph{borrow checker}\index{borrow checker} is the part of the Rust compiler that checks, for every function,
+that each value is used only while owned and not moved, and that the \omterm{def:b2:rust-ownership:borrow}{borrowing rule} holds at every point, using the
+types of the function's parameters and results and not the bodies of the functions it calls.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, v/.style={draw, rounded corners=3pt, fill=omDef!12, minimum width=18mm, minimum height=7mm},
+    r/.style={draw, rounded corners=2pt, fill=black!4, minimum width=12mm, minimum height=5mm}]
+\node[font=\footnotesize\bfseries] at (1.3,1.9) {allowed};
+\node[v] (s) at (0,0) {\texttt{street}};
+\node[r] (r1) at (2.6,0.9) {\texttt{\&street}};
+\node[r] (r2) at (2.6,0) {\texttt{\&street}};
+\node[r] (r3) at (2.6,-0.9) {\texttt{\&street}};
+\foreach \r in {r1,r2,r3} \draw[ptr] (\r.west) -- (s.east);
+\node[align=center, text=black!60] at (1.3,-1.7) {any number of readers};
+\begin{scope}[xshift=4.9cm]
+\node[font=\footnotesize\bfseries] at (1.3,1.9) {allowed};
+\node[v] (s) at (0,0) {\texttt{street}};
+\node[r, fill=omThm!12] (m) at (2.6,0) {\texttt{\&mut street}};
+\draw[ptr, thick] (m.west) -- (s.east);
+\node[align=center, text=black!60] at (1.3,-1.7) {one writer, alone};
+\end{scope}
+\begin{scope}[xshift=9.8cm]
+\node[font=\footnotesize\bfseries] at (1.3,1.9) {refused};
+\node[v] (s) at (0,0) {\texttt{street}};
+\node[r, fill=omThm!12] (m) at (2.6,0.5) {\texttt{\&mut street}};
+\node[r] (r) at (2.6,-0.5) {\texttt{\&street}};
+\draw[ptr, thick] (m.west) -- (s.east);
+\draw[ptr] (r.west) -- (s.east);
+\draw[red!70!black, very thick] (0.9,-0.95) -- (3.6,0.95) (0.9,0.95) -- (3.6,-0.95);
+\node[align=center, text=black!60] at (1.3,-1.7) {a writer and anyone else};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b2:rust-ownership:borrow}{borrowing rule}, for the \omterm{def:b2:rust-ownership:borrow}{borrows} in use at one point of the program. Two writers, like a
+writer and a reader, are refused: \cref{out:b2:rust-ownership:two-mut}.}
+\end{omfigure}
+
+The rule is what makes the use after free of the opening impossible: dropping \code{name} needs to \omterm{def:b2:rust-ownership:move}{move} it, a \omterm{def:b2:rust-ownership:move}{move}
+is a use incompatible with any \omterm{def:b2:rust-ownership:borrow}{borrow} in use, and \code{shown} was in use until the \code{println!}. It also excludes
+a whole family of errors that are not about freeing.
+
+% ledger: b2:rustbelt-2018
+\begin{proposition}[Aliasing excludes mutation]\label{prop:b2:rust-ownership:no-race}
+In a program accepted by the \omterm{def:b2:rust-ownership:checker}{borrow checker}, with no \code{unsafe} code, if at some point a value is changed through
+a path (its \omterm{def:b2:rust-ownership:ownership}{owner}, or an exclusive \omterm{def:b2:rust-ownership:borrow}{borrow}), then no other path to that value is in use at that point. In particular,
+two accesses to one value, one of which is a write, can never be in use at the same time: in one thread, a value
+does not change behind a reader; across threads, there is no data race.
+\end{proposition}
+
+\begin{proof}
+A write goes through the \omterm{def:b2:rust-ownership:ownership}{owner}, which requires that no \omterm{def:b2:rust-ownership:borrow}{borrow} be in use, or through an exclusive \omterm{def:b2:rust-ownership:borrow}{borrow}, which by the
+\omterm{def:b2:rust-ownership:borrow}{borrowing rule} is the only \omterm{def:b2:rust-ownership:borrow}{borrow} in use; and while an exclusive \omterm{def:b2:rust-ownership:borrow}{borrow} is in use, the \omterm{def:b2:rust-ownership:ownership}{owner} itself cannot be used,
+since using it would end or contradict the \omterm{def:b2:rust-ownership:borrow}{borrow}. A second access in use at the same point would be a second
+\omterm{def:b2:rust-ownership:borrow}{borrow}, or a use of the \omterm{def:b2:rust-ownership:ownership}{owner}, against the rule. Threads receive values only by \omterm{def:b2:rust-ownership:move}{move} or by \omterm{def:b2:rust-ownership:borrow}{borrow}, so the same
+counting applies across them. This argument assumes that the compiler applies the rules correctly to the whole
+language and that the library code written with \code{unsafe} respects them. That the rules indeed make the language
+safe was proved formally for a realistic subset of Rust in 2018, in a machine-checked proof that also covers
+several library types; we admit it.
+\end{proof}
+
+\omcode{code/bachelor-2/06-rust-ownership/listings/race.rs}{6}{11}{Two threads incrementing one
+counter}\label{lst:b2:rust-ownership:race}
+
+\omoutput[2-16]{code/bachelor-2/06-rust-ownership/outputs/race.txt}{The data race is refused like any second
+exclusive \omterm{def:b2:rust-ownership:borrow}{borrow}.}\label{out:b2:rust-ownership:race}
+
+Each closure, \code{|| count += 1}, changes \code{count}, so it holds an exclusive \omterm{def:b2:rust-ownership:borrow}{borrow} of it; the two threads may
+run at the same time, so both \omterm{def:b2:rust-ownership:borrow}{borrows} are in use at once. \cref{ch:b2:threads-and-synchronisation} shows the types
+that make such a counter possible: an atomic integer, a mutex.
+
+\begin{method}[Fixing a borrow error]\label{met:b2:rust-ownership:fix-borrow}
+When the \omterm{def:b2:rust-ownership:checker}{borrow checker} refuses a program, read the three places the message names: where the \omterm{def:b2:rust-ownership:borrow}{borrow} starts, the
+conflicting use, and where the \omterm{def:b2:rust-ownership:borrow}{borrow} is used later. Then, in order of preference:
+\begin{enumerate}
+\item \emph{shorten} the first \omterm{def:b2:rust-ownership:borrow}{borrow}: finish using it before the conflicting use, for instance by copying out the
+small value it was needed for (a length, an index);
+\item \emph{split} the \omterm{def:b2:rust-ownership:borrow}{borrow}: \omterm{def:b2:rust-ownership:borrow}{borrow} two disjoint parts of the value instead of the whole, two fields, or two halves
+of a \omterm{def:b2:rust-ownership:slice}{slice} with \code{split_at_mut};
+\item \emph{clone}, if the value is small or the copy is needed anyway, and count what it costs;
+\item \emph{restructure}: change who owns what, for instance return an owned value instead of a reference, or keep
+indices instead of references.
+\end{enumerate}
+\end{method}
+
+\section{Lifetimes}\label{sec:b2:rust-ownership:lifetimes}
+
+\begin{definition}[Dangling reference]\label{def:b2:rust-ownership:dangling}
+A \emph{dangling reference}\index{dangling reference} is a reference used after the value it refers to was dropped,
+or moved: what C calls a dangling pointer, and what the use after free of the opening read.
+\end{definition}
+
+\begin{definition}[Lifetime of a reference]\label{def:b2:rust-ownership:lifetime}
+The \emph{lifetime of a reference}\index{lifetime (Rust)}, written \code{'a}, is the region of the program in which
+the reference may be used. It must lie within the lifetime of the object referred to, the span from its creation
+to its \omterm{def:b2:rust-ownership:drop}{drop} or \omterm{def:b2:rust-ownership:move}{move} (the lifetime of an object in Book 3's sense). A function whose result is a reference names, by
+lifetime parameters in its signature, the arguments the result may \omterm{def:b2:rust-ownership:borrow}{borrow} from.
+\end{definition}
+
+A function that returns a reference must \omterm{def:b2:rust-ownership:borrow}{borrow} it from one of its arguments: a reference to one of its own locals
+would dangle as soon as it returns.
+
+\omoutput[2-8,13-16]{code/bachelor-2/06-rust-ownership/outputs/dangling.txt}{A returned reference with nothing to
+\omterm{def:b2:rust-ownership:borrow}{borrow} from (the program is \code{dangling.rs}).}\label{out:b2:rust-ownership:dangling}
+
+When a function takes two references and returns one of them, the compiler cannot guess which; the signature says
+it.
+
+\omcode{code/bachelor-2/06-rust-ownership/listings/longest.rs}{2}{29}{A lifetime parameter, and an elided
+lifetime}\label{lst:b2:rust-ownership:longest}
+
+\omoutput{code/bachelor-2/06-rust-ownership/outputs/longest.txt}{Both uses stay within the lifetimes of their
+arguments.}\label{out:b2:rust-ownership:longest}
+
+\code{fn longest<'a>(x: &'a str, y: &'a str) -> &'a str} reads: for some region \code{'a} in which both arguments
+are valid, the result is valid in \code{'a}. A caller may therefore use the result only while both arguments live.
+\code{first_letter} needs no annotation: by the \emph{elision rules}, a function with exactly one reference parameter
+returns a reference borrowed from it, and a method with \code{&self} returns one borrowed from \code{self}. The caller
+checks only the signature, never the body: \code{longest_scope.rs} keeps the result of \code{longest} after \code{b}
+is dropped, and is refused even though, with these strings, \code{longest} returns \code{a}.
+
+\omoutput[2-12]{code/bachelor-2/06-rust-ownership/outputs/longest_scope.txt}{The signature promises at most the
+shorter lifetime.}\label{out:b2:rust-ownership:longest-scope}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize\ttfamily, x=1cm, y=0.5cm]
+\foreach \l/\t in {1/let a = String::from(\textquotedbl Orchard Way\textquotedbl);, 2/let result;, 3/\{, 4/{\ \ \ \ let b = String::from(\textquotedbl Mill Row\textquotedbl);},
+  5/{\ \ \ \ result = longest(\&a, \&b);}, 6/\}, 7/println!(\textquotedbl\{result\}\textquotedbl);}
+  \node[anchor=west] at (0,-\l) {\t};
+\draw[very thick, omDef] (6.4,-1) -- (6.4,-7.3);
+\node[above, font=\scriptsize\rmfamily, text=omDef] at (6.4,-0.9) {a};
+\draw[very thick, omMeth] (6.9,-4) -- (6.9,-6);
+\node[above, font=\scriptsize\rmfamily, text=omMeth] at (6.9,-3.9) {b};
+\draw[very thick, omThm] (7.4,-5) -- (7.4,-7.3);
+\node[above, font=\scriptsize\rmfamily, text=omThm] at (7.6,-4.9) {result};
+\draw[red!70!black, thick, dashed] (6.1,-6.3) -- (7.8,-6.3);
+\node[font=\scriptsize\rmfamily, text=red!70!black, anchor=west, align=left] at (8.0,-6.3) {b dropped: the result, which may\\ borrow from b, is still to be used};
+\end{tikzpicture}
+\par\smallskip{\small The lifetimes of \code{longest_scope.rs}, as vertical bars over its source lines. The result
+must be valid at the \code{println!}, line 7, but it may \omterm{def:b2:rust-ownership:borrow}{borrow} from \code{b}, which is dropped at the end of
+line 6: no region \code{'a} lies within both, and the program is refused.}
+\end{omfigure}
+
+\section{Slices and strings}\label{sec:b2:rust-ownership:slices}
+
+\begin{definition}[Slice, string slice]\label{def:b2:rust-ownership:slice}
+A \emph{slice}\index{slice (Rust)} \code{&[T]} is a borrowed view of a contiguous run of values of type \code{T},
+inside an array, a vector or another slice: a pointer to its first element and a number of elements. A \emph{string
+slice} \code{&str} is a borrowed view of a run of bytes that is valid UTF-8; a \code{String} owns such bytes and can
+grow, a \code{&str} only \omterm{def:b2:rust-ownership:borrow}{borrows} them. \code{&v[i..j]} is the slice of the elements from \code{i} up to, but not
+including, \code{j}.
+\end{definition}
+
+\omcode{code/bachelor-2/06-rust-ownership/listings/slices.rs}{2}{20}{\omterm{def:b2:rust-ownership:slice}{Slices} of an array, a vector and a
+string}\label{lst:b2:rust-ownership:slices}
+
+\omoutput{code/bachelor-2/06-rust-ownership/outputs/slices.txt}{One function for every contiguous run of
+\code{u32}.}\label{out:b2:rust-ownership:slices}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize]
+\foreach \v [count=\i from 0] in {65,133,412,98,251} {
+  \node[cell, minimum width=11mm, fill=omDef!10] (p\i) at (1.1*\i,0) {\v};
+  \node[below=0.5mm of p\i, text=black!60] {\i};
+}
+\node[left=2mm of p0, font=\scriptsize\ttfamily] {pages};
+\node[cell, minimum width=12mm] (sp) at (1.1,2.0) {ptr};
+\node[cell, minimum width=12mm, right=0mm of sp] (sl) {len 3};
+\node[left=1mm of sp, font=\scriptsize\ttfamily] {middle};
+\draw[ptr] (sp.south) -- (p1.north);
+\draw[decorate, decoration={brace, mirror, amplitude=4pt}] ($(p1.south west)+(0,-0.45)$) -- ($(p3.south east)+(0,-0.45)$)
+  node[midway, below=5pt, font=\scriptsize] {the elements of \texttt{\&pages[1..4]}};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b2:rust-ownership:slice}{slice} \code{middle} of \cref{lst:b2:rust-ownership:slices}: two words, a pointer to
+element 1 and the length 3, and no copy of the elements. While it is in use, \code{pages} is borrowed: it cannot be
+changed or dropped.}
+\end{omfigure}
+
+A \code{&str} is a \omterm{def:b2:rust-ownership:slice}{slice} of bytes, but its bounds are byte indices, and UTF-8 encodes é in two bytes: in
+the string Café Lane, the bytes 3 and 4 are one character. A \omterm{def:b2:rust-ownership:slice}{slice} that would cut a character in two is not a
+string, and the index operation refuses it, at run time when the index is only known then.
+
+\omcode{code/bachelor-2/06-rust-ownership/listings/char_boundary.rs}{8}{10}{A byte index computed at run
+time}\label{lst:b2:rust-ownership:char-boundary}
+
+\omoutput{code/bachelor-2/06-rust-ownership/outputs/char_boundary.txt}{A panic, not a broken string: the program
+stops (its first lines print a panic without the thread's number, which varies from run to
+run).}\label{out:b2:rust-ownership:char-boundary}
+
+A panic stops the thread with a message, in an orderly way: values are dropped and the exit status is 101.
+Indexing out of bounds, \code{unwrap} on a missing value and overflow in a debug build panic too. A panic is a bug
+reported, not memory corrupted; the safe ways to cut a string, \code{s.get(0..n)}, which returns \code{None}, or
+\code{char_indices}, are the subject of \cref{ch:b2:rust-enums-and-errors}.
+
+\begin{inpractice}[Owned or borrowed?]
+Take parameters as \code{&str} and \code{&[T]} rather than \code{&String} and \code{&Vec<T>}: every string and every
+vector can be borrowed as a \omterm{def:b2:rust-ownership:slice}{slice}, and the function serves them all. Return owned values (\code{String},
+\code{Vec<T>}) when the function creates them, and references only when the result is a part of an argument. Store
+owned values in structures, unless the structure is clearly a short-lived view of other data.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b2:rust-ownership:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-ownership:1}
+For each of the five snippets a to e, say whether it compiles, and if not which rule it breaks. Then check with the
+session in the solution, which builds each one in turn.
+\omcode{code/bachelor-2/06-rust-ownership/listings/exo_compile.rs}{4}{43}{Five snippets}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-ownership:2}
+Explain the error with \cref{def:b2:rust-ownership:borrow}, then fix the program in two ways from
+\cref{met:b2:rust-ownership:fix-borrow}.
+\omcode{code/bachelor-2/06-rust-ownership/listings/exo_e0502.rs}{3}{8}{The shortest name, then one more}
+\omoutput[2-10]{code/bachelor-2/06-rust-ownership/outputs/exo_e0502.txt}{The error.}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-ownership:3}
+Write \code{fn first_word(s: &str) -> &str}, which returns the part of \code{s} before its first whitespace
+character, or all of \code{s}. Why does its signature need no lifetime annotation? Why can the \omterm{def:b2:rust-ownership:slice}{slice} it returns never
+cut a character in two? Test it on a word containing é.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-ownership:4}
+How many heap allocations does \code{main} make below, and how many times is a buffer enlarged? Count line by line
+before reading the output in the solution: an empty \code{Vec} allocates nothing, and the first \code{push} allocates
+room for four \code{String}s.
+\omcode{code/bachelor-2/06-rust-ownership/listings/exo_clones.rs}{19}{32}{Clones and allocations}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-ownership:5}
+\code{Noisy} prints its name when it is dropped. Predict the ten lines the program prints, with
+\cref{def:b2:rust-ownership:drop}, then check them in the solution. Explain the lines \code{drop c} and
+\code{drop a2}.
+\omcode{code/bachelor-2/06-rust-ownership/listings/exo_drop.rs}{2}{27}{Who is dropped when?}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-ownership:6}
+This function returns a reference to its own local. Explain the error, and give the fix the compiler suggests in
+\cref{out:b2:rust-ownership:dangling}. What would the equivalent C function return, and when would the bug show?
+\omcode{code/bachelor-2/06-rust-ownership/listings/exo_return_local.rs}{3}{6}{Joined names}
+\omoutput[2-6]{code/bachelor-2/06-rust-ownership/outputs/exo_return_local.txt}{The error.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-ownership:7}
+\code{let (l, r) = (&mut v[..m], &mut v[m..]);} is refused: two exclusive \omterm{def:b2:rust-ownership:borrow}{borrows} of \code{v}. Write \code{add_halves},
+which adds each element of the first half of a mutable \omterm{def:b2:rust-ownership:slice}{slice} to the matching element of the second half, with
+\code{split_at_mut}. Why may the library give two exclusive \omterm{def:b2:rust-ownership:borrow}{borrows} here, when the compiler would not? Then write
+\code{largest_first}, which swaps the largest element to the front, with \code{split_first_mut}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-ownership:8}
+Explain why \code{fn f<'a>(x: &'a str, y: &str) -> &'a str} may return \code{x} but not \code{y}. What does the
+signature promise the caller, and which call would become unsafe if \code{y} could be returned? Rewrite the
+signature so that either may be returned, and say what the caller loses.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-ownership:9}
+Write \code{fn reverse_words(s: String) -> String}, which reverses the order of the words (separated by single
+spaces) in the string's own buffer, with no new allocation: reverse all the bytes, then each word. Prove that the
+result is valid UTF-8 even when the words contain multi-byte characters, and test that the returned buffer is the
+original one.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:rust-ownership:10}
+Write a generic stack \code{Stack<T>} as a chain of nodes, each a \code{Box<Node<T>>} owning the next node, with
+\code{push}, \code{pop}, \code{peek} and \code{peek_mut}. Why does \code{push} need \code{Option::take}? Show that
+the default \omterm{def:b2:rust-ownership:drop}{drop} of a chain of a million nodes is a recursion a million calls deep, and write a \code{Drop} that
+frees it with a loop. Test the stack against a \code{Vec}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:rust-ownership:11}
+The loop of \cref{lst:b2:cpp-standard-library:invalidation} read freed memory after a \code{push_back}. (a) Prove,
+with \cref{def:b2:rust-ownership:borrow}, that no Rust program without \code{unsafe} can push onto a vector while a
+loop iterates over it. (b) Check your argument against the compiler's message for the same loop in Rust, in the
+solution. (c) Write the loop the way Rust accepts, and compare it with the fixes of the C++ chapter.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:rust-ownership:12}
+To satisfy the \omterm{def:b2:rust-ownership:checker}{borrow checker}, a port of a C program wrote \code{distinct} as below. The output counts the heap
+allocations for $n$ names, each appearing twice. Find the hidden cost, count the allocations exactly as a function of
+$n$, and fix the function with no clone of \code{seen}; then give a version in $O(n)$ expected time.
+\omcode{code/bachelor-2/06-rust-ownership/listings/exo_quadratic.rs}{13}{23}{Distinct names}
+\omoutput{code/bachelor-2/06-rust-ownership/outputs/exo_quadratic.txt}{Allocations for 100, 200 and 400 names.}
+\end{exercise}
+
+\section{Problem: Porting the dictionary that crashed}\label{sec:b2:rust-ownership:problem}
+
+\begin{problem}[{Weekend problem --- Porting the dictionary that crashed}]\label{pb:b2:rust-ownership:1}
+A word counter in C, a hash table with open addressing in \code{dict.h}, worked for years, then crashed three times,
+in three versions, each time after an innocent-looking change. This problem finds the three errors, ports the
+counter to Rust, and measures what the port costs.
+
+\medskip\noindent\textbf{Part I --- Three memory errors in C.}\par\nopagebreak
+The function \code{dict_count(d, word)} returns a pointer to the counter of \code{word}, creating it at 0; an
+insertion may grow the table, which \omterm{def:b2:rust-ownership:move}{moves} every slot to a new block and frees the old one. Each version below is
+built with \code{-DBUG=1}, 2 or 3, and run on the titles of the town's books.
+\omcode{code/bachelor-2/06-rust-ownership/listings/dict.c}{9}{36}{\code{dict.c}: the main program and its three
+versions}
+\omoutput[2-4,6-8,14-18,61-64,66-67,73-75,86-86,88-89,93-93,99-101]{code/bachelor-2/06-rust-ownership/outputs/run_dict_c.txt}{The
+key lines of the four runs.}
+\begin{enumerate}[beginpenalty=10000]
+\item Without bugs, the program prints 34 words; the previous chapter counted 33 in the same titles. Why?
+\item Version 1: which pointer is read after its block was freed, and by which call was the block freed?
+\item Why does version 1 not crash on every input? Give an input on which it would read nothing freed.
+\item Version 2: who owns the string \code{best} points to? Explain the double free.
+\item Version 3: \code{dict_count} keeps the caller's pointer instead of a copy. Into which buffer does it point, and
+why are some counts already wrong before the crash?
+\item Without the sanitizer, what might each version print? Which of the three is the most dangerous?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- An ownership design in Rust.}\par\nopagebreak
+\omcode{code/bachelor-2/06-rust-ownership/listings/dict_table.rs}{40}{52}{\code{Dict::count}, from
+\code{dict_table.rs}}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item The slots are \code{Vec<Option<(String, u32)>>}. Who owns each word, and who frees it, and when?
+\item \code{grow} replaces the vector with \code{std::mem::replace}, then \omterm{def:b2:rust-ownership:move}{moves} each pair into the new one. Why is no
+word copied, and why could \code{grow} not simply read \code{self.slots} while filling a new vector stored in
+\code{self.slots}?
+\item \code{count} returns \code{&mut u32}. What does its elided lifetime say?
+\item Why is there no \code{dict_free} in Rust, and what plays its role?
+\item \code{dict.rs} reads each line into a fresh \code{String}. Why can the words of the line be passed to
+\code{count} as \code{&str} although the line is dropped at the end of each iteration?
+\item Write the order in which the memory of a \code{Dict} holding 34 words is freed at the end of \code{main}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The three errors, refused.}\par\nopagebreak
+\code{dict_bugs.rs} writes each bug in Rust; the session builds it three times.
+\omoutput[2-13,15-19,25-34]{code/bachelor-2/06-rust-ownership/outputs/run_dict_rs.txt}{The program
+without bugs, then the three refusals.}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Error E0499: relate it to version 1, and to the rule \emph{the pointer is valid until the next insertion}
+written in \code{dict.h}'s comment.
+\item Error E0507: relate it to version 2. Who may free a \code{String}?
+\item Error E0597: relate it to version 3, where a \code{HashMap<&str, u32>} keeps borrowed words.
+\item For each of the three, give the fix: the Rust code that does what the programmer meant.
+\item Which of the three would also be caught by C++ with \code{std::string} and \code{std::unordered_map}, and which
+not?
+\item The C comment documented the rule of version 1, and the bug happened anyway. What does the Rust signature of
+\code{count} do that the comment did not?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The two versions measured.}\par\nopagebreak
+The same 4 million words, drawn from 100\,000 by the same generator, are counted by \code{dict.h} and by
+\code{dict_table.rs}, three times each, on the author's laptop.
+\omoutput{code/bachelor-2/06-rust-ownership/outputs/run_bench.txt}{Three runs of each, on the author's laptop.}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Check that the two programs computed the same thing.
+\item Compute the mean time of each, and the spread between the runs of one program. Is the difference between the
+means larger than the spread?
+\item Rust checks the index of every \code{self.slots[i]}. Why does this cost little here?
+\item The Rust version makes one heap allocation per new word, the C version one \code{strdup}. Where else could the
+two differ in cost?
+\item What would a fair comparison need that these runs do not have?
+\item State the result of the problem: the three memory errors and what happened to them, and the measured speed of
+the two versions.
+\end{enumerate}
+\end{problem}

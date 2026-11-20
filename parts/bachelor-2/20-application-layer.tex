@@ -1,0 +1,481 @@
+% Book 4, Year 2, chapter 20 -- The application layer: DNS, HTTP and TLS.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 20.
+\chapter{The Application Layer: DNS, HTTP and TLS}\label{ch:b2:application-layer}
+
+A program asks for the page at \code{http://www.brenmoor.test/}, the way a browser does when an address is typed:
+
+\omoutput{code/bachelor-2/20-application-layer/outputs/visit.txt}{A first visit: a name lookup, a connection, a
+request, a page.}\label{out:b2:application-layer:hook}
+
+Three protocols took part. The \emph{name system} turned the name into an address, TCP opened a connection to it, and
+HTTP carried the request and the page. All three servers are this chapter's own programs, running on this machine:
+the name server listens on UDP port 44202 and the web server on TCP port 44203. This chapter builds them,
+speaking the real formats, then adds the layer that makes the exchange private, TLS, and counts what a first visit
+costs in round trips.
+
+\begin{recall}
+Book 1: a name such as \code{library.brenmoor.example} is looked up in the name system, which answers with an
+address. Book 2: an HTTP request names a method and a path, and the response carries a status, headers and a body; a
+secure connection uses keys and a certificate that a trusted authority has signed. \cref{ch:b2:sockets}: \omterm{def:b2:sockets:socket}{sockets} and
+ports. \cref{ch:b2:transport-layer}: UDP datagrams, TCP's handshake and its byte stream.
+\end{recall}
+
+\section{The name system}\label{sec:b2:application-layer:dns}
+
+% ledger: b2:test-tld
+% ledger: b2:dns-zone
+\begin{definition}[Domain name, name system, zone]\label{def:b2:application-layer:dns}
+A \emph{domain name}\index{domain name} is a sequence of labels written from the most specific to the most general,
+such as \code{www.brenmoor.test}; the names form a tree whose root has the empty name. The \emph{domain name system}
+(DNS)\index{domain name system} is the distributed database that maps names to data such as addresses. It is cut into
+\emph{zones}\index{zone (DNS)}: a zone is a part of the tree whose data one organisation keeps, and it may
+\emph{delegate} a subtree to another zone.
+\end{definition}
+
+The name \code{.test} is reserved for testing, so no real server answers for it: the town's zone,
+\code{brenmoor.test}, lives only in this chapter's programs.
+
+\begin{definition}[Resolver, authoritative server]\label{def:b2:application-layer:resolver}
+An \emph{authoritative server}\index{authoritative server} of a zone answers for the names of that zone, and for the
+names of a delegated subtree it answers with a \emph{referral}: the names and addresses of that subtree's servers. A
+\emph{resolver}\index{resolver} finds the data for a name. In \emph{iterative resolution} it asks the servers itself,
+following referrals from the root down; in \emph{recursive resolution} it asks another resolver to do the whole job
+and send only the final answer.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, n/.style={draw, rounded corners=2pt, inner sep=2pt, fill=white},
+    q/.style={-{Stealth[length=1.6mm]}, omThm, thick}]
+\node[n] (root) at (4,3.3) {root (empty name)};
+\node[n] (ex) at (2.4,2.2) {\code{example}}; \node[n] (test) at (5.2,2.2) {\code{test}};
+\node[n] (bren) at (5.2,1.1) {\code{brenmoor.test}};
+\node[n] (www) at (2.4,0) {\code{www}}; \node[n] (mail) at (4.0,0) {\code{mail}};
+\node[n] (library) at (5.6,0) {\code{library}}; \node[n] (ns) at (7.2,0) {\code{ns}};
+\draw (root) -- (test); \draw (root) -- (ex); \draw (test) -- (bren);
+\foreach \l in {www, mail, library, ns} {\draw (bren) -- (\l);}
+\draw[omDef, dashed, rounded corners=6pt] (1.7,-0.8) rectangle (7.9,1.45);
+\node[text=omDef, anchor=south east] at (7.85,-0.77) {zone \code{brenmoor.test}};
+\node[n, fill=omDef!12] (res) at (10,2.2) {resolver};
+\draw[q] (res) to[bend right=12] node[above, text=omThm] {1} (root.east);
+\draw[q] (res) -- node[above, text=omThm] {2} (test);
+\draw[q] (res) to[bend left=10] node[above, text=omThm] {3} (bren.east);
+\end{tikzpicture}
+\par\smallskip{\small Part of the name tree. The root's servers refer a \omterm{def:b2:application-layer:resolver}{resolver} to those of \code{test} (query 1),
+which refer it to those of \code{brenmoor.test} (query 2), whose zone holds the answer (query 3).}
+\end{omfigure}
+
+\begin{definition}[Resource record, record lifetime]\label{def:b2:application-layer:record}
+% ledger: b2:dns-types
+% ledger: b2:dns-aaaa
+A \emph{resource record}\index{resource record} is one fact about a name: the name, a type, a \emph{lifetime} (TTL,
+\omterm{def:b2:network-layer:ttl}{time to live}) and data. The common types are A (an IPv4 address, type 1), AAAA (an \omterm{def:b2:network-layer:ipv6}{IPv6 address}, 28), NS (a name
+server of the zone, 2), CNAME (the name is an alias of another, 5), MX (a mail server, with a preference, 15) and
+TXT (text, 16). A \omterm{def:b2:application-layer:resolver}{resolver} may keep a record in its cache for the record's lifetime, in seconds, and no longer.
+\end{definition}
+
+\begin{method}[Iterative resolution]\label{met:b2:application-layer:resolve}
+To find the records of type $t$ for a name: start with a root server. Ask the current server for the name and $t$. If
+the reply holds answers, return them (an alias, CNAME, comes with the records of its target when the zone holds them).
+If it says the name does not exist, stop. If it is a referral, take one of the named servers, with its address from
+the reply's additional records (the \emph{glue}), and ask it in turn.
+\end{method}
+
+\omoutput[1-1,9-23]{code/bachelor-2/20-application-layer/outputs/resolve.txt}{Iterative resolution on a toy
+network of three servers, in the wire format of the next section: an alias, and a name that does not exist.}\label{out:b2:application-layer:resolve}
+
+The servers of \code{zone.py} answer from a list of records; the referral comes from an NS record whose name lies
+below the server's own zone. Each question costs one round trip to a server, so a \omterm{def:b2:application-layer:resolver}{resolver} that remembers nothing
+pays three round trips for every name of the town.
+
+\subsection{The message format}
+
+% ledger: b2:dns-header
+% ledger: b2:dns-port
+% ledger: b2:dns-limits
+Queries and answers share one format. A 12-byte header holds an identifier, which the answer copies so that the client
+can match it with its question, sixteen bits of flags, and four counts; then come the question, and three lists of
+records: the answers, the authority (NS records of a referral), and additional records (glue). A message travels in one
+UDP datagram to port 53, or over TCP when it exceeds 512 bytes.
+
+\begin{omfigure}
+\begin{bytefield}[bitwidth=1.55em]{16}
+\bitheader{0,1,4,5,6,7,8,9,11,12,15} \\
+\bitbox{16}{\scriptsize identifier} \\
+\bitbox{1}{\tiny QR} & \bitbox{4}{\scriptsize opcode} & \bitbox{1}{\tiny AA} & \bitbox{1}{\tiny TC} &
+\bitbox{1}{\tiny RD} & \bitbox{1}{\tiny RA} & \bitbox{3}{\scriptsize Z} & \bitbox{4}{\scriptsize RCODE} \\
+\bitbox{16}{\scriptsize QDCOUNT: questions} \\
+\bitbox{16}{\scriptsize ANCOUNT: answers} \\
+\bitbox{16}{\scriptsize NSCOUNT: authority records} \\
+\bitbox{16}{\scriptsize ARCOUNT: additional records}
+\end{bytefield}
+\par\smallskip{\small The DNS header, six 16-bit fields. QR is 1 in an answer; AA says the server is authoritative;
+TC that the message was truncated; RD that recursion is desired, RA that it is available; RCODE 3 means that the name
+does not exist.}
+\end{omfigure}
+
+% ledger: b2:dns-compression
+A name is written as its labels, each preceded by its length (at most 63), and ends with a zero byte, the empty label
+of the root. Since the names of one answer repeat the same suffixes, a name may end with a \emph{pointer}: two bytes
+whose first two bits are 1, the other 14 giving the offset, from the start of the message, of a suffix written
+earlier.
+
+\omcode{code/bachelor-2/20-application-layer/listings/dns_message.py}{10}{23}{Writing a name, with
+compression}\label{lst:b2:application-layer:encode}
+
+\omcode{code/bachelor-2/20-application-layer/listings/dns_message.py}{26}{41}{Reading a name: pointers must go
+back}\label{lst:b2:application-layer:read}
+
+A pointer could point anywhere, including to itself, and a careless reader would then loop for ever on a 14-byte
+message from anyone. The reader above refuses any pointer that does not go back.
+
+\begin{proposition}[Compression terminates]\label{prop:b2:application-layer:compression}
+If every pointer points to an offset strictly before the start of the stretch of labels in which it appears, reading a
+name from a message of $n$ bytes ends after at most $n$ steps.
+\end{proposition}
+
+\begin{proof}
+Reading proceeds in stretches: a stretch starts at the name's position or at a pointer's target, and moves forward
+label by label until a zero byte or a pointer. Within a stretch every step moves forward, and a stretch ends before
+the end of the message. A pointer starts a new stretch at an offset strictly smaller than the start of the current
+one, so the starts of the stretches strictly decrease. Every byte read lies at or after the start of its stretch and
+before the start of the previous one (or the end of the message for the first stretch), so the stretches read
+disjoint ranges of bytes, and the total number of steps is at most $n$.
+\end{proof}
+
+\omoutput{code/bachelor-2/20-application-layer/outputs/dns_message.txt}{A query and an answer, encoded and decoded
+again.}\label{out:b2:application-layer:message}
+
+With compression the answer takes 84 bytes instead of 143. On a real \omterm{def:b2:sockets:socket}{socket}, the zone's server answers queries for any
+of its records; a name it does not hold gets RCODE 3, ``no such name'':
+
+\omoutput{code/bachelor-2/20-application-layer/outputs/dns_demo.txt}{Five queries to the brenmoor.test server on
+127.0.0.1, UDP port 44200.}\label{out:b2:application-layer:demo}
+
+\subsection{Caching}
+
+\omterm{def:b2:application-layer:resolver}{Resolvers} keep answers and referrals for their lifetimes. A machine asks one nearby \omterm{def:b2:application-layer:resolver}{resolver}, recursively; that
+\omterm{def:b2:application-layer:resolver}{resolver} resolves iteratively, and its cache serves every machine behind it. The gain depends on how often a name is
+asked for: if queries for a name arrive at random at rate $r$ per second and its record lives $T$ seconds, the fraction
+answered from the cache is $rT/(1 + rT)$ (\cref{exo:b2:application-layer:8}).
+
+\omoutput{code/bachelor-2/20-application-layer/outputs/resolver_cache.txt}{The fraction of queries a cache answers,
+simulated over 200\,000 queries.}\label{out:b2:application-layer:cache}
+
+A name asked once an hour with a lifetime of an hour still saves half the queries; a busy name is almost never asked
+upstream. The price is staleness: a record changed at its zone may be served from caches for up to its old lifetime,
+which is why \omterm{def:b2:application-layer:dns}{zones} lower the lifetime of a record some time before changing it.
+
+\section{HTTP}\label{sec:b2:application-layer:http}
+
+% ledger: b2:http-ports
+An HTTP request is lines of text: a method, a path and a version, then headers, then an empty line, and a body for
+methods that send one. The response starts with a status line, then headers and the body. The default port is 80, and
+443 for HTTP over TLS. A request by hand, then two ways of fetching twenty pages:
+
+\omoutput{code/bachelor-2/20-application-layer/outputs/http_demo.txt}{A request typed by hand on a \omterm{def:b2:sockets:socket}{socket}, then twenty
+requests through two client libraries.}\label{out:b2:application-layer:http}
+
+\begin{definition}[Persistent connection, head-of-line blocking]\label{def:b2:application-layer:persistent}
+% ledger: b2:http-persistent
+A \emph{persistent connection}\index{persistent connection} carries several requests and their responses, one after
+the other, instead of one; it is HTTP/1.1's default, and a \code{Connection: close} header announces that the
+connection will be closed after the response. \emph{Head-of-line blocking}\index{head-of-line blocking} is the delay a
+response suffers because something before it on the same connection, or in the same ordered stream, has not finished.
+\end{definition}
+
+On a \omterm{def:b2:application-layer:persistent}{persistent connection} the client must know where each body ends, so the server sends either a
+\code{Content-Length} header or, when it does not know the length in advance, a \emph{chunked} body: chunks, each
+preceded by its size in hexadecimal, and a last chunk of size 0 (\cref{exo:b2:application-layer:5}). The town's
+server reads requests one after the other on each connection:
+
+\omcode{code/bachelor-2/20-application-layer/listings/http_server.py}{11}{34}{One connection of the web server, from
+the first request to the close}\label{lst:b2:application-layer:server}
+
+\code{urllib} asked for a close each time, so it paid a TCP handshake per page; \code{http.client} kept one
+connection for all twenty. On a connection of HTTP/1.1, though, the second response cannot start before the first is
+complete. Browsers open several connections at once to fetch a page's parts in parallel.
+
+\begin{definition}[Stream multiplexing]\label{def:b2:application-layer:streams}
+% ledger: b2:http2-frame
+In HTTP/2, a connection carries numbered \emph{streams}\index{stream (HTTP/2)}, one per request and its response,
+whose data travel in \emph{frames}: each frame starts with a 9-byte header giving its length, its type (such as DATA 0
+and HEADERS 1), flags and the number of its stream. Frames of different streams may be interleaved, so responses
+progress together on one connection: this is \emph{stream multiplexing}\index{stream multiplexing}.
+\end{definition}
+
+\begin{omfigure}
+\begin{bytefield}[bitwidth=0.8em]{40}
+\bitheader{0,23,24,31,32,39} \\
+\bitbox{24}{\scriptsize length of the payload} & \bitbox{8}{\scriptsize type} & \bitbox{8}{\scriptsize flags} \\
+\bitbox{1}{\tiny R} & \bitbox{31}{\scriptsize stream identifier} & \bitbox[]{8}{}
+\end{bytefield}
+\par\smallskip{\small The 9-byte header of an HTTP/2 frame (72 bits, drawn on two rows). The payload, by default at
+most $2^{14}$ bytes, follows.}
+\end{omfigure}
+
+\omterm{def:b2:transport-layer:demux}{Multiplexing} removes \omterm{def:b2:application-layer:persistent}{head-of-line blocking} between responses, but not below them: the frames still travel in one TCP
+byte stream, and a lost TCP segment holds back everything after it until it is sent again. A model of four pages of 8
+packets each, with a round trip of 50 ms, and the fifth packet lost:
+
+\omoutput{code/bachelor-2/20-application-layer/outputs/hol_blocking.txt}{When each page is complete, in a model with
+one lost packet (\code{hol_blocking.py}).}\label{out:b2:application-layer:hol}
+
+HTTP/1.1 fetches the pages in turn, and the loss delays all of them. HTTP/2 brings them in parallel, but the loss
+delays all four to 107 ms, when the lost packet's copy arrives. With HTTP/3, each stream is ordered on its own, and
+only the page that lost a packet waits (\cref{exo:b2:application-layer:10}).
+
+\begin{dated}{2026}
+% ledger: b2:http3
+HTTP/3, standardised in June 2022, carries HTTP over QUIC (\cref{ch:b2:transport-layer}): its \omterm{def:b2:application-layer:streams}{streams} are QUIC
+\omterm{def:b2:application-layer:streams}{streams}, each delivered in order on its own, so that a loss on one stream does not hold back the others. It is used
+alongside HTTP/2 and HTTP/1.1, which remain in wide use; a server announces that it speaks HTTP/3 in its HTTP/1.1 or
+HTTP/2 responses.
+\end{dated}
+
+\section{Electronic mail}\label{sec:b2:application-layer:mail}
+
+% ledger: b2:smtp
+Mail moves between servers by SMTP, over TCP port 25, in a dialogue of text lines. To deliver a letter to
+\code{clerk@example.net}, a server looks up the MX records of \code{example.net}, tries the one with the lowest
+preference value first, connects to it, and the two exchange:
+
+\begin{center}\small
+\begin{tabular}{@{}l l l@{}}
+\textbf{client} & \textbf{server} & \textbf{meaning} \\
+& \code{220 mail.example.net} & ready \\
+\code{EHLO post.example.org} & \code{250} & greeting \\
+\code{MAIL FROM:<ada@example.org>} & \code{250} & the sender \\
+\code{RCPT TO:<clerk@example.net>} & \code{250} & one recipient (several allowed) \\
+\code{DATA} & \code{354} & send the letter \\
+the letter, then a line holding only \code{.} & \code{250} & accepted \\
+\code{QUIT} & \code{221} & closing \\
+\end{tabular}
+\end{center}
+
+The three-digit codes are for programs, the text after them for people; the first digit says whether the command
+succeeded (2), needs more (3), or failed (4 temporarily, 5 for good). The letter itself, with its \code{From},
+\code{To} and \code{Subject} lines, is only data to SMTP: nothing in the protocol checks that the \code{From} line is
+true, which is why mail systems added signatures and checks of their own.
+
+\section{TLS}\label{sec:b2:application-layer:tls}
+
+Everything so far crossed the network in clear: anyone on the path could read the page or change it. TLS adds a
+layer between TCP and the application.
+
+\begin{definition}[Transport Layer Security]\label{def:b2:application-layer:tls}
+% ledger: b2:tls13-record
+\emph{Transport Layer Security} (TLS)\index{Transport Layer Security} is a layer that runs over a reliable byte stream
+such as TCP and gives the application above it a byte stream that is private (encrypted), protected against
+modification, and attached to a verified name. It cuts the application's bytes into \emph{TLS
+records}\index{TLS record}, each of at most $2^{14}$ bytes of data, sent encrypted after a 5-byte header (a content
+type, a version and a length).
+\end{definition}
+
+% ledger: b2:tls13-handshake
+Before any record of data, a \emph{handshake} agrees on keys and proves the server's identity. In TLS 1.3 it takes one
+round trip:
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, w/.style={-{Stealth[length=1.8mm]}, thick}]
+\node[font=\small\bfseries] at (0,0.3) {client}; \node[font=\small\bfseries] at (9,0.3) {server};
+\draw[gray] (0,0) -- (0,-4.2); \draw[gray] (9,0) -- (9,-4.2);
+\draw[w, omDef] (0,-0.3) -- node[above, sloped] {ClientHello (versions, ciphers, a key share)} (9,-0.8);
+\draw[w, omDef] (9,-1.6) -- node[above, sloped, align=center] {ServerHello (a key share), then encrypted:\\
+EncryptedExtensions, Certificate, CertificateVerify, Finished} (0,-2.1);
+\draw[w, omDef] (0,-2.5) -- node[above, sloped] {Finished, then the HTTP request (encrypted)} (9,-3.0);
+\draw[w, omThm] (9,-3.4) -- node[above, sloped] {the response (encrypted)} (0,-3.9);
+\node[anchor=east, align=right] at (-0.1,-2.1) {keys known,\\ server verified};
+\end{tikzpicture}
+\par\smallskip{\small The TLS 1.3 handshake on an open \omterm{def:b2:transport-layer:tcp}{TCP connection}. After the first round trip both sides have the
+keys, and the client has checked the server's certificate and its signature; the request goes with the client's
+Finished.}
+\end{omfigure}
+
+The certificate binds the server's public key to its name, and is signed by an authority that the client trusts; the
+mathematics of keys and signatures are the Year 3 volume's. Python's \code{ssl} module provides TLS over a \omterm{def:b2:sockets:socket}{socket}. The
+session below makes a certificate for \code{www.brenmoor.test} with \code{openssl} (a self-signed one, which the
+client is told to trust), then runs an echo pair and a client that asks for another name:
+
+\omoutput[1-7]{code/bachelor-2/20-application-layer/outputs/tls_demo.txt}{TLS on 127.0.0.1: a verified connection,
+then a certificate presented for the wrong name.}\label{out:b2:application-layer:tls}
+
+The second client refuses the connection: the certificate is valid, but not for \code{mail.brenmoor.test}. Checking
+the name is as important as checking the signature; a client that skipped it would accept any server holding any
+certificate.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, b/.style={draw, minimum height=8mm, inner sep=2pt, align=center}]
+\node[b, minimum width=16mm, anchor=west] (ip) at (0,0) {IP header\\ addresses};
+\node[b, minimum width=16mm, anchor=west] (tcp) at (ip.east) {TCP header\\ ports};
+\node[b, minimum width=16mm, anchor=west] (tls) at (tcp.east) {TLS record\\ header};
+\node[b, minimum width=50mm, anchor=west, fill=omDef!20] (data) at (tls.east) {HTTP request or response,\\
+content type, authentication tag};
+\draw[decorate, decoration={brace, amplitude=4pt, mirror}] (ip.south west) -- node[below=4pt] {seen by every router
+on the path} (tls.south east);
+\draw[decorate, decoration={brace, amplitude=4pt}] (data.north west) -- node[above=4pt] {encrypted: only the two
+ends read it} (data.north east);
+\end{tikzpicture}
+\par\smallskip{\small A packet of a TLS connection. TLS hides the content and protects it against change, but not who
+talks to whom, when, or how much.}
+\end{omfigure}
+
+What TLS does not hide matters too. The addresses and ports are visible to every \omterm{def:b2:network-layer:routing}{router}, and so are the sizes and
+times of the records. The name lookup before the connection normally travels in clear, and the ClientHello
+usually carries the name of the site in clear, so that a server holding several sites can pick the right certificate.
+
+\subsection{The cost of a first visit}
+
+Every protocol of this chapter waits for an answer before the next can start, so a first visit is a chain of round
+trips.
+
+\begin{proposition}[Round trips of a visit]\label{prop:b2:application-layer:round-trips}
+Let a page be small enough to arrive in one round trip, and let RTT be the round-trip time to the server. A first
+visit over HTTPS, with TCP and TLS 1.3, takes the time of the name lookup plus $3\,\mathrm{RTT}$. A visit on a new
+connection with the name cached on the machine takes $3\,\mathrm{RTT}$, and a request on a connection already open
+takes $1\,\mathrm{RTT}$.
+\end{proposition}
+
+\begin{proof}
+The client cannot connect before it knows the address. TCP's handshake costs one round trip: the client can send only
+after the SYN+ACK arrives (its last ACK travels with the ClientHello). The client can send the request only after the
+server's Finished arrives, one more round trip. The response comes back one round trip after the request leaves. Each
+of these waits is a full round trip and none can overlap the next, which gives $3\,\mathrm{RTT}$; on an open
+connection only the last remains.
+\end{proof}
+
+\omoutput{code/bachelor-2/20-application-layer/outputs/budget.txt}{The budget with a round trip of 80 ms to the
+server, 10 ms to the \omterm{def:b2:application-layer:resolver}{resolver}, and 40 ms from the \omterm{def:b2:application-layer:resolver}{resolver} to each name server.}\label{out:b2:application-layer:budget}
+
+A cold first visit spends 130 ms of its 370 on the name, which is why \omterm{def:b2:application-layer:resolver}{resolvers} cache, and the rest on handshakes,
+which is why browsers keep connections open and why TLS 1.3 cut the handshake to one round trip.
+
+\begin{inpractice}
+Opening a page usually costs more than this: a page names dozens of other resources (pictures, style sheets,
+scripts), often on other servers, each with its own name to look up and its own connection. Shortening the chain of
+round trips (\omterm{def:b2:application-layer:persistent}{persistent connections}, caches near the users, fewer servers per page) often saves more time than a faster
+link does.
+\end{inpractice}
+
+\omimg{book4/ai/b2-application-layer-datacentre-aisle.jpg}{0.6\linewidth}{An aisle of servers in a data centre. Busy
+sites run many copies of their servers in several such buildings, and the name system can send each user to a nearby
+one. AI illustration.}
+
+\section{Exercises}\label{sec:b2:application-layer:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:application-layer:1}
+Decode the DNS header \code{2a 17 85 83 00 01 00 00 00 00 00 00}: is it a question or an answer, what flags are set,
+and what does it say about the name asked?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:application-layer:2}
+A message contains, from offset 12, the bytes \code{03 77 77 77 c0 0c}. What does a reader that follows every pointer
+do with it? Bound the number of pointers a reader must follow in a message of $n$ bytes, with or without the rule of
+\cref{prop:b2:application-layer:compression}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:application-layer:3}
+Write, byte by byte, a query with identifier \code{0b0e} that asks for the AAAA records of \code{www.brenmoor.test},
+with recursion desired.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:application-layer:4}
+A machine asks its \omterm{def:b2:application-layer:resolver}{resolver} for \code{mail.brenmoor.test}. How many queries does the \omterm{def:b2:application-layer:resolver}{resolver} send if its cache is
+empty, if it holds the referral to \code{brenmoor.test}, and if it holds the answer? How many round trips does the
+machine wait in each case?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:application-layer:5}
+Write \code{dechunk(data)}, which decodes a chunked body and returns it with the number of bytes used, and raises an
+error if the coding is cut short.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:application-layer:6}
+This server announces 12 bytes and sends 10. What does a client do, and why?
+\omcode{code/bachelor-2/20-application-layer/listings/exo_content_length.py}{9}{13}{A wrong length}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:application-layer:7}
+A first version of the server answered one request per connection and knew only \code{GET}. Write the changes that
+keep the connection open unless the client asks to close it or speaks HTTP/1.0, and that answer \code{HEAD}, which
+sends the headers of \code{GET} without the body.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:application-layer:8}
+Queries for a name arrive as a Poisson process of rate $r$, and a \omterm{def:b2:application-layer:resolver}{resolver} caches the answer for $T$ seconds after
+each query it sends upstream. Show that the fraction of queries answered from the cache is $rT/(1 + rT)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:application-layer:9}
+Write a \omterm{def:b2:application-layer:resolver}{resolver} that resolves iteratively, keeps answers and referrals for their lifetimes, and starts each
+resolution from the closest zone whose servers it knows.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:application-layer:10}
+In the model of \cref{out:b2:application-layer:hol}, packets leave one per millisecond from 25 ms, and a lost packet's
+copy arrives $3 \times 25$ ms after the third packet behind it leaves. Compute when each page is complete with HTTP/2
+and with HTTP/3, and explain why HTTP/1.1 is slowest.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:application-layer:11}
+Write a TLS echo pair on 127.0.0.1: the server uses a certificate and key from files, and the client trusts only that
+certificate and checks the server's name.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:application-layer:12}
+Measure, after the handshake, how many bytes TLS sends for messages of 1 byte to 100\,000 bytes, and explain the
+extra bytes per record. What fraction of the traffic is overhead for messages of 1, 100 and 16\,384 bytes?
+\end{exercise}
+
+\section{Problem: Brenmoor goes online}\label{sec:b2:application-layer:problem}
+
+\begin{problem}[{Weekend problem --- Brenmoor goes online}]\label{pb:b2:application-layer:1}
+The town puts its name server, its \omterm{def:b2:application-layer:resolver}{resolver} and its web site online, and wants to know what a first visit costs.
+
+\medskip\noindent\textbf{Part I --- The zone and its server.}\par\nopagebreak
+\begin{enumerate}
+\item List the records of \code{zone.py}'s town zone by type, and say what each is for.
+\item Why must the zone \code{test} hold the address of \code{ns.brenmoor.test}, although the name lies in
+\code{brenmoor.test}?
+\item In \cref{out:b2:application-layer:demo}, why is the answer for the MX query longer than the query by only 21
+bytes?
+\item A record of \code{library} is a CNAME. What does the server send for its A record, and why in one answer?
+\item What does RCODE 3 tell a \omterm{def:b2:application-layer:resolver}{resolver} that an empty answer with RCODE 0 does not?
+\item Why does the server reject a name whose pointer does not go back, instead of following it?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- A resolver with a cache.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item How many queries does an empty \omterm{def:b2:application-layer:resolver}{resolver} send for \code{www}, then for \code{mail}, then for \code{www} again
+within the hour?
+\item After three days without queries, how many does it send for \code{www}?
+\item The town's site is asked for 1000 times a day. With a lifetime of 3600 s, what fraction of the lookups reach
+the town's server?
+\item The town moves its web server. How long may some users still reach the old address, and how can the town
+shorten it?
+\item Why does a \omterm{def:b2:application-layer:resolver}{resolver} use the shortest lifetime of a set of records for the whole set?
+\item Why do machines ask a \omterm{def:b2:application-layer:resolver}{resolver} recursively, rather than resolve iteratively themselves?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- A web server with persistent connections.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item In \cref{out:b2:application-layer:http}, how many TCP handshakes did each client pay?
+\item With a round trip of 80 ms, how much time did the \omterm{def:b2:application-layer:persistent}{persistent connection} save over twenty pages?
+\item How does the server know where a request ends, and the client where a response ends?
+\item Why can the server not answer the second request on a connection before the first?
+\item In \cref{out:b2:application-layer:hol}, which pages does the loss delay with HTTP/2, and by how much?
+\item Why does HTTP/3 need a transport other than TCP to avoid that delay?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The cost of a first page load.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Using \cref{prop:b2:application-layer:round-trips}, how long does a cold first visit take in
+\cref{out:b2:application-layer:budget}, and how much of it is the name?
+\item How long does a revisit on a new connection take, and one on an open connection?
+\item How many round trips would a TLS handshake of two round trips add to every new connection?
+\item A page needs 30 resources from 3 servers. With one connection per server kept open, how many handshakes does it
+pay?
+\item What does TLS hide on such a visit, and what can an observer of the network still learn?
+\item State the result: the round-trip budget of a first visit (name lookup, connection, handshake, request) and of a
+revisit.
+\end{enumerate}
+\end{problem}

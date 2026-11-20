@@ -1,0 +1,102 @@
+\section*{Chapter \ref{ch:b3:kernel-and-scheduling} --- The Kernel and CPU Scheduling}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:1}
+P runs $[0, 2)$; Q arrived at 1 and R at 2, both before P's turn ends, so the queue is Q, R, P. Q runs $[2, 4)$, R $[4, 5)$ and finishes, P $[5, 7)$, Q $[7, 8)$ and finishes, P $[8, 9)$ and finishes. R finishes at 5, Q at 8, P at 9 (\code{test_exercise_1_round_robin_by_hand}).
+\end{solution}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:2}
+In the given order the waits are 0, 6, 8 and 16: average 7.5. \omterm{def:b3:kernel-and-scheduling:policies}{Shortest job first} runs 2, 3, 6, 8, with waits 0, 2, 5 and 11: average 4.5.
+\end{solution}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:3}
+\code{ecall}: a \omterm{def:b3:kernel-and-scheduling:interrupt}{trap}, an exception requested by the program. Integer division by zero: no \omterm{def:b3:kernel-and-scheduling:interrupt}{trap} at all; RISC-V defines its result, $-1$ for the quotient. % ledger: b2:rv-div
+A load from address 0: a \omterm{def:b3:kernel-and-scheduling:interrupt}{trap}, an exception (an access fault). The timer reaching \code{mtimecmp}: a \omterm{def:b3:kernel-and-scheduling:interrupt}{trap}, an \omterm{def:b3:kernel-and-scheduling:interrupt}{interrupt}. A key pressed: an \omterm{def:b3:kernel-and-scheduling:interrupt}{interrupt}, from the keyboard's controller. An illegal instruction: an exception. A \code{ret}: an ordinary jump, no \omterm{def:b3:kernel-and-scheduling:interrupt}{trap}.
+\end{solution}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:4}
+\texttt{B10}, \texttt{A1}, \texttt{B20}, \texttt{A2}, \texttt{B30}, \texttt{A3}, \texttt{B40}: B now starts, and A, after printing A3, increments its counter to 4 and switches to \code{main}, which exits, after B has printed one more line (\code{test_exercise_4_b_first}).
+\end{solution}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:5}
+A prints A1 and switches to B; \code{s1} is not saved, so it still holds A's 1, but B sets it to 10 and prints B10. B switches back to A without saving \code{s1} either, and A resumes with B's 10 in \code{s1}. A adds 1, gets 11, which is not below 4, so its loop ends after one line: A switches to \code{main}, which exits normally. Nothing faults; the program is simply wrong, which is why a forgotten register in a switch is hard to find. The fix puts back the store \code{sw s1, 12(a0)} and the load \code{lw s1, 12(a1)}.
+\end{solution}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:6}
+\code{exercises/ex6_aging.py} picks the ready job with the least \code{prio - waited // age}. Without aging (a huge \code{age}), each high-priority job arrives as the previous one finishes, so the low one runs only after all ten: it finishes at 33. With \code{age} = 3 it gains a level every 3 units and runs much earlier (\code{test_exercise_6_aging_lets_the_low_priority_job_run}).
+\end{solution}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:7}
+Take one job of burst $M$ first and $n - 1$ jobs of burst 1. \omterm{def:b3:kernel-and-scheduling:policies}{First come first served} makes each short job wait at least $M$: total at least $(n - 1)M$. \omterm{def:b3:kernel-and-scheduling:policies}{Shortest job first} runs the short ones first: total $0 + 1 + \dots + (n - 1) = n(n - 1)/2$. The ratio is at least $2M/n$, as large as you like for a fixed $n$ when $M$ grows.
+\end{solution}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:8}
+At time 0 the queue holds the $n$ jobs. A job runs at most $q$ units per turn, then goes to the back, and nothing arrives. So the $k$-th job in the queue starts after the $k - 1$ jobs before it have had one turn each, each of at most $q$ units: it first runs by $(k - 1)q \le (n - 1)q$. \code{test_round_robin_response_bound} checks it on 200 random sets.
+\end{solution}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:9}
+29 instructions in the switch (14 stores, 14 loads, \code{ret}) and 5 to call it: each \code{la} is two instructions on \code{rv} (\code{auipc} and \code{addi}) and the \code{call} one \code{jal}, so 34 per switch in all. The run makes 8 switches: \code{main} to A, three from A to B, three from B to A, and A to \code{main}. That is $8 \times 29 = 232$ of the 371 instructions in the switch itself, and $8 \times 14 = 112$ loads, all the loads of the run (\code{test_switch_output_and_cost}).
+\end{solution}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:10}
+Client $i$'s pass after $n_i$ runs is $p_i = (n_i + 1)s_i$. Let $P$ be the least pass at some moment. The least pass never decreases: a step raises the pass of the client that held it and leaves the others alone. If client $i$ has run, its pass before its last run, $p_i - s_i$, was the least pass at that time, so $p_i - s_i \le P$; if it has not run, $p_i - s_i = 0 \le P$. Hence $P \le p_i \le P + s_i$, that is $n_i = x t_i - e_i$ with $x = P/L$ and $0 \le e_i \le 1$. Summing, $N = xT - E$ with $E = \sum_j e_j$, so $x = (N + E)/T$ and
+\[ n_i - N\frac{t_i}{T} = E\frac{t_i}{T} - e_i. \]
+Since $E \ge e_i$, this is at least $e_i(t_i/T - 1) > -1$ (if $e_i = 0$ it is $\ge 0$). Since $E \le e_i + (k - 1)$, it is at most $e_i(t_i/T - 1) + (k - 1)t_i/T \le (k - 1)t_i/T$. For two clients the upper bound is $t_i/T < 1$. In \cref{out:b3:kernel-and-scheduling:stride} the bounds are $0.5$, $0.25$ and $1.25$ for A, B and C; the largest error measured is 0.88 (\code{test_stride_error_below_one_quantum}).
+\end{solution}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:11}
+Task 1 has the higher priority and is never delayed; it meets its \omterm{def:b3:kernel-and-scheduling:realtime}{deadlines} if $C_1 \le T_1$. Task 2's job released at 0 (the worst case, released with task 1) is delayed only by task 1. Let $F = \lfloor T_2/T_1 \rfloor$. If $C_1 \le T_2 - F T_1$, the last job of task 1 before $T_2$ finishes before $T_2$, and task 2 needs $C_2 \le T_2 - (F + 1)C_1$. Otherwise it needs $C_2 \le F(T_1 - C_1)$. In each case take $C_2$ as large as allowed and minimise $U = C_1/T_1 + C_2/T_2$ over $C_1$: $U$ is linear in $C_1$ on each side, so its minimum is at $C_1 = T_2 - F T_1$, where $U = 1 - f(1 - f)/(F + f)$ with $f = T_2/T_1 - F$. This is least for $F = 1$, and then $1 - f(1 - f)/(1 + f)$ is minimised at $f = \sqrt{2} - 1$, giving $U = 2(\sqrt{2} - 1)$. Any set with a smaller utilisation therefore meets all \omterm{def:b3:kernel-and-scheduling:realtime}{deadlines}.
+\end{solution}
+
+\begin{solution}{exo:b3:kernel-and-scheduling:12}
+\code{exercises/ex12_starve.py}: the long job arrives at 0, and a short job of 2 units arrives every 2 units from time 1. Each arriving short job has less work left than the long one, so the long job runs one unit, then waits until the stream ends: with 100 short jobs it finishes at 220, and with $n$ at $2n + 20$, as late as you like. With aging, $\mathit{age} = 2$, every 2 units waited take one unit off its key. At time 35 it has waited 34 units and its key is $19 - 17 = 2$, equal to a newly arrived short job's, and the tie goes to the earlier arrival. Once it runs, its waiting stops and its work left falls, so its key only decreases: it runs to the end and finishes at 54 (\code{test_exercise_12_starvation_and_its_fix}).
+\end{solution}
+
+\begin{solution}{pb:b3:kernel-and-scheduling:1}
+\textbf{1.} $1{,}855/2{,}851 \approx 0.65$. Above 1, work arrives faster than the machine can do it, and the queue grows without end.
+
+\textbf{2.} A small job that arrives behind a long one waits for all of it: a few long jobs make everyone behind them wait, the \emph{convoy} effect.
+
+\textbf{3.} It lets the small jobs pass the long ones whenever both are waiting: turnaround 47.8 instead of 51.6 (7~\% less), response 16.9 instead of 20.7.
+
+\textbf{4.} A long job is passed by every small job that arrives while it waits; under a steady stream of small jobs it waits until the stream stops.
+
+\textbf{5.} At most one per job after the first, 59: $59/(1{,}855 + 59) \approx 3.1~\%$ of the busy time.
+
+\textbf{6.} The customer cares about turnaround, when the print is ready; response matters only to someone who watches the first page come out. The shop cares about the time lost switching, and about not starving anyone.
+
+\textbf{7.} Each turn is $q$ units of work followed by $s$ of switching: $s/(q + s)$ of the time.
+
+\textbf{8.} Many turns end early, because a job of 2 to 12 units finishes before its quantum is over, and a job alone in the shop runs on without any switch.
+
+\textbf{9.} Work $\rho$ per unit of time needs $\rho(q + s)/q$ once each $q$ units cost $q + s$. Below 1 for $q > \rho s/(1 - \rho) = 0.65/0.35 \approx 1.9$: $q \ge 2$, where it is 0.98.
+
+\textbf{10.} At $q = 1$ the load with switching is 1.30: the machine cannot keep up, the queue grows through the whole run, and every job waits in it.
+
+\textbf{11.} Every job ahead of a new one may run a whole quantum first, so the first turn comes later as $q$ grows. As $q$ grows beyond every burst, it tends to \omterm{def:b3:kernel-and-scheduling:policies}{first come first served}'s 20.7.
+
+\textbf{12.} \omterm{def:b3:kernel-and-scheduling:policies}{First come first served}, with a switch at each change of job.
+
+\textbf{13.} $q^* = 17$, with 42.5: 17.6~\% below \omterm{def:b3:kernel-and-scheduling:policies}{first come first served}'s 51.6, 11~\% below \omterm{def:b3:kernel-and-scheduling:policies}{shortest job first}'s 47.8.
+
+\textbf{14.} Within 3~\% means at most 43.8: from $q = 12$ to $q = 18$.
+
+\textbf{15.} 0.291 against 0.333. At $q = 2$ the machine is nearly saturated, the queue is rarely empty and almost every job needs several quanta, so almost every turn is a full quantum followed by a switch, as the model assumes.
+
+\textbf{16.} Full quanta would need $1{,}855/5 = 371$ turns, so about 371 switches; there are 166, because most small jobs finish in one or two turns that are not full, and a job alone in the shop needs no switch.
+
+\textbf{17.} At $q = 1$ the shop is overloaded and the queue keeps growing: a new job waits behind a long queue even for one unit.
+
+\textbf{18.} 85 switches, against 59 for \omterm{def:b3:kernel-and-scheduling:policies}{first come first served}: with $q = 20$ every small job finishes in one turn, and only the long jobs, when others wait, are cut into several turns.
+
+\textbf{19.} Small jobs are at most 12 units: $q = 12$, with 43.2, within 2~\% of the best.
+
+\textbf{20.} $\rho(q + 2)/q < 1$ needs $q > 2\rho/(1 - \rho) \approx 3.7$: quanta 1 to 3 would overload the shop.
+
+\textbf{21.} A short quantum near 5 gives the best response, 3.4, for a turnaround of 48.5, still below \omterm{def:b3:kernel-and-scheduling:policies}{first come first served}.
+
+\textbf{22.} Small jobs would finish on the top level with a short quantum and respond at once; long jobs would sink to levels with long quanta and switch rarely, which is the best of both ends of the figure.
+
+\textbf{23.} At most one, when it starts: when its quantum ends and nobody waits, it runs on without a switch.
+
+\textbf{24.} A quantum of 12 to 17 units. The switches then cost about 4.5~\% of the machine's busy time (the measured overhead, well below the model's $s/(q + s)$ of 5.6 to 7.7~\%), and the average turnaround falls to 42.5--43.2, about 17~\% below \omterm{def:b3:kernel-and-scheduling:policies}{first come first served}, with an average response of 5 to 6 units instead of 20.7. Below $q = 3$ the switching overloads the shop; above 18 the turnaround drifts back towards \omterm{def:b3:kernel-and-scheduling:policies}{first come first served}.
+\end{solution}

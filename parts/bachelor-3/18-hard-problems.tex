@@ -1,0 +1,322 @@
+\chapter{Approximation and Exact Methods for Hard Problems}\label{ch:b3:hard-problems}
+
+\Cref{ch:b3:np-completeness} showed that vertex cover, the travelling salesman problem and satisfiability are \omterm{def:b3:np-completeness:reduction}{NP-complete}: no algorithm is known that solves every instance in polynomial time. Yet delivery vans get routed and chips get verified every day. This chapter is about how. There are two ways out. An \omterm{def:b3:hard-problems:approximation}{approximation algorithm} runs in polynomial time and proves how far from the optimum it can be. An exact method searches, but prunes so much that real instances finish: branch and bound with a relaxation, and the clause-learning solvers that decide formulas with millions of clauses. Between them sit Horn formulas, a special case that is easy, and \omterm{def:b3:hard-problems:local-search}{local search}, which is often good and promises nothing. Every method is run against the exact optimum on small instances, and the gaps are measured.
+
+\begin{recall}
+A matching of a graph is a set of edges no two of which share a vertex (Year~2 volume). A minimum spanning tree connects all the vertices of a weighted graph at least total weight, and Prim's algorithm finds one (Year~1 volume). Branch and bound explores a tree of partial choices and cuts a branch as soon as a bound shows it cannot beat the best solution found so far; backtracking undoes the last choice when it fails (Year~1 volume). Unit propagation sets the last literal of a clause whose other literals are all false (Year~1 volume). The DPLL solver \code{dpll.py} of \cref{ch:b3:np-completeness} propagates units, then branches on a variable.
+\end{recall}
+
+\section{Approximation ratios}\label{sec:b3:hard-problems:approximation}
+
+\begin{definition}[Approximation algorithm, approximation ratio, maximal matching]\label{def:b3:hard-problems:approximation}
+For a minimisation problem, an \emph{approximation algorithm}\index{approximation algorithm} with \emph{approximation ratio}\index{approximation ratio} $\rho \ge 1$ runs in polynomial time and returns, on every instance, a solution of cost at most $\rho$ times the optimum. A \emph{maximal matching}\index{maximal matching} is a matching to which no edge can be added; it need not be a matching of largest size.
+\end{definition}
+
+The ratio is a promise about the worst instance, proved against an optimum the algorithm never sees. The proof always goes through a lower bound on the optimum that is easy to compute.
+
+\begin{theorem}[Vertex cover by matching]\label{thm:b3:hard-problems:vertex-cover}
+Taking both ends of every edge of a \omterm{def:b3:hard-problems:approximation}{maximal matching} gives a vertex cover at most twice the smallest, and the factor 2 is reached.
+\end{theorem}
+
+The cover covers every edge, since an uncovered edge could be added to the matching. And any cover must contain one end of each matched edge, which share no vertex: the smallest cover has at least as many vertices as the matching has edges, half of what the algorithm takes. \Cref{exo:b3:hard-problems:7} completes the proof; the figure after the output shows a tight case.
+
+\omcode{code/bachelor-3/18-hard-problems/listings/vertex_cover.py}{7}{12}{Vertex cover from a \omterm{def:b3:hard-problems:approximation}{maximal matching} built greedily, edge by edge.}\label{lst:b3:hard-problems:vertex-cover}
+
+\omoutput{code/bachelor-3/18-hard-problems/outputs/vertex_cover.txt}{Against the exact minimum on four random graphs, and on disjoint edges, where the factor 2 is reached.}\label{out:b3:hard-problems:vertex-cover}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, v/.style={circle, draw, minimum size=6mm, inner sep=0pt}]
+  \foreach \i in {1,2,3} {
+    \node[v, fill=omThm!25] (a\i) at (1.6*\i, 1.6) {$a_\i$};
+    \node[v, fill=omThm!25] (b\i) at (1.6*\i, 0) {$b_\i$};
+  }
+  \foreach \i in {1,2,3} { \foreach \j in {1,2,3} { \draw[black!40] (a\i) -- (b\j); } }
+  \foreach \i in {1,2,3} { \draw[omThm, line width=1.6pt] (a\i) -- (b\i); }
+  \node[anchor=west, align=left] at (6.4, 0.8) {matching: 3 edges (thick)\\cover taken: all 6 vertices\\smallest cover: $a_1, a_2, a_3$};
+\end{tikzpicture}
+\par\smallskip{\small A tight case of \cref{thm:b3:hard-problems:vertex-cover}: in the complete bipartite graph on $3 + 3$ vertices the matching may be perfect, and the algorithm takes 6 vertices where 3 suffice.}
+\end{omfigure}
+
+\subsection{Set cover}
+
+\begin{definition}[Set cover problem]\label{def:b3:hard-problems:set-cover}
+The \emph{set cover problem}\index{set cover problem}: given a universe $U$ of $n$ elements and sets $S_1, \ldots, S_k$ whose union is $U$, choose as few sets as possible whose union is $U$.
+\end{definition}
+
+Vertex cover is the special case where the elements are edges and each set is the edges at one vertex. The greedy algorithm takes, again and again, the set covering most of what is still uncovered.
+
+\omcode{code/bachelor-3/18-hard-problems/listings/set_cover.py}{7}{13}{Greedy set cover.}\label{lst:b3:hard-problems:set-cover}
+
+\begin{theorem}[Greedy set cover]\label{thm:b3:hard-problems:set-cover}
+The greedy algorithm returns a cover at most $H(n) = 1 + \frac{1}{2} + \cdots + \frac{1}{n}$ times the smallest, and $H(n) \le \ln n + 1$.
+\end{theorem}
+
+The bound is due to David Johnson in 1974 and L\'aszl\'o Lov\'asz in 1975; \cref{exo:b3:hard-problems:10} proves it by charging each element a share of the set that covers it first. % ledger: b3:johnson-1974
+% ledger: b3:lovasz-1975
+% ledger: b3:greedy-set-cover
+
+\omoutput{code/bachelor-3/18-hard-problems/outputs/set_cover.txt}{An instance built to fool greedy, which takes the largest set first and needs 3 where 2 suffice; and random instances, where greedy is usually optimal.}\label{out:b3:hard-problems:set-cover}
+
+\subsection{The travelling salesman}
+
+\begin{definition}[Metric travelling salesman problem, tree doubling]\label{def:b3:hard-problems:tsp}
+The \emph{metric travelling salesman problem}\index{metric travelling salesman problem} asks for a shortest tour through $n$ points whose distances satisfy the triangle inequality $d(a, c) \le d(a, b) + d(b, c)$. \emph{Tree doubling}\index{tree doubling} walks round a minimum spanning tree, going down and up each edge once, and skips every point already visited.
+\end{definition}
+
+\begin{theorem}[Tree doubling]\label{thm:b3:hard-problems:tree-doubling}
+On metric instances, \omterm{def:b3:hard-problems:tsp}{tree doubling} returns a tour at most twice the shortest.
+\end{theorem}
+
+\begin{proof}
+Removing one edge from a shortest tour leaves a spanning tree, so the minimum spanning tree weighs at most the optimum $T^*$. The walk round the tree crosses every edge twice, a closed walk of length $2\,\mathrm{MST} \le 2T^*$ through every point. Skipping a visited point replaces two steps $a \to b \to c$ by $a \to c$, which is no longer by the triangle inequality. So the tour is at most $2T^*$.
+\end{proof}
+
+Walking round the tree and skipping repeats visits the points in preorder, which is what \code{tree_doubling} computes. Nicos Christofides published in 1976 a refinement within $3/2$ of the optimum, which adds a minimum matching on the odd-degree vertices of the tree instead of doubling it; Anatoliy Serdyukov found it independently. % ledger: b3:christofides
+It is told here, not built. The exact answer for a few places comes from the Held--Karp dynamic program of 1962: for each set $S$ of places and each $j \in S$, the shortest path from place 0 through all of $S$ ending at $j$. % ledger: b3:held-karp-1962
+
+\omcode{code/bachelor-3/18-hard-problems/listings/tsp.py}{25}{45}{Held--Karp: exact, in time about $n^2 2^n$.}\label{lst:b3:hard-problems:held-karp}
+
+\omcode{code/bachelor-3/18-hard-problems/listings/tsp.py}{65}{73}{\omterm{def:b3:hard-problems:tsp}{Tree doubling}: the preorder of the minimum spanning tree.}\label{lst:b3:hard-problems:doubling}
+
+The delivery van of Brenmoor serves 12 of the town's places, with straight-line distances between them.
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[omrecord, name=left, width=0.5\linewidth, height=5.6cm, axis equal image, xlabel={km}, ylabel={km}, title={tree and tree doubling}]
+    \addplot[black!25, line width=3.2pt, unbounded coords=jump, empty line=jump] table[x=x, y=y] {code/bachelor-3/18-hard-problems/figures/van_mst.dat};
+    \addplot[omThm, thick] table[x=x, y=y] {code/bachelor-3/18-hard-problems/figures/van_doubling.dat};
+    \addplot[only marks, mark=*, mark size=1.6pt] table[x=x, y=y] {code/bachelor-3/18-hard-problems/figures/van_places.dat};
+  \end{axis}
+  \begin{axis}[omrecord, at={(left.east)}, anchor=west, xshift=1.2cm, width=0.5\linewidth, height=5.6cm, axis equal image, xlabel={km}, title={optimal tour}]
+    \addplot[omDef, thick] table[x=x, y=y] {code/bachelor-3/18-hard-problems/figures/van_optimum.dat};
+    \addplot[only marks, mark=*, mark size=1.6pt] table[x=x, y=y] {code/bachelor-3/18-hard-problems/figures/van_places.dat};
+  \end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The van's 12 places. Left: the minimum spanning tree (grey, 11,367~m) and the tour \omterm{def:b3:hard-problems:tsp}{tree doubling} takes from it (18,427~m). Right: the optimal tour (16,635~m), from Held--Karp.}
+\end{omfigure}
+
+\omoutput{code/bachelor-3/18-hard-problems/outputs/tsp_demo.txt}{The van's tour, then 200 seeded choices of 12 places out of 30: \omterm{def:b3:hard-problems:tsp}{tree doubling} stays well inside its factor 2, and 2-opt (\cref{sec:b3:hard-problems:local}) closes most of the gap.}\label{out:b3:hard-problems:tsp}
+
+\subsection{Problems with no good ratio}
+
+\begin{definition}[Inapproximability]\label{def:b3:hard-problems:inapproximability}
+A problem shows \emph{inapproximability}\index{inapproximability} at ratio $\rho$ when no polynomial-time algorithm achieves ratio $\rho$ unless $\mathrm{P} = \mathrm{NP}$.
+\end{definition}
+
+Without the triangle inequality the travelling salesman has no constant ratio at all: an algorithm with ratio $\rho$ would decide whether a graph has a \omterm{def:b3:np-completeness:problems}{Hamiltonian cycle}. Give the graph's edges length 1 and every other pair length $\rho n + 1$. A \omterm{def:b3:np-completeness:problems}{Hamiltonian cycle} is a tour of length $n$; any other tour uses a non-edge and costs more than $\rho n$; so the algorithm's tour has length at most $\rho n$ exactly when the graph has a \omterm{def:b3:np-completeness:problems}{Hamiltonian cycle} (\cref{exo:b3:hard-problems:11}).
+Stronger results of this kind, showing that a constant ratio below some threshold is \omterm{def:b3:np-completeness:reduction}{NP-hard} even for problems that have one above it, come from the theory of probabilistically checkable proofs, which this book does not cover.
+
+\section{Branch and bound with a relaxation}\label{sec:b3:hard-problems:bb}
+
+\begin{definition}[Relaxed problem, relaxation bound]\label{def:b3:hard-problems:relaxation}
+A \emph{relaxed problem}\index{relaxed problem} drops or weakens a constraint, so that every solution of the original is still a solution and its optimum is at least as good. When it is easy to solve, its optimum is a \emph{relaxation bound}\index{relaxation bound}: no solution of the original can beat it.
+\end{definition}
+
+In the 0-1 knapsack problem each item is taken whole or left. Allowing fractions of items gives the fractional knapsack, solved by taking items in decreasing order of value per kilogram and cutting the first that does not fit: an item of higher value per kilogram can always replace an equal weight of a lower one without losing value, so the greedy filling is optimal for the \omterm{def:b3:hard-problems:relaxation}{relaxed problem}. Its value bounds what the rest of the bag can still add. Linear programming relaxations, which drop the integrality of the variables of an integer program, are the general form, and are told here, not built.
+
+\omcode{code/bachelor-3/18-hard-problems/listings/knapsack_bb.py}{7}{34}{Branch and bound for the 0-1 knapsack, with and without the fractional bound.}\label{lst:b3:hard-problems:knapsack}
+
+\omoutput{code/bachelor-3/18-hard-problems/outputs/knapsack_bb.txt}{Nodes of the search tree on random instances, bag half the total weight. Without the bound the tree grows by about 16 for every four items; with it, it stays in the hundreds.}\label{out:b3:hard-problems:knapsack}
+
+For the travelling salesman, a good relaxation of a tour is a \emph{1-tree}: a spanning tree of all places but the first, plus the two shortest edges at the first. A tour is a 1-tree, so the cheapest 1-tree is a lower bound, 13,594~m for the van against an optimum of 16,635~m (\cref{exo:b3:hard-problems:6}).
+
+\section{Satisfiability solvers that learn}\label{sec:b3:hard-problems:cdcl}
+
+\code{dpll.py} branches on a variable, propagates units, and on a contradiction backtracks to its last choice. Davis and Putnam published a resolution-based procedure in 1960; the branching procedure is from Davis, Logemann and Loveland, published in 1962. % ledger: b3:davis-putnam-1960
+% ledger: b3:dpll-history
+% ledger: b3:dll-1962
+Modern solvers keep the branching and add three ideas: cheap propagation, learning a clause from each contradiction, and jumping back further than one choice.
+
+\begin{definition}[Watched literals, solver implication graph, conflict clause, clause learning, unique implication point, backjumping, CDCL solver]\label{def:b3:hard-problems:cdcl}
+\begin{itemize}
+  \item \emph{Watched literals}\index{watched literals}: each clause watches two of its literals that are not false; it is looked at only when one of them becomes false, to find another or to propagate.
+  \item The \emph{solver implication graph}\index{solver implication graph} has a vertex per assigned literal, labelled with its decision level, and an edge from each false literal of a clause to the literal that clause implied; a \emph{conflict clause}\index{conflict clause} has all its literals false.
+  \item \emph{Clause learning}\index{clause learning} adds to the formula a clause implied by it that rules out the cause of a conflict. A \emph{unique implication point}\index{unique implication point} is a literal of the current level through which every path from that level's decision to the conflict passes; the first one is the nearest to the conflict.
+  \item \emph{Backjumping}\index{backjumping} undoes every assignment above a level that may be several levels below the current one.
+  \item A \emph{CDCL solver}\index{CDCL solver} (conflict-driven clause learning) combines the four.
+\end{itemize}
+\end{definition}
+
+Take the clauses $c_1 = \neg x_2 \vee x_3$, $c_2 = \neg x_1 \vee \neg x_3 \vee x_4$, $c_3 = \neg x_3 \vee x_5$, $c_4 = \neg x_4 \vee \neg x_5$, and decide $x_1$ at level 1, then $x_2$ at level 2. Propagation sets $x_3$, then $x_4$ and $x_5$, and $c_4$ is falsified. Resolving $c_4$ with the reason of $x_5$ gives $\neg x_4 \vee \neg x_3$; with the reason of $x_4$, $\neg x_1 \vee \neg x_3$. One literal of level 2 is left, $x_3$: the first \omterm{def:b3:hard-problems:cdcl}{unique implication point}. The learned clause $\neg x_1 \vee \neg x_3$ says that $x_1$ and $x_3$ cannot both hold; the solver jumps back to level 1, where the clause is unit and sets $x_3$ false, without ever trying $x_2$ again.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, v/.style={draw, rounded corners, minimum height=6mm, fill=omDef!12}]
+  \node[v, fill=omThm!20] (x1) at (0, 1.6) {$x_1$ @1};
+  \node[v, fill=omThm!20] (x2) at (0, 0) {$x_2$ @2};
+  \node[v] (x3) at (2.6, 0) {$x_3$ @2};
+  \node[v] (x4) at (5.2, 1.2) {$x_4$ @2};
+  \node[v] (x5) at (5.2, -1.0) {$x_5$ @2};
+  \node[v, fill=black!10] (k) at (7.8, 0.1) {conflict};
+  \draw[->] (x2) -- node[below, font=\scriptsize] {$c_1$} (x3);
+  \draw[->] (x1) -- node[above, font=\scriptsize] {$c_2$} (x4);
+  \draw[->] (x3) -- node[pos=0.4, above left, font=\scriptsize] {$c_2$} (x4);
+  \draw[->] (x3) -- node[pos=0.4, below left, font=\scriptsize] {$c_3$} (x5);
+  \draw[->] (x4) -- node[above right, font=\scriptsize] {$c_4$} (k);
+  \draw[->] (x5) -- node[below right, font=\scriptsize] {$c_4$} (k);
+  \draw[omThm, very thick, dashed] (4.4, 2.3) -- (4.4, -1.7) node[below, font=\scriptsize] {first-UIP cut};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:hard-problems:cdcl}{solver implication graph} of the example. Decisions are shaded; ``@2'' is the decision level. Every path from $x_2$ to the conflict passes through $x_3$. The literals with an edge across the cut, $x_1$ and $x_3$, give the learned clause $\neg x_1 \vee \neg x_3$.}
+\end{omfigure}
+
+\code{cdcl.py} implements this in about 140 lines. It decides the most active variable, the one met most often in recent conflicts, and tries it false first.
+
+\omcode{code/bachelor-3/18-hard-problems/listings/cdcl.py}{48}{73}{Propagation with two \omterm{def:b3:hard-problems:cdcl}{watched literals}: a clause is visited only when a watched literal becomes false.}\label{lst:b3:hard-problems:propagate}
+
+\omcode{code/bachelor-3/18-hard-problems/listings/cdcl.py}{75}{100}{Conflict analysis to the first \omterm{def:b3:hard-problems:cdcl}{unique implication point}.}\label{lst:b3:hard-problems:analyse}
+
+\omcode{code/bachelor-3/18-hard-problems/listings/cdcl.py}{114}{139}{The main loop: propagate, learn and backjump on a conflict, decide otherwise.}\label{lst:b3:hard-problems:solve}
+
+The learned clause is asserting: after the backjump, all its literals but one are false, so propagation sets that one at once. Conflict-driven \omterm{def:b3:hard-problems:cdcl}{clause learning} was proposed by J. P. Marques-Silva and Karem Sakallah in 1996 and 1999, in the GRASP solver; the Chaff solver of 2001 engineered DPLL with such enhancements for speed. % ledger: b3:grasp-1999
+% ledger: b3:cdcl-origin
+% ledger: b3:chaff-2001
+% ledger: b3:chaff
+Restarting the search from level 0 while keeping the learned clauses, now and then, is the last common ingredient (\cref{exo:b3:hard-problems:12}).
+
+The two solvers are compared below in decisions and conflicts, which do not depend on the machine. The pigeonhole formulas put $n + 1$ pigeons in $n$ holes, one hole each, and are unsatisfiable. Random 3-SAT formulas are taken at 4.26 clauses per variable, where Selman, Mitchell and Levesque, measuring the work of DPLL, found them passing from almost always satisfiable to almost always unsatisfiable (1996). % ledger: b3:3sat-threshold
+
+\omcode{code/bachelor-3/18-hard-problems/listings/sat_compare.py}{16}{23}{The pigeonhole formula.}\label{lst:b3:hard-problems:pigeonhole}
+
+\omoutput{code/bachelor-3/18-hard-problems/outputs/sat_compare.txt}{Plain DPLL against CDCL. On pigeonhole formulas DPLL makes exactly $n! - 1$ decisions for $n$ holes.}\label{out:b3:hard-problems:sat}
+
+At small sizes the learning costs more than it saves; from 7 holes and on random formulas of 70 variables, CDCL makes 2 to 6 times fewer decisions, and the gap widens with the size. CDCL's counts still grow fast on pigeonhole formulas: each learned clause is a step of a proof that the formula is unsatisfiable, and when every such proof is long, so is the search.
+
+\section{Horn clauses}\label{sec:b3:hard-problems:horn}
+
+\begin{definition}[Horn clause, Horn-SAT, forward chaining]\label{def:b3:hard-problems:horn}
+A \emph{Horn clause}\index{Horn clause} has at most one positive literal: $\neg a_1 \vee \cdots \vee \neg a_k \vee b$ is the rule ``if $a_1, \ldots, a_k$ then $b$''; with no positive literal it is a constraint, and with no negative one a fact. \emph{Horn-SAT}\index{Horn-SAT} is SAT for formulas of Horn clauses. \emph{Forward chaining}\index{forward chaining} applies the rules to the known facts until no new fact appears.
+\end{definition}
+
+\begin{theorem}[Horn-SAT is in P]\label{thm:b3:hard-problems:horn}
+Set every variable false, then repeatedly make true the conclusion of a rule whose premises are all true. The formula is satisfiable if and only if no constraint ends with all its premises true, and then the resulting assignment satisfies it. With a counter per clause this takes time linear in the size of the formula.
+\end{theorem}
+
+\begin{proof}
+Every variable made true is forced: by induction, it is true in every satisfying assignment. So if a constraint has all its premises true, no assignment satisfies the formula. Otherwise, when the process stops, a rule with all premises true has its conclusion true, a rule with a false premise is satisfied by it, and every constraint has a false premise. The time bound is \cref{exo:b3:hard-problems:8}.
+\end{proof}
+
+William Dowling and Jean Gallier published linear-time algorithms for Horn formulas in 1984. % ledger: b3:dowling-gallier-1984
+\omterm{def:b3:hard-problems:horn}{Forward chaining} is the same process on rules with variables. Brenmoor's records list no families, so \code{horn.py} makes up parents for the town's people, seeded, and derives grandparents and ancestors from three rules. Logic programming languages are built on \omterm{def:b3:hard-problems:horn}{Horn clauses} run this way, or backwards from a goal; they are told here, not built.
+
+\omcode{code/bachelor-3/18-hard-problems/listings/horn.py}{11}{34}{\omterm{def:b3:hard-problems:horn}{Horn-SAT}: a counter of premises still false per clause, and a queue of clauses ready to fire.}\label{lst:b3:hard-problems:horn}
+
+\omcode{code/bachelor-3/18-hard-problems/listings/horn.py}{50}{54}{Three rules; capital letters are variables.}\label{lst:b3:hard-problems:rules}
+
+\omoutput{code/bachelor-3/18-hard-problems/outputs/horn.txt}{A Horn formula and the assignment found, the smallest that satisfies it; adding the fact $x_5$ violates the constraint $\neg x_4 \vee \neg x_5$. Then \omterm{def:b3:hard-problems:horn}{forward chaining} on 190 generated parent facts.}\label{out:b3:hard-problems:horn}
+
+Ancestors take three rounds because the ancestor rule is recursive: each round adds one generation.
+
+\section{Local search}\label{sec:b3:hard-problems:local}
+
+\begin{definition}[Local search, 2-opt move, WalkSAT]\label{def:b3:hard-problems:local-search}
+\emph{Local search}\index{local search} starts from a solution and repeatedly replaces it by a better one among its neighbours, solutions that differ by a small change. A \emph{2-opt move}\index{2-opt move} on a tour removes two edges $ab$ and $ce$ and reconnects the tour with $ac$ and $be$, reversing the segment between. \emph{WalkSAT}\index{WalkSAT} flips one variable of an unsatisfied clause chosen at random: with some probability a random one, otherwise the one whose flip falsifies the fewest satisfied clauses.
+\end{definition}
+
+\omcode{code/bachelor-3/18-hard-problems/listings/tsp.py}{76}{88}{2-opt: reverse a segment while that shortens the tour.}\label{lst:b3:hard-problems:two-opt}
+
+A tour no \omterm{def:b3:hard-problems:local-search}{2-opt move} improves crosses itself nowhere, since uncrossing two crossing edges shortens a Euclidean tour. On the 200 sets of 12 places (\cref{out:b3:hard-problems:tsp}), 2-opt after \omterm{def:b3:hard-problems:tsp}{tree doubling} finds the optimum 103 times and stays within 16\% of it. There is no guarantee: the 2-opt optimum can be a local optimum far from the best. S. Lin and B. W. Kernighan's heuristic of 1973 searches tours that differ from the current one in more than two edges; simulated annealing accepts some worsening moves, with a probability that decreases over time, to escape local optima. Both are told here. % ledger: b3:lin-kernighan-1973
+% ledger: b3:lin-kernighan
+
+\omcode{code/bachelor-3/18-hard-problems/listings/walksat.py}{10}{31}{\omterm{def:b3:hard-problems:local-search}{WalkSAT}, with half its steps random.}\label{lst:b3:hard-problems:walksat}
+
+\omoutput{code/bachelor-3/18-hard-problems/outputs/walksat.txt}{\omterm{def:b3:hard-problems:local-search}{WalkSAT} on random 3-SAT at 4 clauses per variable, five seeds each. The first formula is unsatisfiable, and \omterm{def:b3:hard-problems:local-search}{WalkSAT} spends its whole budget without being able to say so.}\label{out:b3:hard-problems:walksat}
+
+\omterm{def:b3:hard-problems:local-search}{WalkSAT} is described in Bart Selman, Henry Kautz and Bram Cohen's paper on \omterm{def:b3:hard-problems:local-search}{local search} strategies for satisfiability of 1993. % ledger: b3:walksat
+% ledger: b3:walksat-1993
+It finds an assignment of a satisfiable formula often in a few hundred flips, but the counts vary by a factor of 25 from one seed to the next, and on an unsatisfiable formula it can only give up. \omterm{def:b3:hard-problems:local-search}{Local search} answers yes; only a complete solver, such as CDCL, answers no.
+
+\section{Exercises}\label{sec:b3:hard-problems:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:hard-problems:1}
+A path of 7 vertices $1 - 2 - \cdots - 7$. \code{matching_cover} reads the edges in order. Which cover does it return, what is the smallest cover, and what is the ratio?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:hard-problems:2}
+Run greedy set cover by hand on $U = \{1, \ldots, 6\}$ with $S_1 = \{1, 2, 3, 4\}$, $S_2 = \{1, 2, 5\}$, $S_3 = \{3, 4, 6\}$, $S_4 = \{5, 6\}$. Is the result optimal?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:hard-problems:3}
+Unit-propagate $x_1 \wedge (\neg x_1 \vee x_2) \wedge (\neg x_2 \vee \neg x_3) \wedge (x_3 \vee x_4 \vee \neg x_1) \wedge (\neg x_4 \vee x_5)$. Which variables are set, and in which order?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:hard-problems:4}
+From \cref{out:b3:hard-problems:knapsack}, predict the number of nodes without the bound for 26 items. Why can the count with the bound go down from 14 to 18 items?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:hard-problems:5}
+\code{exercises/ex5_learning.py} learns only the negation of the \omterm{def:b3:hard-problems:cdcl}{unique implication point} and jumps back to level 0. Find a satisfiable formula it declares unsatisfiable, explain why the clause it learns is not implied by the formula, and fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:hard-problems:6}
+Write \code{one_tree_bound(points)}: a minimum spanning tree of all the points but the first, plus the two shortest edges from the first. Prove it never exceeds the shortest tour. It is tested against brute force.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:hard-problems:7}
+Prove \cref{thm:b3:hard-problems:vertex-cover} in full: the result is a cover, it is at most twice the smallest, and the factor 2 is reached for every even number of vertices.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:hard-problems:8}
+Prove that \code{horn_sat} (\cref{lst:b3:hard-problems:horn}) runs in time linear in the total number of literals.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:hard-problems:9}
+How many entries does the Held--Karp table hold for $n$ places, and how many steps does filling it take? Give the numbers for the van's 12 places, and compare with the number of tours.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:hard-problems:10}
+Prove \cref{thm:b3:hard-problems:set-cover}. (When greedy takes a set covering $k$ new elements, charge each of them $1/k$. Show that the elements of any set $S$ of an optimal cover are charged at most $H(|S|)$ in all.)
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:hard-problems:11}
+Prove that, for every constant $\rho \ge 1$, no polynomial-time algorithm approximates the general travelling salesman problem within $\rho$ unless $\mathrm{P} = \mathrm{NP}$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:hard-problems:12}
+Add restarts to \code{cdcl.py} by overriding \code{restart_now}: restart after $16 \cdot r_i$ conflicts in the $i$-th run, where $r_i$ follows the sequence $1, 1, 2, 1, 1, 2, 4, 1, 1, 2, \ldots$ Explain why the solver stays complete, and measure the conflicts on the random formulas of 60, 80 and 100 variables of seed 18.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:hard-problems:problem}
+
+\begin{problem}[{Weekend problem --- The delivery van of Brenmoor}]\label{pb:b3:hard-problems:1}
+A van leaves the Town Square, serves 11 other places and returns. Distances are straight lines between the coordinates of the town's places, in metres. This problem compares the exact tour, the tour \omterm{def:b3:hard-problems:tsp}{tree doubling} guarantees and the tour 2-opt finds, with the counts of \cref{out:b3:hard-problems:tsp}.
+
+\medskip\noindent\textbf{Part I --- The exact tour.}
+\begin{enumerate}
+  \item How many different tours visit the 12 places, counting a tour and its reverse once?
+  \item Why can Held--Karp fix the Town Square as the start without losing any tour?
+  \item State the recurrence for the shortest path from place 0 through a set $S$ ending at $j$.
+  \item How many table entries does the program compute for 12 places? (\cref{exo:b3:hard-problems:9}.)
+  \item Why does the program take a fraction of a second on 12 places, and about how much longer would 24 take?
+  \item The optimum is 16,635~m. Is a tour of 16,600~m possible?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Tree doubling.}
+\begin{enumerate}[resume]
+  \item Why are straight-line distances a metric?
+  \item The minimum spanning tree weighs 11,367~m. Why is that a lower bound on every tour?
+  \item What bound on the tree-doubling tour follows from the proof of \cref{thm:b3:hard-problems:tree-doubling}? Is it met?
+  \item Where in the proof is the triangle inequality used?
+  \item The tree-doubling tour is 18,427~m. What ratio does the van see, and what ratio does the theorem promise?
+  \item The 1-tree bound is 13,594~m. Which lower bound is better, and how much better?
+  \item With both lower bounds alone, without Held--Karp, what can be said about how close \omterm{def:b3:hard-problems:tsp}{tree doubling} is to optimal?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- 2-opt.}
+\begin{enumerate}[resume]
+  \item Describe one \omterm{def:b3:hard-problems:local-search}{2-opt move} as a change to the list of places.
+  \item Why does \code{two_opt} stop?
+  \item After 2-opt the van's tour is 17,617~m. Is it a local optimum, and is it the optimum?
+  \item Why can a tour with two crossing edges not be 2-optimal?
+  \item How many \omterm{def:b3:hard-problems:local-search}{2-opt moves} does one pass over a tour of $n$ places examine?
+  \item Why is 2-opt started from the tree-doubling tour rather than from a random one?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Measured over many instances.}
+\begin{enumerate}[resume]
+  \item Over 200 seeded choices of 12 places out of 30, what are the worst and mean ratios of \omterm{def:b3:hard-problems:tsp}{tree doubling}?
+  \item Is the worst ratio, 1.456, consistent with the theorem? What would contradict it?
+  \item What do 2-opt's mean ratio of 1.022 and worst of 1.156 add?
+  \item In how many instances does 2-opt reach the optimum, and what does that say about local optima?
+  \item Why can such measurements never replace the proof of the factor 2?
+  \item The van's company grows to 60 places. Which of the three methods still runs, and which guarantee remains?
+\end{enumerate}
+\end{problem}

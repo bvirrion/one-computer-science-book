@@ -1,0 +1,18 @@
+$ gcc -std=c17 -O1 -g -fsanitize=address -fsanitize-recover=address pbdemo.c phonebook_v0.c -o pb
+$ ASAN_OPTIONS=halt_on_error=0 ./pb > report.txt 2>&1
+$ sed -n 2,6p report.txt
+==1000==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x50200000003f at pc 0x7ffff74544bf bp 0x7fffffffeb30 sp 0x7fffffffe2d8
+WRITE of size 16 at 0x50200000003f thread T0
+    #0 0x7ffff74544be in __interceptor_strcpy ../../../../src/libsanitizer/asan/asan_interceptors.cpp:440
+    #1 0x555555555823 in strcpy /usr/include/x86_64-linux-gnu/bits/string_fortified.h:79
+    #2 0x555555555823 in book_add ~/session/phonebook_v0.c:39
+$ grep -E "^SUMMARY|^Emil|^removed|contacts$" report.txt
+SUMMARY: AddressSanitizer: heap-buffer-overflow ../../../../src/libsanitizer/asan/asan_interceptors.cpp:440 in __interceptor_strcpy
+SUMMARY: AddressSanitizer: heap-buffer-overflow ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors.inc:466 in __interceptor_strcmp
+SUMMARY: AddressSanitizer: heap-use-after-free ~/session/pbdemo.c:12 in main
+SUMMARY: AddressSanitizer: heap-buffer-overflow ~/session/phonebook_v0.c:59 in book_remove
+SUMMARY: AddressSanitizer: heap-use-after-free ~/session/pbdemo.c:17 in main
+Emil: 5550101
+removed: first byte 1
+3 contacts
+SUMMARY: AddressSanitizer: 41 byte(s) leaked in 3 allocation(s).

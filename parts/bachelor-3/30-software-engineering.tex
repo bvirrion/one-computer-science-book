@@ -1,0 +1,321 @@
+\chapter{Software Engineering: Design, Testing and Maintenance}\label{ch:b3:software-engineering}
+
+A program written once and thrown away needs only to work. A program that a town library runs for ten years, that three people change every month and that must keep working after each change, needs more: a design that keeps each change small, tests that say at once when a change broke something, and habits that keep both in good order. This chapter follows one such program, the library's loan system, from its \omterm{def:b3:software-engineering:requirements}{requirements} to its design, its tests, the measurement of those tests, and the checks that run before every commit. Each claim about the tests is measured by tools built in the chapter: a coverage tool on the interpreter's own monitoring events, and a mutation tester that rewrites the program's syntax tree.
+
+\begin{recall}
+A specification states what a program must do; an assertion states a property that must hold at a point of the program (grade~10 volume). A module hides its implementation behind an interface (grade~11 volume). A unit test checks one function or module; statement, branch and path coverage measure which parts of a program the tests run; a test oracle decides whether an output is correct; an end-to-end test runs the whole program as a user would (Year~1 volume). Git records the history of a project, commit by commit (Year~1 volume). Classes, interfaces and exceptions come from the Year~2 volume.
+\end{recall}
+
+\section{From requirements to design}\label{sec:b3:software-engineering:requirements}
+
+\begin{definition}[Requirement, use case]\label{def:b3:software-engineering:requirements}
+A \emph{requirement}\index{requirement} is a statement of something the system must do or a property it must have, written so that a test or an inspection can decide whether it holds. A \emph{use case}\index{use case} describes one interaction between a user, called an actor, and the system that reaches a goal of the actor: its main sequence of steps, and what happens when a step fails.
+\end{definition}
+
+The library's \omterm{def:b3:software-engineering:requirements}{requirements}, as the librarians gave them, read ``readers may borrow books for a while, with fines if late''. Rewritten as testable statements, they become:
+\begin{enumerate}[label=R\arabic*.]
+  \item A loan lasts 21 days from the day of borrowing.
+  \item A book on loan cannot be borrowed again until it is given back.
+  \item A reader may hold at most 5 loans at a time.
+  \item A loan that is not late may be renewed by 1 to 4 weeks; a late loan may not.
+  \item A book given back late costs 20 cents per day late.
+\end{enumerate}
+Each one names a number or a condition that a test can check, and each will have its test. The \omterm{def:b3:software-engineering:requirements}{use case} ``borrow a book'' has the reader as actor: the reader hands the book and the card to the desk; the system checks the book is not on loan (R2) and the reader holds fewer than 5 loans (R3); it records the loan with its due date (R1) and prints it. Two failure branches: the book is already on loan, or the reader has too many loans; each ends with a refusal that says why.
+
+\begin{definition}[UML class diagram, sequence diagram]\label{def:b3:software-engineering:uml}
+A \emph{UML class diagram}\index{UML class diagram} shows the classes of a design as boxes listing their attributes and operations, and the relations between them as lines: association, with its multiplicities, and dependency, drawn dashed. A \emph{sequence diagram}\index{sequence diagram} shows one scenario as objects side by side, each with a vertical lifeline, and the messages between them as arrows in time order, from top to bottom.
+\end{definition}
+
+UML, the Unified Modeling Language, became a standard of the Object Management Group in 1997. % ledger: b3:uml
+The two diagrams below are the design of the loan system; the rest of the chapter is its code.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, cls/.style={draw, rectangle split, rectangle split parts=2, fill=omDef!6, align=left, text width=3.3cm, inner sep=3pt}, iface/.style={cls, fill=omThm!8}]
+  \node[cls] (svc) at (0,0) {\textbf{LoanService}\nodepart{second}borrow(reader, book)\\ give\_back(isbn)\\ renew(isbn, weeks)};
+  \node[iface] (repo) at (5.2,0.35) {\textit{\guillemotleft interface\guillemotright}\\ \textbf{LoanRepository}\nodepart{second}add(loan), save(loan)\\ open\_loan\_of(isbn)\\ open\_loans\_of(card)};
+  \node[cls] (sql) at (5.2,-2.6) {\textbf{SqliteLoans}\nodepart{second}db: sqlite3 connection};
+  \node[cls] (loan) at (0,-3.0) {\textbf{Loan}\nodepart{second}start, due, returned\\ days\_late(today)\\ renewed(weeks)};
+  \node[cls, text width=1.6cm] (book) at (-2.6,-5.3) {\textbf{Book}\nodepart{second}isbn, title};
+  \node[cls, text width=1.6cm] (reader) at (2.6,-5.3) {\textbf{Reader}\nodepart{second}card, name};
+  \draw[-{Stealth}] (svc) -- node[above] {uses} (repo.west |- svc);
+  \draw[-{Triangle[open]}, dashed] (sql) -- node[right] {implements} (repo);
+  \draw[dashed, -{Stealth}] (svc) -- node[right] {creates} (loan);
+  \draw ($(loan.south west)+(0.3,0)$) -- node[pos=0.12, left] {*} node[pos=0.85, left] {1} (book.north);
+  \draw ($(loan.south east)+(-0.3,0)$) -- node[pos=0.12, right] {*} node[pos=0.85, right] {1} (reader.north);
+\end{tikzpicture}
+\par\smallskip{\small The loan system's class diagram. The service depends on the repository's interface, not on the SQLite class; a loan belongs to one book and one reader, who may each have many loans over time.}
+\end{omfigure}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, x=3.0cm, y=0.62cm, obj/.style={draw, fill=omDef!8, minimum width=2.2cm, minimum height=0.6cm}]
+  \foreach \x/\n in {0/desk, 1/LoanService, 2/repository, 3/Loan} {
+    \node[obj] (h\x) at (\x,0) {\n};
+    \draw[dashed, black!50] (\x,-0.6) -- (\x,-10.2);
+  }
+  \foreach \a/\b/\y/\t in {0/1/1.5/{borrow(reader, book)}, 1/2/2.7/{open\_loan\_of(isbn)}, 1/2/4.4/{open\_loans\_of(card)}, 1/3/6.1/{Loan(book, reader, today, due)}, 1/2/7.4/{add(loan)}} {
+    \draw[-{Stealth}] (\a,-\y) -- node[above] {\t} (\b,-\y);
+  }
+  \foreach \a/\b/\y/\t in {2/1/3.4/{None}, 2/1/5.1/{fewer than 5}, 1/0/9.2/{loan}} {
+    \draw[-{Stealth}, dashed] (\a,-\y) -- node[above] {\t} (\b,-\y);
+  }
+  \draw[-{Stealth}] (1,-8.1) .. controls (1.35,-8.1) and (1.35,-8.7) .. node[right] {tell listeners} (1,-8.7);
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:software-engineering:uml}{sequence diagram} of ``borrow a book'', in its main sequence. Solid arrows are calls, dashed arrows are returns; the two checks are R2 and R3.}
+\end{omfigure}
+
+\section{Modularity, coupling and cohesion}\label{sec:b3:software-engineering:modularity}
+
+\begin{definition}[Modularity, coupling, cohesion, information hiding, dependency inversion]\label{def:b3:software-engineering:modularity}
+\emph{Modularity}\index{modularity} is the division of a program into modules that can be written, understood, tested and changed separately. \emph{Coupling}\index{coupling} is the degree to which one module depends on the details of another; \emph{cohesion}\index{cohesion} is the degree to which the parts of one module serve a single purpose. \emph{Information hiding}\index{information hiding} is the choice of module boundaries so that each module hides a design decision likely to change, behind an interface that does not reveal it. \emph{Dependency inversion}\index{dependency inversion} makes a high-level module and a low-level one both depend on an interface owned by the high-level side, instead of the high-level module depending on the low-level one.
+\end{definition}
+
+Parnas stated the criterion of \omterm{def:b3:software-engineering:modularity}{information hiding} in 1972: decompose a system by the decisions that may change, each hidden in one module, rather than by the steps of its processing. % ledger: b3:parnas-1972
+In the loan system, the decision ``loans are kept in SQLite'' is likely to change; it is hidden in \code{SqliteLoans}. The service sees only four operations, and receives its repository, its clock, its fine policy and its listeners from outside.
+
+\omcode{code/bachelor-3/30-software-engineering/listings/loans/service.py}{18}{35}{The service's constructor and the \omterm{def:b3:software-engineering:requirements}{use case} ``borrow a book''. Every collaborator is a parameter: the service never names SQLite, the system clock or the printer.}\label{lst:b3:software-engineering:service}
+
+Low \omterm{def:b3:software-engineering:modularity}{coupling} and high \omterm{def:b3:software-engineering:modularity}{cohesion} are the two sides of the same aim. The service is cohesive, since it holds the rules of the \omterm{def:b3:software-engineering:requirements}{use cases} and nothing else; it is loosely coupled to storage, since a test can hand it any object with the four operations, and to time, since the clock is a function it is given. A version that opened the database itself and read \code{date.today()} would be simpler to write and much harder to test: every test would need a database file and would depend on the day it ran.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, m/.style={draw, rounded corners=2pt, fill=omDef!8, minimum width=2.3cm, minimum height=0.65cm}, i/.style={m, fill=omThm!10}, ar/.style={-{Stealth}, thick}]
+  \node[font=\small\bfseries] at (1.2,1.0) {before};
+  \node[m] (s1) at (1.2,0) {LoanService};
+  \node[m] (q1) at (0,-1.6) {sqlite3};
+  \node[m] (d1) at (2.4,-1.6) {date.today()};
+  \draw[ar] (s1) -- (q1); \draw[ar] (s1) -- (d1);
+  \node[font=\small\bfseries] at (7.0,1.0) {after};
+  \node[m] (s2) at (5.6,0) {LoanService};
+  \node[i] (r2) at (8.4,0) {LoanRepository};
+  \node[m] (q2) at (8.4,-1.6) {SqliteLoans};
+  \node[m] (t2) at (5.6,-1.6) {test double};
+  \draw[ar] (s2) -- (r2); \draw[ar, dashed] (q2) -- (r2); \draw[ar, dashed] (t2) -- (r2);
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b3:software-engineering:modularity}{Dependency inversion}. Before, the service depends on the storage library and on the system clock. After, it depends on an interface that it owns; the SQLite class and any \omterm{def:b3:software-engineering:tests}{test double} depend on that interface, and the arrows from the low-level side point up.}
+\end{omfigure}
+
+Robert C.~Martin collected five such design principles in 2000, later named SOLID. % ledger: b3:solid
+Each has its instance in the loan system:
+\begin{itemize}
+  \item \emph{single responsibility}: \code{Loan} computes days late, the service applies the rules, the repository stores; a change to the fine rule touches one place;
+  \item \emph{open--closed}: a new fine policy is added as a new function, without changing the service;
+  \item \emph{Liskov substitution}: any object with the four operations of \code{LoanRepository}, honouring their meaning, can replace \code{SqliteLoans};
+  \item \emph{interface segregation}: the service's listeners are given only an event name and a loan, not the whole service;
+  \item \emph{\omterm{def:b3:software-engineering:modularity}{dependency inversion}}: the arrangement of the figure above.
+\end{itemize}
+
+\begin{definition}[Design pattern, strategy pattern, observer pattern, adapter pattern, model--view--controller]\label{def:b3:software-engineering:patterns}
+A \emph{design pattern}\index{design pattern} is a named, reusable solution to a design problem that recurs in a context, described by its problem, its structure and its consequences. The \emph{strategy pattern}\index{strategy pattern} puts each variant of an algorithm behind one interface, so that the variant can be chosen at run time. The \emph{observer pattern}\index{observer pattern} lets objects register with a subject, which notifies each of them of its changes without knowing what they are. The \emph{adapter pattern}\index{adapter pattern} wraps an object so that it offers the interface that a client expects. \emph{Model--view--controller}\index{model--view--controller} (MVC) divides an interactive program into the model, which holds the data and the rules, the view, which presents them, and the controller, which turns the user's input into operations on the model.
+\end{definition}
+
+The book by Gamma, Helm, Johnson and Vlissides, \emph{Design Patterns}, published in 1994, catalogued 23 of them. % ledger: b3:gof-1994
+In the loan system the fine policies \code{flat_fine} and \code{capped_fine} are strategies, the listeners are observers, and the repository interface is itself a pattern, the repository, which hides storage behind a collection-like interface. The town's old catalogue gives each book as a line of text separated by bars; an adapter gives it the interface the loan system wants.
+
+\omcode{code/bachelor-3/30-software-engineering/listings/catalogue.py}{13}{27}{The catalogue that cannot be changed, and its adapter.}\label{lst:b3:software-engineering:adapter}
+
+MVC was created by Trygve Reenskaug for Smalltalk at Xerox PARC in the late 1970s. % ledger: b3:mvc
+The toy web app of \cref{ch:b3:software-security} can be read through it: its sessions and comments are the model, the function that builds the HTML page is the view, and the request handler that reads the form and calls the model is the controller. Its escaping, which \cref{ch:b3:software-security} placed at the point where text enters HTML, belongs in the view.
+
+A pattern pays when the variation it allows is real. A strategy for a fine policy that has had three versions in ten years earns its keep; an observer with one listener that will never have a second only adds an indirection to read through.
+
+\section{Tests}\label{sec:b3:software-engineering:tests}
+
+\begin{definition}[Integration test, test double, metamorphic testing]\label{def:b3:software-engineering:tests}
+An \emph{integration test}\index{integration test} checks several modules working together, with their real collaborators, such as a service with its database. A \emph{test double}\index{test double} is an object that stands in for a collaborator of the code under test: a stub returns fixed answers, a spy also records how it was called, a fake is a working but simplified implementation. \emph{Metamorphic testing}\index{metamorphic testing} checks a relation between the outputs for related inputs, such as ``sorting a permutation of a list gives the same result'', when no test oracle for a single output is available.
+\end{definition}
+
+Meszaros's classification of \omterm{def:b3:software-engineering:tests}{test doubles}, from 2007, distinguishes the stub, the spy, the mock, the fake and the dummy. % ledger: b3:test-doubles
+The loan system's tests use two: a stub clock that the test sets, and a spy listener that records the events.
+
+\omcode{code/bachelor-3/30-software-engineering/tests/test_loans.py}{23}{55}{A stub, a spy, a unit test of \code{Loan} alone, and an \omterm{def:b3:software-engineering:tests}{integration test} of the service with SQLite, which moves the clock 25 days on and expects R5's fine.}\label{lst:b3:software-engineering:tests}
+
+The end-to-end test runs the desk program as a user would, with a session of seven commands on its standard input, and compares what it prints.
+
+\omoutput{code/bachelor-3/30-software-engineering/outputs/desk.txt}{The desk's command line on a replayed session: R2 refuses the second loan of the novel, R4 refuses to renew a late loan, and R5 charges 11 days late at 20 cents.}\label{out:b3:software-engineering:desk}
+
+The three levels trade speed against realism. A unit test runs in microseconds and points at one function, but it trusts every assumption the function makes about its collaborators; an end-to-end test checks that the whole program fits together, but it is slow and, when it fails, says little about where. A suite has many unit tests, fewer \omterm{def:b3:software-engineering:tests}{integration tests} and a few end-to-end tests.
+
+\begin{definition}[Property-based test, shrinking]\label{def:b3:software-engineering:property}
+A \emph{property-based test}\index{property-based test} states a property that must hold for all inputs of a kind, and checks it on many inputs generated at random. \emph{Shrinking}\index{shrinking} is the search, after a failing input is found, for a smaller input that still fails, so that the reported counterexample is as simple as possible.
+\end{definition}
+
+Claessen and Hughes introduced the idea with QuickCheck, for Haskell, in 2000; the Python library hypothesis follows it, and its setting \code{derandomize} makes every run test the same inputs, which keeps a printed result reproducible. % ledger: b3:quickcheck-2000, b3:tooling-docs
+An older version of the town's date library counted every fourth year as a leap year. A property against Python's own calendar, used as the oracle, finds the error.
+
+\omcode{code/bachelor-3/30-software-engineering/listings/prop_demo.py}{13}{30}{The old day count, the generator of dates (days up to 28, valid in every month) and the property.}\label{lst:b3:software-engineering:prop}
+
+\omoutput{code/bachelor-3/30-software-engineering/outputs/prop_demo.txt}{The first failure found, then the same search with \omterm{def:b3:software-engineering:property}{shrinking}: from the year 199 to the smallest pair of dates whose span contains a year that the old rule takes for leap and the calendar does not, the year 100.}\label{out:b3:software-engineering:prop}
+
+When a single output has no oracle, a relation between outputs may still be checkable. \omterm{def:b3:software-engineering:tests}{Metamorphic testing} was proposed by Chen and his colleagues in 1998: % ledger: b3:metamorphic-1998
+a search that is narrowed must return a subset of its results; a shortest path cannot get longer when an edge is added; a sorted list does not change when its input is permuted. \Cref{exo:b3:software-engineering:10} finds a bug in a sort that way, without ever stating what the sorted list should be.
+
+\section{Coverage and its limits}\label{sec:b3:software-engineering:coverage}
+
+Statement and branch coverage, defined in the Year~1 volume, say which parts of the code a test suite runs. Python~3.12 added \code{sys.monitoring}, which calls a registered tool at chosen events: a \code{LINE} event when a new line starts, a \code{BRANCH} event when a conditional jump is taken or not. A tool may answer \code{DISABLE} to stop being told about a place. % ledger: b3:tooling-docs
+That is all a coverage tool needs.
+
+\omcode{code/bachelor-3/30-software-engineering/listings/coverage_tool.py}{59}{78}{The coverage tool's callbacks. A line is recorded once and its event disabled; a branch is recorded by its jump and its destination, so that both ways of each jump are counted.}\label{lst:b3:software-engineering:coverage}
+
+The tool finds the statements of the file by compiling it, and the branches by listing the conditional jumps of its bytecode with \code{dis}, two destinations each. It is run on the service with the first two tests, then with the whole suite.
+
+\omoutput{code/bachelor-3/30-software-engineering/outputs/coverage_demo.txt}{Coverage of \code{loans/service.py}. The whole suite runs every statement and 15 of the 16 branches; the one never taken is the way out of \code{1 <= weeks} when it is false, for a renewal of 0 weeks or fewer.}\label{out:b3:software-engineering:coverage}
+
+Full coverage is necessary for confidence, not sufficient. A suite can run every statement and take every branch while checking nothing: a test with no useful assertion covers as much as a good one (\cref{exo:b3:software-engineering:5}). And it can miss the one input where the code is wrong: the date library's first suite, in the weekend problem, runs every statement, yet never asks about the year 1900, and a leap rule that forgot the centuries would pass it with the same coverage (\cref{exo:b3:software-engineering:7}). Coverage says what the tests did not run; it does not say that what they ran was checked.
+
+\begin{definition}[Mutation testing, mutant, mutation score, equivalent mutant]\label{def:b3:software-engineering:mutation}
+\emph{Mutation testing}\index{mutation testing} evaluates a test suite by making many small changes to the program under test, one at a time, and running the suite on each. Each changed program is a \emph{mutant}\index{mutant}; the suite kills a mutant if at least one test fails on it. The \emph{mutation score}\index{mutation score} is the number of killed mutants divided by the number of mutants. An \emph{equivalent mutant}\index{equivalent mutant} is one that behaves exactly as the original program on every input, so that no test can kill it.
+\end{definition}
+
+\omterm{def:b3:software-engineering:mutation}{Mutation testing} was proposed by Lipton in 1971 and published by DeMillo, Lipton and Sayward in 1978. % ledger: b3:mutation-1978
+The mutator of the chapter parses a module with \code{ast}, finds every operator and every integer constant, and makes one \omterm{def:b3:software-engineering:mutation}{mutant} per site: \code{+} becomes \code{-}, \code{<} becomes \code{<=}, \code{and} becomes \code{or}, a constant $n$ becomes $n+1$, and so on, from a fixed table.
+
+\omcode{code/bachelor-3/30-software-engineering/listings/mutate.py}{47}{58}{One \omterm{def:b3:software-engineering:mutation}{mutant} per site: the tree is parsed afresh, one node changed, and the change recorded as source text before and after.}\label{lst:b3:software-engineering:mutants}
+
+Each \omterm{def:b3:software-engineering:mutation}{mutant} is compiled and installed in \code{sys.modules} under the module's name, the test module is imported afresh so that it sees the \omterm{def:b3:software-engineering:mutation}{mutant}, and its tests are run. The end-to-end test is left out, since it runs the program in another process, which would load the real module.
+
+\omoutput{code/bachelor-3/30-software-engineering/outputs/mutation_demo.txt}{Mutation analysis of the service: one survivor, a renewal of exactly 4 weeks refused. The suite never tries the upper boundary of R4.}\label{out:b3:software-engineering:mutation}
+
+The survivor shows what coverage could not: line 47 was run, and both its comparisons evaluated, but no test looked at the boundary. One test, a renewal of 4 weeks that must succeed, kills it. \omterm{def:b3:software-engineering:mutation}{Equivalent mutants} are the method's cost: they survive every suite, and deciding whether a survivor is equivalent is in general undecidable, since it is the equivalence of two programs; in practice it is a short argument for each, as the weekend problem shows.
+
+\section{Continuous integration, review and refactoring}\label{sec:b3:software-engineering:process}
+
+\begin{definition}[Continuous integration, code review, refactoring, characterisation test, technical debt]\label{def:b3:software-engineering:process}
+\emph{Continuous integration}\index{continuous integration} (CI) merges every change into the shared main line often, at least daily, and builds and tests the result automatically at each change. A \emph{code review}\index{code review} is the reading of a change by someone other than its author before it is merged. \emph{Refactoring}\index{refactoring} is a change to the structure of code that does not change its behaviour, made in small steps, each checked by the tests. A \emph{characterisation test}\index{characterisation test} records what existing code actually does, right or wrong, so that a change that alters it is detected. \emph{Technical debt}\index{technical debt} is the future cost of changes that a quick solution makes harder, paid for as long as the solution stays.
+\end{definition}
+
+Booch named \omterm{def:b3:software-engineering:process}{continuous integration} in 1991; Cunningham coined ``\omterm{def:b3:software-engineering:process}{technical debt}'' in 1992. % ledger: b3:ci-booch, b3:technical-debt
+The smallest form of CI runs on the developer's own machine. Before every commit, Git runs the script \code{.git/hooks/pre-commit}, if it is there and executable, and refuses the commit if the script fails. % ledger: b3:tooling-docs
+The date library's hook runs the linter, then a gate that runs the tests under the coverage tool and refuses any failure, or coverage below 100\,\% of statements.
+
+\omoutput{code/bachelor-3/30-software-engineering/outputs/ci.txt}{A Git session with the hook. The ``simplification'' of the leap rule is refused, since the calendar test fails; the fix, with a test for the year 1700, is committed.}\label{out:b3:software-engineering:ci}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, node distance=0.45cm, s/.style={draw, rounded corners=2pt, fill=omDef!8, minimum height=0.8cm, align=center}, ar/.style={-{Stealth}, thick}]
+  \node[s] (c) {git commit};
+  \node[s, right=of c] (h) {pre-commit\\ hook};
+  \node[s, right=of h] (l) {lint\\ (ruff)};
+  \node[s, right=of l] (t) {tests under\\ the coverage tool};
+  \node[s, right=of t] (g) {gate: no failure,\\ statements $\geq$ 100\,\%};
+  \node[s, right=of g, fill=omThm!12] (ok) {commit\\ recorded};
+  \draw[ar] (c) -- (h); \draw[ar] (h) -- (l); \draw[ar] (l) -- (t); \draw[ar] (t) -- (g); \draw[ar] (g) -- (ok);
+  \node[s, below=0.8cm of t, fill=black!5, minimum width=7.2cm] (no) {commit refused, nothing recorded};
+  \draw[ar, dashed] (l.south) -- (l.south |- no.north);
+  \draw[ar, dashed] (g.south) -- (g.south |- no.north);
+\end{tikzpicture}
+\par\smallskip{\small The pipeline that the hook runs. A shared CI server runs the same steps again on every push, on a clean machine, so that a hook skipped with \code{--no-verify} or a missing file is still caught.}
+\end{omfigure}
+
+A review reads what the checks cannot: whether the change does what its message says, whether the \omterm{def:b3:software-engineering:requirements}{requirement} it serves is right, whether a test checks the right object (\cref{exo:b3:software-engineering:5} is such a test), whether names say what things are, whether the change leaves the design easier or harder to change next time. It reads the tests first: they say what the author thought the change does.
+
+Fowler's \emph{\omterm{def:b3:software-engineering:process}{Refactoring}}, in 1999, set out the method: tests first, then small steps, each leaving the tests green. % ledger: b3:fowler-1999
+The desk's fines report is one long function with six parameters.
+
+\omcode{code/bachelor-3/30-software-engineering/listings/refactor_before.py}{4}{19}{The fines report before: one loop computes, caps, formats and totals.}\label{lst:b3:software-engineering:before}
+
+Three steps make it clearer: extract the computation of a fine into a function, extract the formatting of a line, then introduce a parameter object, \code{FinePolicy}, for the four parameters that always travel together. After each step the same tests pass.
+
+\omcode{code/bachelor-3/30-software-engineering/listings/refactor_after.py}{7}{32}{The report after the three steps. The policy now owns its rule; the report only walks the loans.}\label{lst:b3:software-engineering:after}
+
+The tests that protect such a change are \omterm{def:b3:software-engineering:process}{characterisation tests}, a term of Feathers: they record the old output, whatever it is, and require the new code to print it exactly. % ledger: b3:feathers-characterization
+The old report prints ``1 days''; the \omterm{def:b3:software-engineering:process}{refactoring} must keep it, since some reader of the report may depend on it, and correcting it is a separate change with its own test.
+
+\omoutput{code/bachelor-3/30-software-engineering/outputs/refactor_check.txt}{The old report on four loans, then the comparison of old and new for four policies, among them no cap and a cap of zero.}\label{out:b3:software-engineering:refactor}
+
+\section{Exercises}\label{sec:b3:software-engineering:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:software-engineering:1}
+Rank these three designs of the fines report from the most to the least coupled to the database, and say what a test of each needs: (a) the report runs its own SQL query; (b) the report receives a repository and asks it for the open loans; (c) the report receives a list of loans.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:software-engineering:2}
+Say whether each test is a unit, an integration or an end-to-end test: (a) \code{test_days_late_is_zero_until_due}; (b) \code{test_late_return_is_fined}; (c) \code{test_desk_end_to_end}; (d) the contract test of \cref{exo:b3:software-engineering:6} run against \code{SqliteLoans}; (e) a test of \code{flat_fine} alone.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:software-engineering:3}
+For \code{days_in_month} of the town's date library and the tests \code{days_in_month(2024, 2)} and \code{days_in_month(2026, 1)}, which statements and which branches are covered? Add the fewest tests that reach 100\,\% of branches of this function alone.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:software-engineering:4}
+The mutator makes three \omterm{def:b3:software-engineering:mutation}{mutants} of \code{return min(20 * days_late, 500)}. List them, and predict which ones the single test \code{capped_fine(30) == 500} kills.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:software-engineering:5}
+In \code{exercises/ex5_wrong_object.py}, \code{test_fine_always_passes} returns a book four days late and checks the result. Find why it can never fail, show it by \omterm{def:b3:software-engineering:mutation}{mutation testing} of the service, and fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:software-engineering:6}
+Write \code{MemoryLoans}, a fake repository keeping loans in a list, and one contract test that both repositories must pass: a loan added is found open, a change to the caller's object does not change what is stored, a loan saved as returned is no longer open, and another reader's loan is untouched.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:software-engineering:7}
+Show that 100\,\% branch coverage need not reveal a bug: give a version of \code{is_leap} with an error, and a test suite that takes every branch of it, passes, and misses the error.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:software-engineering:8}
+How many \omterm{def:b3:software-engineering:mutation}{mutants} does the chapter's mutator make of an expression with $k$ operators of its table and $c$ integer constants? Check on \code{a + b * c < d - 1}. How many would a mutator make that replaces each comparison by each of the five others?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:software-engineering:9}
+Write the two intermediate states of the \omterm{def:b3:software-engineering:process}{refactoring} of the fines report, after the first and the second step, and check with a \omterm{def:b3:software-engineering:property}{property-based test} that all four versions print the same report for every rate, cap, grace period and day.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:software-engineering:10}
+\code{merge_sort} in \code{exercises/ex10_metamorphic.py} has an injected bug. Without looking for it, write three metamorphic relations for a sort: permuting the input, doubling it, adding a constant to every element. Run them on random lists; which relation finds the bug, and what is it?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:software-engineering:11}
+Let $C$ be a class of mutation operators and $P$ a correct program on which a test suite $T$ passes. Prove that if $T$ kills every \omterm{def:b3:software-engineering:mutation}{mutant} of $P$ by $C$ that is not equivalent to $P$, then $T$ fails on every program that differs from $P$ by one change of class $C$ and computes something else. Why does running the mutator on the program under test, rather than on the correct program nobody has, still give evidence of this?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:software-engineering:12}
+Extend the coverage tool into \code{LineCounts}, which counts how many times each line runs. Test it on \code{day_number(2026, 3, 1)}, whose counts you can compute by hand, and explain the count of the \code{for} line.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:software-engineering:problem}
+
+\begin{problem}[{Weekend problem --- Mutation testing the town's date library}]\label{pb:b3:software-engineering:1}
+The town hall's date library, \code{towndate.py}, has five tests, and its maintainer says that it is ``fully tested: 100\,\% coverage''. The problem measures what the tests check, finds what they miss, and closes the gaps.
+
+\omcode{code/bachelor-3/30-software-engineering/listings/towndate.py}{16}{46}{The town's date library. Line 4, above, holds \code{MONTH_DAYS}, the lengths of the twelve months of a common year, and lines 5 to 13 the names of the days, from Monday.}\label{lst:b3:software-engineering:towndate}
+
+\omoutput{code/bachelor-3/30-software-engineering/outputs/date_mutation.txt}{Coverage of the library under its first suite, then the mutation analysis under the first suite and with two new tests.}\label{out:b3:software-engineering:datemut}
+
+\medskip\noindent\textbf{Part I --- The library and its tests.}
+\begin{enumerate}
+  \item State the leap-year rule that line 17 implements, and the \omterm{def:b3:software-engineering:requirements}{requirement} each of the five first tests checks.
+  \item Why does \code{day_number} add \code{y // 4 - y // 100 + y // 400} to $365y$?
+  \item Check by hand that \code{days_between((2026, 1, 1), (2026, 3, 1))} is 59.
+  \item Which of the first tests is an oracle test against a known value, and which checks a relation?
+  \item Why does \code{days_between} return the absolute value?
+  \item What does \code{weekday} assume about the year 1, and why can that be checked against Python's \code{datetime}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Coverage.}
+\begin{enumerate}[resume]
+  \item What fraction of statements does the first suite run?
+  \item Which three branches does it never take? Say which inputs would take each.
+  \item Why does the test of 2024 never evaluate \texttt{year \% 400 == 0}?
+  \item Is the maintainer's claim true? What does it prove about the leap rule?
+  \item Give a wrong leap rule that the first suite passes with the same coverage.
+  \item Which survivors of Part III fall on lines whose branches are fully covered?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Mutation analysis.}
+\begin{enumerate}[resume]
+  \item How many \omterm{def:b3:software-engineering:mutation}{mutants} are made, and how many does the first suite kill? Give the score.
+  \item Why do the \omterm{def:b3:software-engineering:mutation}{mutants} of the month table on line 4 survive, and which months are they?
+  \item Why do 7 \omterm{def:b3:software-engineering:mutation}{mutants} of line 17 survive?
+  \item Why do the \omterm{def:b3:software-engineering:mutation}{mutants} \code{y // 100} to \code{y // 101} and \code{y // 400} to \code{y // 401} on line 33 survive, although \code{weekday} uses the absolute day number?
+  \item Which survivors of line 27 point to missing boundary tests?
+  \item Classify the 16 survivors by the \omterm{def:b3:software-engineering:requirements}{requirement} they show untested.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- New tests and equivalent mutants.}
+\begin{enumerate}[resume]
+  \item What do the two new tests check, and which oracle does the first one use?
+  \item Which of the two new tests kills each survivor of lines 4, 17, 27 and 33, and why does comparing \code{day_number} with the calendar on the first of each month of eight chosen years suffice for most of them?
+  \item How many \omterm{def:b3:software-engineering:mutation}{mutants} survive the new suite?
+  \item Prove that the two survivors are equivalent to the original.
+  \item What is the score over the non-equivalent \omterm{def:b3:software-engineering:mutation}{mutants}?
+  \item Sum up: what statement coverage does the first suite reach, how many of the \omterm{def:b3:software-engineering:mutation}{mutants} does it kill, how many do the two new tests raise it to, and how many survivors are equivalent?
+\end{enumerate}
+\end{problem}

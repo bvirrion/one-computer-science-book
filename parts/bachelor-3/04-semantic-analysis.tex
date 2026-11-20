@@ -1,0 +1,329 @@
+\chapter{Abstract Syntax and Semantic Analysis}\label{ch:b3:semantic-analysis}
+
+The parser accepts \code{var flag = count + true;} without a murmur: it is a well-formed statement. It also accepts a call to a function that does not exist, a variable used three lines before it is declared, and an \code{int} function that forgets to return. None of these can be seen by a grammar, because each depends on something written elsewhere in the program: a declaration, a type, the rest of a function. This chapter adds the phase that sees them. It binds every use of a name to its declaration, gives every expression a type, checks the rules of the language, and reports what is wrong in a way a programmer can act on. It also writes the interpreter that says what a correct Moor program means, against which every later phase of the compiler will be tested.
+
+\section{What the tree must carry}\label{sec:b3:semantic-analysis:tree}
+
+\begin{recall}
+A hash table maps keys to values in expected constant time per operation (Year 1 volume). The \omterm{def:b3:top-down-parsing:ast}{abstract syntax tree} of Moor (chapter~\ref{ch:b3:top-down-parsing}) has a node per construct and a span per node; it is frozen. Moor's types are \code{int} and \code{bool}, as in the languages of the school volumes.
+\end{recall}
+
+The phases after the parser need facts the tree does not hold: which declaration a name refers to, the type of each expression, later the place of each variable in memory. There are two ways to attach them. A compiler can add fields to the nodes, filled in as the phases run (\emph{in-tree annotation}). Or it can keep the tree as the parser built it and store each fact in a \emph{side table}, a map from a node's identifier to the fact. Moor's tree is frozen, so this book takes the second way, and it needs node identifiers. The spans give them for free: two uses of names never start at the same byte of the source, so the byte offset where a node starts identifies it. A side table also keeps the phases independent: the type checker reads the resolver's table and writes its own, and a later phase can drop a table it no longer needs.
+
+\begin{definition}[Tree-walking interpreter]\label{def:b3:semantic-analysis:interpreter}
+A \emph{tree-walking interpreter}\index{tree-walking interpreter} runs a program by evaluating its \omterm{def:b3:top-down-parsing:ast}{abstract syntax tree} directly, one node at a time, with a recursive function per kind of node.
+\end{definition}
+
+The rest of this chapter checks which programs are correct. Before checking them, we fix what a correct one means. The interpreter \code{interp.rs} is a few recursive functions over the tree: \code{stmt} executes a statement, \code{expr} evaluates an expression, \code{call} pushes a frame of block scopes for the callee. It is slow, and it is the reference: the compiler of chapters~\ref{ch:b3:code-generation} and~\ref{ch:b3:program-optimisation} is correct when, on every program, its RISC-V code prints what the interpreter prints. That makes every detail of the interpreter a decision about the language. Integers are 32 bits and wrap, and division follows the machine the compiler targets (\cref{lst:b3:semantic-analysis:arith}): a quotient by zero is $-1$ and the remainder the dividend, so that compiled and interpreted programs agree even there.
+
+\omcode{code/bachelor-3/04-semantic-analysis/listings/interp.rs}{200}{221}{The binary operators of Moor, as the interpreter computes them: wrapping 32-bit arithmetic, and the division of RISC-V. \code{&&} and \code{||} never reach this function: they evaluate their right operand only when needed.}\label{lst:b3:semantic-analysis:arith}
+
+\omoutput{code/bachelor-3/04-semantic-analysis/outputs/interp_demo.txt}{The interpreter runs \code{sieve.moor}: the primes below 50, and \code{main} returns their number, which becomes the exit status.}\label{out:b3:semantic-analysis:interp}
+
+\section{Scopes and symbol tables}\label{sec:b3:semantic-analysis:scopes}
+
+\begin{definition}[Lexical scope, shadowing, dynamic scope]\label{def:b3:semantic-analysis:scope}
+Under \emph{lexical scope}\index{lexical scope} (or static scope), a declaration is visible in the region of the program text it belongs to: in Moor, from the declaration to the end of its block, inner blocks included. A declaration in an inner block \emph{shadows}\index{shadowing} a declaration of the same name in an enclosing one: inside the inner block, the name refers to the inner declaration. Under \emph{dynamic scope}\index{dynamic scope}, a name refers to the most recent declaration still active when the code runs, which depends on the chain of calls and not on the text.
+\end{definition}
+
+The difference shows on two functions. With \texttt{var x:\ int = 1;} at the top of a program, \code{fn show() { print(x); }} and \code{fn main() { var x = 2; show(); }}, Moor prints 1: the \code{x} in \code{show} is the one the text of \code{show} can see. Under \omterm{def:b3:semantic-analysis:scope}{dynamic scope} it would print 2, the \code{x} of the caller. A few old languages and some shell and macro languages use \omterm{def:b3:semantic-analysis:scope}{dynamic scope}; it makes a function's meaning depend on who calls it, and it cannot be checked before the program runs.
+
+\begin{definition}[Symbol table]\label{def:b3:semantic-analysis:symbol-table}
+A \emph{symbol table}\index{symbol table} maps the names visible at a point of the program to their declarations. For block structure it supports four operations: open a scope, close it (forgetting what it declared), declare a name in the innermost scope, and look a name up, finding the innermost declaration.
+\end{definition}
+
+The simplest table that does this is a stack of hash maps (\cref{lst:b3:semantic-analysis:scope}). Opening a block pushes an empty map, closing it pops the map, and lookup searches from the top. \omterm{def:b3:semantic-analysis:scope}{Shadowing} is automatic, since the inner map is searched first, and closing a block restores the outer declaration because it was never removed. Declaring a name twice in the same block is refused, and the first declaration returned so that the message can point at it. The counter of map probes will be used to compare tables.
+
+\omcode{code/bachelor-3/04-semantic-analysis/listings/scope.rs}{24}{43}{Declaring in the innermost scope, and looking up from the top of the stack.}\label{lst:b3:semantic-analysis:scope}
+
+\Cref{out:b3:semantic-analysis:trace} prints the stack after each declaration of \code{ok.moor} (\cref{lst:b3:semantic-analysis:ok}). The first map holds the built-in functions and the program's items; then each function opens a map for its parameters and one per block. The figure below draws the stack at three points of \code{main}.
+
+\omcode{code/bachelor-3/04-semantic-analysis/listings/ok.moor}{1}{21}{A program to resolve: a global, two functions that call each other before the second is declared, and a shadowed \code{x}.}\label{lst:b3:semantic-analysis:ok}
+
+\omoutput{code/bachelor-3/04-semantic-analysis/outputs/scope_trace.txt}{The stack of scopes after each declaration, outermost first, each scope's names sorted. \code{main}'s parameter scope is empty.}\label{out:b3:semantic-analysis:trace}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, >=Stealth,
+  fr/.style={draw, minimum width=30mm, minimum height=5mm, fill=omDef!6, font=\ttfamily\scriptsize}]
+  \foreach \col/\lab/\items in {0/{after line 15}/{x:15}, 1/{at line 18}/{x:15,x:17}, 2/{at line 20}/{x:15}} {
+    \node[fr] at (\col*3.6, 0) {globals, built-ins};
+    \node[fr] at (\col*3.6, 0.55) {main's parameters};
+    \foreach \it [count=\k from 2] in \items
+      \node[fr, fill=omMeth!10] at (\col*3.6, \k*0.55) {\it};
+    \node[font=\small] at (\col*3.6, -0.6) {\lab};
+  }
+  \node[font=\scriptsize, anchor=west, text=omThm] at (5.15,1.65) {$\leftarrow$ lookup of \texttt{x}};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:semantic-analysis:symbol-table}{symbol table} of \code{main} at three points, top of the stack up; \texttt{x:15} is the \code{x} declared on line 15. At line 18 the lookup of \code{x} finds the inner one, declared on line 17; at line 20 the inner block has been popped and the outer \code{x} is visible again.}
+\end{omfigure}
+
+A stack of maps is not the only choice. A single list of (name, declaration) pairs with a mark per block is simpler, and lookup scans it from the newest end. A single hash map from each name to the stack of its visible declarations makes every lookup one probe, at the price of a more careful exit (exercise~\ref{exo:b3:semantic-analysis:5}). A persistent map, which is never changed in place but copied along one path per insertion, makes leaving a block free, since the outer scope is simply the old version (exercise~\ref{exo:b3:semantic-analysis:11}). The weekend problem counts what each costs.
+
+\section{Resolving names}\label{sec:b3:semantic-analysis:resolution}
+
+\begin{definition}[Name resolution, binding occurrence]\label{def:b3:semantic-analysis:resolution}
+A \emph{binding occurrence}\index{binding occurrence} of a name is the place where it is declared: a parameter, a \code{var}, a function or a global. \emph{Name resolution}\index{name resolution} maps every other occurrence, every use, to the binding occurrence it refers to under the scope rules, or reports that there is none.
+\end{definition}
+
+Moor's functions are visible everywhere, so that \code{even} may call \code{odd} before \code{odd} is declared. The resolver therefore makes two passes (\cref{lst:b3:semantic-analysis:passes}). The first declares every item of the program in the outermost scope; the second walks each function's body with a scope for its parameters and one per block. Each declaration gets a number, and two side tables map each use, and each declaring node, to that number.
+
+\omcode{code/bachelor-3/04-semantic-analysis/listings/resolve.rs}{54}{84}{The two passes. \code{later} lists the function's local declarations, for a better message when a name is used before its declaration.}\label{lst:b3:semantic-analysis:passes}
+
+\Cref{lst:b3:semantic-analysis:use} handles a use and a local declaration. The order of the two lines for \code{var} is a rule of the language: the initialiser is resolved before the name is declared, so in \code{var x = x + 1;} the \code{x} on the right is an outer one, or an error if there is none. When a lookup fails, the resolver looks for a declaration of the same name later in the function: if there is one, the programmer has most likely put the statements in the wrong order, and the message says so.
+
+\omcode{code/bachelor-3/04-semantic-analysis/listings/resolve.rs}{104}{135}{A use: found, used before its declaration, or not declared. A block opens and closes a scope; a \code{var} resolves its initialiser first.}\label{lst:b3:semantic-analysis:use}
+
+\Cref{out:b3:semantic-analysis:check} lists the resolution of \code{ok.moor}: thirteen uses, each with the kind and place of its declaration and, for variables, the type the checker of the next section gave it. The two \code{x} on lines 18 and 20 go to different declarations; the figure below draws the bindings of \code{even}.
+
+\omoutput{code/bachelor-3/04-semantic-analysis/outputs/check_demo.txt}{Every use in \code{ok.moor} and the declaration it is bound to, by line and column.}\label{out:b3:semantic-analysis:check}
+
+\begin{omfigure}
+\frenchspacing
+\begin{tikzpicture}[font=\small, level distance=9mm, >=Stealth,
+  every node/.style={inner sep=1.5pt}, tk/.style={font=\ttfamily\small},
+  decl/.style={draw=omDef, fill=omDef!10, rounded corners=1pt, font=\ttfamily\small},
+  use/.style={draw=omThm, rounded corners=1pt, font=\ttfamily\small}]
+  \node[decl] (fn) {fn even}
+    child[sibling distance=22mm] {node[decl] (n) {n: int}}
+    child[sibling distance=34mm] {node {block}
+      child[sibling distance=30mm] {node {if}
+        child[sibling distance=15mm] {node {==}
+          child[sibling distance=9mm] {node[use] (u1) {n}}
+          child[sibling distance=9mm] {node[tk] {0}}}
+        child[sibling distance=15mm] {node {return true}}}
+      child[sibling distance=30mm] {node {return}
+        child {node[use] (call) {call odd}
+          child {node {$-$}
+            child[sibling distance=9mm] {node[use] (u2) {n}}
+            child[sibling distance=9mm] {node[tk] {1}}}}}};
+  \node[decl] (odd) at (6.6,0) {fn odd};
+  \draw[->, omThm, densely dashed] (u1) to[out=150, in=250] (n);
+  \draw[->, omThm, densely dashed] (u2.west) to[out=170, in=280] (n);
+  \draw[->, omThm, densely dashed] (call.east) to[out=20, in=270] (odd);
+\end{tikzpicture}
+\par\smallskip{\small The tree of \code{even} with the resolution drawn as arrows from each use (red) to its declaration (blue). The arrows are not part of the tree: they are the entries of the side table \code{uses}. \code{odd} is declared after \code{even}, and is found because the first pass declared it.}
+\end{omfigure}
+
+\section{Checking types}\label{sec:b3:semantic-analysis:types}
+
+\begin{definition}[Static semantics, type checking]\label{def:b3:semantic-analysis:static-semantics}
+The \emph{static semantics}\index{static semantics} of a language is the set of rules a program must satisfy beyond its grammar, checked before it runs: every name declared, every operator applied to operands of the right types, every function returning on every path. \emph{Type checking}\index{type checking} is the part of it that gives every expression of a program a type and checks that each construct receives operands of the types it requires.
+\end{definition}
+
+Each requirement is written as a typing rule, an inference: if the premises above the line hold, the conclusion below it holds. A premise or conclusion $\Gamma \vdash e : \tau$ reads ``with the variables of $\Gamma$ at their types, expression $e$ has type $\tau$''; chapter~\ref{ch:b3:type-systems} makes these notions precise.
+
+Moor's rules for expressions are short. A few of them:
+\begin{mathpar}
+\inferrule{\Gamma(x) = \tau}{\Gamma \vdash x : \tau}
+\and
+\inferrule{\Gamma \vdash e_1 : \mathsf{int} \\ \Gamma \vdash e_2 : \mathsf{int}}{\Gamma \vdash e_1 + e_2 : \mathsf{int}}
+\and
+\inferrule{\Gamma \vdash e_1 : \mathsf{int} \\ \Gamma \vdash e_2 : \mathsf{int}}{\Gamma \vdash e_1 < e_2 : \mathsf{bool}}
+\and
+\inferrule{\Gamma \vdash e_1 : \tau \\ \Gamma \vdash e_2 : \tau \\ \tau \in \{\mathsf{int}, \mathsf{bool}\}}{\Gamma \vdash e_1 == e_2 : \mathsf{bool}}
+\and
+\inferrule{\Gamma \vdash e_1 : \mathsf{bool} \\ \Gamma \vdash e_2 : \mathsf{bool}}{\Gamma \vdash e_1\ \&\&\ e_2 : \mathsf{bool}}
+\and
+\inferrule{\Gamma(f) = (\tau_1, \dots, \tau_n) \to \tau \\ \Gamma \vdash e_i : \tau_i \ (1 \le i \le n)}{\Gamma \vdash f(e_1, \dots, e_n) : \tau}
+\end{mathpar}
+Statements have a judgement of their own, $\Gamma \vdash s \dashv \Gamma'$: the statement is correct in $\Gamma$, and $\Gamma'$ is the context after it, which a \code{var} extends. Writing $\rho$ for the result type of the enclosing function:
+\begin{mathpar}
+\inferrule{\Gamma \vdash e : \tau}{\Gamma \vdash \mathtt{var}\ x = e; \dashv \Gamma, x{:}\tau}
+\and
+\inferrule{\Gamma(x) = \tau \\ \Gamma \vdash e : \tau}{\Gamma \vdash x = e; \dashv \Gamma}
+\and
+\inferrule{\Gamma \vdash e : \mathsf{bool} \\ \Gamma \vdash B_1 \\ \Gamma \vdash B_2}{\Gamma \vdash \mathtt{if}\ e\ B_1\ \mathtt{else}\ B_2 \dashv \Gamma}
+\and
+\inferrule{\Gamma \vdash e : \rho}{\Gamma \vdash \mathtt{return}\ e; \dashv \Gamma}
+\end{mathpar}
+A program is well typed if a derivation exists for each function body; the figure below is one for a statement. The checker builds no derivation: it computes the type of each expression bottom-up, and each rule becomes a test. \Cref{lst:b3:semantic-analysis:binary} is the binary operators: the operands' types first, then the operator's requirement. The helper \code{expect} reports a type that is not the one required, unless it is \code{Error}, the type of an expression already reported (\cref{sec:b3:semantic-analysis:messages}).
+
+\begin{omfigure}
+\begin{tikzpicture}
+\node {\small$\inferrule*[right=if]
+  {\inferrule*[right=$<$]{\inferrule*{\Gamma(\mathtt{x}) = \mathsf{int}}{\Gamma \vdash \mathtt{x} : \mathsf{int}} \\ \inferrule*{\Gamma(\mathtt{limit}) = \mathsf{int}}{\Gamma \vdash \mathtt{limit} : \mathsf{int}}}{\Gamma \vdash \mathtt{x < limit} : \mathsf{bool}}
+   \\
+   \inferrule*[right=assign]{\Gamma(\mathtt{y}) = \mathsf{int} \\ \inferrule*[right=$+$]{\Gamma \vdash \mathtt{x} : \mathsf{int} \\ \Gamma \vdash \mathtt{1} : \mathsf{int}}{\Gamma \vdash \mathtt{x + 1} : \mathsf{int}}}{\Gamma \vdash \mathtt{\{\ y = x + 1;\ \}}}}
+  {\Gamma \vdash \mathtt{if\ x < limit\ \{\ y = x + 1;\ \}} \dashv \Gamma}$};
+\end{tikzpicture}
+\par\smallskip{\small A typing derivation for one statement, with $\Gamma = \mathtt{x}{:}\mathsf{int}, \mathtt{y}{:}\mathsf{int}, \mathtt{limit}{:}\mathsf{int}$. The leaves look names up in $\Gamma$; each line is one rule. An \code{if} without \code{else} has the same rule without $B_2$.}
+\end{omfigure}
+
+\omcode{code/bachelor-3/04-semantic-analysis/listings/typecheck.rs}{202}{224}{The typing rules of the binary operators, as code. Equality accepts two operands of the same type, \code{int} or \code{bool}.}\label{lst:b3:semantic-analysis:binary}
+
+One rule is about paths, not types: a function with a result type must return on every path, or the caller would read a value that was never produced. The checker decides it on the tree (\cref{lst:b3:semantic-analysis:returns}): a block returns if one of its statements does, and an \code{if} returns only if both branches do. A \code{while} never counts, even \code{while true}: the check is conservative, and it may refuse a function that always returns, but it never accepts one that can fall off its end (exercise~\ref{exo:b3:semantic-analysis:7}).
+
+\omcode{code/bachelor-3/04-semantic-analysis/listings/typecheck.rs}{255}{262}{Return on every path, decided on the tree.}\label{lst:b3:semantic-analysis:returns}
+
+What does the checker buy? The interpreter's arithmetic in \cref{lst:b3:semantic-analysis:arith} reads its operands as integers without looking; if a \code{bool} reached it, the interpreter would stop with an internal error, and compiled code would add a 0 or a 1 without any warning. The checker rules this out.
+
+\begin{theorem}[Well-typed Moor never adds a boolean]\label{thm:b3:semantic-analysis:sound}
+In a well-typed Moor program, whenever the interpreter evaluates $e_1 + e_2$, both operands evaluate to integers. The same holds for every arithmetic and comparison operator, and the operands of \code{&&}, \code{||} and \code{!} evaluate to booleans.
+\end{theorem}
+
+\begin{proof}
+We prove it for functions that make no calls; calls are exercise~\ref{exo:b3:semantic-analysis:10}. Say that an environment \emph{agrees} with $\Gamma$ if each variable $x$ of $\Gamma$ holds a value of type $\Gamma(x)$, and array elements are integers. \emph{Claim}: if $\Gamma \vdash e : \tau$, the environment agrees with $\Gamma$, and the evaluation of $e$ ends without a runtime error, its value has type $\tau$. By induction on $e$, following the evaluation, which evaluates the subexpressions first. A literal has its type. A variable has type $\Gamma(x)$ by the rule, and holds a value of that type by agreement. An array element is an integer by agreement. For $e_1 + e_2$, the rule gives $\Gamma \vdash e_i : \mathsf{int}$, so by induction both values are integers, which is the theorem's statement for this node, and their wrapped sum is an integer. The other operators are the same, with the types of their rules; for \code{&&} and \code{||} the right operand may not be evaluated, which changes nothing.
+
+\emph{Agreement is kept by every statement.} A \code{var x = e;} adds $x{:}\tau$ to $\Gamma$, and $x$ receives the value of $e$, of type $\tau$ by the claim. An assignment $x = e$ requires $\Gamma \vdash e : \Gamma(x)$. An array assignment requires an integer value. Leaving a block removes the same names from the environment and from $\Gamma$. By induction on the number of statements executed, the environment always agrees with the current $\Gamma$, so the claim applies to every expression evaluated, and with it the theorem.
+\end{proof}
+
+The theorem is a small case of type safety, which chapter~\ref{ch:b3:type-systems} states and proves for a whole language, with the rules made formal.
+
+\section{Useful error messages}\label{sec:b3:semantic-analysis:messages}
+
+A checker that stops at the first error makes the programmer compile once per mistake. One that goes on must avoid the opposite trap: when \code{zz} is not declared, the expression \code{(zz + 1) * 2 < 3 && true} could produce a message at every level of the tree, each a consequence of the first. Users learn to read only the first message, and the others are noise.
+
+\begin{definition}[Error type]\label{def:b3:semantic-analysis:error-type}
+An \emph{error type}\index{error type} is a type given to an expression that has already been reported as wrong. Every rule accepts it in place of any type, without a message, and an operator whose operand has it gives it to its own result when the result type depends on the operand.
+\end{definition}
+
+With the \omterm{def:b3:semantic-analysis:error-type}{error type}, each cause gives one message. \code{zz} is reported once by the resolver; its type is \code{Error}; \code{zz + 1} is not reported, and has type \code{int} since \code{+} always gives an integer; the rest of the expression checks normally. The figure below compares the two behaviours. The other rules of good messages are as simple: point at the right place, with a caret under the column; say what was expected and what was found; add a note pointing at the other place involved, such as the first declaration of a name declared twice; and report all errors, in the order of the source. \Cref{out:b3:semantic-analysis:errors} is the \omterm{def:b3:lexical-analysis:phases}{front end} on \code{errors.moor}: four errors, two with a note.
+
+\omcode{code/bachelor-3/04-semantic-analysis/listings/errors.moor}{1}{11}{Four mistakes.}\label{lst:b3:semantic-analysis:errors}
+
+\omoutput{code/bachelor-3/04-semantic-analysis/outputs/errors_demo.txt}{The four messages, in source order, each with its line and caret; the second declaration of \code{count} and the early use of \code{total} point at the other line involved.}\label{out:b3:semantic-analysis:errors}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, level distance=8.5mm, sibling distance=13mm,
+  every node/.style={inner sep=1.5pt},
+  bad/.style={draw=omSafe, fill=omSafe!12, rounded corners=1pt},
+  err/.style={draw=omRecall, fill=omRecall!10, rounded corners=1pt}]
+  \begin{scope}
+  \node[bad] {\&\&}
+    child {node[bad] {<}
+      child {node[bad] {*} child {node[bad] {+} child {node[bad] {zz}} child {node {1}}} child {node {2}}}
+      child {node {3}}}
+    child {node {true}};
+  \node at (0,-4.2) {without an error type: 5 messages};
+  \end{scope}
+  \begin{scope}[xshift=7.2cm]
+  \node {\&\&}
+    child {node {<}
+      child {node {*} child {node {+} child {node[bad] {zz : Error}} child {node {1}}} child {node {2}}}
+      child {node {3}}}
+    child {node {true}};
+  \node at (0,-4.2) {with an error type: 1 message};
+  \end{scope}
+\end{tikzpicture}
+\par\smallskip{\small The expression \texttt{(zz + 1) * 2 < 3 \&\& true} with \code{zz} undeclared. If an unknown name stopped every rule above it, each operator would complain about an operand it cannot type (red). With the \omterm{def:b3:semantic-analysis:error-type}{error type}, only the cause is reported; \code{+} still gives an \code{int}, and the rest of the tree is checked normally.}
+\end{omfigure}
+
+\begin{inpractice}[Messages are read by people in a hurry]
+The best compilers spend as much code on messages as on checks. A message names the construct as the programmer wrote it (\code{'+'}, not \code{BinOp::Add}), and its first line should be enough. Order matters: sorting by position makes the first message the earliest cause, and tests should fix the exact text of messages, as this chapter's do, so that a change in wording is a decision and not an accident.
+\end{inpractice}
+
+\begin{history}[Blocks]
+The report on ALGOL 60, published in May 1960, defined the block: a sequence of statements headed by declarations that are valid only inside it, and that may hide declarations of the same names outside it. % ledger: b3:algol60-1960
+Block structure and \omterm{def:b3:semantic-analysis:scope}{lexical scope}, as in this chapter, come from that report into most of the languages that followed.
+\end{history}
+
+\section{Exercises}\label{sec:b3:semantic-analysis:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:semantic-analysis:1}
+In the program below, which declaration does each use of \code{n} and \code{m} refer to, on lines 3, 5, 6 and 8? What does it print?
+\begin{center}\small\ttfamily\frenchspacing\begin{tabular}{rl}
+1 & var n: int = 1;\\
+2 & fn f(n: int) -> int \{\\
+3 & \quad var m = n;\\
+4 & \quad \{\\
+5 & \quad\quad var n = m + 1;\\
+6 & \quad\quad m = n;\\
+7 & \quad \}\\
+8 & \quad return n + m;\\
+9 & \}\\
+10 & fn main() \{ print(f(5)); \}
+\end{tabular}\end{center}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:semantic-analysis:2}
+List the messages the checker gives for this program, in order, and say why there are not more:
+\begin{center}\small\ttfamily\frenchspacing fn f(a: int) -> bool \{ return a; \}\\ fn main() \{ var b = f(1) + 2; if 3 \{ print(true); \} while f(0) == 1 \{ \} \}\end{center}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:semantic-analysis:3}
+Write the typing rule of \code{while}, in the style of the rule of \code{if}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:semantic-analysis:4}
+With \texttt{var x:\ int = 1;}, \code{fn show() { print(x); }} and \code{fn main() { var x = 2; show(); }}, what does the program print under \omterm{def:b3:semantic-analysis:scope}{lexical scope}, and under \omterm{def:b3:semantic-analysis:scope}{dynamic scope}? Which of the two could a compiler check for undeclared names before the program runs?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:semantic-analysis:5}
+\Cref{lst:b3:semantic-analysis:flat} keeps the whole \omterm{def:b3:semantic-analysis:symbol-table}{symbol table} in one hash map, and each block the list of the names it declared, removed when the block ends. \Cref{out:b3:semantic-analysis:flat} shows what goes wrong. Explain it and fix the structure so that every lookup is still a single probe.
+\omcode{code/bachelor-3/04-semantic-analysis/listings/scope_bug.rs}{14}{22}{Declaring and closing a block in the one-map table.}\label{lst:b3:semantic-analysis:flat}
+\omoutput{code/bachelor-3/04-semantic-analysis/outputs/scope_bug.txt}{An \code{x} declared on line 15, shadowed on line 17.}\label{out:b3:semantic-analysis:flat}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:semantic-analysis:6}
+Write \code{unused(p, r)} in \code{exercises/ex6_unused.rs}: a warning for every local variable or parameter that is never read. Assigning to a variable does not read it. Test it on \code{exercises/ex6.moor}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:semantic-analysis:7}
+Prove that the check of \cref{lst:b3:semantic-analysis:returns} is sound: if \code{returns(B)} holds, every execution of $B$ that ends without a runtime error ends by a \code{return}, never by reaching the end of $B$. Give a function the check refuses although it always returns.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:semantic-analysis:8}
+A use sits inside $d$ nested blocks of a function, counting the body as the first. With the resolver's stack of maps, how many map probes does its lookup cost if the name is a local of the innermost block, a parameter, a global, or undeclared?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:semantic-analysis:9}
+Predict, line by line, what the interpreter prints for \code{exercises/ex9.moor}, and its exit status:
+\begin{center}\small\ttfamily\frenchspacing fn f(n: int) -> int \{\\ if n <= 1 \{ print(n); return n; \}\\ var a = f(n - 1); print(n); return a + f(n - 2); \}\\ fn main() -> int \{ return f(4); \}\end{center}
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:semantic-analysis:10}
+Extend the proof of \cref{thm:b3:semantic-analysis:sound} to programs with calls: show that a call $f(e_1, \dots, e_n)$ of type $\tau$ that returns yields a value of type $\tau$. What do you need from the return-on-every-path check, and from the rule of \code{return}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:semantic-analysis:11}
+Implement persistent scopes in \code{exercises/ex11_persistent.rs}: a scope is an immutable balanced search tree, and declaring a name builds a new tree that shares all but one path with the old one. Entering a block keeps the old root; leaving it returns to that root. Count the nodes allocated per declaration and the comparisons per lookup, and compare with the stack of maps.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:semantic-analysis:12}
+Extend Moor with local declarations without an initialiser, \texttt{var x:\ int;}, and design rules that forbid reading a variable before it has been assigned: compute, for each point of a function, the set of variables \emph{definitely assigned} there. Give the rules for assignment, \code{if} with and without \code{else}, \code{while} and \code{return}, and prove them sound: a variable in the set has been assigned on every path to that point.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:semantic-analysis:problem}
+
+\begin{problem}[{Weekend problem --- The parish register script}]\label{pb:b3:semantic-analysis:1}
+Brenmoor's parish keeps its registers as nested records, and a clerk's program writes them out as generated Moor scripts: $d$ nested blocks, $m$ declarations in each, every declaration \code{var v}$_{i,j}$\code{ = reg + }$j$\code{;} reading a register \code{reg} declared first in the outermost block. Some scripts are 1,000 blocks deep. The file \code{exercises/pb_register.rs} writes them (\code{script(d, m, None)}) and resolves them with three \omterm{def:b3:semantic-analysis:symbol-table}{symbol tables}, counting the work. Write $n = dm$.
+
+\medskip\noindent\textbf{Part I --- Scopes by hand.}
+\begin{enumerate}
+\item Write the script for $d = m = 2$ and draw the stack of maps after each declaration.
+\item To which declaration does each use of \code{reg} refer? Why must it be found from every block?
+\item If the second block declared its own \code{reg} first, which uses would change their binding?
+\item In a block that already sees a \code{v}, which \code{v} does \code{var v = v + 1;} read?
+\item Would any answer change if Moor used \omterm{def:b3:semantic-analysis:scope}{dynamic scope}? Why not, for this script?
+\item How many declarations and how many uses does a script have, as functions of $d$ and $m$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Three tables.}
+\begin{enumerate}[resume]
+\item With a list of (name, declaration) pairs searched from the newest end, how many name comparisons does the lookup of \code{reg} cost in the $k$-th declaration of the script?
+\item Deduce the total for the whole script. Does it depend on $d$?
+\item With the resolver's stack of maps, how many probes does the lookup of \code{reg} cost at depth $i$? Deduce the total.
+\item With a single map from each name to the stack of its declarations (exercise~\ref{exo:b3:semantic-analysis:5}), what does a lookup cost? What does leaving a block cost?
+\item How much memory does each table use at the deepest point of the script?
+\item For $d = 1$, compare the three totals.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Counted.}
+\begin{enumerate}[resume]
+\item For $n = 10{,}000$, run the counts for $d = 1$, 10, 100 and 1,000 and fill a table with the three totals.
+\item Explain from question 8 why the list's column does not change.
+\item What is the ratio between the list and the stack of maps at $d = 1{,}000$? At $d = 1$?
+\item Real programs are rarely more than ten blocks deep, and most uses refer to names declared nearby. Which table would you choose for Moor's compiler, and why do many compilers use a stack of maps anyway?
+\item The counts are of probes, not of time. Why is a probe in a hash map ``constant time'' only in expectation?
+\item Why does the book count operations rather than time them?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Errors counted.}
+\begin{enumerate}[resume]
+\item The clerk misspells \code{reg} as \code{rge} in block 3 of a script with $d = 5$, $m = 4$. How many messages does the \omterm{def:b3:lexical-analysis:phases}{front end} give?
+\item Why is there no message about the \code{+} in which each misspelt name appears?
+\item If an undeclared name were given the type \code{int} instead of the \omterm{def:b3:semantic-analysis:error-type}{error type}, would the count change for this script? Give a statement for which it would.
+\item How would you change the resolver to give one message per misspelt name in a function, and how many would this script then get?
+\item Sum up the costs of the three tables on scripts of $n$ declarations and depth $d$, and say which one makes the resolution linear in the size of the script.
+\end{enumerate}
+\end{problem}

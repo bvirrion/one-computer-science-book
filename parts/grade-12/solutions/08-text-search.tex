@@ -1,0 +1,204 @@
+\section*{Chapter \ref{ch:g12:text-search} --- Searching in Text}
+
+\begin{solution}{exo:g12:text-search:1}
+At positions $1$ and $3$: \code{b[ana]nas} and \code{ban[ana]s}. They overlap: the \code{a} at position $3$ belongs to
+both.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:2}
+Position $0$: \code{a}, \code{b} agree, \code{c} differs from \code{d}: $3$. Positions $1$ and $2$: one each. Position
+$3$: \code{a}, \code{b}, \code{d} agree: $3$, found. In all $8$ comparisons, and the \omterm{def:g12:text-search:pattern}{occurrence} $[3]$.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:3}
+The first five places are \code{BANAN}. \code{B} is last at $0$: $5$. \code{A} is last at $3$: $2$. \code{N} is last at
+$4$: $1$. Every other letter: $6$.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:4}
+The table of \code{TOWN}: \code{T} $3$, \code{O} $2$, \code{W} $1$, others $4$. Position $0$: the space under the last
+place, no match, jump $4$. Position $4$: under the last place, the space after \code{OLD}, jump $4$. Position $8$:
+\code{TOWN}, found; under the last place an \code{N}, jump $4$. Position $12$: an \code{L}, jump $4$, and $16 > 17 - 4$
+ends the search. Four alignments.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:5}
+\smallskip\noindent\hspace*{2em}\code{def count_occurrences(text, p):}
+
+\noindent\hspace*{4em}\code{count = 0}
+
+\noindent\hspace*{4em}\code{for i in range(len(text) - len(p) + 1):}
+
+\noindent\hspace*{6em}\code{if text[i:i + len(p)] == p:}
+
+\noindent\hspace*{8em}\code{count += 1}
+
+\noindent\hspace*{4em}\code{return count}
+
+\smallskip\noindent The slice comparison hides the letter-by-letter loop of \code{search_naive}; the cost is the same.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:6}
+The last alignment, $i = n - m$, is never tried: an \omterm{def:g12:text-search:pattern}{occurrence} at the very end of the text is missed. The smallest test
+is a text equal to the \omterm{def:g12:text-search:pattern}{pattern}, such as \code{search("a", "a")}, which must find $[0]$; \code{"the town"} with
+\code{"town"} also catches it.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:7}
+\smallskip\noindent\hspace*{2em}\code{def horspool_first(text, p):}
+
+\noindent\hspace*{4em}\code{n, m = len(text), len(p)}
+
+\noindent\hspace*{4em}\code{shift, i = shift_table(p), 0}
+
+\noindent\hspace*{4em}\code{while i <= n - m:}
+
+\noindent\hspace*{6em}\code{j = m - 1}
+
+\noindent\hspace*{6em}\code{while j >= 0 and text[i + j] == p[j]:}
+
+\noindent\hspace*{8em}\code{j -= 1}
+
+\noindent\hspace*{6em}\code{if j < 0:}
+
+\noindent\hspace*{8em}\code{return i}
+
+\noindent\hspace*{6em}\code{i += shift.get(text[i + m - 1], m)}
+
+\noindent\hspace*{4em}\code{return -1}
+
+\smallskip\noindent The tests compare it with the first position of every \omterm{def:g12:text-search:pattern}{occurrence} on $400$ random cases.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:8}
+\code{N} is at the last place, $3$, and gets $4 - 1 - 3 = 0$. When an \code{N} of the text comes under the last place
+(for instance once \code{TOWN} is found), the \omterm{def:g12:text-search:pattern}{pattern} moves $0$ places: the same alignment is tried again, for ever.
+The last place must be left out, so that every shift is at least $1$.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:9}
+$(n - m + 1)m$ is largest for $m$ near $(n + 1)/2$, the middle of its two roots $0$ and $n + 1$. For $n = 1000$:
+$m = 500$ or $501$, and $501 \times 500 = 250\,500$ comparisons, a quarter of $n^2$.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:10}
+At $0$, $2$ and $4$. \code{count} returns $2$: it counts \omterm{def:g12:text-search:pattern}{occurrences} that do not overlap, so after the one at $0$ it
+resumes at $4$. A search for every \omterm{def:g12:text-search:pattern}{occurrence} must allow overlaps; a count of separate copies must not.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:11}
+\smallskip\noindent\hspace*{2em}\code{def search_ignore_case(text, p):}
+
+\noindent\hspace*{4em}\code{return horspool(text.lower(), p.lower())[0]}
+
+\smallskip\noindent It returns $[4, 17]$. Lowering the case of the whole text costs one pass over it; for many searches
+in the same text, it is done once.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:12}
+Let the search be at alignment $i$, let $c$ be the text letter at $i + m - 1$, under the \omterm{def:g12:text-search:pattern}{pattern}'s last place, and
+$s = \mathrm{shift}(c)$. Take an alignment $i + d$ with $1 \le d < s$. Under the text letter $c$ it puts the \omterm{def:g12:text-search:pattern}{pattern}'s
+place $m - 1 - d$, which is between $m - s$ and $m - 2$. If $c$ appears among the first $m - 1$ places, its last place
+there is $m - 1 - s$, so the places from $m - s$ to $m - 2$ hold no $c$; if it does not appear, no place does. Either
+way the \omterm{def:g12:text-search:pattern}{pattern}'s letter under $c$ is not $c$, and alignment $i + d$ is not an \omterm{def:g12:text-search:pattern}{occurrence}. So the alignments jumped
+over are not \omterm{def:g12:text-search:pattern}{occurrences}, and every alignment not jumped over is checked letter by letter.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:13}
+At every alignment the window is $m$ letters \code{a}. Comparing from the right, the last $m - 1$ places of the \omterm{def:g12:text-search:pattern}{pattern}
+are \code{a} and agree, and the first, \code{b}, does not: $m$ comparisons. The letter under the last place is
+\code{a}, whose last place among the first $m - 1$ is $m - 2$: shift $1$. So every one of the $n - m + 1$ alignments is
+tried, at $m$ comparisons each. The tests check $m(n - m + 1)$ for three pairs $(n, m)$.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:14}
+\smallskip\noindent\hspace*{2em}\code{def search_wildcard(text, p):}
+
+\noindent\hspace*{4em}\code{n, m = len(text), len(p)}
+
+\noindent\hspace*{4em}\code{found = []}
+
+\noindent\hspace*{4em}\code{for i in range(n - m + 1):}
+
+\noindent\hspace*{6em}\code{if all(p[j] == "?" or p[j] == text[i + j] for j in range(m)):}
+
+\noindent\hspace*{8em}\code{found.append(i)}
+
+\noindent\hspace*{4em}\code{return found}
+
+\smallskip\noindent The proof of exercise \ref{exo:g12:text-search:12} needs that the \omterm{def:g12:text-search:pattern}{pattern}'s letter under $c$ is
+not $c$; a \code{?} matches every $c$. A \code{?} at place $j < m - 1$ limits every shift to at most $m - 1 - j$; the
+table must be built that way, or the search must stay naive. \code{st?} finds $15$ and $23$ in
+\code{the bus to the station stops}.
+\end{solution}
+
+\begin{solution}{exo:g12:text-search:15}
+A letter's shift is its distance from the end, counted from its last place among the first $m - 1$. In a random
+\omterm{def:g12:text-search:pattern}{pattern} each place holds a given letter with chance $\frac14$, so the last place of that letter is usually within
+the last few places: places $m - 2$, $m - 3$, \dots{} each miss it with chance $\frac34$. The shifts are about $1$
+to $8$ whatever $m$, and their mean about $4$. For one \omterm{def:g12:text-search:pattern}{pattern} of length $32$ cut from a random text of $200\,000$
+letters, the \omterm{def:g12:text-search:shift-table}{shift table} was \code{C} $3$, \code{G} $1$, \code{T} $5$, \code{A} $4$, mean $3.25$; over the $61\,343$
+jumps of the search, the measured mean was $3.26$.
+\end{solution}
+
+\begin{solution}{pb:g12:text-search:1}
+\textbf{1.} So that each \omterm{def:g12:text-search:pattern}{pattern} occurs at least once: a random \omterm{def:g12:text-search:pattern}{pattern} of $16$ letters would almost never occur, and
+the search for an \omterm{def:g12:text-search:pattern}{occurrence} would not be tested.
+
+\textbf{2.} Each position starts a given $4$-letter \omterm{def:g12:text-search:pattern}{pattern} with chance $1/4^4 = 1/256$: about $100\,000 / 256 \approx
+390$ \omterm{def:g12:text-search:pattern}{occurrences}. $378$ is close.
+
+\textbf{3.} The chance at a position is $1/4^{16}$, about $2 \times 10^{-10}$; over a million positions, about
+$2 \times 10^{-4}$.
+
+\textbf{4.} That both searches find the same positions; a speed-up that loses \omterm{def:g12:text-search:pattern}{occurrences} would be worthless, and the
+check runs on every \omterm{def:g12:text-search:pattern}{pattern}.
+
+\textbf{5.} $\frac34$ that the first fails; $\frac14$ that a second comparison is made, $\frac1{16}$ a third.
+
+\textbf{6.} The $k$-th comparison is made when the first $k - 1$ agree, with chance $(1/4)^{k-1}$. Adding these
+chances gives the mean number of comparisons: $1 + \frac14 + \frac1{16} + \dotsb = \frac{1}{1 - 1/4} = \frac43$,
+the terms beyond $m$ being negligible.
+
+\textbf{7.} The sum is almost all in its first terms; the \omterm{def:g12:text-search:pattern}{pattern}'s length only cuts it off far away.
+
+\textbf{8.} $\frac{1}{1 - 1/26} = \frac{26}{25} = 1.04$, the value printed.
+
+\textbf{9.} The first seven places \code{ACGTACG}: \code{A} last at $4$, shift $3$; \code{C} at $5$, $2$; \code{G} at
+$6$, $1$; \code{T} at $3$, $4$. Mean $(3 + 2 + 1 + 4)/4 = 2.5$.
+
+\textbf{10.} The search makes one alignment per jump, so about $n / \text{(mean jump)}$ alignments, each with a little
+more than $\frac43$ comparisons, about $1.4$ to $1.5$. Divided by $n$: $1.4 / 2.75 \approx 0.51$ for $m = 4$,
+$1.4 / 3.6 \approx 0.39$ for $m = 8$, $1.4 / 4.25 \approx 0.33$ for $m = 16$; the printed values are $0.514$,
+$0.412$, $0.363$.
+
+\textbf{11.} For $m = 4$, the shifts cannot exceed $4$. As $m$ grows, they may; but each letter's last place is
+usually within the last few places (exercise \ref{exo:g12:text-search:15}), so the mean stops near $4$.
+
+\textbf{12.} A shift is $m - 1 - j$ with $j \ge 0$, or $m$: at most $m$. A shift above $10$ means a letter absent from
+the $10$ places before the last, with chance $(3/4)^{10} \approx 0.06$ for each letter.
+
+\textbf{13.} A \omterm{def:g12:text-search:pattern}{pattern} whose first seven letters are all the same, such as \code{AAAAAAAA}: \code{A} gets $1$ and the
+three other letters $8$, mean $6.25$. A letter present among the first seven places gets at least $1$, and only one
+letter can have all its places early if all seven are filled.
+
+\textbf{14.} $2.6$, $3.2$, $3.7$, $3.4$.
+
+\textbf{15.} About $1.04 / 0.057 \approx 18$.
+
+\textbf{16.} No: five \omterm{def:g12:text-search:pattern}{patterns} per length are few, and the mean jump varies from \omterm{def:g12:text-search:pattern}{pattern} to \omterm{def:g12:text-search:pattern}{pattern} ($4.25$ against
+$3.80$ here). The differences between $m = 16$ and $m = 32$ are within that variation.
+
+\textbf{17.} \code{measure_find.py}: \code{str.find} makes comparisons of the same kind, but in machine code, without
+the work of the Python interpreter around each step.
+
+\textbf{18.} A text of a single letter repeated, with a \omterm{def:g12:text-search:pattern}{pattern} of the same letter except the first (exercise
+\ref{exo:g12:text-search:13}): $m$ comparisons per alignment and jumps of $1$.
+
+\textbf{19.} It gives the same answers, is tested by millions of programs, and is many times faster.
+
+\textbf{20.} \textbf{On a million random letters from A, C, G, T, the naive search makes $1.33$ comparisons per letter
+whatever the \omterm{def:g12:text-search:pattern}{pattern}; Horspool's makes $0.51$ for \omterm{def:g12:text-search:pattern}{patterns} of $4$ letters and $0.36$ to $0.41$ for $8$ to $32$: $2.6$
+to $3.7$ times fewer, levelling off because its mean jump stays near $4$ places. On $26$ letters the saving grows with
+the \omterm{def:g12:text-search:pattern}{pattern} instead.}
+\end{solution}

@@ -1,0 +1,194 @@
+% Solutions of Book 4, chapter 3 (cpp-polymorphism).
+\section*{Chapter \ref{ch:b2:cpp-polymorphism} --- Inheritance and Polymorphism}
+
+\begin{solution}{exo:b2:cpp-polymorphism:1}
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/exo_which.txt}{The four lines.}
+\code{kind} is virtual: through the pointer and the reference it is dispatched to \code{Map::kind}. \code{shelf} is not
+virtual: through an \code{Item *} or \code{Item &} the compiler calls \code{Item::shelf}, chosen at compile time from
+the static type; \code{Map::shelf} only hides it, and is called when the static type is \code{Map}, as in the last
+line. By value, the parameter is a sliced \code{Item}: both calls run \code{Item}'s versions.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-polymorphism:2}
+\code{std::unique_ptr<Sensor>} destroys its object with \code{delete} on a \code{Sensor *}. \code{Sensor}'s
+\omterm{def:b2:cpp-classes-raii:constructor}{destructor} is not virtual, so for the \code{LoggingSensor} only \code{~Sensor} runs (the vector of 1000 readings is
+never destroyed) and the block is returned with the size of a \code{Sensor}, 4 bytes, instead of the 32 allocated:
+undefined behaviour, which the sanitizer reports as a type mismatch, from inside \code{unique_ptr}'s \omterm{def:b2:cpp-classes-raii:constructor}{destructor}. The
+fix is the word \code{virtual}: \code{virtual ~Sensor() {}}. (A \code{std::shared_ptr<Sensor>} made by
+\code{make_shared<LoggingSensor>} would happen to work, because it remembers the real type; relying on that is
+fragile.)
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-polymorphism:3}
+\omcode{code/bachelor-2/03-cpp-polymorphism/exercises/triangle.hpp}{7}{23}{\code{Triangle}, in its own file}
+Step 1 is already done by \code{Shape}; the file is step 2: one \omterm{def:b2:cpp-polymorphism:inheritance}{derived class}, overriding the pure \code{area} (by
+Heron's formula) and \code{name}. The loop of \code{shapes.cpp} is step 3 and is untouched; only the place that creates
+the shapes (step 4) gains a line, a \code{push_back} of \code{std::make_unique<Triangle>(3, 4, 5)}. The strict
+inequalities refuse flat triangles, whose area would be 0. Tested in \code{tests/shapes_test.cpp}.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-polymorphism:4}
+\code{Plain}: one \code{int}, 4 bytes. \code{OneVirtual}: \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} (8) and \code{int} (4) make 12, rounded up to
+16, a multiple of the pointer's alignment 8. \code{ManyVirtual}: the same 16, since four \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions} still mean
+one pointer (\cref{prop:b2:cpp-polymorphism:layout}). \code{Derived}: its \code{int} goes into the 4 bytes of padding
+at the end of the base part, which this compiler's rules allow for a \omterm{def:b2:cpp-polymorphism:inheritance}{base class} with \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions}, so it stays
+16. A \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} and three \code{char}: $8 + 3 = 11$, rounded to 16. Two \code{double} and five \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions}:
+$8 + 16 = 24$, already a multiple of 8.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-polymorphism:5}
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/exo_ctor_virtual.txt}{The four lines.}
+While \code{Item}'s \omterm{def:b2:cpp-classes-raii:constructor}{constructor} runs, the object is an \code{Item}: its \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} is \code{Item}'s and the call
+runs \code{Item::describe}. Then \code{Map}'s \omterm{def:b2:cpp-classes-raii:constructor}{constructor} sets the \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} to \code{Map}'s, builds
+\code{region}, and its call runs \code{Map::describe}; so does \code{show}. When \code{m} dies, \code{~Map} (implicit)
+runs first, then \code{~Item}, during which the object is an \code{Item} again. If the base \omterm{def:b2:cpp-classes-raii:constructor}{constructor} called
+\code{Map::describe}, it would read \code{region} before its \omterm{def:b2:cpp-classes-raii:constructor}{constructor} ran: a string not yet built, which is
+undefined behaviour and in practice a crash or garbage.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-polymorphism:6}
+\code{std::vector<Item>} holds \code{Item} objects: \code{push_back(r)} copies the \code{Item} part of the recording
+(slicing), so the element is a plain \code{Item} and its \code{label} is \code{Item}'s. To keep objects of several
+classes, the vector must hold pointers that own them: \code{std::vector<std::unique_ptr<Item>>}, filled with
+\code{std::make_unique<Recording>(...)}; the loop then calls \code{it->label()} and dispatch works. A vector of
+references does not exist: a reference is not an object, cannot be reseated, and cannot be an element.
+\code{std::unique_ptr} rather than \code{std::shared_ptr}, since the catalogue is the only owner.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-polymorphism:7}
+\omcode{code/bachelor-2/03-cpp-polymorphism/exercises/fines_tables.h}{5}{27}{Fines with one table per kind, in C}
+\code{tests/fines_tables_test.c} compares every kind and every lateness from $-2$ to 400 with the switch. To add a
+kind: write its fine function and its table, two short declarations, possibly in a new file; nothing else changes.
+The C version has no compiler check that a table is complete, which C++'s \omterm{def:b2:cpp-polymorphism:abstract}{pure virtual functions} give.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-polymorphism:8}
+For \code{set_width(w)}: afterwards the width is \code{w} and the height is unchanged; symmetrically for
+\code{set_height(h)}. From these, a client proves that after \code{set_width(4); set_height(5);} the area is
+$4 \times 5 = 20$, whatever the starting sides: this is \code{resize_plot}. Suppose a \code{Square} keeps the invariant
+width $=$ height. After \code{set_height(5)} the invariant forces the width to 5, so the area is 25, not 20: the
+client's proven property fails, and the principle is violated. If instead the \omterm{def:b2:cpp-polymorphism:virtual}{override} left the width at 4, the
+object would no longer be square, breaking its own invariant. No \omterm{def:b2:cpp-polymorphism:virtual}{override} can do both, since the two requirements
+contradict each other on the state after \code{set_height(5)}. With immutable classes, \code{Rectangle(w, h)}
+promises only that \code{area()} returns $wh$ for the sides given at construction; \code{Square(s)} constructs
+\code{Rectangle(s, s)}, and every property provable from that specification (the area is the product of the sides,
+and never changes) holds for it. The problem was mutation, not squares.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-polymorphism:9}
+\omcode{code/bachelor-2/03-cpp-polymorphism/exercises/capped.hpp}{6}{19}{A policy that wraps a policy}
+\code{CappedFine} derives from \code{FinePolicy}, so that the summing code can use it like any policy
+(\omterm{def:b2:cpp-polymorphism:inheritance}{inheritance} of the interface); and it holds the policy it caps, to which it delegates (\omterm{def:b2:cpp-polymorphism:composition}{composition} of the
+behaviour). It can therefore cap any policy, present or future, without a capped version of each. On the town's loans
+at the end of 2025, the total owed falls from 463.45 to 309.05 with a cap of 10.00, and a cap above every fine gives
+463.45 again; \code{tests/library_test.cpp} checks both figures.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-polymorphism:10}
+\omcodes{code/bachelor-2/03-cpp-polymorphism/exercises/expr.hpp}{52-73,90-106}{The shared base of sums and products,
+and products}
+\code{Expr} declares \code{eval}, \code{str}, \code{simplify} (pure) and \code{constant}, which returns the address of
+the value for a number and null otherwise; \code{Num} and \code{Var} are leaves. \code{Binary} writes \code{eval},
+\code{str} and \code{simplify} once, in terms of three pure functions: the operation, its symbol, and
+\code{rebuild}, which applies the identities of each operator to the simplified operands. \code{simplify} returns a new
+tree and leaves the original alone. \code{tests/exercises_test.cpp} checks the example ($x = 1.5$ gives 7.5 before and
+after), the identities, and an unbound variable.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-polymorphism:11}
+Tables: $8 \sum_i m_i$ bytes, once for the program. \omterm{def:b2:cpp-polymorphism:vtable}{Table pointers}: $8 \sum_i N_i$ bytes. For the library: tables
+$8 \times 3 \times 3 = 72$ bytes, three policy objects with one pointer each, 24 bytes, and the 400 loans' pointers
+to their policy, 3200 bytes, against 400 tags of 4 bytes, 1600 bytes, in the C design: a few kilobytes either way.
+For the game: tables $8 \times 10 \times 4 = 320$ bytes, negligible; each particle is $24 + 8 = 32$ bytes, so \omterm{def:b2:cpp-polymorphism:vtable}{table
+pointers} are a quarter of the memory (8\,MB of 32\,MB). Memory per object, not code size, is the price of \omterm{def:b2:cpp-polymorphism:vtable}{dispatch
+tables} when objects are small and many.
+\end{solution}
+
+\begin{solution}{exo:b2:cpp-polymorphism:12}
+\omcode{code/bachelor-2/03-cpp-polymorphism/exercises/collide.hpp}{9}{42}{Double dispatch}
+\code{a.hits(b)} is dispatched on \code{a}'s class: \code{Disc::hits} calls \code{b.hits_disc(*this)}, which is
+dispatched on \code{b}'s class and knows that its argument is a \code{Disc}. A disc and a box intersect when the point
+of the box nearest the disc's centre (the centre clamped to the box) is within the radius. With $c$ classes, each
+needs \code{hits} and one \code{hits_X} per class: $c + 1$ functions each, $c(c+1)$ in all. Adding a class means
+writing its $c + 2$ functions and adding one \code{hits_New} to every existing class: double dispatch is closed to new
+kinds, the reverse of what \cref{met:b2:cpp-polymorphism:open-closed} achieves for single dispatch.
+\end{solution}
+
+\begin{solution}{pb:b2:cpp-polymorphism:1}
+\textbf{1.} The \code{enum}, a case in \code{fine_cents}, a case in \code{kind_name}, and every item that should
+become a map.
+
+\textbf{2.} $fk$ cases (one per function and kind). Adding a kind writes $f$ cases, in $f$ different places, plus the
+enum.
+
+\textbf{3.} Both switches have no \code{default}, so \code{-Wall} (through \code{-Wswitch}) warns for both after
+\code{MAP} is added; a switch with a \code{default} would stay silent.
+
+\textbf{4.} $2 \times 50 = 100$ cents, 1.00; $10 \times 50 = 500$, capped to 4.00; and 4.00 for 60 days.
+
+\textbf{5.} The kind arrives as data, a string, and some code must turn each string into the right class: a table or
+a chain of tests is unavoidable at the boundary. Classes reduce the number of such places to one.
+
+\textbf{6.} In \code{library.hpp}, in \code{policy_for}.
+
+\textbf{7.} A new file holding \code{MapFine}, overriding \code{fine_cents} (\code{std::min(50 * d, 400)}) and
+\code{name}; \code{policy_for} gains a line for the genre of maps. \code{FinePolicy}, the other policies and the
+summing code do not change.
+
+\textbf{8.} It now describes the rules of a kind, not only its fine: a name such as \code{KindRules} fits better. This
+is step 1 of \cref{met:b2:cpp-polymorphism:open-closed}: collect what every kind must provide.
+
+\textbf{9.} Again $fk$ function bodies, as many as cases, but grouped by kind, one class per kind, instead of by
+function: a new kind adds its $f$ bodies in one place.
+
+\textbf{10.} Comic: 19 loans, 51.75, about 2.72 each. Standard: 58 loans, 114.10, about 1.97 each. Study: 32 loans,
+297.60, 9.30 each.
+
+\textbf{11.} $6240 = 20(d - 3)$ gives $d = 315$. Loan 27 was due on 19 February 2025 and is still out: 315 days to 31
+December.
+
+\textbf{12.} Only \code{policy_for}, which returns a capped study policy; \code{CappedFine} itself is a new file.
+
+\textbf{13.} Precondition: $d \geq 1$, a whole number of days late (the summing code calls it only for late loans).
+Postcondition: the result is a whole number of cents, $\geq 0$, and the function does not throw. The summing code
+needs nothing more.
+
+\textbf{14.} Standard (at most 5.00) and comic (at most 3.00); study does not (11.40 for 60 days). It is not in the
+specification of \code{FinePolicy}, only a property of two of its classes: the letter promises too much.
+
+\textbf{15.} Yes: $\min(10d, 500)$ and $\min(25d, 300)$ are non-negative and non-decreasing, and
+$\max(0, 20(d-3))$ too. \code{CappedFine} keeps both properties of the policy it wraps, since $\min(f(d), c)$ with $c
+\geq 0$ is non-negative and non-decreasing when $f$ is.
+
+\textbf{16.} Non-negativity (and the precondition: $d = 0$ is not a late loan). Summed with the fines, refunds would
+lower the total ``owed'' and could make it negative; and since the summing code skips $d = 0$, the refund would never
+be paid anyway. A refund is a different operation and belongs in a different function.
+
+\textbf{17.} For a client relying on the 5.00 ceiling: no, a study loan 60 days late breaks it. For a client relying
+only on question 13: yes. Substitutability is always relative to a specification.
+
+\textbf{18.} No. \code{ComicFine} would inherit \code{StandardFine}'s promise of 10 cents a day and break it. What
+they share, ``a rate per day with a ceiling'', is better expressed by one class with two parameters, or by
+\code{CappedFine} around a linear policy.
+
+\textbf{19.} In the printed run, a few nanoseconds more per call: the mixed-kinds line is about twice the switch
+line. (The digits change from run to run; the ratio is what to read.)
+
+\textbf{20.} 400 calls of a few nanoseconds: a few microseconds a night, nothing.
+
+\textbf{21.} $10^8$ calls at the mixed-kinds rate, several nanoseconds each: most of each second, before any useful work.
+
+\textbf{22.} Keep the particles of each kind in their own contiguous array and loop over each array with direct
+calls (no pointer to follow, no unpredictable target), or keep one array of tagged values and switch; a template
+(\cref{ch:b2:cpp-templates}) gives the first without writing each loop by hand.
+
+\textbf{23.} Both cases do the same two loads and the same indirect call, and their objects are allocated the same
+way. What differs is the predictability of the target: with one kind the processor guesses the next function
+correctly every time, with a random mix half the time, and each wrong guess costs several nanoseconds
+(\cref{ch:b2:processor-and-pipelining}).
+
+\textbf{24.} \emph{One new file per new kind, and the measured cost of a virtual call against a switch}: with
+classes, adding a kind is one new file and one line in the function that creates the objects, against $f$ cases in
+$f$ places with a switch; a virtual call costs a few nanoseconds, in the printed run about twice an inlined switch
+when the kinds are mixed, which matters only in inner loops over millions of objects.
+\end{solution}

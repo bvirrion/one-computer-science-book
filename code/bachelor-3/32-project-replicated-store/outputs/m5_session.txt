@@ -1,0 +1,28 @@
+$ for n in 1 2 3; do (./store node $n --stagger > node$n.log &); done
+$ ./store wait-leader
+leader: node 1
+$ for k in a b c d e; do ./store send 1 SET $k 1 > /dev/null; done
+$ kill -9 $(cat node1/pid)
+$ ./store wait-leader
+leader: node 2
+$ ./store send 3 GET c
+node 3: REDIRECT 2
+node 2: VALUE 1
+$ ./store send 3 SET f 2
+node 3: REDIRECT 2
+node 2: OK
+$ (./store node 1 --stagger >> node1.log &)
+$ ./store caught-up 1
+node 1 holds the same 6 keys as the leader, node 2
+$ ./store dump 1
+node 1: a=1 b=1 c=1 d=1 e=1 f=2
+$ cat node1.log node2.log node3.log
+node 1: up, 0 entries in its log, term 0
+node 1: candidate in term 1
+node 1: leader in term 1
+node 1: up, 6 entries in its log, term 1
+node 2: up, 0 entries in its log, term 0
+node 2: candidate in term 2
+node 2: leader in term 2
+node 3: up, 0 entries in its log, term 0
+$ kill $(cat node1/pid node2/pid node3/pid)

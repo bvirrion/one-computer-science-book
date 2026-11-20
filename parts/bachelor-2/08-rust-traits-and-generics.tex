@@ -1,0 +1,509 @@
+% Book 4, Year 2, chapter 8 -- Traits and generics.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 8.
+\chapter{Traits and Generics}\label{ch:b2:rust-traits-and-generics}
+
+\code{println!("{}", x)} prints integers, floats, strings, and, after five lines of code, a type of our own that the
+authors of \code{println!} never saw.
+
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/display.rs}{4}{21}{A book that prints
+itself}\label{lst:b2:rust-traits-and-generics:display}
+
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/display.txt}{One method written, three ways to print.
+The width 30 had no effect.}\label{out:b2:rust-traits-and-generics:display}
+
+\code{println!}, \code{format!} and \code{to_string} ask one thing of their argument: that its type implements the
+\omterm{def:b2:rust-traits-and-generics:trait}{trait} \code{Display}, a one-method interface. This chapter is about such interfaces, the functions written once for
+every type that has them, and the two ways, by copies or by tables, in which the compiler turns them into machine
+code.
+
+\begin{recall}
+\Cref{ch:b2:cpp-polymorphism}: a \omterm{def:b2:cpp-polymorphism:virtual}{virtual function} is called through the object's pointer to its class's table, at a
+cost of one indirect call. \Cref{ch:b2:cpp-templates}: a \omterm{def:b2:cpp-templates:template}{template} is instantiated once per argument type, and a
+concept states what the argument must provide. \Cref{ch:b2:rust-enums-and-errors}: a derive attribute writes
+\code{Debug}, \code{PartialEq} and orders for a type.
+\end{recall}
+
+\section{Traits}\label{sec:b2:rust-traits-and-generics:traits}
+
+\begin{definition}[Trait, trait implementation, default method]\label{def:b2:rust-traits-and-generics:trait}
+A \emph{trait}\index{trait} is a named set of method signatures, and possibly of \omterm{def:b2:rust-traits-and-generics:associated}{associated types} and constants, that
+a type may provide. A \emph{trait implementation}\index{trait implementation}, \code{impl Trait for Type { ... }},
+gives the bodies for one type. A \emph{default method}\index{default method} is a method whose body is written in
+the trait itself, in terms of the other methods; an implementation may keep it or replace it.
+\end{definition}
+
+\omcodes{code/bachelor-2/08-rust-traits-and-generics/listings/bounds.rs}{4-29}{A \omterm{def:b2:rust-traits-and-generics:trait}{trait} for what the library
+lends}\label{lst:b2:rust-traits-and-generics:lendable}
+
+\code{Book} keeps the default \code{describe}; \code{Film} replaces it. Unlike a C++ \omterm{def:b2:cpp-polymorphism:inheritance}{base class}, a \omterm{def:b2:rust-traits-and-generics:trait}{trait} has no fields
+and is not a type of values; and an implementation may be written after both the type and the \omterm{def:b2:rust-traits-and-generics:trait}{trait}, in another
+file, as \code{Display} was for \code{Book}. One restriction keeps this sound.
+
+\begin{definition}[Coherence, orphan rule]\label{def:b2:rust-traits-and-generics:coherence}
+\emph{Coherence}\index{coherence (orphan rule)} requires that a program have at most one implementation of a given
+\omterm{def:b2:rust-traits-and-generics:trait}{trait} for a given type. Rust enforces it by the \emph{orphan rule}: a crate may write \code{impl Trait for Type} only
+if the \omterm{def:b2:rust-traits-and-generics:trait}{trait} or the type is defined in that crate.
+\end{definition}
+
+So our crate may implement \code{Display} for \code{Book} (our type) or \code{Lendable} for \code{String} (our \omterm{def:b2:rust-traits-and-generics:trait}{trait}),
+but not \code{Display} for \code{Vec<u32>}: two crates could each write one, and the program would not know which to
+call. The usual way round is a \emph{\omterm{def:b2:rust-traits-and-generics:newtype}{newtype}} (\cref{sec:b2:rust-traits-and-generics:zero}).
+
+\section{Generic functions and trait bounds}\label{sec:b2:rust-traits-and-generics:generics}
+
+\begin{definition}[Generic function, trait bound]\label{def:b2:rust-traits-and-generics:bound}
+A \emph{generic function}\index{generic function} has type parameters, \code{fn f<T>(...)}, and is checked once,
+for every type its parameters may take. A \emph{trait bound}\index{trait bound} \code{T: Trait} restricts \code{T} to
+types that implement \code{Trait}, and is the only source of what the body may do with a \code{T}. Bounds are
+written in the angle brackets, in a \code{where} clause, or as \code{impl Trait} in a parameter's type.
+\end{definition}
+
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/bounds.rs}{31}{49}{Three ways to write a
+bound}\label{lst:b2:rust-traits-and-generics:bounds}
+
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/bounds.txt}{\code{label} accepts a \code{char} and an
+integer as the shelf: both are \code{Display}.}\label{out:b2:rust-traits-and-generics:bounds}
+
+A body that uses an operation its bounds do not promise is refused, before any call is seen:
+
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/missing_bound.rs}{3}{10}{A comparison with no
+bound}\label{lst:b2:rust-traits-and-generics:missing}
+
+\omoutput[2-13]{code/bachelor-2/08-rust-traits-and-generics/outputs/missing_bound.txt}{The compiler names the missing
+\omterm{def:b2:rust-traits-and-generics:trait}{trait}.}\label{out:b2:rust-traits-and-generics:missing}
+
+This is the difference with C++ \omterm{def:b2:cpp-templates:template}{templates}. A \omterm{def:b2:cpp-templates:template}{template}'s body is checked only when it is instantiated, against the
+actual type, and an error inside it surfaces at the caller, often deep in a library (\cref{ch:b2:cpp-templates});
+a concept may state requirements, but the body is not checked against them. A Rust generic body is checked once,
+against its bounds: if it compiles, it compiles for every type that satisfies them, and a caller's error is only
+ever \emph{this type does not implement that \omterm{def:b2:rust-traits-and-generics:trait}{trait}}.
+
+\begin{definition}[Monomorphisation]\label{def:b2:rust-traits-and-generics:mono}
+\emph{Monomorphisation}\index{monomorphisation} is the compilation of a \omterm{def:b2:rust-traits-and-generics:bound}{generic function} into one machine-code copy
+for each combination of type arguments with which the program uses it, each copy compiled and optimised as if it had
+been written for those types.
+\end{definition}
+
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/mono.rs}{2}{18}{One generic, two
+uses}\label{lst:b2:rust-traits-and-generics:mono}
+
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/run_mono.txt}{The symbols of the object file:
+\code{largest} exists twice.}\label{out:b2:rust-traits-and-generics:mono}
+
+\begin{proposition}[One copy per type]\label{prop:b2:rust-traits-and-generics:mono}
+Let a program call a \omterm{def:b2:rust-traits-and-generics:bound}{generic function} \code{f<T>}, directly or through other \omterm{def:b2:rust-traits-and-generics:bound}{generic functions}, with the set
+$\mathcal{T}$ of type arguments, once all generic calls are expanded. Then the compiled program contains at most
+$|\mathcal{T}|$ copies of \code{f}, one per element of $\mathcal{T}$, whatever the number of call sites.
+\end{proposition}
+
+\begin{proof}
+The compiler generates a copy of \code{f} for a type argument when it first meets a call with it, and records it;
+every later call with the same argument, from any site, uses the recorded copy. A copy is made only for an argument
+that some call uses, so the copies are in bijection with a subset of $\mathcal{T}$: at most $|\mathcal{T}|$. (Fewer
+when the optimiser inlines a copy everywhere and drops it, or merges two identical copies, as the weekend problem
+will show.)
+\end{proof}
+
+The copies are fast, since each is specialised: \code{largest::<u32>} compares with an integer instruction, the
+\code{f64} one with a floating-point one, with no indirection. They also cost space and compile time, in proportion
+to $|\mathcal{T}|$.
+
+\section{Trait objects}\label{sec:b2:rust-traits-and-generics:dyn}
+
+A vector holds values of one type. To hold rectangles and circles together, the program needs one type for
+\emph{any value that implements \code{Shape}}.
+
+\begin{definition}[Trait object, fat pointer]\label{def:b2:rust-traits-and-generics:trait-object}
+A \emph{trait object}\index{trait object} \code{dyn Trait} is a value of some type implementing \code{Trait}, whose
+type is known only at run time. It is used behind a pointer, \code{&dyn Trait} or \code{Box<dyn Trait>}, which is a
+\emph{fat pointer}\index{fat pointer}: the address of the value together with the address of a table, the
+\emph{\omterm{def:b2:cpp-polymorphism:vtable}{vtable}}, holding the value type's size, alignment, drop function and the addresses of its implementations of
+the \omterm{def:b2:rust-traits-and-generics:trait}{trait}'s methods.
+\end{definition}
+
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/shapes_dyn.rs}{20}{34}{Two types in one
+vector}\label{lst:b2:rust-traits-and-generics:shapes}
+
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/shapes_dyn.txt}{Each \code{area} call reaches the right
+implementation.}\label{out:b2:rust-traits-and-generics:shapes}
+
+\code{fat_pointer.rs} prints the sizes of a few pointers and reads the two halves of three trait-object references.
+
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/fat_pointer.rs}{12}{16}{The two words of a
+\code{&dyn Shape}}\label{lst:b2:rust-traits-and-generics:fat}
+
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/fat_pointer.txt}{Sizes in bytes, on a target with
+8-byte pointers.}\label{out:b2:rust-traits-and-generics:fat}
+
+\begin{proposition}[A trait object reference is two pointers]\label{prop:b2:rust-traits-and-generics:fat}
+A reference or box to a \code{dyn Trait} occupies two machine words, the data pointer and the \omterm{def:b2:cpp-polymorphism:vtable}{vtable} pointer. All
+values of one type share one \omterm{def:b2:cpp-polymorphism:vtable}{vtable} for a given \omterm{def:b2:rust-traits-and-generics:trait}{trait}, and values of different types have different \omterm{def:b2:cpp-polymorphism:vtable}{vtables}.
+\end{proposition}
+
+\begin{proof}
+A call \code{s.area()} on \code{s: &dyn Shape} must find, at run time, the code of \code{area} for the value's type,
+and, to drop a \code{Box<dyn Shape>}, its drop function and size. These depend on the type, not on the value, so one
+table per (type, \omterm{def:b2:rust-traits-and-generics:trait}{trait}) pair suffices and the compiler builds exactly one, a constant in the program; the value's
+address is a second word, since the value itself may be anywhere. The value is not changed, so the table address
+cannot be inside it: it travels in the pointer. Two words, as printed for \code{&dyn Shape} and \code{Box<dyn
+Shape>}; the slices \code{&[u32]} and \code{&str} are \omterm{def:b2:rust-traits-and-generics:trait-object}{fat pointers} too, with a length as second word.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, c/.style={draw, minimum width=17mm, minimum height=5mm}, v/.style={draw, fill=omDef!10, minimum width=26mm, minimum height=4.5mm}]
+\node[font=\scriptsize\bfseries] at (1.6,1.0) {Rust: \texttt{\&dyn Shape}};
+\node[c, fill=black!5] (d) at (0.75,0) {data};
+\node[c, fill=black!5] (t) at (2.45,0) {vtable};
+\node[c, fill=omThm!10, minimum width=22mm] (val) at (0.2,-1.6) {\texttt{Circle \{ r: 2.0 \}}};
+\node[v] (v1) at (3.8,-1.3) {drop function};
+\node[v, below=0pt of v1] (v2) {size 8, align 8};
+\node[v, below=0pt of v2] (v3) {\texttt{area} of \texttt{Circle}};
+\draw[ptr] (d.south) -- (val.north);
+\draw[ptr] (t.south) -- (v1.north);
+\node[text=black!60, align=center] at (3.8,-3.35) {one table per (type, trait),\\shared by all circles};
+\begin{scope}[xshift=8.2cm]
+\node[font=\scriptsize\bfseries] at (1.0,1.0) {C++: \texttt{Shape *}};
+\node[c, fill=black!5] (p) at (0,0) {pointer};
+\node[c, fill=black!5] (vp) at (0,-1.3) {vptr};
+\node[c, fill=omThm!10, below=0pt of vp] (r) {\texttt{r = 2.0}};
+\node[v] (w1) at (2.9,-1.3) {destructor};
+\node[v, below=0pt of w1] (w2) {\texttt{area} of \texttt{Circle}};
+\draw[ptr] (p.south) -- (vp.north);
+\draw[ptr] (vp.east) -- (w1.west);
+\node[text=black!60, align=center] at (1.2,-3.35) {the table pointer is inside\\every object};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Where the \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} lives. In Rust it travels in the reference, so a \code{Circle}
+stays 8 bytes and gains no hidden field; only the references used as \omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects} grow, to 16 bytes. In C++ every
+object of a class with \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions} carries it, whether or not it is ever called virtually.}
+\end{omfigure}
+
+Not every \omterm{def:b2:rust-traits-and-generics:trait}{trait} can be used this way.
+
+\begin{definition}[Object safety]\label{def:b2:rust-traits-and-generics:object-safe}
+A \omterm{def:b2:rust-traits-and-generics:trait}{trait} is \emph{object safe}\index{object safety}, or \emph{dyn compatible}, if \code{dyn Trait} can be formed: its
+methods can be called through a \omterm{def:b2:cpp-polymorphism:vtable}{vtable}. Methods that return \code{Self} by value, or have type parameters of their
+own, break this (the caller does not know the size of \code{Self}; a generic method would need one table entry per
+type argument), unless they are excluded with \code{where Self: Sized}.
+\end{definition}
+
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/object_safety.rs}{3}{14}{A method that returns
+\code{Self}}\label{lst:b2:rust-traits-and-generics:object-safety}
+
+\omoutput[2-4,13-14]{code/bachelor-2/08-rust-traits-and-generics/outputs/object_safety.txt}{The message uses the
+newer name, \emph{dyn compatible}.}\label{out:b2:rust-traits-and-generics:object-safety}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, b/.style={draw, rounded corners=2pt, fill=black!4, minimum width=32mm, minimum height=7mm, align=center}]
+\node[b] (g) at (0,0) {\texttt{fn largest<T: PartialOrd>}\\ source, checked once};
+\node[b, fill=omDef!10] (g1) at (5,0.7) {\texttt{largest::<u32>}\\ integer compare};
+\node[b, fill=omDef!10] (g2) at (5,-0.7) {\texttt{largest::<f64>}\\ float compare};
+\draw[ptr] (g.east) -- (g1.west); \draw[ptr] (g.east) -- (g2.west);
+\node[text=black!60] at (5,1.6) {machine code};
+\begin{scope}[yshift=-2.9cm]
+\node[b] (h) at (0,0) {\texttt{fn sum\_dyn(\&[Box<dyn Shape>])}\\ source, checked once};
+\node[b, fill=omDef!10] (h1) at (5,0) {\texttt{sum\_dyn}\\ one copy, calls via table};
+\node[b, fill=omThm!10, minimum width=26mm] (t1) at (9.7,0.45) {\texttt{Rect}'s \texttt{area}};
+\node[b, fill=omThm!10, minimum width=26mm] (t2) at (9.7,-0.45) {\texttt{Square}'s \texttt{area}};
+\draw[ptr] (h.east) -- (h1.west);
+\draw[ptr, dashed] (h1.east) -- (t1.west); \draw[ptr, dashed] (h1.east) -- (t2.west);
+\node[text=black!60] at (9.7,1.15) {chosen at run time};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Static and \omterm{def:b2:cpp-polymorphism:dispatch}{dynamic dispatch}. Above, a generic is copied per type and each copy calls its
+methods directly, where they can be inlined. Below, a function on \omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects} exists once, and each call goes
+through the \omterm{def:b2:cpp-polymorphism:vtable}{vtable} of the value at hand.}
+\end{omfigure}
+
+The two costs can be measured. \code{dispatch_cost.rs} sums the areas of a million shapes, twenty times, through a
+\omterm{def:b2:rust-traits-and-generics:bound}{generic function} over rectangles only, through a \code{match} on an enum of the two shapes
+(\cref{ch:b2:rust-enums-and-errors}), and through boxed \omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects}.
+
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/dispatch_cost.rs}{13}{19}{The three
+sums}\label{lst:b2:rust-traits-and-generics:dispatch}
+
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/run_dispatch.txt}{Measured on the author's laptop, two
+runs; the times vary from run to run.}\label{out:b2:rust-traits-and-generics:dispatch}
+
+The generic loop is the fastest: no call at all remains, and the additions are vectorised. The enum costs a test
+per shape; \omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects} cost an indirect call, and a pointer to follow to each box, about twice the enum. A few
+nanoseconds per call matters only in inner loops: \omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects} are the right tool for a list of plugins, handlers
+or shapes of open-ended kinds, an enum for a closed set of kinds, a generic for code that must be fast for each
+type.
+
+\section{The standard traits}\label{sec:b2:rust-traits-and-generics:std}
+
+A handful of \omterm{def:b2:rust-traits-and-generics:trait}{traits} of the standard library give a type its everyday abilities; most can be derived.
+
+\begin{center}\footnotesize
+\begin{tabular}{@{}lll@{}}
+\hline
+\omterm{def:b2:rust-traits-and-generics:trait}{trait} & gives & derive? \\
+\hline
+\code{Debug}, \code{Display} & \code{{:?}} and \code{{}} printing & \code{Debug} only \\
+\code{Clone}, \code{Copy} & \code{.clone()}; copy on assignment instead of move & yes \\
+\code{PartialEq}, \code{Eq} & \code{==}; \code{Eq} promises reflexivity, $x = x$ & yes \\
+\code{PartialOrd}, \code{Ord} & \code{<}, \code{partial_cmp}; \code{Ord}: a total order, \code{cmp}, \code{sort} & yes \\
+\code{Hash} & a key of \code{HashMap} and \code{HashSet} & yes \\
+\code{Default} & \code{T::default()} & yes \\
+\code{From}, \code{Into} & conversions, used by \code{?} & no \\
+\code{Add}, \code{Mul}, \code{Neg}, \dots & the operators \code{+}, \code{*}, unary \code{-} & no \\
+\code{Iterator} & \code{for} loops, \code{map}, \code{sum} (\cref{ch:b2:functional-programming}) & no \\
+\code{Drop} & code run when the value is dropped & no \\
+\hline
+\end{tabular}
+\end{center}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, t/.style={draw, rounded corners=2pt, fill=omDef!10, minimum width=20mm, minimum height=6mm}]
+\node[t] (pe) at (0,0) {\texttt{PartialEq}};
+\node[t] (eq) at (-2.6,-1.3) {\texttt{Eq}};
+\node[t] (po) at (2.6,-1.3) {\texttt{PartialOrd}};
+\node[t] (o) at (0,-2.6) {\texttt{Ord}};
+\draw[ptr] (pe) -- (eq); \draw[ptr] (pe) -- (po); \draw[ptr] (eq) -- (o); \draw[ptr] (po) -- (o);
+\node[anchor=west, text=black!70, align=left] at (4.3,-0.4) {\texttt{f64}: \texttt{PartialEq}, \texttt{PartialOrd} only\\(\texttt{NaN != NaN}, and \texttt{NaN} is unordered)};
+\node[anchor=west, text=black!70, align=left] at (4.3,-2.2) {\texttt{u32}, \texttt{String}, \texttt{char}, tuples and\\derived structs of these: all four};
+\end{tikzpicture}
+\par\smallskip{\small The comparison \omterm{def:b2:rust-traits-and-generics:trait}{traits}. An arrow goes from a \omterm{def:b2:rust-traits-and-generics:trait}{trait} to one that requires it: a type can
+implement \code{Ord} only if it implements \code{Eq} and \code{PartialOrd}.}
+\end{omfigure}
+
+Derived comparisons follow the order in which the fields are written.
+
+\begin{proposition}[Derived orders are lexicographic]\label{prop:b2:rust-traits-and-generics:derived-ord}
+For a struct with fields $f_1, \dots, f_n$ in this order, the derived \code{Ord} compares $a$ and $b$ by their first
+fields, and if equal by their second, and so on: the lexicographic order on $(a.f_1, \dots, a.f_n)$. For an enum, a
+value of an earlier variant is smaller than one of a later variant, and two values of the same variant compare
+lexicographically on their fields. If the order of every field type is total, the derived order is total.
+\end{proposition}
+
+\begin{proof}
+The first two claims describe the derived code, which is \code{a.f1.cmp(&b.f1)} followed, while the result is
+\code{Equal}, by the next fields; for an enum, the comparison of the variants' indices comes first. Totality, for a
+struct, by induction on $n$. For $n = 0$ all values are equal. For $n \ge 1$: if $a.f_1 \ne b.f_1$, the total order
+on $f_1$ puts one first, and so does the derived order; if $a.f_1 = b.f_1$, the derived order is that of the
+remaining $n - 1$ fields, total by the induction hypothesis. Transitivity and antisymmetry follow in the same way
+(\cref{exo:b2:rust-traits-and-generics:8}). For an enum, the variant indices are integers, totally ordered, and within
+one variant the struct case applies.
+\end{proof}
+
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/people_sort.rs}{4}{24}{Derived orders on a person and an
+age group}\label{lst:b2:rust-traits-and-generics:people}
+
+\omoutput[2-7]{code/bachelor-2/08-rust-traits-and-generics/outputs/run_people.txt}{The town's 120 people, by name, by
+age, and counted by group.}\label{out:b2:rust-traits-and-generics:people}
+
+\code{f64} has no \code{Ord}: \code{NaN} compares neither smaller, equal nor greater than anything, itself included,
+so a vector of \code{f64} cannot call \code{sort}.
+
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/float_sort.txt}{\code{float_sort.rs}: the comparisons
+of NaN, then three ways to sort \code{[4.3, -0.1, NaN, 12.5, 3.9, -2.0]}.}\label{out:b2:rust-traits-and-generics:float}
+
+\code{f64::total_cmp} is a total order on all bit patterns, \code{NaN} after $+\infty$. Treating \code{NaN} as
+equal to everything gives a relation that is not transitive ($-0.1 = \mathrm{NaN} = 12.5$, yet $-0.1 < 12.5$), and
+the sort, whose correctness assumes an order, returns a vector that is not sorted. The \code{unwrap} at least stops.
+
+Operators are \omterm{def:b2:rust-traits-and-generics:trait}{traits} too. \code{a + b} is \code{Add::add(a, b)}, so implementing \code{Add} for a type gives it
+\code{+}.
+
+\begin{definition}[Associated type]\label{def:b2:rust-traits-and-generics:associated}
+An \emph{associated type}\index{associated type} is a type named inside a \omterm{def:b2:rust-traits-and-generics:trait}{trait}, \code{type Output;}, that each
+implementation fixes. \code{Add} declares \code{type Output}, the type of \code{a + b}; \code{Iterator} declares
+\code{type Item}, the type of the elements it yields.
+\end{definition}
+
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/vector2.rs}{10}{23}{Plane vectors with \code{+},
+\code{-} and \code{*}}\label{lst:b2:rust-traits-and-generics:vector}
+
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/vector2.txt}{Walking halfway from the library to the
+station.}\label{out:b2:rust-traits-and-generics:vector}
+
+An \omterm{def:b2:rust-traits-and-generics:associated}{associated type} differs from a type parameter in who chooses it: \code{Mul<f64> for V2} and a possible
+\code{Mul<V2> for V2} are two implementations, selected by the right operand's type, but each fixes its own
+\code{Output}, so the type of \code{a * b} is never ambiguous.
+
+\section{Newtypes and zero cost}\label{sec:b2:rust-traits-and-generics:zero}
+
+\begin{definition}[Newtype]\label{def:b2:rust-traits-and-generics:newtype}
+A \emph{newtype}\index{newtype} is a struct with a single field, \code{struct Metres(f64);}, that gives an existing
+type a new name and a new set of operations: those implemented for it, and no others.
+\end{definition}
+
+A \omterm{def:b2:rust-traits-and-generics:newtype}{newtype} is used to give distinct meanings distinct types, a length and a time both stored as \code{f64}, and to
+implement a foreign \omterm{def:b2:rust-traits-and-generics:trait}{trait} for a foreign type, which the orphan rule forbids directly
+(\cref{exo:b2:rust-traits-and-generics:10} does it for \code{bool}).
+
+\begin{definition}[Zero-cost abstraction]\label{def:b2:rust-traits-and-generics:zero-cost}
+An abstraction of a language is \emph{zero-cost}\index{zero-cost abstraction} if a program written with it compiles
+to code no slower and no larger than the program a careful programmer would write without it, by hand.
+\end{definition}
+
+Generics are \omterm{def:b2:rust-traits-and-generics:zero-cost}{zero-cost} in this sense (a copy per type, as if written by hand); \omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects} are not quite, by
+design: they buy the ability to mix types for an indirect call. \omterm{def:b2:rust-traits-and-generics:newtype}{Newtypes} are the clearest case, and the weekend
+problem measures it.
+
+\begin{inpractice}[Choosing between generics, enums and trait objects]
+Take a generic parameter when the type is known at compile time at every call site; an enum when the set of kinds is
+closed and you own it, so that a new kind is a compile error at every \code{match}; a \omterm{def:b2:rust-traits-and-generics:trait-object}{trait object} when the set is
+open, other crates add kinds, or the values must be mixed in one collection. Derive \code{Debug} on every type, and
+\code{Clone}, \code{PartialEq}, \code{Eq}, \code{Hash}, \code{Ord} where they make sense.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b2:rust-traits-and-generics:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-traits-and-generics:1}
+Predict the five lines. Which \code{name} does each call reach, and why do the second and fourth lines differ from
+what one might expect?
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/exo_which.rs}{12}{33}{\omterm{def:b2:rust-traits-and-generics:trait}{Trait} methods, inherent methods,
+generics and \code{dyn}}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-traits-and-generics:2}
+\code{report} does not compile, with two errors. Find the bounds it needs, and write its signature with a
+\code{where} clause.
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/exo_bound.rs}{5}{15}{Printing and counting}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-traits-and-generics:3}
+Write a type \code{Fraction} that is always in lowest terms with a positive denominator, a \omterm{def:b2:cpp-classes-raii:constructor}{constructor} returning
+\code{None} for a zero denominator, and \code{Display} printing \code{3/4}, \code{-3/4}, or \code{2} for a whole
+number. Make \code{format!("{:>5}", f)} pad the fraction. Why does the derived \code{PartialEq} then compare values
+correctly?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:rust-traits-and-generics:4}
+A program has \code{fn show<T: Display>(x: T)} and \code{fn pair<A: Display, B: Display>(a: A, b: B)}, whose body
+calls \code{show(a)} and \code{show(b)}. \code{main} calls \code{show(3)}, \code{show("Mill")}, \code{show(4)},
+\code{pair(1, "x")} and \code{pair("y", 2.5)}. How many copies of \code{show} and of \code{pair} does the compiled
+program contain (before inlining)? Justify with \cref{prop:b2:rust-traits-and-generics:mono}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-traits-and-generics:5}
+Predict the two sorted lists, using \cref{prop:b2:rust-traits-and-generics:derived-ord}. Then reorder the fields of
+\code{Loan} so that loans sort by title first: what else changes?
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/exo_derived.rs}{2}{27}{An enum and a struct, sorted}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-traits-and-generics:6}
+The median of seven temperatures comes out as $-0.4$. Explain, using the output, why the sort did not sort, and fix
+the program twice: with \code{total_cmp}, and by refusing \code{NaN} when the fields are parsed.
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/exo_nan.rs}{4}{14}{A median}
+\omoutput[2-3]{code/bachelor-2/08-rust-traits-and-generics/outputs/exo_nan.txt}{The result and the vector.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-traits-and-generics:7}
+Write \code{largest<T: PartialOrd + Copy>(xs: &[T]) -> Option<T>}, then \code{largest_ref}, which needs no
+\code{Copy}. What does each return on \code{[1.0, NaN, 3.0]} and on \code{[NaN, 3.0]}, and why?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-traits-and-generics:8}
+Complete the proof of \cref{prop:b2:rust-traits-and-generics:derived-ord}: prove that the derived order of a struct
+whose fields have total orders is transitive and antisymmetric.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:rust-traits-and-generics:9}
+Write a \omterm{def:b2:rust-traits-and-generics:trait}{trait} \code{Shape} with \code{area}, \code{perimeter} and \code{name}, three shapes, and a function that
+sorts a \code{Vec<Box<dyn Shape>>} by decreasing area and returns the names. Why can you not derive \code{Ord} on
+\code{Box<dyn Shape>}, and what do you use instead?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:rust-traits-and-generics:10}
+Write a \omterm{def:b2:rust-traits-and-generics:trait}{trait} \code{Numeric} (\code{Copy}, \code{+}, \code{*}, a zero and a one) and a square matrix type
+generic over it, with \code{identity}, \code{mul} and \code{pow} by repeated squaring. Implement \code{Numeric} for
+\code{i64}, \code{f64}, and for booleans with \emph{or} as addition and \emph{and} as multiplication: why must you
+use a \omterm{def:b2:rust-traits-and-generics:newtype}{newtype} for the last one? Check that the tenth power of $\bigl(\begin{smallmatrix}1&1\\1&0\end{smallmatrix}
+\bigr)$ contains the Fibonacci number 55, and what the boolean powers of a graph's adjacency matrix tell.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:rust-traits-and-generics:11}
+A program has $m$ types, each implementing $k$ \omterm{def:b2:rust-traits-and-generics:trait}{traits}, the \omterm{def:b2:rust-traits-and-generics:trait}{trait} $i$ having $n_i$ methods, all used as \omterm{def:b2:rust-traits-and-generics:trait-object}{trait
+objects}. (a) How many \omterm{def:b2:cpp-polymorphism:vtable}{vtables} does it hold, and how many words in all, if each table has three words (drop, size,
+alignment) plus one per method? (b) A C++ program with the same $m$ classes, each deriving from the $k$ abstract
+bases: how many \omterm{def:b2:cpp-polymorphism:vtable}{table pointers} does each object carry? (c) Which design costs memory per object, and which per type?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:rust-traits-and-generics:12}
+Write \code{Connection<State>}, where \code{State} is \code{Closed} or \code{Open}, two empty types: \code{new}
+gives a closed connection, \code{open} consumes it and returns an open one, \code{send} exists only on
+\code{Connection<Open>}, and \code{close} returns a closed one. Show that sending on a closed connection, or using a
+connection after closing it, does not compile, and that the state costs no byte.
+\end{exercise}
+
+\section{Problem: A units library}\label{sec:b2:rust-traits-and-generics:problem}
+
+\begin{problem}[{Weekend problem --- A units library}]\label{pb:b2:rust-traits-and-generics:1}
+% ledger: b2:mco-units
+% ledger: b2:mco-loss
+On 23 September 1999 a spacecraft sent to orbit Mars was lost as it arrived. The investigation board found that a
+ground program wrote the impulses of the thrusters in pound-force seconds, where the interface specification required
+newton-seconds; the navigation software read the numbers as newton-seconds, and underestimated the effect of the
+thrusters by a factor of 4.45. The reconstructed trajectory passed 57\,km above the surface, too low to survive. Both
+programs passed numbers, and a number does not carry its unit. This problem makes the unit part of the type and
+checks what it costs.
+
+\medskip\noindent\textbf{Part I --- Newtypes.}\par\nopagebreak
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/units.rs}{5}{27}{Three units and four
+operations}
+\begin{enumerate}[beginpenalty=10000]
+\item What is the size of \code{Metres}? Of \code{(Metres, Seconds)}?
+\item Why is the field \code{pub}, and what would be lost if it were private? What would be gained?
+\item Which \omterm{def:b2:rust-traits-and-generics:trait}{traits} do the three types derive, and why not \code{Eq} or \code{Ord}?
+\item Could the board's bug have been written with these types, if the impulse were a type \code{NewtonSeconds}?
+What would the ground program have had to write?
+\item Write a type \code{PoundForceSeconds} and a conversion \code{From<PoundForceSeconds> for NewtonSeconds}.
+\item Why is a conversion function safer than a constant 4.45 multiplied in by each caller?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Operator traits.}\par\nopagebreak
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/run_units.txt}{The library at work, and two mistakes
+refused (\code{units_mix.rs}).}
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, u/.style={draw, rounded corners=2pt, fill=omDef!10, minimum width=26mm, minimum height=6mm}]
+\node[u] (m) at (0,0) {\texttt{Metres}};
+\node[u] (s) at (6,0) {\texttt{Seconds}};
+\node[u] (v) at (3,-1.8) {\texttt{MetresPerSecond}};
+\draw[ptr] (m.south) -- node[left, xshift=-2pt] {\texttt{/ Seconds}} (v.north west);
+\draw[ptr] (v.north east) -- node[right, xshift=2pt] {\texttt{* Seconds}: \texttt{Metres}} (s.south);
+\draw[ptr] ([xshift=-5mm]m.north) .. controls +(-0.2,0.9) and +(0.2,0.9) .. node[above] {\texttt{+ Metres}} ([xshift=5mm]m.north);
+\draw[ptr] ([xshift=-5mm]s.north) .. controls +(-0.2,0.9) and +(0.2,0.9) .. node[above] {\texttt{+ Seconds}} ([xshift=5mm]s.north);
+\node[omThm, align=left, anchor=west] at (8.0,-0.6) {refused:\\ \texttt{Metres + Seconds}\\ \texttt{let x: f64 = d;}\\ \texttt{Metres * Metres}};
+\end{tikzpicture}
+\par\smallskip{\small The operations the types allow. The arrow from \code{MetresPerSecond} leads, through a
+multiplication by \code{Seconds}, back to \code{Metres}; every operation not drawn is a compile error.}
+\end{omfigure}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Which impl makes \code{d / t} compile, and what is the type of the result?
+\item Why does \code{Metres * Metres} not compile? Should it, and with which output type?
+\item The two errors of \code{units_mix.rs} are both \emph{mismatched types}. Explain each.
+\item \code{v * Seconds(3600.0)} works but \code{Seconds(3600.0) * v} does not. Add the missing impl.
+\item Implement \code{std::iter::Sum} for \code{Metres}, so that \code{legs.iter().map(|l| l.0).sum()} gives
+\code{Metres}.
+\item Why is \code{Display} implemented for \code{MetresPerSecond} but \code{Debug} printed for the others in the
+output?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Generics over units.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Write \code{fn total<U: Add<Output = U> + Copy>(xs: &[U], zero: U) -> U}, and use it on lengths and on times.
+\item How many copies of \code{total} does your program then contain?
+\item Can \code{total} be called on a slice that mixes \code{Metres} and \code{Seconds}? Why is that a feature?
+\item A \omterm{def:b2:rust-traits-and-generics:trait}{trait} \code{Unit} with an associated constant \code{SYMBOL: &'static str} lets one generic \code{Display}
+serve every unit. Sketch it.
+\item What would a \omterm{def:b2:rust-traits-and-generics:trait-object}{trait object} \code{&dyn Unit} cost compared with the generic?
+\item Name two units that a real library would add, and the operations between them.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Zero cost.}\par\nopagebreak
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/units_asm.rs}{6}{24}{The same trip, typed and
+untyped}
+\omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/run_asm.txt}{The object file's symbols, and the size
+of the code.}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item What does the attribute \code{no_mangle} change, and why is it used here?
+\item Read the two symbol lines: what do the section, the size and the address say about the two functions?
+\item How many instructions does the function have, and what are its last three doing?
+\item Nine \code{addpd} instructions add two \code{f64} at once. What is being added in pairs?
+\item What would have to differ in the typed version for the two to compile differently?
+\item State the result of the problem.
+\end{enumerate}
+\end{problem}

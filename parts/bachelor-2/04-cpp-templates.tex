@@ -1,0 +1,453 @@
+% Book 4, Year 2, chapter 4 -- Templates and generic programming.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 4.
+\chapter{Templates and Generic Programming}\label{ch:b2:cpp-templates}
+
+Last year's dynamic array held \code{int}s. The weather station needs one of \code{double}s, the library one of
+titles. C offers two ways out, and the program below shows both: copy the code and change the type, or write it once
+for blocks of bytes, with \code{void *} and an element size.
+
+\omcode{code/bachelor-2/04-cpp-templates/listings/int_vec.c}{21}{38}{The array once more, for any element size, with
+\code{void *}}\label{lst:b2:cpp-templates:int-vec}
+
+\omoutput{code/bachelor-2/04-cpp-templates/outputs/int_vec.txt}{An array of \code{int}, written for \code{int}, and
+an array of \code{double}, written for bytes.}\label{out:b2:cpp-templates:int-vec}
+
+The first way multiplies the code: a bug fixed in the \code{int} version stays in the \code{double} one. The second
+keeps one copy but throws the types away: \code{any_vec_push} accepts the address of anything, copies bytes one by
+one with a loop the compiler cannot specialise, and every reader must cast \code{data} back to the right type, which
+nothing checks. The C library's \code{qsort} is written the second way. C++ offers a third: write the code once, with
+the type as a parameter, and let the compiler write each typed copy.
+
+\begin{recall}
+\cref{ch:b2:cpp-copy-move}: a class that owns memory follows the \omterm{def:b2:cpp-copy-move:rules}{rule of five}, moves are cheap and \code{noexcept},
+and a growing array makes fewer than $2(n-1)$ transfers when it doubles. Book 3 sorted with \code{qsort}, which
+receives the array as \code{void *}, the element size, and a comparison function called through a pointer.
+\end{recall}
+
+\section{Function templates}\label{sec:b2:cpp-templates:functions}
+
+\begin{definition}[Function template, class template, template parameter]\label{def:b2:cpp-templates:template}
+A \emph{template}\index{template (C++)} is a declaration preceded by \code{template <typename T, ...>}, whose
+\emph{template parameters}\index{template parameter} stand for types (\code{typename T}) or for constant values (such
+as \code{std::size_t N}). A \emph{function template}\index{function template} describes a family of functions, a
+\emph{class template}\index{class template} a family of classes, one member of the family for each choice of the
+parameters.
+\end{definition}
+
+\omcode{code/bachelor-2/04-cpp-templates/listings/max_template.cpp}{5}{20}{One \omterm{def:b2:cpp-templates:template}{function template}, three
+types}\label{lst:b2:cpp-templates:max}
+
+\omoutput{code/bachelor-2/04-cpp-templates/outputs/max_template.txt}{Each call used the version for its
+type.}\label{out:b2:cpp-templates:max}
+
+\begin{definition}[Template argument deduction]\label{def:b2:cpp-templates:deduction}
+At a call of a \omterm{def:b2:cpp-templates:template}{function template} with no explicit arguments, the compiler finds the \omterm{def:b2:cpp-templates:template}{template} arguments by
+\emph{template argument deduction}\index{template argument deduction}: it matches each parameter type against the
+type of the corresponding argument. Each \omterm{def:b2:cpp-templates:template}{template parameter} must be deduced to a single type from all the arguments
+in which it appears; a parameter that appears in no function parameter (only in the return type, say) cannot be
+deduced, and must be given explicitly, as in \code{larger<double>(3, 7.5)}.
+\end{definition}
+
+Deduction does not convert: \code{larger(3, 7.5)} would make \code{T} both \code{int} and \code{double}, and the call
+does not compile. Given explicitly, \code{T = double} turns the call into an ordinary one, where 3 converts to
+\code{double}.
+
+\section{Class templates}\label{sec:b2:cpp-templates:classes}
+
+The growable array of the opening, written once for every type, is a \omterm{def:b2:cpp-templates:template}{class template}. Unlike the C version, it must
+also respect what a C++ element needs: a \code{std::string} cannot be copied byte by byte, and its \omterm{def:b2:cpp-classes-raii:constructor}{constructor} and
+\omterm{def:b2:cpp-classes-raii:constructor}{destructor} must run. The array therefore allocates \emph{raw} memory (\code{::operator new}, the C++ form of
+\code{malloc}), builds each element in it with a \emph{placement new}, \code{new (address) T(...)}, and destroys it
+with an explicit call to its \omterm{def:b2:cpp-classes-raii:constructor}{destructor}.
+
+\omcodes{code/bachelor-2/04-cpp-templates/listings/vec.hpp}{8-36,72-75}{\code{Vec<T>}: the special members, \code{push_back} and
+the data}\label{lst:b2:cpp-templates:vec}
+
+\omcode{code/bachelor-2/04-cpp-templates/listings/vec.hpp}{37}{63}{\code{reserve} and
+\code{clear}}\label{lst:b2:cpp-templates:vec-reserve}
+
+\code{reserve} builds the elements in the new block before destroying the old ones. It moves them when their \omterm{def:b2:cpp-copy-move:move}{move
+constructor} cannot throw and copies them otherwise (\code{std::move_if_noexcept}), so that if a copy throws the old
+block is still complete: the strong guarantee of \cref{ch:b2:cpp-copy-move}, which \code{tests/vec_test.cpp} checks
+with an element whose fourth copy throws. The remaining members are one-liners: \code{operator[]}, \code{at}, which
+checks its index, \code{size}, \code{capacity}, and \code{begin} and \code{end}, which make the range-\code{for} work.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize]
+\node[anchor=west, font=\footnotesize\bfseries] at (-0.3,1.75) {a \texttt{Vec<std::string>} object (24 bytes)};
+\node[cell, minimum width=1.5cm] (d) at (0.5,0.5) {$\bullet$};
+\node[cell, minimum width=1.5cm, right=0mm of d] (s) {2};
+\node[cell, minimum width=1.5cm, right=0mm of s] (c) {4};
+\foreach \n/\l in {d/data\_, s/size\_, c/cap\_} \node[font=\scriptsize\ttfamily, below=0.5mm of \n] {\l};
+\node[cell, minimum width=2.4cm, fill=omDef!10, font=\scriptsize\ttfamily] (e0) at (6.4,0.5) {Mill Lane};
+\node[cell, minimum width=2.4cm, fill=omDef!10, font=\scriptsize\ttfamily, right=0mm of e0] (e1) {Quay Street};
+\node[cell, minimum width=2.4cm, fill=black!5, font=\scriptsize, right=0mm of e1] (e2) {raw};
+\node[cell, minimum width=2.4cm, fill=black!5, font=\scriptsize, right=0mm of e2] (e3) {raw};
+\draw[ptr] (d.center) .. controls (1.2,1.35) and (4.4,1.35) .. (e0.north west);
+\draw[decorate, decoration={brace, mirror, amplitude=4pt}] (e0.south west) -- (e1.south east)
+  node[midway, below=5pt, font=\scriptsize] {\texttt{size\_} elements, constructed};
+\draw[decorate, decoration={brace, mirror, amplitude=4pt}] (e2.south west) -- (e3.south east)
+  node[midway, below=5pt, font=\scriptsize] {room for \texttt{cap\_ - size\_} more, no object};
+\end{tikzpicture}
+\par\smallskip{\small The layout of every \code{Vec<T>}: three members of 24 bytes in all, whatever \code{T}, and a
+heap block of \code{cap_} slots of \code{sizeof(T)} bytes, the first \code{size_} of which hold constructed objects.
+The \omterm{def:b2:cpp-classes-raii:constructor}{destructor} destroys exactly those, then frees the block.}
+\end{omfigure}
+
+\omcode{code/bachelor-2/04-cpp-templates/listings/vec_demo.cpp}{6}{25}{One \omterm{def:b2:cpp-templates:template}{class template}, three
+classes}\label{lst:b2:cpp-templates:vec-demo}
+
+\omoutput{code/bachelor-2/04-cpp-templates/outputs/vec_demo.txt}{Integers, doubles and strings in the same
+code.}\label{out:b2:cpp-templates:vec-demo}
+
+\begin{definition}[Generic programming]\label{def:b2:cpp-templates:generic}
+\emph{Generic programming}\index{generic programming} writes algorithms and data structures once, in terms of the
+operations they need from their element types (copy, compare, add), so that they apply to every type providing
+those operations, with no loss of type checking or of speed against a version written for one type.
+\end{definition}
+
+\section{Instantiation}\label{sec:b2:cpp-templates:instantiation}
+
+A \omterm{def:b2:cpp-templates:template}{template} is not code. It becomes code when it is used.
+
+\begin{definition}[Template instantiation]\label{def:b2:cpp-templates:instantiation}
+\emph{Template instantiation}\index{template instantiation} is the generation, by the compiler, of a function or a
+class from a \omterm{def:b2:cpp-templates:template}{template} and a list of \omterm{def:b2:cpp-templates:template}{template} arguments, by substituting the arguments for the parameters. A use
+such as \code{Vec<int>} or \code{larger(3, 7)} causes the instantiation; a \omterm{def:b2:cpp-classes-raii:class}{member function} of a \omterm{def:b2:cpp-templates:template}{class template} is
+instantiated only if it is used.
+\end{definition}
+
+\omcode{code/bachelor-2/04-cpp-templates/listings/instantiate.sh}{2}{4}{Compiling the demo and listing its
+symbols}\label{lst:b2:cpp-templates:instantiate}
+
+\omoutput{code/bachelor-2/04-cpp-templates/outputs/instantiate.txt}{Thirty instantiated functions, among them
+three \code{push_back}s.}\label{out:b2:cpp-templates:instantiate}
+
+\code{nm} lists the symbols of the object file and \code{-C} turns their encoded names back into C++. The three
+\code{push_back}s are three separate functions, compiled from one text for three types. Their type \code{W}
+(\emph{weak}) tells the linker what to do when several object files contain the same instantiation, which is the
+normal case: every file that uses \code{Vec<int>} instantiates it.
+
+\begin{proposition}[One instantiation per argument list]\label{prop:b2:cpp-templates:instantiations}
+In each translation unit, a \omterm{def:b2:cpp-templates:template}{template} is instantiated at most once for each distinct list of \omterm{def:b2:cpp-templates:template}{template} arguments,
+however many times it is used with that list. When several translation units instantiate the same \omterm{def:b2:cpp-templates:template}{template} with
+the same arguments, the linker keeps one copy of each function. A program therefore contains at most one copy of
+each instantiated function per distinct argument list, and a \omterm{def:b2:cpp-templates:template}{template} used with $k$ argument lists, of which it
+uses $m$ \omterm{def:b2:cpp-classes-raii:class}{member functions} with each, yields at most $km$ functions.
+\end{proposition}
+
+\begin{proof}
+Within a unit, the compiler records each specialisation it has generated, keyed by the \omterm{def:b2:cpp-templates:template}{template} and its arguments,
+and reuses the record for later uses, so a second use generates nothing. Across units, each copy is emitted as a weak
+symbol with the same encoded name, built from the \omterm{def:b2:cpp-templates:template}{template} and its arguments; the linker, on finding several weak
+definitions of one name, keeps one and discards the others, which the language allows because they are identical
+(they come from the same \omterm{def:b2:cpp-templates:template}{template} with the same arguments). The bound follows: at most one function for each pair of
+an argument list and a used member.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, box/.style={draw, rounded corners=2pt, align=center, inner sep=4pt}]
+\node[box, fill=omDef!10] (t) at (0,0) {\texttt{template <typename T>}\\ \texttt{class Vec \{\dots\};}};
+\node[box, fill=black!4, font=\scriptsize\ttfamily] (u1) at (3.9,1.1) {a.cpp uses\\ Vec<int>, Vec<double>};
+\node[box, fill=black!4, font=\scriptsize\ttfamily] (u2) at (3.9,-1.1) {b.cpp uses\\ Vec<int>};
+\node[box, fill=omThm!10, font=\scriptsize\ttfamily] (o1) at (8.0,1.1) {a.o (weak symbols):\\ Vec<int>::push\_back\\ Vec<double>::push\_back};
+\node[box, fill=omThm!10, font=\scriptsize\ttfamily] (o2) at (8.0,-1.1) {b.o (weak symbol):\\ Vec<int>::push\_back};
+\node[box, fill=omMeth!10, font=\scriptsize\ttfamily] (x) at (12.2,0) {program:\\ one Vec<int>::push\_back\\ one Vec<double>::push\_back};
+\draw[ptr] (t) -- (u1.west); \draw[ptr] (t) -- (u2.west);
+\draw[ptr] (u1) -- (o1); \draw[ptr] (u2) -- (o2);
+\draw[ptr] (o1.east) -- (x); \draw[ptr] (o2.east) -- (x);
+\foreach \x/\l in {0/template, 3.9/source files, 8.0/compiled: object files, 12.2/linked} \node[font=\scriptsize\bfseries, text=black!60] at (\x,2.3) {\l};
+\end{tikzpicture}
+\par\smallskip{\small One \omterm{def:b2:cpp-templates:template}{template}, two translation units, two argument lists. Each unit instantiates what it
+uses; the linker merges the two copies of \code{Vec<int>::push_back}.}
+\end{omfigure}
+
+Two consequences follow. A \omterm{def:b2:cpp-templates:template}{template}'s definition must be visible wherever it is used, since the compiler can only
+instantiate what it can read: \omterm{def:b2:cpp-templates:template}{templates} live in headers (\cref{exo:b2:cpp-templates:2} shows what happens
+otherwise). And errors in a \omterm{def:b2:cpp-templates:template}{template}'s use appear at instantiation, inside the \omterm{def:b2:cpp-templates:template}{template}'s body, as the next section
+shows. Some types deserve a different body from the general one; a \omterm{def:b2:cpp-templates:template}{template} can be given one.
+
+\begin{definition}[Template specialisation]\label{def:b2:cpp-templates:specialisation}
+A \emph{full specialisation}\index{template specialisation} \code{template <> ... f<A>(...)} gives the body of a
+\omterm{def:b2:cpp-templates:template}{template} for one particular argument list \code{A}, used instead of the general body whenever those arguments are
+chosen. \omterm{def:b2:cpp-templates:template}{Function templates} may also be \emph{overloaded}: a second \omterm{def:b2:cpp-templates:template}{template} with a more specific parameter (such as
+\code{T *} for \code{T}), chosen when it matches better.
+\end{definition}
+
+\omcode{code/bachelor-2/04-cpp-templates/listings/specialise.cpp}{5}{22}{A general \omterm{def:b2:cpp-templates:template}{template}, a specialisation and an
+overload}\label{lst:b2:cpp-templates:specialise}
+
+\omoutput{code/bachelor-2/04-cpp-templates/outputs/specialise.txt}{Each value described by the most specific
+version.}\label{out:b2:cpp-templates:specialise}
+
+\omterm{def:b2:cpp-templates:template}{Templates} also take values: \code{std::array<double, 3>} is a class with three \code{double}s, its size fixed at
+compile time. Values computed at compile time come from \code{constexpr} functions, which the compiler runs while
+it compiles when their arguments are constants.
+
+\omcode{code/bachelor-2/04-cpp-templates/listings/constexpr_pow.cpp}{5}{23}{A function run by the compiler, and at
+run time}\label{lst:b2:cpp-templates:constexpr}
+
+\omoutput{code/bachelor-2/04-cpp-templates/outputs/constexpr_pow.txt}{Two compile-time values and one run-time
+value.}\label{out:b2:cpp-templates:constexpr}
+
+\code{GIB} and the size of \code{table} were computed by the compiler; \code{power(argc + 1, 20)} depends on the
+command line, $2^{20}$ here, and was computed when the program ran. A \code{static_assert} is a test that runs at
+compile time: if it fails, the program does not compile.
+
+\section{Requirements on a type parameter}\label{sec:b2:cpp-templates:concepts}
+
+A \omterm{def:b2:cpp-templates:template}{template}'s body uses operations of its type parameters (\code{<}, copying, \code{+}), and so requires them. Until
+C++20 the requirement was unwritten: the compiler found out at instantiation, inside the body. Below, the same
+\omterm{def:b2:cpp-templates:template}{function template} is used with a type that has no \code{<}, first as it stands and then with its requirement written
+down.
+
+\omoutput[2-6]{code/bachelor-2/04-cpp-templates/outputs/no_concept.txt}{Without a stated requirement, the error is
+reported inside the \omterm{def:b2:cpp-templates:template}{template}.}\label{out:b2:cpp-templates:no-concept}
+
+% ledger: b2:cpp20-concepts
+\begin{definition}[Concept, constraint]\label{def:b2:cpp-templates:concept}
+A \emph{concept}\index{concept (C++)} is a named, compile-time predicate on \omterm{def:b2:cpp-templates:template}{template} arguments, defined by
+\code{template <typename T> concept C = expression;}, where the expression may combine other concepts and
+\code{requires} expressions listing operations that must be valid. A \emph{constraint}\index{constraint} attaches
+concepts to a \omterm{def:b2:cpp-templates:template}{template}, as \code{template <C T>} or \code{requires C<T>}: the \omterm{def:b2:cpp-templates:template}{template} is then considered only for
+arguments that satisfy them. Concepts are a C++20 feature.
+\end{definition}
+
+\omcode{code/bachelor-2/04-cpp-templates/listings/with_concept.cpp}{8}{21}{The requirement, stated in
+front}\label{lst:b2:cpp-templates:with-concept}
+
+\omoutput[2-5,10-10,15-17]{code/bachelor-2/04-cpp-templates/outputs/with_concept.txt}{With a \omterm{def:b2:cpp-templates:concept}{concept}, the error is
+reported at the call, naming the missing operation.}\label{out:b2:cpp-templates:with-concept}
+
+The second message is longer but speaks to the caller: the call does not match, because \code{Point} does not
+satisfy \code{Ordered}, because \code{a < b} is invalid. The first speaks of a line inside a function the caller may
+never have read. In a library \omterm{def:b2:cpp-templates:template}{template} ten calls deep, the difference is between one message and a page of
+them. The standard library predefines many \omterm{def:b2:cpp-templates:concept}{concepts}, such as \code{std::copyable}, \code{std::integral} or
+\code{std::random_access_iterator}.
+
+\begin{method}[Stating requirements first]\label{met:b2:cpp-templates:concept-first}
+To write a function or \omterm{def:b2:cpp-templates:template}{class template}:
+\begin{enumerate}
+\item list the operations the body will use on each type parameter, with their result types;
+\item express them as a \omterm{def:b2:cpp-templates:concept}{concept}, reusing the library's \omterm{def:b2:cpp-templates:concept}{concepts} where they fit, and constrain the parameter with it;
+\item write the body using only those operations, and check that each use is covered (a use the \omterm{def:b2:cpp-templates:concept}{concept} does not
+cover compiles for the types tried so far and fails, inside the body, for the next one,
+\cref{exo:b2:cpp-templates:6});
+\item test the \omterm{def:b2:cpp-templates:template}{template} with two types that satisfy the \omterm{def:b2:cpp-templates:concept}{concept} and one that does not, checking that the last is
+refused at the call.
+\end{enumerate}
+\end{method}
+
+\section{Static against dynamic polymorphism}\label{sec:b2:cpp-templates:static}
+
+A \omterm{def:b2:cpp-templates:template}{function template} and a \omterm{def:b2:cpp-polymorphism:virtual}{virtual function} both let one piece of code work with many types. They choose at different
+times.
+
+\begin{definition}[Static polymorphism]\label{def:b2:cpp-templates:static-poly}
+\emph{Static polymorphism}\index{static polymorphism} is the use of \omterm{def:b2:cpp-templates:template}{templates} to write code that works with every
+type satisfying its requirements, where the operation to run for each type is chosen at compile time, during
+instantiation. It is opposed to the \omterm{def:b2:cpp-polymorphism:dispatch}{subtype polymorphism} of \cref{ch:b2:cpp-polymorphism}, chosen at run time
+through a \omterm{def:b2:cpp-polymorphism:vtable}{dispatch table}.
+\end{definition}
+
+\omterm{def:b2:cpp-templates:static-poly}{Static polymorphism} costs no \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} and no indirect call, and the compiler can inline the chosen operation
+into the caller, then optimise the result as a whole. It costs one copy of the code per type, and the set of types
+must be known when the program is compiled: a vector of mixed shapes read from a file needs \omterm{def:b2:cpp-polymorphism:dispatch}{dynamic dispatch}. The
+two sorts of the standard libraries illustrate the difference. \code{qsort} receives its comparison as a function
+pointer and calls it for every comparison; \code{std::sort} is a \omterm{def:b2:cpp-templates:template}{template} whose comparison type is a parameter, so
+that each instantiation can inline it.
+
+% ledger: b2:qsort-c89
+% ledger: b2:std-sort-complexity
+\omcode{code/bachelor-2/04-cpp-templates/listings/sort_compare.cpp}{22}{37}{Sorting the same random integers both
+ways; \code{compare_ints} returns the sign of $x - y$}\label{lst:b2:cpp-templates:sort-compare}
+
+\omoutput{code/bachelor-2/04-cpp-templates/outputs/sort_compare.txt}{One run on the author's laptop; the digits
+change from run to run.}\label{out:b2:cpp-templates:sort-compare}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, box/.style={draw, rounded corners=2pt, align=center, inner sep=4pt, minimum height=8mm}]
+\node[font=\footnotesize\bfseries] at (1.6,1.5) {\texttt{qsort}};
+\node[box, fill=black!4] (q) at (0,0) {\texttt{qsort} loop\\ (compiled once)};
+\node[box, fill=omThm!10] (c) at (3.4,0) {\texttt{compare\_ints}\\ \scriptsize via a pointer};
+\draw[ptr, bend left=25] (q.north east) to node[above, font=\scriptsize] {call, $\approx n\log_2 n$ times} (c.north west);
+\draw[ptr, bend left=25] (c.south west) to node[below, font=\scriptsize] {return $-1$, 0 or 1} (q.south east);
+\begin{scope}[xshift=7.6cm]
+\node[font=\footnotesize\bfseries] at (1.6,1.5) {\texttt{std::sort<int *, Less>}};
+\node[box, fill=omMeth!10, minimum width=4.4cm] (s) at (1.6,0) {sort loop with \texttt{x < y} written inside\\ (compiled for \texttt{int} and \texttt{Less})};
+\node[font=\scriptsize, text=black!60] at (1.6,-0.9) {no call: one compare instruction};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Where the comparison happens. \code{qsort} is compiled once for every type, so it can only
+call the comparison through a pointer it receives; \code{std::sort} is instantiated for \code{int} and the lambda's
+type, and the comparison becomes part of its own loop.}
+\end{omfigure}
+
+Both sort the same values in time growing like $n \log n$, and \code{std::sort} is faster by a factor that the run
+shows to be about two, from the smallest array to the largest: the function call, the two loads through
+\code{void *} and the branchy three-way result of \code{compare_ints}, repeated $n \log_2 n$ times, against a single
+comparison inside the loop. The C standard requires nothing of \code{qsort}'s speed: neither its algorithm nor its
+complexity is specified. \code{std::sort} must make $O(n \log n)$ comparisons in the worst case.
+
+\begin{inpractice}[Templates or virtual functions]
+Use a \omterm{def:b2:cpp-templates:template}{template} when the types are known at compile time and the operation is small and called often: containers,
+algorithms, numeric code. Use \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions} when the set of types is open, or chosen at run time from data, or
+when one compiled copy must serve every type: plug-ins, the library's fine policies. Mixed designs are common: a
+\omterm{def:b2:cpp-templates:template}{template} container of \code{std::unique_ptr} to a \omterm{def:b2:cpp-polymorphism:inheritance}{base class} holds objects of any \omterm{def:b2:cpp-polymorphism:inheritance}{derived class}.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b2:cpp-templates:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-templates:1}
+For each call a to g, say which \code{show} runs, and with which \code{T} if it is a \omterm{def:b2:cpp-templates:template}{template}. The rule: among the
+candidates that match, an exact match beats a conversion, and an ordinary function beats a \omterm{def:b2:cpp-templates:template}{template} when both match
+equally well.
+\omcode{code/bachelor-2/04-cpp-templates/listings/exo_overload.cpp}{4}{20}{Four candidates, seven calls}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-templates:2}
+A programmer moves the body of a \omterm{def:b2:cpp-templates:template}{function template} into its own source file, as one does for ordinary functions:
+\code{twice.hpp} declares \code{template <typename T> T twice(T x);}, \code{twice.cpp} defines it, and
+\code{main_twice.cpp} calls \code{twice(21)}. Each file compiles; the link fails. Explain, with
+\cref{def:b2:cpp-templates:instantiation}, and give two fixes.
+\omoutput[4-6]{code/bachelor-2/04-cpp-templates/outputs/link_twice.txt}{The linker's message.}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-templates:3}
+Write \code{clamp_to(x, lo, hi)}, which returns \code{lo} if $x < lo$, \code{hi} if $hi < x$ and \code{x} otherwise,
+for any type with a \code{<}, stated as a \omterm{def:b2:cpp-templates:concept}{concept}; it throws if $hi < lo$. Check that a type without \code{<} is
+refused at the call, and say why the function returns a \code{const T &}. Is that safe when \code{lo} is a
+temporary?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-templates:4}
+A program uses \code{Vec<int>}, \code{Vec<double>} and \code{Vec<std::string>}, calls \code{push_back} on all three,
+\code{at} on the first only, and copies the third. Using \cref{prop:b2:cpp-templates:instantiations}, list the
+instantiated \omterm{def:b2:cpp-classes-raii:class}{member functions} of \code{Vec} (count \code{reserve} and \code{clear}, which \code{push_back} and the
+\omterm{def:b2:cpp-classes-raii:constructor}{destructor} call). How does the list change if the program is split into two files that both use
+\code{Vec<int>}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-templates:5}
+Two of these three calls do not compile; the third compiles and is wrong. Explain the two messages with
+\cref{def:b2:cpp-templates:deduction}, fix each call, and explain what the third compares.
+\omcode{code/bachelor-2/04-cpp-templates/listings/exo_deduce.cpp}{5}{14}{Three calls}
+\omoutput[3-3,10-10,13-13,20-20]{code/bachelor-2/04-cpp-templates/outputs/exo_deduce.txt}{The key lines of the two
+errors.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-templates:6}
+The \omterm{def:b2:cpp-templates:concept}{concept} below is satisfied by \code{double} and by \code{std::string}, and yet the call with strings does not
+compile. Explain the message, and say which step of \cref{met:b2:cpp-templates:concept-first} was skipped. Write the
+\omterm{def:b2:cpp-templates:concept}{concept} the body really needs.
+\omcode{code/bachelor-2/04-cpp-templates/listings/exo_weak_concept.cpp}{7}{28}{A middle value}
+\omoutput[2-6]{code/bachelor-2/04-cpp-templates/outputs/exo_weak_concept.txt}{The error, inside the body.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-templates:7}
+Write a \omterm{def:b2:cpp-templates:template}{function template} \code{lower_bound_of(first, last, key)} that returns the first position $p$ of a sorted
+range with \code{!(*p < key)}, or \code{last}, for any random-access iterator (a \omterm{def:b2:cpp-templates:concept}{concept} of the library) and any key
+comparable with the elements. State its loop invariant. Test it against \code{std::lower_bound} on random sorted
+vectors and every key in a range.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-templates:8}
+A \omterm{def:b2:cpp-templates:template}{class template} \code{Pow<N>}, with a \omterm{def:b2:cpp-templates:template}{template parameter} \code{unsigned N}, has one member, the constant
+\code{static constexpr long value = 3 * Pow<N - 1>::value;}, and a \omterm{def:b2:cpp-templates:specialisation}{full specialisation} \code{Pow<0>} whose
+\code{value} is 1: \code{Pow<N>::value} is $3^N$, computed at compile time. How many classes does
+\code{Pow<20>::value} instantiate? And a program that uses \code{Pow<20>} and \code{Pow<25>}? Write the same with a
+\code{constexpr} function and compare what the compiler must generate.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-templates:9}
+Write \code{Matrix<T, R, C>}, stored in a \code{std::array<T, R * C>}, with element access, \code{transpose} and a
+product \code{operator*} that accepts only matrices of matching inner dimension, so that multiplying a $2 \times 3$
+by a $2 \times 3$ matrix does not compile. Check that refusal with a \code{static_assert} and a \omterm{def:b2:cpp-templates:concept}{concept}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-templates:10}
+Write a binary heap \code{Heap<T, Less = std::less<T>>} over a \code{std::vector<T>}, with \code{push}, \code{top} and
+\code{pop}, the comparator being a \omterm{def:b2:cpp-templates:template}{template parameter} stored in the object. Test it against a sorted copy for 500
+random values, and as a min-heap of strings with \code{std::greater}. Why can the comparator be inlined here and not
+in \code{qsort}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-templates:11}
+A library \omterm{def:b2:cpp-templates:template}{template} has $m$ \omterm{def:b2:cpp-classes-raii:class}{member functions} of about $b$ bytes of machine code each, and a program uses it with $k$
+types, every member with every type. (a) Bound the code size the \omterm{def:b2:cpp-templates:template}{template} contributes, with
+\cref{prop:b2:cpp-templates:instantiations}. (b) The program is built from $u$ files that each use all $k$ types:
+what do the object files contain before linking, and the program after? (c) From
+\cref{out:b2:cpp-templates:instantiate}, how many functions of \code{Vec} does \code{vec_demo.o} contain per type,
+roughly? Compare with a \code{void *} version, compiled once.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-templates:12}
+Write \code{pascal<N>()}, a \code{constexpr} function returning the table of binomial coefficients $\binom{n}{k}$ for
+$0 \leq k \leq n \leq N$ as nested \code{std::array}s, computed by Pascal's rule. Keep it in a \code{constexpr}
+variable for $N = 67$, and check with \code{static_assert} that $\binom{5}{2} = 10$ and that $\binom{67}{33}$ fits in 64
+bits. Why is 67 the largest $N$ for which every entry fits in an unsigned 64-bit integer? Test Pascal's rule and the
+row sums $2^n$ at run time.
+\end{exercise}
+
+\section{Problem: One sort for every type}\label{sec:b2:cpp-templates:problem}
+
+\begin{problem}[{Weekend problem --- One sort for every type}]\label{pb:b2:cpp-templates:1}
+The town keeps tables of readings (\code{double}), of people sorted by name (\code{std::string}) and of loans sorted
+by date (a \code{struct}). This problem sorts all three with one generic function and measures what it gains over
+\code{qsort}.
+
+\medskip\noindent\textbf{Part I --- \code{qsort} and \code{void *}.}\par\nopagebreak
+\begin{enumerate}[beginpenalty=10000]
+\item Write the comparison function \code{qsort} needs for \code{double}s. Why is \code{return x - y;} wrong for
+\code{double}, and for \code{int} near the ends of its range?
+\item Write the comparison for an array of \code{struct loan {int id; int due;}} by due date, then by
+\code{id}.
+\item Why can \code{qsort} not sort an array of \code{std::string} correctly? (It moves elements byte by byte.)
+\item What does the compiler check about the arguments of a \code{qsort} call? Give a call that compiles and sorts
+garbage.
+\item \code{compare_ints} in \cref{lst:b2:cpp-templates:sort-compare} is called how many times, roughly, for
+$n = 10^6$? Use $n \log_2 n$.
+\item What does the C standard promise about \code{qsort}'s running time and stability?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- A template sort.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Write \code{template <typename T, typename Less> void insertion_sort(T *a, std::size_t n, Less less)}.
+\item Call it on \code{double}s with a lambda, on \code{std::string}s with \code{std::less<>}, and on loans with a
+lambda comparing due dates then ids.
+\item Which functions does the compiler instantiate for these three calls?
+\item Why are the strings now moved correctly, where \code{qsort} copied bytes?
+\item Rewrite the swap of two elements so that it moves, and say what it costs for strings longer than the small
+buffer of \cref{ch:b2:cpp-copy-move}.
+\item Insertion sort makes up to $n(n-1)/2$ comparisons. Why would a \omterm{def:b2:cpp-templates:template}{template} version still lose to \code{qsort} for
+$n = 10^6$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Concepts.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item State, as a \omterm{def:b2:cpp-templates:concept}{concept}, what \code{insertion_sort} requires of \code{Less} given \code{T}.
+\item Which \omterm{def:b2:cpp-templates:concept}{concept} of the library expresses ``\code{T} can be moved and move-assigned''? Add it.
+\item A caller passes a comparator that takes its arguments by non-const reference. Does it satisfy your \omterm{def:b2:cpp-templates:concept}{concept}?
+Should it?
+\item A comparator \code{[](double x, double y) {return x <= y;}} satisfies the \omterm{def:b2:cpp-templates:concept}{concept}. Why is it still wrong for a
+sort? Can a \omterm{def:b2:cpp-templates:concept}{concept} detect it?
+\item Rewrite the sort to take a pair of random-access iterators instead of a pointer and a size. Which library
+\omterm{def:b2:cpp-templates:concept}{concept} do you use?
+\item Write a test that checks, for each of the three types, that the result is sorted and is a permutation of the
+input.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The measured speed-up.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item From \cref{out:b2:cpp-templates:sort-compare}, compute the time per element and per comparison of each sort
+for $n = 10^6$.
+\item Is the ratio roughly constant over $n$? What does that say about where the difference comes from?
+\item Explain, with the figure on the two sorts, what the processor does per comparison in each case.
+\item The town sorts a million readings once a night. Is the difference worth a rewrite? And a trading system that
+sorts ten thousand orders every millisecond?
+\item The \code{sort_compare} program was compiled with \code{-O2}. Predict the ratio at \code{-O0}, where nothing
+is inlined.
+\item State the result of the problem: the speed-up of \code{std::sort} over \code{qsort} measured on the laptop, and
+its cause.
+\end{enumerate}
+\end{problem}

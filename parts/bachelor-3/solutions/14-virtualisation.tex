@@ -1,0 +1,103 @@
+\section*{Chapter \ref{ch:b3:virtualisation} --- Virtual Machines and Containers}
+
+\begin{solution}{exo:b3:virtualisation:1}
+\code{0x180} and \code{0x100} have bits 9 and 8 equal to 01: supervisor-level, so writing \code{satp} or \code{sstatus} from user mode traps. \code{0xC01} has bits 9 and 8 equal to 00: user-level (and bits 11 and 10 equal to 11, read-only), so reading \code{time} does not trap by this rule. \code{add} and a load from the \omterm{def:b3:virtualisation:vm}{guest}'s own memory do not trap. The three CSR accesses are sensitive: the translation register, the processor's status and a clock are state the \omterm{def:b3:virtualisation:vm}{hypervisor} must control. Reading \code{time} is therefore sensitive but, by the numbering rule alone, not privileged: the \omterm{def:b3:virtualisation:vm}{guest} would read the real clock.
+\end{solution}
+
+\begin{solution}{exo:b3:virtualisation:2}
+(a)~Type 2: it runs as an application of the \omterm{def:b3:virtualisation:vm}{host} operating system. (b)~Type 1: it runs on the bare hardware and is itself the operating system that schedules the \omterm{def:b3:virtualisation:vm}{guests}.
+\end{solution}
+
+\begin{solution}{exo:b3:virtualisation:3}
+$kh + k + h$: $2 \times 2 + 2 + 2 = 8$, as in the last line of \cref{out:b3:virtualisation:walk}; with $k = 2$ and $h = 4$, $8 + 2 + 4 = 14$.
+\end{solution}
+
+\begin{solution}{exo:b3:virtualisation:4}
+One trap per character of \texttt{"hello from the guest\textbackslash n"}, 21 characters, then four more: show the sum, read the clock, show it, power off. $21 + 4 = 25$ (\code{test_guest_under_the_monitor_and_exercise_4}).
+\end{solution}
+
+\begin{solution}{exo:b3:virtualisation:5}
+The \omterm{def:b3:virtualisation:vm}{guest} executes its first device write again and again: each time the monitor emulates it, appends \texttt{h} to the console, and resumes at the same instruction. The console fills with \texttt{h}, one per trap, and the run ends only when the step limit stops it, with \code{StepLimit} (\code{test_exercise_5_stuck_monitor_loops}). The fix is the monitor's last line, \code{m.pc += 4}: an emulated instruction must be stepped over, as the processor would have done.
+\end{solution}
+
+\begin{solution}{exo:b3:virtualisation:6}
+\code{exercises/ex6_timer.py}: the three CSRs are kept in a dictionary that \code{read_csr} and \code{write_csr} consult first, and \code{run} steps the \omterm{def:b3:virtualisation:vm}{guest} itself, checking before each step whether the virtual clock has reached the compare value; if so it saves \code{m.pc} in the third CSR, sets \code{m.pc} to the handler, and clears the compare value. The test's \omterm{def:b3:virtualisation:vm}{guest} spends 6 instructions setting up (\code{la} is two), then 2 per round of its loop, so the counter is 22 when the timer fires at instruction 50, and the saved \code{pc} is inside the loop (\code{test_exercise_6_timer_fires_once}).
+\end{solution}
+
+\begin{solution}{exo:b3:virtualisation:7}
+Facts used: every \omterm{def:b3:virtualisation:vm}{guest} \omterm{def:b3:virtual-memory:space}{physical address} must be translated by the \omterm{def:b3:virtualisation:vm}{host}'s walk, $h$ references, before it can be read; the \omterm{def:b3:virtualisation:vm}{guest}'s walk reads one entry per level, $k$ entries, each at a \omterm{def:b3:virtualisation:vm}{guest} \omterm{def:b3:virtual-memory:space}{physical address}; the data's address is a \omterm{def:b3:virtualisation:vm}{guest} \omterm{def:b3:virtual-memory:space}{physical address} too.
+
+For each of the $k$ \omterm{def:b3:virtualisation:vm}{guest} levels, $h$ references to find where the entry is and 1 to read it: $k(h + 1)$. Then $h$ references to translate the data's address: $k(h + 1) + h = kh + k + h$ in all. With $h = k$, $k^2 + 2k = (k + 1)^2 - 1$ (\code{test_exercise_7_walk_count}).
+\end{solution}
+
+\begin{solution}{exo:b3:virtualisation:8}
+$1 + 10^{-4} \times 1{,}999 \approx 1.20$: 20~\% slower. Under 5~\% needs $f \times 1{,}999 \le 0.05$, $f \le 2.5 \times 10^{-5}$: one trap every 40,000 instructions. The \omterm{def:b3:virtualisation:vm}{guest} of the chapter would run $1 + 1{,}999/16.6 \approx 121$ times slower: a \omterm{def:b3:virtualisation:vm}{guest} that talks to its devices one character at a time is the worst case.
+\end{solution}
+
+\begin{solution}{exo:b3:virtualisation:9}
+Four blocks of 16~MiB would need the whole 64~MiB, and the \omterm{def:b3:virtual-memory:space}{address space} already holds the program's code, the C library, the stack and the \omterm{def:b3:garbage-collection:allocator}{allocator}'s own data. So the fourth \code{malloc} returns \code{NULL}: three blocks, as printed. The child returns 0, the parent's allocation of 256~MiB is not limited, since a \omterm{def:b3:virtualisation:container}{resource limit} applies to the process that set it and its future children. With 1~GiB the child would get about 63 blocks, by the same reasoning, if the machine has the memory (the \code{memset} makes it real).
+\end{solution}
+
+\begin{solution}{exo:b3:virtualisation:10}
+Facts used: a non-privileged instruction executed in user mode does what it does in supervisor mode, provided it is not sensitive, since only \omterm{def:b3:virtualisation:sensitive}{sensitive instructions} depend on or change the mode, the translation or the devices; every \omterm{def:b3:virtualisation:sensitive}{sensitive instruction} is privileged, so it traps in user mode; the \omterm{def:b3:virtualisation:vm}{hypervisor}'s emulation of an instruction $i$ applies to (virtual mode, registers, memory) the transition the real machine applies to (mode, registers, memory).
+
+Claim: after each \omterm{def:b3:virtualisation:vm}{guest} step, the real registers and memory equal those of a real machine run from the same initial state, and the virtual mode bit equals its mode. Initially true. Step with an instruction $i$. If $i$ is not sensitive, it does not trap, its effect does not depend on the mode, and it does not change it: the real user-mode step gives the same registers and memory as the reference machine, and the virtual bit is unchanged on both sides. If $i$ is sensitive, it is privileged and traps; the \omterm{def:b3:virtualisation:vm}{hypervisor} applies $i$'s transition to the virtual state, equal by hypothesis to the reference state, and returns to the \omterm{def:b3:virtualisation:vm}{guest} after $i$: both sides take the same transition. By induction the claim holds after every step. If some \omterm{def:b3:virtualisation:sensitive}{sensitive instruction} were not privileged, the second case would fail: it would run directly, reading or changing the real mode instead of the virtual one.
+\end{solution}
+
+\begin{solution}{exo:b3:virtualisation:11}
+The first read happens at the \omterm{def:b3:virtualisation:vm}{guest}'s first instruction, the second at its second; with \code{charge} instructions added per trap after the first, the difference is $1 + \mathit{charge}$, and the \omterm{def:b3:virtualisation:vm}{guest} prints \code{charge}: 0, 1 and 50 (\code{test_exercise_11_timing_detects_the_monitor}). A monitor that charges nothing shows the \omterm{def:b3:virtualisation:vm}{guest} a clock that counts only its own instructions: this \omterm{def:b3:virtualisation:vm}{guest} cannot tell. But the monitor's work takes real time, and any clock the \omterm{def:b3:virtualisation:vm}{guest} can reach without trapping, a real time register readable in user mode or a device that counts real time, a reply from another machine, reveals it. A \omterm{def:b3:virtualisation:vm}{guest} can always measure something; a \omterm{def:b3:virtualisation:vm}{hypervisor} can only make every clock it controls consistent, and keep the others out of reach.
+\end{solution}
+
+\begin{solution}{exo:b3:virtualisation:12}
+\code{exercises/ex12_fence.py} decodes the instruction at \code{pc} without running it; for a load or a store it computes \code{x[rs1] + imm} and its size, and raises \code{RVFault} if the access leaves $[\mathit{lo}, \mathit{hi})$, before calling \code{m.step()}. The test's store at \code{0x10000004} is stopped and the word there stays 0 (\code{test_exercise_12_fence}). The check costs a decoding and a comparison on every memory instruction, the way \omterm{def:b3:virtualisation:techniques}{binary translation} that inserts checks costs. Hardware does the same check for free on every access, as the second stage of address translation: a \omterm{def:b3:virtualisation:vm}{guest} \omterm{def:b3:virtual-memory:space}{physical address} that the \omterm{def:b3:virtualisation:vm}{host}'s tables do not map faults.
+\end{solution}
+
+\begin{solution}{pb:b3:virtualisation:1}
+\textbf{1.} $25/416 \approx 0.060$: the 21 console writes, the two writes to the number display, the clock read and the power switch.
+
+\textbf{2.} 1,004 traps. The loop takes 5 instructions per character, so the \omterm{def:b3:virtualisation:vm}{guest} runs $2 + 5{,}000 + 2 + 2 + 300 + 5 = 5{,}311$ instructions, and $f \approx 0.19$.
+
+\textbf{3.} Three: the address, the length and the start.
+
+\textbf{4.} 302: two \code{li} and 100 rounds of 3. None of them is sensitive: arithmetic on the \omterm{def:b3:virtualisation:vm}{guest}'s own registers.
+
+\textbf{5.} A program that computes in its own memory has a small $f$; one that does input and output, changes its \omterm{def:b3:virtual-memory:space}{address space} or takes many \omterm{def:b3:kernel-and-scheduling:interrupt}{interrupts}, a large one.
+
+\textbf{6.} The kernel is the code that manages devices, \omterm{def:b3:virtual-memory:paging}{page tables}, \omterm{def:b3:kernel-and-scheduling:interrupt}{interrupts} and the privilege mode, exactly the sensitive state; the programs above it reach that state only through the kernel.
+
+\textbf{7.} $(1 - f)N$ ordinary instructions cost one unit each and $fN$ traps cost $T$ each: $N(1 - f + fT) = N(1 + f(T - 1))$, against $N$ without traps.
+
+\textbf{8.} To 1 in both cases: no traps, or traps that cost no more than the instruction they replace.
+
+\textbf{9.} About 1.10, 2.0, 11 and 101.
+
+\textbf{10.} $999 f \le 0.1$, $f \le 10^{-4}$: one trap every 10,000 instructions.
+
+\textbf{11.} One trap per character costs about $1{,}004 \times 999 \approx 10^6$ instruction times; three traps for the whole buffer, about 3,000. Batching work into fewer traps is the main way to make a \omterm{def:b3:virtualisation:vm}{guest}'s devices fast.
+
+\textbf{12.} An emulator's slowdown is $E$ for every program; \omterm{def:b3:virtualisation:sensitive}{trap and emulate}'s is $1 + f(T - 1)$, close to 1 for most programs. \omterm{def:b3:virtualisation:sensitive}{Trap and emulate} loses only if $f(T - 1) > E - 1$.
+
+\textbf{13.} The loop runs a trap, an \code{addi} and a \code{bnez}: its cost per instruction $c$ is $(T + 2)p/3$, where $p$ is the cost of a plain instruction, so $T = 3c/p - 2$.
+
+\textbf{14.} $1.0167$ against $1.0155$: a difference of about 0.1~\%.
+
+\textbf{15.} The plain cost $p$ was measured on a loop with one branch in three instructions; the long loops are almost all \code{addi}, cheaper than a branch. Against that cheaper baseline a trap is relatively dearer, so the counted slowdown is slightly above the formula, as printed.
+
+\textbf{16.} The machine itself runs about 65 lines for every instruction, to fetch, decode, execute and count it; the monitor's decoding and emulation is of the same order, and it replaces the instruction's own execution.
+
+\textbf{17.} $E \approx 65$. \omterm{def:b3:virtualisation:sensitive}{Trap and emulate} with $T = 1{,}000$ gives $1 + 0.06 \times 999 \approx 61$ for that \omterm{def:b3:virtualisation:vm}{guest}: about the same. For a \omterm{def:b3:virtualisation:vm}{guest} that traps so often, an emulator would do almost as well; for an ordinary one, with $f$ near $10^{-4}$, \omterm{def:b3:virtualisation:sensitive}{trap and emulate} is about 60 times faster.
+
+\textbf{18.} A count reruns byte for byte; seconds on a laptop shared with other work vary from run to run by more than the effect to be measured. A first version timed the runs, and its slowdowns varied by several per cent between two runs.
+
+\textbf{19.} $k$ \omterm{def:b3:virtualisation:vm}{host} walks before the \omterm{def:b3:virtualisation:vm}{guest}'s $k$ entries, plus one for the data: $kh + k + h = 16 + 4 + 4 = 24$.
+
+\textbf{20.} 4. Counting the data access, 25 instead of 5: a \omterm{def:b3:virtual-memory:tlb}{TLB} miss costs five times as much.
+
+\textbf{21.} $1 + 4m$ without nesting, $1 + 24m$ with it: 1.04 and 1.24 for $m = 0.01$.
+
+\textbf{22.} $4 \times 2 + 4 + 2 = 14$.
+
+\textbf{23.} It must notice every change: write-protect the \omterm{def:b3:virtualisation:vm}{guest}'s \omterm{def:b3:virtual-memory:paging}{page tables} so that each write traps, and update its own table in the handler. The cost moves from the walks to the traps.
+
+\textbf{24.} Virtualisation is cheap when the \omterm{def:b3:virtualisation:vm}{guest} runs its own instructions directly and rarely traps, with $f(T - 1)$ small, and when the \omterm{def:b3:virtual-memory:tlb}{TLB} hides the second stage of translation. It is dear when the \omterm{def:b3:virtualisation:vm}{guest} talks to its devices often, in small pieces, or misses the \omterm{def:b3:virtual-memory:tlb}{TLB} often: each trap costs $T$, and each miss $(k + 1)^2 - 1$ references instead of $k$.
+\end{solution}

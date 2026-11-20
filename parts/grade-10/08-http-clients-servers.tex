@@ -1,0 +1,427 @@
+% Provenance (never printed): SNT "Le Web" (URL, HTTP, browser, client-server, static/dynamic pages, HTTPS) and NSI
+% premiere "Interactions entre l'homme et la machine sur le Web" (events, forms, GET/POST, client and server
+% roles, sessions). See sources/book2/BRIEFS.md.
+\chapter{The Web: Clients, Servers and HTTP}\label{ch:g10:http-clients-servers}
+
+Sara types the address of the town library's site and presses Enter. Less than a second later the page is there,
+with its title, a logo, a search box and two small pictures. In that second her browser and a machine she has never
+seen exchanged about a dozen messages, each a few lines of plain text, written in an agreed format.
+
+This chapter reads those messages. It runs a small web server on the reader's own machine, at the address
+\code{127.0.0.1}, which always means ``this computer'', and sends it \omterm{def:g10:http-clients-servers:http}{requests} from Python, so that every line
+that crosses between the two can be printed.
+
+\begin{recall}
+Data crosses the internet in packets; every machine has an address, and the name system turns names into addresses.
+A client asks and a server answers (Book 1, grade 8). A browser shows web pages, and a link takes you to another
+page (Book 1, grade 5). A page is written in HTML, and its look in CSS; the padlock next to an address means the
+connection is encrypted (Book 1, grade 9).
+\end{recall}
+
+\section{The parts of an address}\label{sec:g10:http-clients-servers:url}
+
+% ledger: g10:uri-3986
+\begin{definition}[URL]\label{def:g10:http-clients-servers:url}
+A \emph{URL}\index{URL} (uniform resource locator) is the address of a resource on the web. It is made of a
+\emph{scheme}\index{scheme} (\code{http} or \code{https}), a \emph{host}\index{host} (the name or address of the
+server), an optional \omterm{def:g10:http-clients-servers:port-number}{port number}, a path naming the resource on that server, an optional \emph{query
+string}\index{query string} after a \code{?}, made of \code{name=value} pairs separated by \code{&}, and an optional
+\emph{fragment}\index{fragment} after a \texttt{\#}, a place inside the resource that the browser keeps for itself.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\ttfamily\small, every node/.style={inner sep=0pt, outer sep=0pt}]
+  \node[anchor=base west] (a) at (0,0) {http};
+  \node[anchor=base west] (b) at (a.base east) {://};
+  \node[anchor=base west] (c) at (b.base east) {library.brenmoor.example};
+  \node[anchor=base west] (d) at (c.base east) {:8080};
+  \node[anchor=base west] (e) at (d.base east) {/books/search};
+  \node[anchor=base west] (f) at (e.base east) {?title=forest\&genre=nature};
+  \node[anchor=base west] (g) at (f.base east) {\#top};
+  \begin{scope}[font=\footnotesize\rmfamily, every node/.style={inner sep=1pt, anchor=north}]
+    \foreach \n/\lab/\col in {a/scheme/omDef, c/host/omProp, d/port/omThm, e/path/omMeth, f/query string/omDef,
+        g/fragment/omProp}
+      \draw[decorate, decoration={brace, amplitude=3pt, mirror}, \col, thick] ([yshift=-3pt]\n.south west) --
+        ([yshift=-3pt]\n.south east) node[midway, yshift=-4pt, text=\col] {\lab};
+  \end{scope}
+\end{tikzpicture}
+
+{\small The parts of an address. Without a \omterm{def:g10:http-clients-servers:port-number}{port number}, the \omterm{def:g10:http-clients-servers:url}{scheme} gives the usual one: $80$ for \code{http},
+$443$ for \code{https}.}
+\end{omfigure}
+
+\omcode{code/grade-10/08-http-clients-servers/listings/parse_url.py}{1}{12}{Splitting an
+address.}\label{lst:g10:http-clients-servers:parse-url}
+
+\omoutput{code/grade-10/08-http-clients-servers/outputs/parse_url.txt}{Each part on its own; an address without a
+\omterm{def:g10:http-clients-servers:port-number}{port number} has \code{None}.}\label{out:g10:http-clients-servers:parse-url}
+
+The \omterm{def:g10:http-clients-servers:url}{host} names a machine, but one machine can run several servers at once: a web server, a mail server, a game
+server. The \omterm{def:g10:http-clients-servers:port-number}{port number} tells them apart.
+
+% ledger: g10:http-ports
+\begin{definition}[Port number]\label{def:g10:http-clients-servers:port-number}
+A \emph{port number}\index{port number} is a whole number from $0$ to $65{,}535$ that identifies one program waiting
+for connections on a machine. A connection goes to a pair (address, port). Web servers usually listen on port $80$
+for \code{http} and $443$ for \code{https}.
+\end{definition}
+
+\section{A request and its response}\label{sec:g10:http-clients-servers:http}
+
+\begin{definition}[Protocol]\label{def:g10:http-clients-servers:protocol}
+A \emph{protocol}\index{protocol} is a set of rules for an exchange of messages between programs: who speaks first,
+the format of each message, and what each answer means.
+\end{definition}
+
+% ledger: g10:http-9112-message
+\begin{definition}[HTTP, request, response]\label{def:g10:http-clients-servers:http}
+\emph{HTTP}\index{HTTP} (hypertext transfer \omterm{def:g10:http-clients-servers:protocol}{protocol}) is the \omterm{def:g10:http-clients-servers:protocol}{protocol} of the web. The client sends a
+\emph{request}\index{request}; the server sends back one \emph{response}\index{response}. Each message is text: a
+first line, then \omterm{def:g10:http-clients-servers:http-header}{header} lines, then an empty line, then an optional body. Every line ends with the two characters
+carriage return and line feed, written \texttt{\textbackslash r\textbackslash n} in Python.
+\end{definition}
+
+\begin{definition}[Header]\label{def:g10:http-clients-servers:http-header}
+A \emph{header}\index{header (HTTP)} is a line \code{Name: value} of an \omterm{def:g10:http-clients-servers:http}{HTTP} message that gives information about
+the message: the server's name (\code{Host}), the type of the body (\code{Content-Type}), its length in bytes
+(\code{Content-Length}), a \omterm{def:g10:http-clients-servers:cookie}{cookie}, and so on.
+\end{definition}
+
+To see the messages themselves, the next listing opens a connection to the server and writes a \omterm{def:g10:http-clients-servers:http}{request} byte by byte,
+as a browser would, then prints every line of the \omterm{def:g10:http-clients-servers:http}{response}.
+
+\omcode{code/grade-10/08-http-clients-servers/listings/raw_exchange.py}{1}{15}{A \omterm{def:g10:http-clients-servers:http}{request} written by hand, and the
+\omterm{def:g10:http-clients-servers:http}{response} line by line.}\label{lst:g10:http-clients-servers:raw-exchange}
+
+\omoutput{code/grade-10/08-http-clients-servers/outputs/raw_exchange.txt}{The status line, three \omterm{def:g10:http-clients-servers:http-header}{headers}, the empty
+line, the body. The last line is the server's own log, printed when it stops.}\label{out:g10:http-clients-servers:raw-exchange}
+
+The helper \code{running}, in the chapter's folder, starts the server in a process of its own on the given port,
+waits until it accepts connections, and stops it at the end of the \code{with} block, printing what the server wrote
+meanwhile. The \code{Date} \omterm{def:g10:http-clients-servers:http-header}{header} is left out of the printout because it changes every second.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize]
+  \node[draw, fill=omDef!8, align=left, font=\ttfamily\footnotesize, inner sep=4pt] (q) {%
+    GET /hello HTTP/1.1\\Host: 127.0.0.1\\Connection: close\\\ \\};
+  \node[draw, fill=omProp!10, align=left, font=\ttfamily\footnotesize, inner sep=4pt, right=26mm of q] (r) {%
+    HTTP/1.1 200 OK\\Server: BrenmoorSite/1.0\\Content-Type: text/plain; charset=utf-8\\Content-Length: 20\\\ \\
+    Hello from Brenmoor};
+  \node[above=1mm of q, font=\footnotesize\bfseries] {request};
+  \node[above=1mm of r, font=\footnotesize\bfseries] {response};
+  \draw[ptr] ([yshift=2mm]q.east) -- node[above] {client to server} ([yshift=2mm]q.east -| r.west);
+  \draw[ptr, omProp] ([yshift=-4mm]q.east -| r.west) -- node[below] {server to client} ([yshift=-4mm]q.east);
+  \node[left=1mm of q.north west, anchor=north east, align=right, text=omDef] {request line\\headers\\\\empty line};
+\end{tikzpicture}
+
+{\small One exchange. The \omterm{def:g10:http-clients-servers:http}{request} line names a \emph{\omterm{def:g10:http-clients-servers:methods}{method}}, a path and the version of \omterm{def:g10:http-clients-servers:http}{HTTP}; the status line gives
+the version, a \omterm{def:g10:http-clients-servers:status}{status code} and its meaning in words. The body follows the empty line, and \code{Content-Length}
+tells the client where it ends.}
+\end{omfigure}
+
+Here is the server. Its code is grouped in a \emph{class}, a notion of grade 12; for now, read it as a set of
+functions that the \code{http.server} module calls: \code{do_GET} for each \omterm{def:g10:http-clients-servers:methods}{GET} \omterm{def:g10:http-clients-servers:http}{request}, \code{do_POST} for each \omterm{def:g10:http-clients-servers:methods}{POST}
+\omterm{def:g10:http-clients-servers:http}{request}, and \code{self} as the way to reach the \omterm{def:g10:http-clients-servers:http}{request} and to answer it.
+
+The file starts by importing \code{http.server} and \code{urllib.parse}, and by naming the folder of the site's
+files and the type of each kind of file; then comes the class.
+
+\omcode{code/grade-10/08-http-clients-servers/listings/library_site.py}{11}{44}{The library site: answering a \omterm{def:g10:http-clients-servers:methods}{GET}
+\omterm{def:g10:http-clients-servers:http}{request}.}\label{lst:g10:http-clients-servers:site-get}
+
+Python's \code{urllib.request} module is a client: it writes the \omterm{def:g10:http-clients-servers:http}{request}, reads the \omterm{def:g10:http-clients-servers:http}{response} and separates its
+parts.
+
+\omcode{code/grade-10/08-http-clients-servers/listings/fetch_once.py}{1}{13}{A client with
+\code{urllib}.}\label{lst:g10:http-clients-servers:fetch-once}
+
+\omoutput{code/grade-10/08-http-clients-servers/outputs/fetch_once.txt}{The same exchange, seen by a
+client library.}\label{out:g10:http-clients-servers:fetch-once}
+
+% ledger: g10:http-9110-classes
+\begin{definition}[Status code]\label{def:g10:http-clients-servers:status}
+The \emph{status code}\index{status code} of a \omterm{def:g10:http-clients-servers:http}{response} is a three-digit number whose first digit gives its class:
+\code{1xx} information, \code{2xx} success (\code{200 OK}), \code{3xx} redirection, the resource is elsewhere
+(\code{303 See Other}), \code{4xx} an error of the client (\code{404 Not Found}), \code{5xx} an error of the server.
+\end{definition}
+
+\omcode{code/grade-10/08-http-clients-servers/listings/status_codes.py}{1}{12}{Three paths, three
+outcomes.}\label{lst:g10:http-clients-servers:status-codes}
+
+\omoutput{code/grade-10/08-http-clients-servers/outputs/status_codes.txt}{The client follows the redirection on its
+own: the server's log shows two \omterm{def:g10:http-clients-servers:http}{requests} for \code{/old-hello}.}\label{out:g10:http-clients-servers:status-codes}
+
+A browser does the same, and does more: once the page has arrived, it reads its HTML and sends one more \omterm{def:g10:http-clients-servers:http}{request} for
+each stylesheet and each image the page names.
+
+\begin{omfigure}
+\begin{tikzpicture}[y=-7mm, font=\footnotesize]
+  \draw[thick] (0,0) node[above] {browser} -- (0,7.6);
+  \draw[thick] (8,0) node[above] {server} -- (8,7.6);
+  \foreach \y/\q/\r in {0.4/{GET /page.html}/{200, 425 bytes of HTML}, 2.6/{GET /style.css}/{200, 92 bytes},
+      4.8/{GET /logo.svg}/{200, 204 bytes}} {
+    \draw[ptr] (0,\y) -- node[pos=0.3, above, sloped] {\q} (8,\y+0.6);
+    \draw[ptr, omProp] (8,\y+0.9) -- node[pos=0.3, below, sloped] {\r} (0,\y+1.5);
+  }
+  \node[align=center] at (4,7.2) {\dots\ and two more images};
+  \node[anchor=west, align=left, text=black!60] at (8.3,1.3) {the browser reads the HTML\\and finds 4 resources};
+\end{tikzpicture}
+
+{\small Loading one page. Each arrow pair is one \omterm{def:g10:http-clients-servers:http}{request} and its \omterm{def:g10:http-clients-servers:http}{response}; time runs downwards. The browser cannot
+ask for the stylesheet before it has read the page that names it.}
+\end{omfigure}
+
+\section{Forms and parameters}\label{sec:g10:http-clients-servers:forms}
+
+\begin{definition}[Form, parameter]\label{def:g10:http-clients-servers:form}
+A \emph{form}\index{form} is the part of a web page where the user types or chooses values and sends them; each value
+is sent as a \emph{parameter}\index{parameter}, a pair \code{name=value}, to the address that the form names.
+\end{definition}
+
+\omcode{code/grade-10/08-http-clients-servers/listings/site_files/page.html}{1}{16}{The library page, with its
+\omterm{def:g10:http-clients-servers:form}{form}.}\label{lst:g10:http-clients-servers:page}
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \omwindow{8}{4.2}{Brenmoor Library}
+  \pic at (0,0) {window};
+  \node[anchor=north west, font=\sffamily\bfseries\large] at (0.3,3.55) {Brenmoor Library};
+  \fill[ocBlue] (0.75,2.25) circle (0.32); \node[font=\tiny\sffamily, text=white] at (0.75,2.25) {logo};
+  \node[anchor=west, font=\sffamily\small] at (0.3,1.4) {Title:};
+  \draw[black!60, fill=white] (1.3,1.18) rectangle (4.3,1.62);
+  \node[draw=black!60, fill=black!8, rounded corners=1pt, font=\sffamily\small] at (5.0,1.4) {Search};
+  \node[anchor=west, font=\sffamily\small] at (0.3,0.55) {Open every day.};
+  \fill[ocBlue] (3.2,0.55) circle (0.22); \fill[ocBlue] (3.75,0.55) circle (0.22);
+\end{tikzpicture}
+
+{\small The page as a browser shows it. Typing \textit{forest} and pressing \textit{Search} makes the browser \omterm{def:g10:http-clients-servers:http}{request}
+\code{/search?title=forest}: the \omterm{def:g10:http-clients-servers:form}{form}'s \code{method} is \code{get}.}
+\end{omfigure}
+
+\begin{definition}[Methods GET and POST]\label{def:g10:http-clients-servers:methods}
+The \emph{method}\index{method (HTTP)} of a \omterm{def:g10:http-clients-servers:http}{request} says what the client wants. \emph{GET}\index{GET} asks for a
+resource; its \omterm{def:g10:http-clients-servers:form}{parameters}, if any, travel in the \omterm{def:g10:http-clients-servers:url}{query string} of the address. \emph{POST}\index{POST} sends data to
+the server, such as a \omterm{def:g10:http-clients-servers:form}{form} to record; its \omterm{def:g10:http-clients-servers:form}{parameters} travel in the body of the \omterm{def:g10:http-clients-servers:http}{request}.
+\end{definition}
+
+\omcode{code/grade-10/08-http-clients-servers/listings/library_site.py}{46}{57}{The site: a \omterm{def:g10:http-clients-servers:methods}{POST} \omterm{def:g10:http-clients-servers:http}{request}, whose
+\omterm{def:g10:http-clients-servers:form}{parameters} are read from the body.}\label{lst:g10:http-clients-servers:site-post}
+
+\omcode{code/grade-10/08-http-clients-servers/listings/form_get_post.py}{1}{12}{The same search, sent with \omterm{def:g10:http-clients-servers:methods}{GET} and
+with \omterm{def:g10:http-clients-servers:methods}{POST}.}\label{lst:g10:http-clients-servers:form-get-post}
+
+\omoutput{code/grade-10/08-http-clients-servers/outputs/form_get_post.txt}{With \omterm{def:g10:http-clients-servers:methods}{GET} the \omterm{def:g10:http-clients-servers:form}{parameter} is in the \omterm{def:g10:http-clients-servers:http}{request}
+line, so it ends up in the server's log; with \omterm{def:g10:http-clients-servers:methods}{POST} it is in the body.}\label{out:g10:http-clients-servers:form-get-post}
+
+% ledger: g10:http-9110-safe
+\begin{method}[Choosing between GET and POST]\label{met:g10:http-clients-servers:get-post}
+\begin{enumerate}
+  \item A \omterm{def:g10:http-clients-servers:http}{request} that only reads (a search, a page) uses \omterm{def:g10:http-clients-servers:methods}{GET}: its address can be copied, bookmarked and sent again
+    without harm. The rules of \omterm{def:g10:http-clients-servers:http}{HTTP} call \omterm{def:g10:http-clients-servers:methods}{GET} a \emph{safe} \omterm{def:g10:http-clients-servers:methods}{method}: it must not change anything on the server.
+  \item A \omterm{def:g10:http-clients-servers:http}{request} that changes something (a loan, a message, an order) uses \omterm{def:g10:http-clients-servers:methods}{POST}, so that a crawler following links
+    or a reloaded page does not repeat it unseen.
+  \item Large data (a file, a long text) goes in a \omterm{def:g10:http-clients-servers:methods}{POST} body: addresses have a limited length.
+  \item A password never goes in an address: addresses are logged and kept in the browser's history. It goes in a
+    \omterm{def:g10:http-clients-servers:methods}{POST} body, over \omterm{def:g10:http-clients-servers:https}{HTTPS}.
+\end{enumerate}
+\end{method}
+
+% ledger: g10:uri-3986
+An address may only hold some \omterm{def:g10:text-encodings:ascii}{ASCII} characters, so the others are written by \emph{percent-encoding}: each byte of
+their \omterm{def:g10:text-encodings:utf8}{UTF-8} encoding becomes \texttt{\%} followed by two hexadecimal digits. In a \omterm{def:g10:http-clients-servers:form}{form}'s \omterm{def:g10:http-clients-servers:url}{query string}, a space may
+also be written \code{+}.
+
+\omcode{code/grade-10/08-http-clients-servers/listings/percent.py}{1}{5}{Percent-encoding and
+back.}\label{lst:g10:http-clients-servers:percent}
+
+\omoutput{code/grade-10/08-http-clients-servers/outputs/percent.txt}{\textit{é} is the two bytes \code{C3 A9}; the
+space is \code{20} and \code{&} is \code{26}.}\label{out:g10:http-clients-servers:percent}
+
+\section{Cookies and sessions}\label{sec:g10:http-clients-servers:cookies}
+
+Each \omterm{def:g10:http-clients-servers:http}{HTTP} \omterm{def:g10:http-clients-servers:http}{request} stands alone: the server does not remember the previous one. To recognise a visitor, it hands the
+browser a small piece of text that the browser sends back.
+
+% ledger: g10:cookie-6265
+\begin{definition}[Cookie, session]\label{def:g10:http-clients-servers:cookie}
+A \emph{cookie}\index{cookie} is a pair \code{name=value} that a server sends in a \code{Set-Cookie} \omterm{def:g10:http-clients-servers:http-header}{header} and that
+the browser stores and sends back, in a \code{Cookie} \omterm{def:g10:http-clients-servers:http-header}{header}, with every later \omterm{def:g10:http-clients-servers:http}{request} to the same server. A
+\emph{session}\index{session} is the series of \omterm{def:g10:http-clients-servers:http}{requests} of one visitor that a server links together, usually through
+a cookie holding a random \emph{session identifier}, while the session's data stays on the server.
+\end{definition}
+
+\omcode{code/grade-10/08-http-clients-servers/listings/library_site.py}{59}{63}{The site: a visit counter kept in a
+\omterm{def:g10:http-clients-servers:cookie}{cookie}.}\label{lst:g10:http-clients-servers:site-count}
+
+\omcode{code/grade-10/08-http-clients-servers/listings/cookie_counter.py}{1}{13}{A client with a \omterm{def:g10:http-clients-servers:cookie}{cookie} jar, like a
+browser.}\label{lst:g10:http-clients-servers:cookie-counter}
+
+\omoutput{code/grade-10/08-http-clients-servers/outputs/cookie_counter.txt}{Three visits: each \omterm{def:g10:http-clients-servers:http}{response} sets the
+\omterm{def:g10:http-clients-servers:cookie}{cookie} that the next \omterm{def:g10:http-clients-servers:http}{request} sends back.}\label{out:g10:http-clients-servers:cookie-counter}
+
+The counter lives in the browser: a visitor could edit the \omterm{def:g10:http-clients-servers:cookie}{cookie} and claim a thousand visits. Anything the server
+must trust, such as who is logged in, stays on the server, and the \omterm{def:g10:http-clients-servers:cookie}{cookie} holds only an identifier too long and
+random to guess (\cref{exo:g10:http-clients-servers:13}).
+
+\begin{safety}
+\omterm{def:g10:http-clients-servers:cookie}{Cookies} are also how a site, or an advertiser present on many sites, recognises the same browser from visit to
+visit. Browsers let you see and delete the \omterm{def:g10:http-clients-servers:cookie}{cookies} of each site, block the \omterm{def:g10:http-clients-servers:cookie}{cookies} of sites other than the one you
+are visiting, and delete everything when the window is closed. A private window starts with no \omterm{def:g10:http-clients-servers:cookie}{cookies} and forgets
+them at the end.
+\end{safety}
+
+\section{What runs where}\label{sec:g10:http-clients-servers:where}
+
+The server's code ran on the server: it chose the answer, and the browser received only the result. A page can also
+carry code that runs in the browser, written in the language \emph{JavaScript}. Such code reacts to
+\emph{events}, a click on a button, a key typed in a box, the end of loading, by running a function called a
+\emph{handler}: it can check a \omterm{def:g10:http-clients-servers:form}{form} before it is sent, or change part of the page without loading a new one.
+Whatever runs in the browser can be read and changed by the user, so a server checks every value it receives again.
+
+\begin{definition}[HTTPS]\label{def:g10:http-clients-servers:https}
+\emph{HTTPS}\index{HTTPS} is \omterm{def:g10:http-clients-servers:http}{HTTP} sent over an encrypted connection: the same \omterm{def:g10:http-clients-servers:http}{requests} and \omterm{def:g10:http-clients-servers:http}{responses}, but anyone who
+watches the packets on the way sees only unreadable bytes, and the browser checks that the server really is the one
+named in the address. Grade 12 explains how.
+\end{definition}
+
+\begin{history}[The web]
+% ledger: g10:web-1989, g10:web-1990
+The web was proposed in March 1989 by Tim Berners-Lee, then working at a European physics laboratory, as a way to
+share documents linked to one another. By the end of 1990 the first web server and the first browser ran there, and
+the address of the first site was \code{info.cern.ch}. \omterm{def:g10:http-clients-servers:http}{HTTP}, HTML and \omterm{def:g10:http-clients-servers:url}{URLs} were the three pieces of the proposal,
+and they still are.
+\end{history}
+
+\section{Exercises}\label{sec:g10:http-clients-servers:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g10:http-clients-servers:1}
+Give the \omterm{def:g10:http-clients-servers:url}{scheme}, \omterm{def:g10:http-clients-servers:url}{host}, port, path, \omterm{def:g10:http-clients-servers:url}{query string} and \omterm{def:g10:http-clients-servers:url}{fragment} of
+\texttt{https://maps.brenmoor.example/route?from=3\&to=17\#map}. Which port does the browser use?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:http-clients-servers:2}
+Give the class of each \omterm{def:g10:http-clients-servers:status}{status code}, and say whose fault each error is: \code{201}, \code{301}, \code{403},
+\code{500}, \code{503}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:http-clients-servers:3}
+The page's \omterm{def:g10:http-clients-servers:form}{form} has \code{method="get"}. A user types \textit{the lost code} and presses \textit{Search}. Write the
+\omterm{def:g10:http-clients-servers:http}{request} line the browser sends.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:http-clients-servers:4}
+A browser visits \code{/count} twice, then deletes the site's \omterm{def:g10:http-clients-servers:cookie}{cookies}, then visits it once more. What does each
+\omterm{def:g10:http-clients-servers:http}{response} say, and what is in the jar at the end?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:http-clients-servers:5}
+Write \code{query_params(url)}, which returns the dictionary of the \omterm{def:g10:http-clients-servers:form}{parameters} of an address's \omterm{def:g10:http-clients-servers:url}{query string}, without
+\code{urllib}. Leave the values percent-encoded.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:http-clients-servers:6}
+A student writes a \omterm{def:g10:http-clients-servers:http}{response} by hand as a status line, a \code{Content-Type} \omterm{def:g10:http-clients-servers:http-header}{header}, then the body. The client waits
+and never shows the page. Find the two things missing, and say what each one tells the client.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:http-clients-servers:7}
+In the site, the last branch of \code{do_GET} answers \code{404}. What would happen to a \omterm{def:g10:http-clients-servers:http}{request} for an unknown path
+if that branch were missing? Why is an answer always needed?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:http-clients-servers:8}
+Count the bytes of the \omterm{def:g10:http-clients-servers:http}{request} of the raw exchange listing, the \texttt{\textbackslash r\textbackslash n} included. How many of them are
+\omterm{def:g10:http-clients-servers:http-header}{headers} and empty line, and how many \omterm{def:g10:http-clients-servers:http}{request} line?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:http-clients-servers:9}
+A login \omterm{def:g10:http-clients-servers:form}{form} uses \code{method="get"} over \code{http}. The address after logging in is
+\code{/login?user=noor&password=tulip7}. List three places where the password can now be read, and correct the
+\omterm{def:g10:http-clients-servers:form}{form}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:http-clients-servers:10}
+Percent-encode \textit{café \& co} by hand, as in a path (space as \texttt{\%20}). Then explain why a raw \code{&}
+cannot be left inside a \omterm{def:g10:http-clients-servers:url}{query string}'s value.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:http-clients-servers:11}
+Add a route \code{/sum?a=2&b=40} to the site that answers the sum, \code{42}, and answers \code{400} (bad \omterm{def:g10:http-clients-servers:http}{request})
+when a \omterm{def:g10:http-clients-servers:form}{parameter} is missing or not a whole number.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:http-clients-servers:12}
+A page names $1$ stylesheet and $3$ images. Each new connection costs one round trip before the first \omterm{def:g10:http-clients-servers:http}{request}, and
+each \omterm{def:g10:http-clients-servers:http}{request} and its \omterm{def:g10:http-clients-servers:http}{response} cost one more. How many round trips does loading the page take with a new connection
+for every \omterm{def:g10:http-clients-servers:http}{request}? With a single connection reused? Why can the stylesheet never be requested in the same round trip
+as the page?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:http-clients-servers:13}
+Write a route \code{/basket?add=bread} that keeps a shopping basket per visitor on the server: a dictionary from a
+\omterm{def:g10:http-clients-servers:cookie}{session} identifier to the list of items, the identifier made with \code{secrets.token_hex(8)} and sent in a \omterm{def:g10:http-clients-servers:cookie}{cookie}.
+Why is it safer than keeping the basket itself in the \omterm{def:g10:http-clients-servers:cookie}{cookie}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:http-clients-servers:14}
+A route \code{/a} redirects to \code{/b}, and \code{/b} redirects to \code{/a}. What does a client do? Try it with
+\code{urllib}, and explain how a client can detect such a loop.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:http-clients-servers:15}
+A site deletes a book from its catalogue when \code{GET /delete?book=12} is requested, from a link on an
+administrator's page. Describe how a search engine's crawler, which follows every link it finds, could empty the
+catalogue, and propose a correct design.
+\end{exercise}
+
+\section{Problem: What One Page Costs}\label{sec:g10:http-clients-servers:problem}
+
+\begin{problem}[{Weekend problem --- how long the library page takes to load}]\label{pb:g10:http-clients-servers:1}
+The program \code{exercises/page_cost.py} starts the library site, \omterm{def:g10:http-clients-servers:http}{requests} \code{page.html} as a browser would,
+reads it, \omterm{def:g10:http-clients-servers:http}{requests} every resource it names, and prints the size of every body. Take a latency of $50$~ms: a round
+trip, a message there and its answer back, takes $50$~ms. Opening a connection costs one round trip; each \omterm{def:g10:http-clients-servers:http}{request}
+and its \omterm{def:g10:http-clients-servers:http}{response} cost one more.
+
+\medskip\noindent\textbf{Part I --- One page and its resources.}
+\begin{enumerate}
+  \item Read \code{page.html}: which resources does it name, and with which tags?
+  \item How many \omterm{def:g10:http-clients-servers:http}{requests} does loading the page take in all?
+  \item Which \omterm{def:g10:http-clients-servers:http}{request} must come first, and why?
+  \item Which \omterm{def:g10:http-clients-servers:status}{status code} does each of them receive?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Requests and bytes.}
+\begin{enumerate}[resume]
+  \item Run the program. Give the size of each body and the total.
+  \item The \omterm{def:g10:http-clients-servers:http}{response} \omterm{def:g10:http-clients-servers:http-header}{headers} of the site take about $130$ bytes per \omterm{def:g10:http-clients-servers:http}{response}. Estimate the total number of bytes
+    received, \omterm{def:g10:http-clients-servers:http-header}{headers} included. Which part of it is \omterm{def:g10:http-clients-servers:http-header}{headers}?
+  \item The \omterm{def:g10:http-clients-servers:http}{requests} a browser sends are about $400$ bytes each, with many \omterm{def:g10:http-clients-servers:http-header}{headers}. Compare the bytes sent and the
+    bytes received.
+  \item At $10$ megabits per second, how long does it take to receive the bytes of question 6? Compare with one round
+    trip.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Round trips.}
+\begin{enumerate}[resume]
+  \item With a new connection for each \omterm{def:g10:http-clients-servers:http}{request}, how many round trips does the page take, and how many milliseconds?
+  \item With one connection reused for every \omterm{def:g10:http-clients-servers:http}{request}?
+  \item A browser opens up to six connections at once to one server. With two connections opened together after the
+    HTML has arrived, how many round trips does the page take?
+  \item Which matters more for this page: the number of bytes or the number of round trips?
+  \item With one reused connection, what latency would make the page take a whole second?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Caching.}
+\begin{enumerate}[resume]
+  \item On a second visit, the browser still holds the four resources. If it asks for each one again with a \omterm{def:g10:http-clients-servers:http-header}{header}
+    saying which copy it has, the server can answer \code{304 Not Modified} with no body. How many round trips does
+    that visit take with one connection?
+  \item If the server says, in a \omterm{def:g10:http-clients-servers:http-header}{header} of the first visit, that the resources stay valid for a day, the browser
+    does not ask at all. How many round trips then?
+  \item Why can the HTML page itself rarely be kept that way?
+  \item A reader opens the page ten times a day. With one reused connection, how many round trips per day does the
+    day-long validity save, compared with asking again each time as in question 14?
+  \item State the result: the \omterm{def:g10:http-clients-servers:http}{requests}, the bytes and the round trips of the page, and its load time with a new
+    connection per \omterm{def:g10:http-clients-servers:http}{request} and with one reused connection.
+\end{enumerate}
+\end{problem}

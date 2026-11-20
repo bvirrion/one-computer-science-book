@@ -1,0 +1,110 @@
+\section*{Chapter \ref{ch:b3:query-optimisation} --- Query Processing and Optimisation}
+
+\begin{solution}{exo:b3:query-optimisation:1}
+With 50 pages per block: $R$ outside, $2{,}000 + 40 \times 300 = 14{,}000$; $S$ outside, $300 + 6 \times 2{,}000 = 12{,}300$. The number of blocks times the inner size is about $MN/(B-2)$ either way; the outer relation is read once more, so the smaller relation should be outside, and rounding up the number of blocks also favours it.
+\end{solution}
+
+\begin{solution}{exo:b3:query-optimisation:2}
+With $B = 11$: $\lceil 5000/11 \rceil = 455$ runs, then 46, 5 and 1 after three merge passes of 10 runs: 4 passes, $2 \times 5{,}000 \times 4 = 40{,}000$ page I/O. With $B = 101$: 50 runs, merged in one pass of 100: 2 passes, 20,000. Two passes sort up to $B(B-1) = 110$ pages with 11 buffer pages: 10 runs of 11 pages, merged at once.
+\end{solution}
+
+\begin{solution}{exo:b3:query-optimisation:3}
+Equi-width: the first bucket holds 568 days with 26 distinct values, so an equality is estimated at $568/26 \approx 21.8$. Equi-depth: four buckets hold only the value 0, $91 + 91 + 92 + 91 = 365$ days counted whole, and the fifth, $[0, 0.2]$, has 91 days and 3 distinct values, $91/3 \approx 30.3$: 395.3 in all. The assumption that every distinct value in a bucket is equally frequent makes the equi-width estimate low: 0 is one of 26 values but has 447 of the 568 days.
+\end{solution}
+
+\begin{solution}{exo:b3:query-optimisation:4}
+Before the index: \texttt{SCAN l}, then \texttt{SEARCH b USING INTEGER PRIMARY KEY (rowid=?)}: each loan looks up its book by rowid and the genre is tested there. After it: \texttt{SCAN b}, then \texttt{SEARCH l USING INDEX loans\_book (book\_id=?)}: the 80 books are scanned, the condition on the genre keeps the mysteries, and only their loans are found through the index. A test checks the four lines.
+\end{solution}
+
+\begin{solution}{exo:b3:query-optimisation:5}
+The buggy join counts 85 page I/O, the fixed one 25. Building on the 20-page input, which does not fit in $B - 2 = 6$ pages, it must partition both inputs: $3(20 + 5) = 75$, plus 10 pages from part-filled buckets. Building on the 5-page input, the table fits in memory and each input is read once: $20 + 5 = 25$. The fix compares the sizes and builds on the smaller, swapping the order of the columns back in each output tuple:
+\begin{center}
+\texttt{if len(S) < len(R):\ return join\_building\_on(S, R, b, a, B, disk, build\_is\_left=False)}
+\end{center}
+\end{solution}
+
+\begin{solution}{exo:b3:query-optimisation:6}
+\code{exercises/ex6_sortmerge.py} sorts both inputs, then reads each as a sequence of groups of equal keys. It advances the group of $S$ while its key is smaller than the current key of $R$; on equal keys it outputs the product of the two groups. A group of $S$ is kept while several groups of $R$ are compared with it, which is why groups, not single tuples, are the unit. The I/O is that of the merge join if every group of $S$ fits in memory; otherwise the group's pages are read again for each page of the matching $R$ group. The test compares its output with the nested loop on random relations with many duplicates.
+\end{solution}
+
+\begin{solution}{exo:b3:query-optimisation:7}
+Facts used: a tuple of $E_1 \bowtie_\theta E_2$ is a pair $(t_1, t_2)$ with $\theta(t_1, t_2)$ true; $\pi_L$ keeps the columns in $L$.
+
+Let $(t_1, t_2)$ be in the join. Then $(t_1[L_1], t_2[L_2])$ is in the right-hand join, since $\theta$ reads only columns in $L_1 \cup L_2$, and its projection on $L$ equals that of $(t_1, t_2)$, since $L \subseteq L_1 \cup L_2$. Conversely, a pair $(u_1, u_2)$ of the right-hand join comes from some $t_1 \in E_1$, $t_2 \in E_2$ with $u_i = t_i[L_i]$, and $\theta(t_1, t_2) = \theta(u_1, u_2)$ is true: so $(t_1, t_2)$ is in the left-hand join with the same projection. If $L_i$ lacked a column of $\theta$, the right-hand join could not evaluate its condition: pushing $\pi_{\mathit{title}}$ below the join on \code{book_id} would lose the column the join needs.
+\end{solution}
+
+\begin{solution}{exo:b3:query-optimisation:8}
+A \omterm{def:b3:query-optimisation:search}{left-deep plan} is fixed by the order in which the relations enter: $n!$ orders. A join tree of any shape is a binary tree with $n$ leaves, ordered children, labelled by the relations: there are $C_{n-1} = \frac{(2n-2)!}{n!\,(n-1)!}$ tree shapes with $n$ leaves (the Catalan number) and $n!$ labellings, giving $(2n-2)!/(n-1)!$. For a chain, an order avoids products exactly when the relations entered so far form a segment of the chain: the first relation is anywhere, and each next one extends the segment at its left or right end; the sequence of $n - 1$ choices of end determines the order, and every sequence of ends determines a valid first relation. There are $2^{n-1}$ such orders. A test counts the trees by recursion for $n \le 7$.
+\end{solution}
+
+\begin{solution}{exo:b3:query-optimisation:9}
+Facts used: Cauchy--Schwarz, $(\sum_v c_v)^2 \le V \sum_v c_v^2$ for $V$ numbers $c_v$.
+
+The estimate is $400 \times 400/60 \approx 2{,}667$ pairs; the true count is $\sum_v c_v^2 = 3{,}084$, where $c_v$ is the number of loans of member $v$ (pairs of a loan with itself included). For a self-join on a column with $V$ values and counts $c_v$, the result has $\sum_v c_v^2$ tuples and the estimate is $|R|^2/V = (\sum_v c_v)^2 / V$. By Cauchy--Schwarz the estimate is at most the truth, with equality only when all $c_v$ are equal: skew always makes a self-join larger than estimated.
+\end{solution}
+
+\begin{solution}{exo:b3:query-optimisation:10}
+Facts used: the partition phase uses one input buffer and $B - 1$ output buffers; the join phase holds one bucket's hash table in $B - 2$ pages, with one page to read the other bucket and one for output.
+
+Partitioning reads both inputs and writes them once, as buckets: $2(M + N)$. If each bucket of the smaller input fits in $B - 2$ pages, the join phase reads every bucket of both inputs once: $M + N$ more, $3(M + N)$ in all. With an even hash, the smaller input of $m = \min(M, N)$ pages splits into buckets of $m/(B-1)$ pages, which fit when $m/(B-1) \le B - 2$, that is $m \le (B-1)(B-2)$. When a bucket is too large, it and its partner are partitioned again with another hash function, one more read and write of both: $5(M + N)$ if every bucket needs it, less if only some do. In \cref{out:b3:query-optimisation:joins}, $\min(M, N) = 100 \le 11 \times 10$, and one round suffices.
+\end{solution}
+
+\begin{solution}{exo:b3:query-optimisation:11}
+The program prints, for (out before, due before) = (3, 3), (6, 6), (6, 4) and (10, 12): true counts 40, 150, 73, 329; independence estimates 6.4, 65.2, 31.8, 311.7; two-column estimates equal to the true counts. Independence fails because the due date is the out date plus 21 days; it is close only when one condition holds for almost every row, as with a due date before December. The two-column statistic stores a count per pair of months, and its estimate is exact whenever the query's boundaries fall on month boundaries, since the query is then a union of whole cells; for a boundary inside a month it must spread a cell's count as a histogram does. Here it has 22 non-empty cells, the out month and the next one: at most 144 counts to store, against 12 for each column alone.
+\end{solution}
+
+\begin{solution}{exo:b3:query-optimisation:12}
+Facts used: in the cost model, the cost of joining a relation $r$ to a plan for $S$ depends on the plan only through its number of tuples, fixed by $S$, and its output order.
+
+\code{exercises/ex12_orders.py} keys its table by (set, order). For four relations of 50 tuples joined on $k$, the plain search chooses three \omterm{def:b3:query-optimisation:joins}{hash joins}, $3 \times 30 = 90$; the extended search chooses three merge joins, $30 + 20 + 20 = 70$: the first merge sorts both inputs, each later one finds its left input already sorted on $k$ and sorts only the 5-page relation. The plain search lost this because for $\{R_3, R_4\}$ the merge join costs as much as the \omterm{def:b3:query-optimisation:joins}{hash join}, 30, and only one was kept, the hash. Proof of optimality: take an optimal \omterm{def:b3:query-optimisation:search}{left-deep plan} for all relations; its last join adds $r$ to a plan $P$ for $S \setminus \{r\}$ with output order $o$. Replacing $P$ by the cheapest plan for $(S \setminus \{r\}, o)$ keeps the cost of the last join (same tuples, same order) and does not increase the cost of $P$; by induction on the size of the set, the table holds a plan as cheap as the optimum. A test compares the extended search with an exhaustive one on random queries.
+\end{solution}
+
+\begin{solution}{pb:b3:query-optimisation:1}
+\textbf{1.} $\pi_{\mathit{title}, \mathit{last\_name}, \mathit{due\_date}}\, \sigma_{\mathit{late}}\bigl(((\mathit{loans} \bowtie \mathit{books}) \bowtie \mathit{members}) \bowtie \mathit{people}\bigr)$, each join on the shared key.
+
+\textbf{2.} To the loans: \emph{late} reads only \code{return_date} and \code{due_date}, columns of the loans, so \cref{thm:b3:query-optimisation:push} applies at each join on the way down.
+
+\textbf{3.} None of those tables has the dates: the condition cannot be evaluated there.
+
+\textbf{4.} books -- loans -- members -- people: a chain of four.
+
+\textbf{5.} $4! = 24$ orders; $2^3 = 8$ avoid a Cartesian product (\cref{exo:b3:query-optimisation:8}).
+
+\textbf{6.} The joins need \code{book_id}, \code{member_id} and \code{person_id}, which the final projection drops; a pushed projection must keep them (\cref{exo:b3:query-optimisation:7}).
+
+\textbf{7.} Blocks of 3 pages: loans with books, $40 + 14 \times 8 = 152$ reads, 40 written; with members, $40 + 14 \times 6 = 124$, 40 written; with people, $40 + 14 \times 12 = 208$, 40 written; then 40 read for the selection. 524 reads and 120 writes, 644 in all.
+
+\textbf{8.} 40 read and 11 written for the selection; each join reads its 11 input pages and 2 pages per tuple, $11 + 218 = 229$; the first two results are written, 11 pages each. Reads $40 + 3 \times 229 = 727$, writes 33: 760.
+
+\textbf{9.} Selection 51. People with members: the smaller, 6 pages, exceeds $B - 2 = 3$, so Grace: $3(12 + 6) = 54$, and 6 pages written. With the late loans: $3(6 + 11) = 51$, and 11 written. With the books: $3(11 + 8) = 57$. In all $51 + 54 + 6 + 51 + 11 + 57 = 230$.
+
+\textbf{10.} Each of 109 tuples pays 2 page reads per join, 218, more than reading the three small tables many times over: the count has no \omterm{def:b3:database-storage:buffer}{buffer pool}, so the same page of books is read again for every loan.
+
+\textbf{11.} The probes then read nothing: 40 for the loans and 11 for each of the three intermediate inputs, 73 reads, and 33 writes: 106, the cheapest of the three.
+
+\textbf{12.} Here plan B, or plan C if the small tables stay cached, as they would. With a million loans and 1\,\% late, the scan of the loans dominates every plan; the 10,000 late loans then probe three small key indexes held in memory almost for free, so plan C is best while those indexes fit in the \omterm{def:b3:database-storage:buffer}{buffer pool}, and plan B when they do not.
+
+\textbf{13.} The counts are 524 and 120, as in question 7.
+
+\textbf{14.} 727 and 33, as in question 8.
+
+\textbf{15.} The Grace partitions: 4 buckets per input, each ending in a part-filled page, written and read again; $244 - 230 = 14$ such pages.
+
+\textbf{16.} \Cref{thm:b3:query-optimisation:push} and the commutativity and associativity of joins make the three algebra trees equal; each physical join computes the equi-join exactly, as the tests check.
+
+\textbf{17.} Its three joins read $152 + 124 + 208 = 484$ pages; with the selection first, the same block nested loops read $43 + 35 + 59 = 137$. The other 347 reads carry loans that are not late.
+
+\textbf{18.} Each intermediate result would no longer be written and read back. Plan A would save its 120 writes and the 120 reads of the second and third joins' outer inputs and of the selection: about 404. Plan B would save the writes and first reads of its 11-, 6- and 11-page intermediates, $2 \times 28 = 56$: about 188.
+
+\textbf{19.} The model counts only the joins, $3(L + P)$ each: $54 + 51 + 57 = 162$. The count adds the selection, 51, the writes of two intermediates, 17, and the 14 part-filled pages: $162 + 51 + 17 + 14 = 244$.
+
+\textbf{20.} Joining people and members first, the two smallest inputs, gives a 6-page result for 54; every order starting from the late loans joins their 11 pages first, and the cheapest of those costs $51 + 69 + 57 = 177$.
+
+\textbf{21.} Plan C: \texttt{SCAN l}, then searches of the books, members and people by rowid, index nested loops on the primary keys, with the selection applied as each loan is read.
+
+\textbf{22.} SQLite's tables are B-trees keyed by rowid, and the pages of these small tables stay in its page cache: each probe costs a few comparisons in memory, not a disk read. That is question 11's situation, where plan C is the cheapest.
+
+\textbf{23.} That \code{loans_member} holds 400 entries, about 7 per member, and that members has 60 rows. With these counts the planner estimated that 60 searches of about 7 index entries each cost less than a scan of all 400 entries with a search of the members for each, and it reversed the two loops. Without them it had to guess the sizes.
+
+\textbf{24.} The plan chosen by \code{selinger.py} costs 244 page I/O as counted, 162 in its model, against 644 for the query as written: 2.6 times less. The search costed 24 plans; of the 24 orders of four relations, 8 avoid a Cartesian product.
+\end{solution}

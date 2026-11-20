@@ -1,0 +1,477 @@
+% Book 3, Year 1, chapter 28 -- sequential circuits and finite-state machines.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 28.
+% ledger: b1:mealy-1955, b1:moore-1956, b1:core-memory
+\chapter{Sequential Circuits and Finite-State Machines}\label{ch:b1:sequential-circuits}
+
+A traffic light changes every thirty seconds, and it knows which colour comes next. The circuits of
+\cref{ch:b1:combinational-circuits} cannot do that: their outputs depend only on their inputs of the moment, and two
+identical inputs give identical outputs, whatever happened before. A light, a \omterm{def:b1:sequential-circuits:register}{counter}, a lock and a processor all need
+\emph{memory}. This chapter builds memory from gates by letting them feed back on themselves, tames it with a clock,
+and arrives at the \omterm{def:b1:sequential-circuits:fsm}{finite-state machine}, the model behind every controller, whose most important example is the \omterm{def:b1:sequential-circuits:datapath}{control
+unit} of a processor. The last section builds one for the toy machine and checks it, instruction by instruction, against
+the toy machine's simulator.
+
+\begin{recall}
+The second book met the \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop} and the state machine, and its toy machine runs a fetch--decode--execute cycle;
+\omterm{def:b1:combinational-circuits:combinational}{combinational circuits}, \omterm{def:b1:combinational-circuits:karnaugh}{Karnaugh maps}, the ALU and \omterm{def:b1:combinational-circuits:delay}{propagation delay} are in \cref{ch:b1:combinational-circuits}.
+\end{recall}
+
+\section{Feedback and memory}\label{sec:b1:sequential-circuits:feedback}
+
+\begin{definition}[Sequential circuit]\label{def:b1:sequential-circuits:sequential}
+A \emph{sequential circuit}\index{sequential circuit} is a circuit whose outputs depend on the past inputs as well as the
+present ones. Its gates form a \omterm{def:b1:graph-traversals:graph}{graph} with cycles, or it contains elements that store bits.
+\end{definition}
+
+The simplest has two NOR gates, each fed by the other. The simulator for such circuits cannot evaluate the gates in a
+\omterm{def:b1:graph-traversals:topo}{topological order}, since there is none; it moves time forward one gate delay at a time, every gate taking the values its
+inputs had one unit before.
+
+\omcode{code/bachelor-1/28-sequential-circuits/listings/sr_latch.py}{7}{11}{Two NOR gates feeding each
+other}\label{lst:b1:sequential-circuits:sr}
+
+\omoutput{code/bachelor-1/28-sequential-circuits/outputs/sr_latch.txt}{The \omterm{def:b1:sequential-circuits:latch}{latch} traced one gate delay at a time.
+After \emph{set} and \emph{reset} it holds its bit; released from $S = R = 1$ it
+oscillates.}\label{out:b1:sequential-circuits:sr}
+
+\begin{definition}[Latch, SR latch, D latch]\label{def:b1:sequential-circuits:latch}
+A \emph{latch}\index{latch} is a circuit with two stable \omterm{def:b1:sequential-circuits:fsm}{states} that stores one bit. An \emph{SR latch}\index{SR latch} has
+inputs $S$ (set) and $R$ (reset): $S = 1$ makes its output $Q$ 1, $R = 1$ makes it 0, and $S = R = 0$ keeps it. The
+input $S = R = 1$ is forbidden. A \emph{D latch}\index{D latch} has a data input $D$ and an enable $E$: while $E = 1$ its
+output follows $D$ (it is \emph{transparent}), and while $E = 0$ it keeps the last value.
+\end{definition}
+
+\begin{omfigure}
+\begin{minipage}{0.55\linewidth}\centering
+\begin{circuitikz}[font=\small]
+\node[nor port] (top) at (2,1) {}; \node[nor port] (bot) at (2,-1) {};
+\draw (top.in 1) -- ++(-0.9,0) node[left] {$R$}; \draw (bot.in 2) -- ++(-0.9,0) node[left] {$S$};
+\draw (top.out) -- ++(0.9,0) node[right] {$Q$}; \draw (bot.out) -- ++(0.9,0) node[right] {$Q'$};
+\fill ($(top.out)+(0.3,0)$) circle (1.3pt) ($(bot.out)+(0.3,0)$) circle (1.3pt);
+\draw ($(top.out)+(0.3,0)$) -- ++(0,-0.6) -- ($(bot.in 1)+(-0.4,0.45)$) |- (bot.in 1);
+\draw ($(bot.out)+(0.3,0)$) -- ++(0,0.6) -- ($(top.in 2)+(-0.4,-0.45)$) |- (top.in 2);
+\end{circuitikz}
+\end{minipage}%
+\begin{minipage}{0.4\linewidth}\centering\small
+\begin{tabular}{cc|l}
+$S$ & $R$ & $Q$ next \\ \hline
+0 & 0 & $Q$ (hold) \\
+1 & 0 & 1 (set) \\
+0 & 1 & 0 (reset) \\
+1 & 1 & forbidden
+\end{tabular}
+\end{minipage}
+\par\smallskip{\small An \omterm{def:b1:sequential-circuits:latch}{SR latch}: the output of each NOR gate is an input of the other. The loop is what remembers.}
+\end{omfigure}
+
+With $S = R = 0$ each NOR gate is an inverter, and two inverters in a loop are stable in two ways, $Q = 1, Q' = 0$ and
+$Q = 0, Q' = 1$: that is the stored bit. $S = 1$ forces $Q' = 0$, hence $Q = 1$; $R = 1$ forces the opposite. With $S = R
+= 1$ both outputs are 0, which is not a pair of complements; releasing both inputs at once lets the two gates race,
+and in a model with exactly equal delays they oscillate for ever. In real gates one wins, but nobody can say which: that is
+why the input is forbidden.
+
+A \omterm{def:b1:sequential-circuits:latch}{D latch} puts two AND gates in front: $S = DE$ and $R = D'E$, so the forbidden input cannot happen. Its transparency is a
+problem, however. If the output of a \omterm{def:b1:sequential-circuits:latch}{latch} feeds, through some logic, back to its own input, a change can run round the
+loop many times while the \omterm{def:b1:sequential-circuits:latch}{latch} is enabled, and the result depends on how long the enable lasts. The cure is to let the
+stored value change only at an instant.
+
+\section{Flip-flops and the clock}\label{sec:b1:sequential-circuits:clock}
+
+\begin{definition}[Flip-flop, edge-triggered D flip-flop]\label{def:b1:sequential-circuits:flip-flop}
+A \emph{flip-flop}\index{flip-flop} stores one bit and changes it only at an edge of a control signal. An
+\emph{edge-triggered D flip-flop}\index{edge-triggered D flip-flop} copies its input $D$ to its output $Q$ at each
+rising edge (a change from 0 to 1) of its clock input, and keeps $Q$ the rest of the time.
+\end{definition}
+
+Two \omterm{def:b1:sequential-circuits:latch}{D latches} make one. The first, the \emph{master}, is enabled while the clock is 0 and follows $D$; the second, the
+\emph{slave}, is enabled while the clock is 1 and copies the master. At the rising edge the master closes, holding the
+value $D$ had at that moment, and the slave opens and shows it; while the clock is 1, $D$ may change, but the master is
+closed.
+
+\omcode{code/bachelor-1/28-sequential-circuits/listings/d_flipflop.py}{10}{25}{A master--slave D \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop} from two \omterm{def:b1:sequential-circuits:latch}{D
+latches}}\label{lst:b1:sequential-circuits:dff}
+
+\omoutput{code/bachelor-1/28-sequential-circuits/outputs/d_flipflop.txt}{The \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop} under a clock of period 20 time
+units: $Q$ changes only after rising edges. Then $D$ is changed at $k$ units from an edge, to find the window in which it
+must not move.}\label{out:b1:sequential-circuits:dff}
+
+\begin{definition}[Clock signal, clock period, synchronous circuit]\label{def:b1:sequential-circuits:clock}
+A \emph{clock signal}\index{clock signal} is a signal that alternates between 0 and 1 at a fixed rate; the time between
+two rising edges is the \emph{clock period}\index{clock period}, and its inverse the clock frequency. A
+\emph{synchronous circuit}\index{synchronous circuit} is made of \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops}, all driven by the same clock, and of
+combinational logic between them, with no loop that does not pass through a \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop}.
+\end{definition}
+
+In a \omterm{def:b1:sequential-circuits:clock}{synchronous circuit} the state, the contents of the \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops}, changes only at the edges; between two edges the
+combinational logic computes, from the state and the inputs, the next state, which the \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops} load at the next edge.
+Every loop is cut by a \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop}, so the logic between edges is combinational, and \cref{ch:b1:combinational-circuits}
+applies to it.
+
+\begin{definition}[Setup time, hold time]\label{def:b1:sequential-circuits:setup}
+The \emph{setup time}\index{setup time} of a \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop} is how long before the clock edge its input must be stable; the
+\emph{hold time}\index{hold time}, how long after the edge it must stay stable. The \emph{clock-to-output delay} is the
+time from the edge to the new output.
+\end{definition}
+
+The measurement in \cref{out:b1:sequential-circuits:dff} finds a \omterm{def:b1:sequential-circuits:setup}{setup time} of 2 units: a $D$ that falls one unit before
+the edge is missed, because the path from $D$ through the NOT gate into the master is one gate longer than the path of a
+rising $D$. Its \omterm{def:b1:sequential-circuits:setup}{hold time} is 0, and the clock-to-output delay 2 units. The figure below draws the run.
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=\linewidth, height=46mm, xmin=0, xmax=79, ymin=-0.3, ymax=5.3, axis lines=none, clip=false]
+\addplot[const plot, thick, black] table[x=t, y expr=\thisrow{clk}*0.9+4]
+  {code/bachelor-1/28-sequential-circuits/figures/dff.dat};
+\addplot[const plot, thick, omDef] table[x=t, y expr=\thisrow{D}*0.9+2]
+  {code/bachelor-1/28-sequential-circuits/figures/dff.dat};
+\addplot[const plot, thick, omThm] table[x=t, y expr=\thisrow{Q}*0.9]
+  {code/bachelor-1/28-sequential-circuits/figures/dff.dat};
+\node[left] at (axis cs:0,4.45) {clock}; \node[left] at (axis cs:0,2.45) {$D$}; \node[left] at (axis cs:0,0.45) {$Q$};
+\pgfplotsinvokeforeach{10,30,50,70}{
+  \draw[gray, dashed] (axis cs:#1,-0.2) -- (axis cs:#1,5.1);
+  \fill[omThm!25, opacity=0.6] (axis cs:#1-2,1.9) rectangle (axis cs:#1,3.0);}
+\node[font=\scriptsize, anchor=south] at (axis cs:50,5.0) {rising edges (dashed)};
+\node[font=\scriptsize, fill=white, inner sep=1pt] at (axis cs:60,3.45) {this pulse of $D$ is never stored};
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The run of \cref{out:b1:sequential-circuits:dff}. $Q$ takes the value $D$ had at each rising edge,
+two time units later; the shaded windows are the \omterm{def:b1:sequential-circuits:setup}{setup times}, in which $D$ must not change.}
+\end{omfigure}
+
+The \omterm{def:b1:sequential-circuits:clock}{clock period} is bounded below. After an edge, the new state appears at the \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop} outputs a clock-to-output delay
+later, crosses the combinational logic along its \omterm{def:b1:combinational-circuits:delay}{longest delay path} (\cref{def:b1:combinational-circuits:delay}), and
+must arrive a \omterm{def:b1:sequential-circuits:setup}{setup time} before the next edge:
+\[ T \geq t_{\text{clock-to-output}} + t_{\text{logic}} + t_{\text{setup}}. \]
+The \omterm{def:b1:sequential-circuits:setup}{hold time} puts a bound on the \emph{shortest} path: the new values must not reach the next \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops} before their \omterm{def:b1:sequential-circuits:setup}{hold
+time} has passed. A processor's clock frequency is set by the slowest path between two of its \omterm{def:b1:sequential-circuits:register}{registers}.
+
+\section{Registers, counters and memory}\label{sec:b1:sequential-circuits:registers}
+
+\begin{definition}[Register, shift register, counter]\label{def:b1:sequential-circuits:register}
+A \emph{register}\index{register (hardware)} is a row of \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops} on the same clock that store a word; with an
+\emph{enable} input, each loads its input when enable is 1 and keeps its value otherwise. A \emph{shift
+register}\index{shift register} moves its bits one place at each edge, a new bit entering at one end. A
+\emph{counter}\index{counter (circuit)} is a register whose value goes through $0, 1, 2, \dots$ at successive edges.
+\end{definition}
+
+The enable is a \omterm{def:b1:combinational-circuits:mux}{multiplexer} in front of each \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop}, choosing between its own output and the new input: a \omterm{def:b1:sequential-circuits:register}{register}
+with enable is a \omterm{def:b1:sequential-circuits:clock}{synchronous circuit}, its clock never stopped.
+
+\omcode{code/bachelor-1/28-sequential-circuits/listings/shift.py}{6}{17}{A \omterm{def:b1:sequential-circuits:register}{register} with enable and a \omterm{def:b1:sequential-circuits:register}{shift register}, one
+clock edge at a time}\label{lst:b1:sequential-circuits:shift}
+
+\omoutput{code/bachelor-1/28-sequential-circuits/outputs/shift.txt}{Loading only when enabled; four bits entering one by
+one, then moving on.}\label{out:b1:sequential-circuits:shift}
+
+A \omterm{def:b1:sequential-circuits:register}{shift register} turns a stream of bits into a word (after four edges the bits 1, 1, 0, 1 sit side by side) and back:
+that is how a serial line, such as a USB cable, carries bytes one bit at a time.
+
+A \omterm{def:b1:sequential-circuits:register}{counter} can be built two ways. In a \emph{synchronous \omterm{def:b1:sequential-circuits:register}{counter}} every \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop} is on the clock, and gates compute the
+next value: bit 0 flips at every edge, bit 1 when bit 0 is 1, bit 2 when bits 0 and 1 are both 1. In a \emph{ripple
+\omterm{def:b1:sequential-circuits:register}{counter}} only the first \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop} sees the clock; each of the others flips when the one before it falls from 1 to 0. It
+needs no gates, but its bits change one after the other.
+
+\omcode{code/bachelor-1/28-sequential-circuits/listings/counter.py}{6}{33}{Two 3-bit \omterm{def:b1:sequential-circuits:register}{counters}, watched at every time
+unit; each \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop} takes $d$ units}\label{lst:b1:sequential-circuits:counter}
+
+\omoutput{code/bachelor-1/28-sequential-circuits/outputs/counter.txt}{The values seen between two clock edges. The ripple
+\omterm{def:b1:sequential-circuits:register}{counter} passes through wrong values: from 3 to 4 it shows 2 and 0 on the
+way.}\label{out:b1:sequential-circuits:counter}
+
+A circuit that reads the ripple \omterm{def:b1:sequential-circuits:register}{counter} while it settles may see 2 or 0 between 3 and 4: a \emph{glitch}. The synchronous
+\omterm{def:b1:sequential-circuits:register}{counter} has none, and settles in one \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop} delay whatever its width, where the ripple \omterm{def:b1:sequential-circuits:register}{counter} needs $n$.
+
+A memory is many \omterm{def:b1:sequential-circuits:register}{registers} and a way to choose one. A $k$-to-$2^k$ \omterm{def:b1:combinational-circuits:mux}{decoder} (\cref{def:b1:combinational-circuits:mux})
+turns the address into one selected row; a write loads the row whose \omterm{def:b1:combinational-circuits:mux}{decoder} output is 1; a read sends the selected row
+through a \omterm{def:b1:combinational-circuits:mux}{multiplexer} to the output.
+
+\begin{definition}[Memory cell]\label{def:b1:sequential-circuits:memory-cell}
+A \emph{memory cell}\index{memory cell} is the circuit that stores one bit of a memory, with an input that selects it for
+writing and an output that the read logic selects.
+\end{definition}
+
+\omcode{code/bachelor-1/28-sequential-circuits/listings/ram.py}{7}{26}{The \omterm{def:b1:combinational-circuits:mux}{decoder} and the \omterm{def:b1:combinational-circuits:mux}{multiplexer} of a 16-word
+memory}\label{lst:b1:sequential-circuits:ram}
+
+\omoutput{code/bachelor-1/28-sequential-circuits/outputs/ram.txt}{A $16 \times 4$ memory: writes and reads, and its
+gates.}\label{out:b1:sequential-circuits:ram}
+
+More than half of the gates are cells, and the share grows with the size: a memory of $2^k$ words of $w$ bits needs $5
+\cdot 2^k w$ gates of cells against about $2^k$ for the \omterm{def:b1:combinational-circuits:mux}{decoder}. Real memories make the cell as small as possible: six
+transistors in a static \omterm{def:b1:sequential-circuits:memory-cell}{memory cell}, one transistor and a capacitor, refreshed thousands of times a second, in a dynamic
+one.
+
+\begin{history}[Magnetic cores]
+% ledger: b1:core-memory
+Before memories were made of transistors, the main memory of computers was a plane of tiny rings of magnetic material,
+threaded on a grid of wires: each ring held one bit as the direction of its magnetisation, and the current in one row
+wire and one column wire together selected a single ring, a \omterm{def:b1:combinational-circuits:mux}{decoder} made of physics. Jay Forrester described the
+three-dimensional arrangement in 1951, and core memory was the main memory of most computers until the 1970s.
+\end{history}
+
+\omimg{book3/core-memory-plane.jpg}{0.4\linewidth}{A plane of core memory holding 1024 bits: 32 rows and 32 columns of
+ferrite rings, each threaded by the wires of its row and its column. Photograph: Konstantin Lanzet, CC BY-SA 3.0.}
+
+\section{Finite-state machines}\label{sec:b1:sequential-circuits:fsm}
+
+Every \omterm{def:b1:sequential-circuits:clock}{synchronous circuit} is the same object seen from far: a state, kept in \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops}; an input at each clock cycle;
+a next state and an output computed from them. Mathematics names it.
+
+\begin{definition}[Finite-state machine]\label{def:b1:sequential-circuits:fsm}
+A \emph{finite-state machine}\index{finite-state machine} has a finite set of \emph{states}\index{state (of a machine)},
+one of them initial, a finite input alphabet $\Sigma$, an output alphabet, and a \emph{transition}\index{transition}
+function that gives, for each state $q$ and input symbol $a$, the next state $\delta(q, a)$. It reads one symbol per step
+and produces one output per step.
+\end{definition}
+
+\begin{definition}[Moore machine, Mealy machine, state diagram, state encoding]\label{def:b1:sequential-circuits:moore-mealy}
+In a \emph{Moore machine}\index{Moore machine} the output is a function $\lambda(q)$ of the state; in a \emph{Mealy
+machine}\index{Mealy machine} it is a function $\lambda(q, a)$ of the state and the input, attached to the \omterm{def:b1:sequential-circuits:fsm}{transition}. A
+\emph{state diagram}\index{state diagram} draws the \omterm{def:b1:sequential-circuits:fsm}{states} as circles and each \omterm{def:b1:sequential-circuits:fsm}{transition} as an arrow labelled by its
+input (and, for a Mealy machine, its output, as $a/o$). A \emph{state encoding}\index{state encoding} gives each state a
+distinct word of bits, to be stored in \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops}.
+\end{definition}
+
+For an input word $a_1 \dots a_n$ a \omterm{def:b1:sequential-circuits:moore-mealy}{Mealy machine} outputs $\lambda(q_0, a_1) \dots \lambda(q_{n-1}, a_n)$ and a \omterm{def:b1:sequential-circuits:moore-mealy}{Moore
+machine} $\lambda(q_1) \dots \lambda(q_n)$, where $q_i$ is the state after $i$ symbols. Two machines are
+\emph{equivalent} if they give the same output word for every input word. Both kinds compute the same things:
+
+\begin{proposition}[Moore and Mealy are equivalent]\label{prop:b1:sequential-circuits:conversion}
+For every \omterm{def:b1:sequential-circuits:moore-mealy}{Moore machine} there is an equivalent \omterm{def:b1:sequential-circuits:moore-mealy}{Mealy machine} with the same \omterm{def:b1:sequential-circuits:fsm}{states}, and for every \omterm{def:b1:sequential-circuits:moore-mealy}{Mealy machine} with state
+set $Q$ and output alphabet $O$ there is an equivalent \omterm{def:b1:sequential-circuits:moore-mealy}{Moore machine} with at most $|Q| \cdot |O|$ \omterm{def:b1:sequential-circuits:fsm}{states}.
+\end{proposition}
+
+\begin{proof}
+Moore to Mealy: put on each \omterm{def:b1:sequential-circuits:fsm}{transition} the output of the state it enters, $\lambda'(q, a) = \lambda(\delta(q, a))$. Mealy to
+Moore: take the pairs $(q, o)$ as \omterm{def:b1:sequential-circuits:fsm}{states}, meaning ``in $q$, having just output $o$'', with $\delta'((q, o), a) = (\delta(q,
+a), \lambda(q, a))$ and output $o$. Both machines go through the same \omterm{def:b1:sequential-circuits:fsm}{states} $q_i$, and the output read after step $i$ is
+$\lambda(q_{i-1}, a_i)$ in both; \cref{exo:b1:sequential-circuits:10} writes the induction out.
+\end{proof}
+
+\omcode{code/bachelor-1/28-sequential-circuits/listings/moore_mealy.py}{35}{52}{The two conversions, keeping only the
+reachable pairs}\label{lst:b1:sequential-circuits:conversion}
+
+The example is a \emph{sequence detector}: it reads bits and outputs 1 exactly when the last three were $1, 0, 1$.
+Overlaps count: in $10101$ it fires twice. Its Mealy \omterm{def:b1:sequential-circuits:fsm}{states} remember the longest end of the input that is a beginning of
+$101$: nothing, $1$, or $10$.
+
+\omoutput{code/bachelor-1/28-sequential-circuits/outputs/moore_mealy.txt}{The \omterm{def:b1:sequential-circuits:moore-mealy}{Moore machine} made from the Mealy detector of
+101: the state $(1, 1)$ is new, the state $1$ entered with an output of 1. Both agree on every word of up to ten
+bits.}\label{out:b1:sequential-circuits:conversion}
+
+\begin{omfigure}
+\begin{tikzpicture}[->, >=stealth, auto, node distance=21mm, every state/.style={minimum size=8mm, font=\small},
+  every edge quotes/.style={font=\scriptsize}]
+\node[state, initial, initial text={}] (e) {$\varepsilon$}; \node[state, right=of e] (a) {$1$};
+\node[state, right=of a] (b) {$10$};
+\path (e) edge[loop above] node {$0/0$} ()
+      (e) edge node {$1/0$} (a)
+      (a) edge[loop above] node {$1/0$} ()
+      (a) edge[bend left=20] node {$0/0$} (b)
+      (b) edge[bend left=20] node {$1/\mathbf{1}$} (a)
+      (b) edge[bend left=40] node {$0/0$} (e);
+\begin{scope}[xshift=78mm]
+\node[state, initial, initial text={}] (E) {$\varepsilon$/0}; \node[state, right=of E] (A) {$1$/0};
+\node[state, right=of A] (B) {$10$/0}; \node[state, accepting, below=14mm of A, fill=omThm!15] (C) {$1$/1};
+\path (E) edge[loop above] node {0} () (E) edge node {1} (A) (A) edge[loop above] node {1} ()
+      (A) edge node {0} (B) (B) edge node {1} (C) (B) edge[bend right=62, swap] node {0} (E)
+      (C) edge node {0} (B) (C) edge node {1} (A);
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small The detector of 101. Left, the \omterm{def:b1:sequential-circuits:moore-mealy}{Mealy machine}: the 1 is output on the \omterm{def:b1:sequential-circuits:fsm}{transition} from $10$ on input 1.
+Right, the \omterm{def:b1:sequential-circuits:moore-mealy}{Moore machine}: the 1 is the output of the state $1/1$, which splits the state $1$ in two.}
+\end{omfigure}
+
+\paragraph{From a \omterm{def:b1:sequential-circuits:moore-mealy}{state diagram} to a circuit.} Four steps make a machine into a \omterm{def:b1:sequential-circuits:clock}{synchronous circuit}. Encode the \omterm{def:b1:sequential-circuits:fsm}{states} in
+$\lceil \log_2 |Q| \rceil$ bits, one \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop} per bit; write the truth tables of the next-state bits and of the output,
+as functions of the state bits and the input; simplify them (\cref{sec:b1:combinational-circuits:simplification}); and
+connect the logic's outputs to the \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops}' inputs. Unused codes are don't-cares.
+
+\omoutput{code/bachelor-1/28-sequential-circuits/outputs/detector.txt}{The Moore detector with $(\varepsilon, 0) = 00$,
+$(1, 0) = 01$, $(10, 0) = 10$, $(1, 1) = 11$; $A$ is the high state bit, $B$ the low one, $x$ the input. The circuit is
+checked against the machine.}\label{out:b1:sequential-circuits:detector}
+
+$B^+ = x$ says that the low state bit is just the last input, a one-bit \omterm{def:b1:sequential-circuits:register}{shift register}; $z = AB$ needs one gate. A
+different encoding gives different equations, sometimes better ones; \emph{one-hot} encoding, one \omterm{def:b1:sequential-circuits:flip-flop}{flip-flop} per state,
+spends \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops} to make the logic trivial (\cref{exo:b1:sequential-circuits:9}).
+
+\section{The control of a small processor}\label{sec:b1:sequential-circuits:control}
+
+The toy machine of the earlier books executes an instruction in one step of its simulator. Hardware cannot: reading the
+two bytes of the instruction, reading or writing memory, and changing \omterm{def:b1:sequential-circuits:register}{registers} take several clock cycles, and something
+must order them. A processor is two parts.
+
+\begin{definition}[Datapath, control unit]\label{def:b1:sequential-circuits:datapath}
+The \emph{datapath}\index{datapath} of a processor is the part that holds and transforms data: \omterm{def:b1:sequential-circuits:register}{registers}, the ALU,
+the buses and \omterm{def:b1:combinational-circuits:mux}{multiplexers} between them, and the connection to memory. The \emph{control unit}\index{control unit} is a
+\omterm{def:b1:sequential-circuits:fsm}{finite-state machine} that, at each clock cycle, sends the datapath the signals that choose which \omterm{def:b1:sequential-circuits:register}{register} transfer
+happens: which \omterm{def:b1:sequential-circuits:register}{register} is loaded, from which source, with which ALU operation.
+\end{definition}
+
+The \omterm{def:b1:sequential-circuits:datapath}{datapath} of the toy machine has the four \omterm{def:b1:sequential-circuits:register}{registers}, the program \omterm{def:b1:sequential-circuits:register}{counter} \code{PC}, the stack \omterm{def:b1:pointers-and-arrays:pointer}{pointer} \code{SP}, the
+flags, and two instruction \omterm{def:b1:sequential-circuits:register}{registers} \code{IR0} and \code{IR1} for the two bytes of the current instruction; its ALU is
+that of \cref{def:b1:combinational-circuits:alu} on eight bits, which the program computes with integer arithmetic. The
+\omterm{def:b1:sequential-circuits:datapath}{control unit} is a \omterm{def:b1:sequential-circuits:moore-mealy}{Moore machine}: each state names the \omterm{def:b1:sequential-circuits:register}{register} transfers it orders. Its next state depends on the state,
+on the operation code in \code{IR0}, and, for a conditional jump, on the flags.
+
+\omcode{code/bachelor-1/28-sequential-circuits/listings/toy_control.py}{10}{41}{The \omterm{def:b1:sequential-circuits:datapath}{control unit} of the toy machine:
+the transfers each state orders, and the next-state function}\label{lst:b1:sequential-circuits:control}
+
+\code{R} is the \omterm{def:b1:sequential-circuits:register}{register} named in the first byte, \code{S} the one named in the second, and \code{M[...]} the memory.
+\code{FETCH0} and \code{FETCH1} read the two bytes of the instruction; \code{DECODE} chooses the execute state from the
+operation code; each execute state goes back to \code{FETCH0}. A jump not taken goes straight back too.
+
+\omcode{code/bachelor-1/28-sequential-circuits/listings/toy_control.py}{115}{132}{Clocking the two parts, and comparing
+the \omterm{def:b1:sequential-circuits:datapath}{datapath} with the simulator after every instruction}\label{lst:b1:sequential-circuits:clocking}
+
+\omoutput{code/bachelor-1/28-sequential-circuits/outputs/toy_control.txt}{The programs of the earlier books, run by the
+\omterm{def:b1:sequential-circuits:datapath}{control unit} and its \omterm{def:b1:sequential-circuits:datapath}{datapath}; after every instruction the \omterm{def:b1:sequential-circuits:register}{registers}, flags, memory and outputs are those of the toy
+machine's simulator.}\label{out:b1:sequential-circuits:control}
+
+\begin{omfigure}
+\begin{tikzpicture}[->, >=stealth, st/.style={draw, rounded corners=2mm, font=\scriptsize\ttfamily, minimum height=6mm,
+  inner sep=2pt}, font=\scriptsize]
+\node[st, fill=omDef!12] (f0) at (0,0) {FETCH0}; \node[st, fill=omDef!12] (f1) at (2.4,0) {FETCH1};
+\node[st, fill=omDef!12] (dec) at (4.8,0) {DECODE};
+\foreach \n/\l/\y in {x1/LOADI/2.1, x2/LOAD/1.5, x3/STORE/0.9, x4/ALU\_RR/0.3, x5/CMP/-0.3, x6/JUMP/-0.9,
+  x7/OUT/-1.5, x8/RET/-2.1}
+  {\node[st] (\n) at (8.2,\y) {\l}; \draw (dec.east) -- (\n.west);}
+\node[st] (p1) at (10.6,-0.3) {PUSH1}; \node[st] (p2) at (12.4,-0.3) {PUSH2};
+\draw (dec.south) |- (10.6,-2.75) -- (p1.south); \draw (p1) -- (p2);
+\node[st] (h) at (10.6,1.5) {HALT}; \node[st] (s) at (12.4,1.5) {STOP};
+\draw (dec.north) |- (10.6,2.75) -- (h.north); \draw (h) -- (s);
+\draw (f0) -- (f1); \draw (f1) -- (dec);
+\draw (dec.south west) to[bend left=35] node[below] {jump not taken} (f0.south east);
+\draw[gray] (8.2,-2.45) -- (8.2,-3.2) -- node[below] {every execute state returns to FETCH0} (0,-3.2) -- (f0.south west);
+\node[anchor=west, align=left, gray] at (8.9,0.3) {\dots\ and ALU\_RI, ALU\_R, IN,\\ LOADR, STORER, POP, CALL1--2};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b1:sequential-circuits:datapath}{control unit} of \cref{lst:b1:sequential-circuits:control}, some execute \omterm{def:b1:sequential-circuits:fsm}{states} left out: three
+\omterm{def:b1:sequential-circuits:fsm}{states} per instruction for most, four or five for the stack instructions. The program counts 3.9 cycles per instruction
+on average.}
+\end{omfigure}
+
+The \omterm{def:b1:sequential-circuits:datapath}{control unit} has 23 \omterm{def:b1:sequential-circuits:fsm}{states}, so five \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops} encode it, and its next-state and output functions are combinational
+logic of the state, six bits of operation code and three flags, which \cref{sec:b1:sequential-circuits:fsm} turns into
+gates. Large instruction sets made those functions unmanageable in the 1950s; the answer, \emph{microprogrammed control},
+stores the control signals of each state as a word in a small read-only memory, the \emph{microprogram}, addressed by the
+state, so that the \omterm{def:b1:sequential-circuits:datapath}{control unit} is itself a tiny computer reading a table. Many processors since have been built that
+way, and many have gone back to gates when speed mattered more than the size of the instruction set.
+
+\section{Exercises}\label{sec:b1:sequential-circuits:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:sequential-circuits:1}
+An \omterm{def:b1:sequential-circuits:latch}{SR latch} starts with $Q = 0$. Its inputs $(S, R)$ take the values $10$, $00$, $01$, $10$, $00$, each held long enough
+for the \omterm{def:b1:sequential-circuits:latch}{latch} to settle. Give $Q$ after each.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:sequential-circuits:2}
+The synchronous 3-bit \omterm{def:b1:sequential-circuits:register}{counter} of \cref{lst:b1:sequential-circuits:counter} holds 5. Give its value after each of the next
+five clock edges, and which bits flip at each.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:sequential-circuits:3}
+What does the Moore detector of \cref{out:b1:sequential-circuits:conversion} output on the input word $11010110$? Give the
+\omterm{def:b1:sequential-circuits:fsm}{states} it goes through.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:sequential-circuits:4}
+A 4-bit \omterm{def:b1:sequential-circuits:register}{shift register} as in \cref{lst:b1:sequential-circuits:shift} holds $1010$. The bits $1, 1, 0, 0$ enter at four
+edges. Give its contents after each.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:sequential-circuits:5}
+A circuit compares the 3-bit ripple \omterm{def:b1:sequential-circuits:register}{counter} of \cref{out:b1:sequential-circuits:counter} with 2, and sounds a bell when
+they are equal. The \omterm{def:b1:sequential-circuits:register}{counter} goes from 0 to 7 once. How many times does the bell sound, and when? Repair the design.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:sequential-circuits:6}
+This traffic light stops with an error on the second input word. Explain why, and complete the machine.
+\omcode{code/bachelor-1/28-sequential-circuits/listings/exo_incomplete.py}{4}{15}{A traffic light}
+\omoutput{code/bachelor-1/28-sequential-circuits/outputs/exo_incomplete.txt}{The two runs.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:sequential-circuits:7}
+Build the Mealy detector of $0110$, overlaps allowed, and test it on every word of up to 12 bits against the definition.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:sequential-circuits:8}
+Design a synchronous \omterm{def:b1:sequential-circuits:register}{counter} modulo 6 on three D \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops}: the next-state equations, simplified with the codes 6 and 7
+as don't-cares, and a check that it counts $0, 1, \dots, 5, 0, \dots$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:sequential-circuits:9}
+How many \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops} does a machine with $k$ \omterm{def:b1:sequential-circuits:fsm}{states} need with a binary encoding? With one-hot encoding? For the \omterm{def:b1:sequential-circuits:datapath}{control
+unit} of \cref{lst:b1:sequential-circuits:control}, compare, and say what one-hot encoding buys.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:sequential-circuits:10}
+Prove by induction on the length of the input word that the conversions of
+\cref{prop:b1:sequential-circuits:conversion} give equivalent machines.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:sequential-circuits:11}
+In a \omterm{def:b1:sequential-circuits:clock}{synchronous circuit} the \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops} have a clock-to-output delay of 50 ps, a \omterm{def:b1:sequential-circuits:setup}{setup time} of 30 ps and a \omterm{def:b1:sequential-circuits:setup}{hold time} of
+10 ps; every gate takes 25 ps. Between two \omterm{def:b1:sequential-circuits:register}{registers} the longest path has 12 gates and the shortest 2. What is the
+highest clock frequency? Is the \omterm{def:b1:sequential-circuits:setup}{hold time} respected? What if the \omterm{def:b1:shortest-paths:shortest}{shortest path} had no gate?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:sequential-circuits:12}
+A vending machine sells an item for 3; at each clock cycle a coin of 1 or 2, or none, is inserted. Draw its \omterm{def:b1:sequential-circuits:moore-mealy}{Mealy
+machine} (outputs: give the item, give back 1), derive simplified next-state and output equations, and simulate the circuit
+against the machine on every sequence of up to eight coins.
+\end{exercise}
+
+\section{Problem: A combination lock}\label{sec:b1:sequential-circuits:problem}
+
+\begin{problem}[{Weekend problem --- A combination lock}]\label{pb:b1:sequential-circuits:1}
+A lock has two keys, 0 and 1, and opens when the last four keys pressed are $1, 0, 1, 1$. The program builds its \omterm{def:b1:sequential-circuits:moore-mealy}{Mealy
+machine} from the pattern, converts it to a \omterm{def:b1:sequential-circuits:moore-mealy}{Moore machine}, finds for each pair of \omterm{def:b1:sequential-circuits:fsm}{states} a word that tells them apart,
+and turns both machines into circuits, checked on every word of up to 12 keys.
+\omcode{code/bachelor-1/28-sequential-circuits/listings/lock.py}{13}{24}{The detector of any pattern: \omterm{def:b1:sequential-circuits:fsm}{states} are the
+prefixes of the pattern}\label{lst:b1:sequential-circuits:lock}
+\omoutput{code/bachelor-1/28-sequential-circuits/outputs/lock.txt}{The two machines, the words that distinguish their
+\omterm{def:b1:sequential-circuits:fsm}{states} ($e$ is the empty prefix; in the \omterm{def:b1:sequential-circuits:moore-mealy}{Moore machine} $p/o$ is the prefix $p$ entered with output $o$), and their
+circuits.}\label{out:b1:sequential-circuits:lock}
+
+\medskip\noindent\textbf{Part I --- The Mealy machine.}
+\begin{enumerate}
+\item Draw the \omterm{def:b1:sequential-circuits:moore-mealy}{Mealy machine} of the output: four \omterm{def:b1:sequential-circuits:fsm}{states}, eight \omterm{def:b1:sequential-circuits:fsm}{transitions}.
+\item Why is the next state of $101$ on key 1 the state $1$, and not $e$?
+\item Which line of the listing finds that next state, and how?
+\item Run the machine by hand on $1011011$. When does the lock open?
+\item Why is the machine \emph{complete}: why does every state have a \omterm{def:b1:sequential-circuits:fsm}{transition} for both keys?
+\item The output is 1 on a \omterm{def:b1:sequential-circuits:fsm}{transition}. When, exactly, should the bolt move?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The Moore machine.}
+\begin{enumerate}[resume]
+\item Draw the \omterm{def:b1:sequential-circuits:moore-mealy}{Moore machine}; which state is new?
+\item Why does the conversion give five \omterm{def:b1:sequential-circuits:fsm}{states} and not $4 \times 2 = 8$?
+\item On the same word $1011011$, compare the outputs of the two machines step by step.
+\item Why do the pairs involving $1/1$ need only the empty word?
+\item Explain why a word that tells two \omterm{def:b1:sequential-circuits:fsm}{states} apart proves that no equivalent machine can merge them.
+\item Conclude that four Mealy \omterm{def:b1:sequential-circuits:fsm}{states} and five Moore \omterm{def:b1:sequential-circuits:fsm}{states} are each the fewest possible.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Circuits.}
+\begin{enumerate}[resume]
+\item Give the binary encodings the program uses, in the order of the output.
+\item Check the Mealy equation $B^+ = x$ on two \omterm{def:b1:sequential-circuits:fsm}{transitions}.
+\item Why may the Moore equations use the codes 5, 6 and 7 freely?
+\item Why is the Moore output $z = A$, with no gate at all?
+\item Count the gates of each circuit from its equations, as the program does.
+\item Which circuit is faster from key to output, and why does the answer not depend only on gates?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Checking.}
+\begin{enumerate}[resume]
+\item How many words of up to 12 keys are there?
+\item Show that if a circuit and a machine have the same output and next state on every reachable state and key, they
+agree on every word, of any length.
+\item Every state is reachable in at most four keys. Why do the words of up to 12 keys check every state and key, and
+more?
+\item What would a wrong encoding (two \omterm{def:b1:sequential-circuits:fsm}{states} with the same code) do to the check?
+\item A real keypad has ten keys. How does the machine change, and how many words of up to 12 keys are there now?
+\item State the named result, \emph{Mealy saves a state}, with the counts of \omterm{def:b1:sequential-circuits:fsm}{states}, \omterm{def:b1:sequential-circuits:flip-flop}{flip-flops} and gates.
+\end{enumerate}
+\end{problem}

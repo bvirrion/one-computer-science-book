@@ -1,0 +1,116 @@
+\section*{Chapter \ref{ch:b3:database-storage} --- Database Storage and Indexes}
+
+\begin{solution}{exo:b3:database-storage:1}
+The page has 4,096 bytes, a 4-byte header and 4 bytes per slot. After 30 records: $4096 - 4 - 30 \times 4 - 30 \times 40 = 2{,}772$ bytes free. Deleting 10 empties their slots but leaves their bytes in the record area: still 2,772 free. \code{compact} slides the 20 live records to the back, so the records start at $4096 - 800 = 3{,}296$ and $3{,}296 - 124 = 3{,}172$ bytes are free. Ten new records reuse the empty slots at 40 bytes each, leaving 2,772; each further record needs 44 bytes with its slot, and $2{,}772 = 63 \times 44$: 73 more records, and the page is exactly full.
+\end{solution}
+
+\begin{solution}{exo:b3:database-storage:2}
+Full nodes: leaves of 99 keys, internal nodes of 100 children. $\lceil 10^7/99 \rceil = 101{,}011$ leaves, then 1,011, 11 and 1 nodes: height 4. Minimal nodes: by \cref{thm:b3:database-storage:height} with $m = 100$, $h \le 1 + \log_{50}(5 \times 10^6) \approx 1 + 3.94$, so $h \le 4$. Least and greatest heights are both 4: every \omterm{def:b3:database-storage:bptree}{B+ tree} of \omterm{def:b3:database-storage:bptree}{order} 100 on $10^7$ keys has height 4.
+\end{solution}
+
+\begin{solution}{exo:b3:database-storage:3}
+Accesses 1, 2, 3 miss and fill the three frames, each with its reference bit set. The second access to 1 hits. Page 4 misses: every frame is unpinned with its bit set, so the hand clears the three bits in one sweep and comes back to frame 0: page 1 is evicted, although it was used two accesses ago. Page 1 then misses and evicts page 2, the next frame with a clear bit; 5 misses and evicts 3; 2 misses and evicts 4. Seven misses and one hit: when every bit is set the clock degenerates into first in, first out.
+\end{solution}
+
+\begin{solution}{exo:b3:database-storage:4}
+The four plan lines, in \omterm{def:b3:database-storage:bptree}{order}:
+\begin{itemize}
+  \item \texttt{SEARCH loans USING COVERING INDEX loans\_member (member\_id=?)}\\ Counting needs no column outside the index.
+  \item \texttt{SEARCH loans USING COVERING INDEX loans\_member (member\_id>?)}\\ A range in the index, which again holds every column needed.
+  \item \texttt{SCAN loans}\\ There is no index on \code{book_id}.
+  \item \texttt{SEARCH loans USING INTEGER PRIMARY KEY (rowid=?)}\\ \code{loan_id} is the rowid, the key of the table's own B-tree, so the table is searched directly.
+\end{itemize}
+A test checks the four lines.
+\end{solution}
+
+\begin{solution}{exo:b3:database-storage:5}
+Keys 3, 6 and 9 are lost. A leaf of \omterm{def:b3:database-storage:bptree}{order} 4 overflows at 4 keys $[a, b, c, d]$; the buggy split sends $c$ up and keeps $[a, b]$ and $[d]$, so $c$ is in no leaf. A search for $c$ goes right of the separator $c$, into $[d]$, and fails. With increasing keys the overflowing leaf is $[1, 2, 3, 4]$, then $[4, 5, 6, 7]$, then $[7, 8, 9, 10]$, and the third key of each is dropped. The fix keeps $c$ in the right leaf and copies it up: \code{right.keys = n.keys[half:]} and the separator \code{right.keys[0]}, which is \code{split_leaf} of \cref{lst:b3:database-storage:split}.
+\end{solution}
+
+\begin{solution}{exo:b3:database-storage:6}
+\code{exercises/ex6_delete.py} deletes from the leaf, then repairs on the way back up: if the child just visited is below its minimum, it tries the left sibling, then the right, for one that stays at or above its minimum after giving an entry away. Borrowing between leaves moves one pair and resets the separator to the first key of the right leaf; between internal nodes it rotates through the parent: the separator comes down into the child and the sibling's end key goes up. Otherwise the child merges with a sibling: for leaves the keys are concatenated and the leaf chain relinked; for internal nodes the separator comes down between the two key lists. The parent loses one key and one child and may be repaired in turn by its own parent. Finally a root with one child is replaced by that child. The test runs random insertions and deletions for \omterm{def:b3:database-storage:bptree}{orders} 3 to 7 and checks after each operation that keys are sorted and bounded by the separators, that every leaf is at one depth and that every non-root node is at its minimum.
+\end{solution}
+
+\begin{solution}{exo:b3:database-storage:7}
+Facts used: an internal node has at most $m$ children and a leaf at most $m - 1$ keys.
+
+A tree of $h$ levels has at most $m^{h-1}$ leaves, so $n \le m^{h-1}(m-1)$ and $h \ge 1 + \log_m (n/(m-1))$; $h$ being an integer, $h \ge 1 + \lceil \log_m (n/(m-1)) \rceil$. For $n = 10^6$ and $m = 255$: $\log_{255} 3{,}937 \approx 1.49$, so $h \ge 3$. The upper bound, with $\lceil 255/2 \rceil = 128$ and $\lceil 254/2 \rceil = 127$, is $h \le 2 + \log_{128}(10^6/254) \approx 2 + 1.71$, so $h \le 3$. Only height 3 is possible, as both lines of \cref{out:b3:database-storage:archive} show.
+\end{solution}
+
+\begin{solution}{exo:b3:database-storage:8}
+The descent reads $h - 1$ internal nodes; then each leaf touched costs one read. A range of $k$ keys starting anywhere in a leaf spans at least $\lceil k/\ell \rceil$ leaves and at most $\lceil k/\ell \rceil + 1$, and the scan may read one more leaf to see the first key beyond the range. So $h - 1 + \lceil k/\ell \rceil \le \text{reads} \le h + 1 + \lceil k/\ell \rceil$. \omterm{def:b3:database-storage:bptree}{Bulk loading} put about 254 keys in each leaf: $10{,}000/254 \approx 39.4$, and $2 + 40 = 42$. After random insertion, $52 = 2 + 50$: the range spans 50 leaves, about 200 keys each, 79\,\% full there, against 189 on average over the tree.
+\end{solution}
+
+\begin{solution}{exo:b3:database-storage:9}
+Facts used: in \code{push}, a level is rewritten whole each time something is merged into it, and it is pushed down as soon as it holds more than $C T^{i+1}$ entries.
+
+Level 0 receives \omterm{def:b3:database-storage:lsm}{memtables} of $C$ entries and is rewritten at sizes $C, 2C, \ldots, (T+1)C$, the last being pushed down: $C(T+1)(T+2)/2$ entries written for $(T+1)C$ received, $(T+2)/2$ each. Level $i \ge 1$ receives batches of a size $b$ just above $C T^i$, and overflows once it holds more than $C T^{i+1}$, after about $T$ batches; it is written at sizes $b, 2b, \ldots, Tb$, which is $b T(T+1)/2$ for $T b$ received, $(T+1)/2$ each. An entry that has gone down $L$ levels has been written at most about $(T+2)/2 + (L-1)(T+1)/2 \le L(T+2)/2$ times. For $T = 4$ with four levels the bound is 12, measured 9.0; for $T = 10$ with three levels it is 18, measured 11.5. The measurements are lower because the bottom level is not full: most entries have been through only part of its cycle.
+\end{solution}
+
+\begin{solution}{exo:b3:database-storage:10}
+Facts used: \code{chunks(seq, cap)} cuts $s$ items into $g = \lceil s/\text{cap} \rceil$ pieces whose sizes are $\lfloor s/g \rfloor$ or $\lceil s/g \rceil$.
+
+Sizes. Each piece has at most $\lceil s/g \rceil \le \text{cap}$ items. When $g \ge 2$, $g - 1 < s/\text{cap}$ gives $s/g > \text{cap}(g-1)/g \ge \text{cap}/2$, so each piece has more than half the capacity: leaves (cap $m - 1$) get at least $\lceil (m-1)/2 \rceil$ pairs and internal nodes (cap $m$) at least $\lceil m/2 \rceil$ children. When $g = 1$, the single piece is the root, which needs only 2 children, and the loop builds internal nodes only while a level has at least 2 nodes.
+
+\omterm{def:b3:database-storage:bptree}{Order}. Leaves are filled from the sorted pairs in \omterm{def:b3:database-storage:bptree}{order} and chained in \omterm{def:b3:database-storage:bptree}{order}. The separators of an internal node are the smallest keys of its children after the first, so child $j$'s keys lie between separator $j - 1$ and separator $j$. Each level is built from the whole level below, so all leaves are at the same depth.
+
+Cost. Every node is written once. There are at most $n/\lceil (m-1)/2 \rceil + 1 \le n/\lfloor m/2 \rfloor + 1$ leaves, and since every internal node has at least 2 children there are fewer internal nodes than leaves: at most $2n/\lfloor m/2 \rfloor + 2$ page writes, $O(n/m)$, all sequential and with no split.
+\end{solution}
+
+\begin{solution}{exo:b3:database-storage:11}
+\code{exercises/ex11_linear.py}: \code{address} computes $h \bmod N 2^L$ and, if the result is below \code{next}, the bucket has already split this round and $h \bmod N 2^{L+1}$ is used. \code{put} inserts and, while the load exceeds the threshold, splits bucket \code{next}: its keys are rehashed with one more bit into it and a new bucket at the end, \code{next} advances, and when every bucket of the round has split the level rises and \code{next} returns to 0. The bucket that splits is the next in line, not the full one, because that is what lets the address be computed from two numbers, the level and \code{next}, without a directory. The cost is that an overflowing bucket chains overflow pages until its turn comes, at most one round later: lookups in it read more than one page meanwhile. The test checks \code{get} against a dictionary and that the load stays under the threshold.
+\end{solution}
+
+\begin{solution}{exo:b3:database-storage:12}
+\code{exercises/ex12_workload.py} prints, in page I/O per operation, 2.07 for the \omterm{def:b3:database-storage:bptree}{B+ tree} and 0.72 for the LSM tree with 90\,\% reads, and 3.38 against 0.13 with 10\,\% reads. The LSM tree wins both, by 3 times and by 26 times. The count favours it in several ways. It gives the \omterm{def:b3:database-storage:bptree}{B+ tree} no \omterm{def:b3:database-storage:buffer}{buffer pool}, though its root and second level, 1 MiB at most, would be cached and a lookup would cost one read. It assumes each run's index and Bloom filter are in memory. It counts the LSM tree's sequential writes like random ones, which favours the \omterm{def:b3:database-storage:bptree}{B+ tree} on a disk. And it leaves out range scans, which in an LSM tree must merge every level. With the top levels cached, the \omterm{def:b3:database-storage:bptree}{B+ tree} reads one page per lookup, close to the LSM tree's 1.01 for present keys; for writes, the LSM tree's advantage remains.
+\end{solution}
+
+\begin{solution}{pb:b3:database-storage:1}
+\textbf{1.} $\lfloor (4096 - 16)/16 \rfloor = 255$.
+
+\textbf{2.} 255 children need 254 keys: $254 \times 8 + 255 \times 8 + 16 = 4{,}088 \le 4{,}096$. 256 children need $255 \times 8 + 256 \times 8 + 16 = 4{,}104 > 4{,}096$.
+
+\textbf{3.} $\lfloor (4096 - 16 - 8)/16 \rfloor = 254$, the \code{LEAF} of \cref{lst:b3:database-storage:archive}.
+
+\textbf{4.} $(4096 - 16)/8 = 510$ children: twice as wide, and each level holds twice as many keys.
+
+\textbf{5.} The node is one page read whatever its width; the binary search inside it runs in memory, about $\log_2 255 \approx 8$ comparisons, costing nanoseconds against the milliseconds or microseconds of a page read.
+
+\textbf{6.} A real page also holds a slot or cell-pointer array, variable-length keys with their own length fields, and free space left for later insertions, so fewer entries fit than in this fixed layout.
+
+\textbf{7.} $\lceil 10^9/254 \rceil = 3{,}937{,}008$ leaves; above them 15,440 nodes, then 61, then the root: height 4.
+
+\textbf{8.} 3,938 leaves, 16 nodes, the root: height 3.
+
+\textbf{9.} About $3.94 \times 10^9$ leaves; $255^3 \approx 1.66 \times 10^7$ is too few to name them and $255^4 \approx 4.23 \times 10^9$ is enough, so four levels above the leaves: height 5.
+
+\textbf{10.} At 69\,\% a leaf holds 175 pairs and a node 175 children: 5,714,286 leaves, more than $175^3 = 5{,}359{,}375$, so a fourth internal level is needed: height 5.
+
+\textbf{11.} $255^3$ leaves of 254 pairs: 4,211,669,250 keys.
+
+\textbf{12.} With $\lceil 255/2 \rceil = 128$ and $\lceil 254/2 \rceil = 127$: $h \le 2 + \log_{128}(10^9/254) \approx 2 + 3.13$, so $h \le 5$. The half-full line of \cref{out:b3:database-storage:archive}, with nodes at 127 entries, gives 5 as well.
+
+\textbf{13.} $3{,}938 + 16 + 1 = 3{,}955$: question 8's levels.
+
+\textbf{14.} A leaf splits into two half-full leaves, which fill up again before they split: at any moment the leaves are spread between half full and full. The average is about 69\,\%, as measured.
+
+\textbf{15.} A lookup reads one page per level, and both trees have three: the extra 1,750 pages are spread across the leaf level and the level above, which stays below 255 nodes.
+
+\textbf{16.} $5{,}705 - 3{,}955 = 1{,}750$ pages, 7,168,000 bytes, about 6.8 MiB: 44\,\% more space.
+
+\textbf{17.} Increasing keys always go to the last leaf. When it splits, its left half keeps $\lfloor 255/2 \rfloor = 127$ pairs and never receives another key, so every leaf but the last ends half full; a test counts 127 in each.
+
+\textbf{18.} Split a leaf unevenly when the new key is the largest in the tree, keeping all but one pair on the left; or, when all the keys are known in advance, bulk load them.
+
+\textbf{19.} The bulk-loaded tree has levels of 1, 16 and 3,938 pages. Nothing cached: 3 reads. The root cached: 2. The root and the 16 nodes, 17 pages, 68 KiB: 1. All 3,955 pages, 15.4 MiB: none.
+
+\textbf{20.} The top two levels are $1 + 61 = 62$ pages, 248 KiB; the top three are $62 + 15{,}440 = 15{,}502$ pages, about 60.6 MiB.
+
+\textbf{21.} 4 page reads with nothing cached, 2 with two levels cached, 1 with three.
+
+\textbf{22.} 200 reads per second: 50 lookups per second with nothing cached, 100 with two levels, 200 with three.
+
+\textbf{23.} Each level is about 255 times smaller than the level below it: the leaves are $3{,}937{,}008$ of the $3{,}952{,}510$ pages, 99.6\,\%. Caching everything above them costs 0.4\,\% of the index; caching the leaves costs the rest.
+
+\textbf{24.} With full nodes, a billion documents need a \omterm{def:b3:database-storage:bptree}{B+ tree} of height 4; grown by random insertion, its 69\,\% leaves make it 5. A lookup costs at most 4 page reads in the first case, 2 with 248 KiB of top levels in the \omterm{def:b3:database-storage:buffer}{buffer pool} and 1 with 61 MiB.
+\end{solution}

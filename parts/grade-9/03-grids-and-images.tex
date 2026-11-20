@@ -1,0 +1,356 @@
+% Provenance (never printed): see sources/outline_sources.md and sources/book1/BRIEFS.md (g9/03).
+\chapter{Grids and Images}\label{ch:g9:grids-and-images}
+
+Noor zooms into a photo on her tablet, again and again, until the face of her
+cat turns into small coloured squares. Each square is a \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel}, and each \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel}
+is a number, or three. A photo is a table of numbers with rows and columns:
+a \omterm{def:g9:grids-and-images:grid}{grid}. This chapter builds \omterm{def:g9:grids-and-images:grid}{grids} in Python, and changes pictures by changing
+their numbers.
+
+\begin{recall}
+A \omterm{def:g7:lists:list}{list} keeps \omterm{def:g6:variables-and-input:value}{values} in order, each at an \omterm{def:g7:lists:list}{index} from 0; a \omterm{def:g7:strings:slice}{slice} such as
+\code{items[::-1]} reads it backwards (\cref{ch:g7:lists}). A picture is made
+of \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixels}; a \omterm{def:g5:text-pictures-sound-as-numbers:grey}{grey level} is a number from 0 (black) to 255 (white); a colour is
+three numbers, red, green and blue (\cref{ch:g5:text-pictures-sound-as-numbers}).
+A \omterm{def:g8:files-and-data-tables:text-file}{text file} can be read and written by a \omterm{def:g4:programs-and-operating-system:program}{program}
+(\cref{ch:g8:files-and-data-tables}).
+\end{recall}
+
+\section{A list of lists as a grid}
+
+\begin{definition}[Grid]\label{def:g9:grids-and-images:grid}
+A \emph{grid}\index{grid} is a \omterm{def:g7:lists:list}{list} of \omterm{def:g7:lists:list}{lists} of the same length: each inner
+\omterm{def:g7:lists:list}{list} is one row, and the \omterm{def:g6:variables-and-input:value}{values} at the same \omterm{def:g7:lists:list}{index} in every row form a column.
+\code{grid[r][c]} is the \omterm{def:g6:variables-and-input:value}{value} in row \code{r}, column \code{c}.
+\end{definition}
+
+\begin{definition}[Grid cell]\label{def:g9:grids-and-images:cell}
+A \emph{grid cell}\index{grid cell} is one place of a \omterm{def:g9:grids-and-images:grid}{grid}, given by its row and
+its column.
+\end{definition}
+
+\omcode{code/grade-9/03-grids-and-images/listings/grid_basics.py}{1}{15}{A \omterm{def:g9:grids-and-images:grid}{grid} of 3
+rows and 4 columns, and a \omterm{def:g9:grids-and-images:grid}{grid} built by \omterm{def:g4:algorithms-repeat-and-decide:loop}{loops}.}\label{lst:g9:grids-and-images:basics}
+
+\Needspace*{8\baselineskip}
+\omoutput{code/grade-9/03-grids-and-images/outputs/grid_basics.txt}{Rows first,
+then columns.}\label{out:g9:grids-and-images:basics}
+
+\code{grid[1]} is the row \code{[7, 2, 9, 4]}, and \code{grid[1][2]} the \omterm{def:g6:variables-and-input:value}{value}
+at \omterm{def:g7:lists:list}{index} 2 of that row. \code{len(grid)} counts the rows, \code{len(grid[0])}
+the \omterm{def:g6:variables-and-input:value}{values} of a row, so the columns.
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \foreach \row [count=\r from 0] in {{3,8,1,6},{7,2,9,4},{5,0,4,2}} {
+    \foreach \v [count=\c from 0] in \row {
+      \node[cell] at (\c*0.8,-\r*0.8) {\v};
+    }
+    \node[font=\scriptsize, black!60] at (-0.8,-\r*0.8) {row \r};
+  }
+  \foreach \c in {0,...,3} { \node[font=\scriptsize, black!60] at (\c*0.8,0.65) {\c}; }
+  \node[font=\scriptsize, black!60] at (1.2,1.1) {column};
+  \node[cell, draw=ocRed, very thick] at (1.6,-0.8) {9};
+  \node[font=\small, ocRed] at (1.2,-2.4) {in red: \code{grid[1][2]}};
+\end{tikzpicture}
+
+{\small The \omterm{def:g9:grids-and-images:grid}{grid} of \cref{lst:g9:grids-and-images:basics}: row 1, column 2
+holds 9 (before it is changed to 0).}
+\end{omfigure}
+
+To show a \omterm{def:g9:grids-and-images:grid}{grid} as a table, print each row on its own line:
+
+\Needspace*{11\baselineskip}
+\omcode{code/grade-9/03-grids-and-images/listings/print_grid.py}{1}{8}{Printing a
+\omterm{def:g9:grids-and-images:grid}{grid} row by row.}\label{lst:g9:grids-and-images:print}
+
+\Needspace*{7\baselineskip}
+\omoutput{code/grade-9/03-grids-and-images/outputs/print_grid.txt}{The \omterm{def:g9:grids-and-images:grid}{grid} as a
+table.}\label{out:g9:grids-and-images:print}
+
+A short way to build a \omterm{def:g9:grids-and-images:grid}{grid} of zeros looks tempting, but it holds a trap:
+
+\Needspace*{12\baselineskip}
+\omcode{code/grade-9/03-grids-and-images/listings/shared_rows.py}{1}{9}{Two ways to
+build a \omterm{def:g9:grids-and-images:grid}{grid} of zeros.}\label{lst:g9:grids-and-images:shared}
+
+\Needspace*{6\baselineskip}
+\omoutput{code/grade-9/03-grids-and-images/outputs/shared_rows.txt}{One change
+appears in every row of the first \omterm{def:g9:grids-and-images:grid}{grid}.}\label{out:g9:grids-and-images:shared}
+
+\code{[[0] * 3] * 3} is the \emph{same} row three times, not three rows: a change
+to one is a change to all. The \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop} builds a new row at each turn. Why Python
+works this way is explained in the next book; for now, build \omterm{def:g9:grids-and-images:grid}{grids} with a \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop}.
+
+\section{Neighbours}
+
+\begin{definition}[Neighbour of a cell]\label{def:g9:grids-and-images:neighbour}
+The \emph{neighbours}\index{neighbour (of a cell)} of a \omterm{def:g9:grids-and-images:cell}{grid cell} are the cells
+that touch it: the four above, below, left and right of it, or the eight that
+also include the corners. A cell at the edge of the \omterm{def:g9:grids-and-images:grid}{grid} has fewer.
+\end{definition}
+
+The eight \omterm{def:g9:grids-and-images:neighbour}{neighbours} of \code{grid[r][c]} are found by adding $-1$, 0 or 1 to
+the row and to the column, skipping the cell itself and the places outside the
+\omterm{def:g9:grids-and-images:grid}{grid}:
+
+\omcode{code/grade-9/03-grids-and-images/listings/neighbours.py}{1}{23}{The
+\omterm{def:g9:grids-and-images:neighbour}{neighbours} of a cell.}\label{lst:g9:grids-and-images:neighbours}
+
+\Needspace*{7\baselineskip}
+\omoutput{code/grade-9/03-grids-and-images/outputs/neighbours.txt}{A middle cell
+has 8 \omterm{def:g9:grids-and-images:neighbour}{neighbours}, a corner 3.}\label{out:g9:grids-and-images:neighbours}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=0.6cm, y=0.6cm]
+  \foreach \ox/\title in {0/4 neighbours, 5.5/8 neighbours, 11/a corner: 3} {
+    \foreach \r in {0,...,3} { \foreach \c in {0,...,3} {
+      \draw[black!40] (\ox+\c,-\r) rectangle ++(1,1);
+    } }
+    \node[font=\small] at (\ox+2,1.6) {\title};
+  }
+  \foreach \c/\r in {2/-1, 1/-2, 3/-2, 2/-3} { \fill[ocBlue!35] (\c,\r) rectangle ++(1,1); }
+  \fill[ocRed!60] (2,-2) rectangle ++(1,1);
+  \foreach \c/\r in {1/-1, 2/-1, 3/-1, 1/-2, 3/-2, 1/-3, 2/-3, 3/-3} { \fill[ocBlue!35] (5.5+\c,\r) rectangle ++(1,1); }
+  \fill[ocRed!60] (7.5,-2) rectangle ++(1,1);
+  \foreach \c/\r in {1/0, 0/-1, 1/-1} { \fill[ocBlue!35] (11+\c,\r) rectangle ++(1,1); }
+  \fill[ocRed!60] (11,0) rectangle ++(1,1);
+  \foreach \ox in {0,5.5,11} { \foreach \r in {0,...,3} { \foreach \c in {0,...,3} {
+      \draw[black!40] (\ox+\c,-\r) rectangle ++(1,1);
+  } } }
+\end{tikzpicture}
+
+{\small A cell (red) and its \omterm{def:g9:grids-and-images:neighbour}{neighbours} (blue): the four that share a side, the
+eight that also share a corner, and the three of a corner cell.}
+\end{omfigure}
+
+The test \code{0 <= nr < len(grid)} checks both ends at once: \code{nr} is
+at least 0 \emph{and} smaller than the number of rows.
+
+\section{A grey-level image as a grid}
+
+A grey-level image is a \omterm{def:g9:grids-and-images:grid}{grid} of \omterm{def:g5:text-pictures-sound-as-numbers:grey}{grey levels}, one per \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel}: row 0 is the top of
+the image. A colour image is three \omterm{def:g9:grids-and-images:grid}{grids} of the same size, one for red, one
+for green, one for blue. The rest of the chapter uses \omterm{def:g5:text-pictures-sound-as-numbers:grey}{grey levels}, one \omterm{def:g9:grids-and-images:grid}{grid}.
+
+\section{A plain-text image file}
+
+% ledger: g9:pgm-format
+\begin{definition}[PGM file]\label{def:g9:grids-and-images:pgm}
+A \emph{plain PGM file}\index{PGM file} is a \omterm{def:g8:files-and-data-tables:text-file}{text file} that holds a grey-level
+image: the letters \code{P2}, then the width and the height, then the largest
+\omterm{def:g5:text-pictures-sound-as-numbers:grey}{grey level} (255), then the \omterm{def:g5:text-pictures-sound-as-numbers:grey}{grey level} of every \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel}, row after row, separated
+by spaces or ends of line.
+\end{definition}
+
+The format is one of a family of very simple image formats, made to be read and
+written easily by \omterm{def:g4:programs-and-operating-system:program}{programs}; its documentation asks for lines of at most 70
+\omterm{def:g7:strings:string}{characters}. A small \omterm{def:g3:files-and-folders:file}{file} of 6 by 4 \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixels}, from black to white:
+
+\Needspace*{12\baselineskip}
+\omcode{code/grade-9/03-grids-and-images/listings/make_image.py}{1}{9}{A small image
+as PGM text.}\label{lst:g9:grids-and-images:make}
+
+\Needspace*{11\baselineskip}
+\omoutput{code/grade-9/03-grids-and-images/outputs/make_image.txt}{Six columns, from
+0 to 255.}\label{out:g9:grids-and-images:make}
+
+Two \omterm{def:g7:functions:function}{functions} read and write the format. \code{read_pgm} splits the whole text
+into words, reads the width and the height, and fills the \omterm{def:g9:grids-and-images:grid}{grid}; the \omterm{def:g6:variables-and-input:value}{value} of
+row \code{r}, column \code{c} is word number \code{r * width + c} after the
+header. \code{pgm_text} does the reverse.
+
+\omcode{code/grade-9/03-grids-and-images/listings/pgm.py}{1}{25}{Reading and writing
+the plain PGM format.}\label{lst:g9:grids-and-images:pgm}
+
+The chapter's image is \code{shape.pgm}, 16 by 12 \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixels}: a dark background, a
+grey square and a white arrow. A script of the chapter writes it, and a test
+checks that it is written the same way every time.
+
+\Needspace*{9\baselineskip}
+\omcode{code/grade-9/03-grids-and-images/listings/read_pgm.py}{1}{6}{Reading the
+chapter's image.}\label{lst:g9:grids-and-images:read}
+
+\Needspace*{7\baselineskip}
+\omoutput{code/grade-9/03-grids-and-images/outputs/read_pgm.txt}{Row 6 runs through
+the middle of the arrow.}\label{out:g9:grids-and-images:read}
+
+\section{Changing an image}
+
+Each change below reads \code{shape.pgm}, changes the \omterm{def:g9:grids-and-images:grid}{grid}, and prints the text of
+the new \omterm{def:g9:grids-and-images:pgm}{PGM file}; the pictures at the end of the section are drawn from that
+printed text. The \emph{negative} replaces each \omterm{def:g5:text-pictures-sound-as-numbers:grey}{grey level} $v$ by $255 - v$:
+
+\Needspace*{10\baselineskip}
+\omcode{code/grade-9/03-grids-and-images/listings/negative.py}{1}{7}{The
+negative.}\label{lst:g9:grids-and-images:negative}
+
+The \emph{mirror} reads each row backwards, so left and right swap:
+
+\Needspace*{9\baselineskip}
+\omcode{code/grade-9/03-grids-and-images/listings/mirror.py}{1}{6}{The
+mirror.}\label{lst:g9:grids-and-images:mirror}
+
+\begin{method}[Threshold]\label{met:g9:grids-and-images:threshold}
+To turn a grey image into pure black and white, choose a level, such as 128:
+every \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel} at that level or above becomes white (255), every other \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel}
+black (0).
+\end{method}
+
+\Needspace*{13\baselineskip}
+\omcode{code/grade-9/03-grids-and-images/listings/threshold.py}{1}{10}{The
+threshold at 128.}\label{lst:g9:grids-and-images:threshold}
+
+\begin{method}[Blur by averaging]\label{met:g9:grids-and-images:blur}
+To blur an image, replace each \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel} by the average of the 3 by 3 square around
+it: itself and its \omterm{def:g9:grids-and-images:neighbour}{neighbours}, fewer at the edges. Sharp edges become soft
+slopes.
+\end{method}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=0.7cm, y=0.7cm]
+  \foreach \r in {0,...,4} { \foreach \c in {0,...,4} { \draw[black!40] (\c,-\r) rectangle ++(1,1); } }
+  \fill[ocYellow!50] (1,-3) rectangle (4,0);
+  \foreach \r in {0,...,4} { \foreach \c in {0,...,4} { \draw[black!40] (\c,-\r) rectangle ++(1,1); } }
+  \draw[ocRed, very thick] (1,-3) rectangle (4,0);
+  \fill[ocRed!60] (2,-2) rectangle ++(1,1);
+  \node[anchor=west, align=left, font=\small] at (5.5,-0.5) {new value of the red pixel =\\ the sum of the 9 values in the\\ red square, divided by 9};
+\end{tikzpicture}
+
+{\small The 3 by 3 window of the blur: the new \omterm{def:g5:text-pictures-sound-as-numbers:grey}{grey level} of a \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel} is the
+average of the window around it.}
+\end{omfigure}
+
+\omcode{code/grade-9/03-grids-and-images/listings/blur.py}{1}{23}{The blur: a new
+\omterm{def:g9:grids-and-images:grid}{grid}, filled from the old one.}\label{lst:g9:grids-and-images:blur}
+
+The blur builds a \emph{new} \omterm{def:g9:grids-and-images:grid}{grid}. If it changed the old one in place, each
+average would use \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixels} already blurred, and the result would depend on the
+order of the \omterm{def:g4:algorithms-repeat-and-decide:loop}{loops}.
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \foreach \name/\title [count=\i from 0] in {shape/original, negative/negative, mirror/mirror, threshold/threshold, blur/blur} {
+    \begin{axis}[at={(\i*2.95cm,0)}, width=3.6cm, height=3.0cm, scale only axis=false,
+        hide axis, y dir=reverse, enlargelimits=false, axis equal image,
+        colormap/blackwhite, point meta min=0, point meta max=255, title={\small \title}]
+      \addplot[matrix plot*, mesh/cols=16, point meta=explicit] table[meta=v] {code/grade-9/03-grids-and-images/figures/out/\name.dat};
+    \end{axis}
+  }
+\end{tikzpicture}
+
+{\small The chapter's image and its four changes, drawn from the \omterm{def:g5:text-pictures-sound-as-numbers:grey}{grey levels}
+that the \omterm{def:g4:programs-and-operating-system:program}{programs} printed.}
+\end{omfigure}
+
+\section{Exercises}
+
+\begin{exercise}[$\star$]\label{exo:g9:grids-and-images:1}
+In the \omterm{def:g9:grids-and-images:grid}{grid} of \cref{out:g9:grids-and-images:print}, what is \code{grid[2][0]}?
+And \code{grid[0][3]}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g9:grids-and-images:2}
+Which \omterm{def:g6:variables-and-input:value}{values} does \code{neighbours(grid, 2, 3)} return for the same \omterm{def:g9:grids-and-images:grid}{grid}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g9:grids-and-images:3}
+\code{negative.py} is run on a 2 by 2 image whose rows are \code{0 100} and
+\code{200 255}. What are the \omterm{def:g5:text-pictures-sound-as-numbers:grey}{grey levels} of the result?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g9:grids-and-images:4}
+Write a \omterm{def:g7:functions:function}{function} \code{transpose(grid)} that returns the \omterm{def:g9:grids-and-images:grid}{grid} whose rows are the
+columns of \code{grid}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:grids-and-images:5}
+This \omterm{def:g7:functions:function}{function} stops with an \code{IndexError} for the bottom right cell, and gives
+a wrong answer, with no error, for the top left one. Why? Fix it.
+
+\omcode{code/grade-9/03-grids-and-images/exercises/neighbours_bug.py}{1}{2}{Four
+\omterm{def:g9:grids-and-images:neighbour}{neighbours}, without checks.}\label{lst:g9:grids-and-images:neighbours-bug}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:grids-and-images:6}
+This mirror returns \code{image[::-1]}. What does it do to the arrow of
+\code{shape.pgm}? Fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:grids-and-images:7}
+Write a \omterm{def:g7:functions:function}{function} \code{brighter(image, amount)} that adds \code{amount} to every
+\omterm{def:g5:text-pictures-sound-as-numbers:grey}{grey level}, keeping each result between 0 and 255.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:grids-and-images:8}
+Write a \omterm{def:g7:functions:function}{function} \code{rotate(image)} that turns an image a quarter turn
+clockwise. What are the width and the height of the result?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g9:grids-and-images:9}
+In a \omterm{def:g9:grids-and-images:grid}{grid} of 5 columns and 4 rows, add up the numbers of \omterm{def:g9:grids-and-images:neighbour}{four-neighbours} (above,
+below, left, right) of all the cells. Count without listing all 20 cells.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g9:grids-and-images:10}
+Write a \omterm{def:g7:functions:function}{function} \code{count_white(image)} that counts the \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixels} at 255. How
+many are there in the threshold of \code{shape.pgm}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g9:grids-and-images:11}
+A \omterm{def:g9:grids-and-images:pgm}{plain PGM file} of $w$ by $h$ \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixels} writes each \omterm{def:g5:text-pictures-sound-as-numbers:grey}{grey level} with at most three
+digits and a separator. About how many \omterm{def:g4:memory-and-storage:byte}{bytes} does it take, at most? Compare
+with one \omterm{def:g4:memory-and-storage:byte}{byte} per \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g9:grids-and-images:12}
+A \omterm{def:g9:grids-and-images:grid}{grid} of 0s and 1s changes by these rules: a cell at 1 stays at 1 if 2 or 3 of
+its eight \omterm{def:g9:grids-and-images:neighbour}{neighbours} are at 1, and becomes 0 otherwise; a cell at 0 becomes 1 if
+exactly 3 of its \omterm{def:g9:grids-and-images:neighbour}{neighbours} are at 1. Write a \omterm{def:g7:functions:function}{function} \code{step(grid)} that
+returns the next \omterm{def:g9:grids-and-images:grid}{grid}. Check it on three 1s in a row in the middle of a 5 by 5
+\omterm{def:g9:grids-and-images:grid}{grid}.
+\end{exercise}
+
+\section{Problem: The Blur That Spreads}
+
+\begin{problem}[{Weekend problem --- the blur that spreads}]\label{pb:g9:grids-and-images:1}
+A black image holds one white \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel}, 255, in its middle. What happens when it is
+blurred again and again? In this problem, the window always divides by 9, and
+the places outside the image count as 0.
+
+\medskip\noindent\textbf{Part I --- By hand.}
+\begin{enumerate}
+  \item On a 7 by 7 image with the white \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel} in the middle, which \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixels} are not
+    0 after one blur? What is their \omterm{def:g6:variables-and-input:value}{value}?
+  \item After a second blur, how far from the middle does the light reach?
+  \item Guess the number of lit \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixels} after $k$ blurs, far from the edges.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Decimal values.}
+
+\omcode{code/grade-9/03-grids-and-images/listings/spread.py}{1}{28}{The blur of the
+problem, and a count of the lit cells.}\label{lst:g9:grids-and-images:spread}
+
+\omcode{code/grade-9/03-grids-and-images/listings/spread.py}{31}{46}{Blurring one
+white \omterm{def:g5:text-pictures-sound-as-numbers:pixel}{pixel} 20 times, with decimal and with whole \omterm{def:g6:variables-and-input:value}{values}.}\label{lst:g9:grids-and-images:spread-main}
+
+\begin{enumerate}[resume]
+  \item What does \code{lit} count, and what does the \omterm{def:g7:functions:parameter}{parameter} \code{whole}
+    change?
+  \item Run the \omterm{def:g4:programs-and-operating-system:program}{program}. Do the counts with decimal \omterm{def:g6:variables-and-input:value}{values} match your guess?
+  \item Why are all 225 cells lit after 20 blurs, and not $41 \times 41$?
+  \item Does the total brightness stay the same from blur to blur?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Whole grey levels.}
+\begin{enumerate}[resume]
+  \item A \omterm{def:g9:grids-and-images:pgm}{PGM file} stores whole numbers only. How do the counts change with
+    \code{whole=True}?
+  \item Why does the light stop spreading after 5 blurs?
+  \item After blur 16 the image no longer changes at all. Explain why a blur can
+    leave an image unchanged.
+  \item What does this tell you about doing a calculation many times with
+    rounded numbers?
+  \item State the result.
+\end{enumerate}
+\end{problem}

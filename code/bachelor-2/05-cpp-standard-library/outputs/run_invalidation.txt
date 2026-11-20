@@ -1,0 +1,72 @@
+$ g++ -std=c++20 -O0 -g -fsanitize=address invalidation.cpp -o invalidation
+$ ./invalidation
+due in 3 days
+due in 8 days
+due in 12 days
+=================================================================
+==1000==ERROR: AddressSanitizer: heap-use-after-free on address 0x50200000001c at pc 0x555555555781 bp 0x7fffffffeb40 sp 0x7fffffffeb30
+READ of size 4 at 0x50200000001c thread T0
+    #0 0x555555555780 in main ~/session/invalidation.cpp:9
+    #1 0x7ffff6c29d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+    #2 0x7ffff6c29e3f in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29e3f)
+    #3 0x555555555344 in _start (~/session/invalidation+0x1344)
+
+0x50200000001c is located 12 bytes inside of 16-byte region [0x502000000010,0x502000000020)
+freed by thread T0 here:
+    #0 0x7ffff74b724f in operator delete(void*, unsigned long) ../../../../src/libsanitizer/asan/asan_new_delete.cpp:172
+    #1 0x555555557b44 in __gnu_cxx::new_allocator<int>::deallocate(int*, unsigned long) /usr/include/c++/11/ext/new_allocator.h:145
+    #2 0x555555557156 in std::allocator<int>::deallocate(int*, unsigned long) /usr/include/c++/11/bits/allocator.h:199
+    #3 0x555555557156 in std::allocator_traits<std::allocator<int> >::deallocate(std::allocator<int>&, int*, unsigned long) /usr/include/c++/11/bits/alloc_traits.h:496
+    #4 0x5555555566af in std::_Vector_base<int, std::allocator<int> >::_M_deallocate(int*, unsigned long) /usr/include/c++/11/bits/stl_vector.h:354
+    #5 0x555555556d70 in void std::vector<int, std::allocator<int> >::_M_realloc_insert<int>(__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >, int&&) /usr/include/c++/11/bits/vector.tcc:500
+    #6 0x555555556630 in int& std::vector<int, std::allocator<int> >::emplace_back<int>(int&&) /usr/include/c++/11/bits/vector.tcc:121
+    #7 0x55555555607f in std::vector<int, std::allocator<int> >::push_back(int&&) /usr/include/c++/11/bits/stl_vector.h:1204
+    #8 0x55555555581d in main ~/session/invalidation.cpp:12
+    #9 0x7ffff6c29d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+
+previously allocated by thread T0 here:
+    #0 0x7ffff74b61e7 in operator new(unsigned long) ../../../../src/libsanitizer/asan/asan_new_delete.cpp:99
+    #1 0x555555557bcb in __gnu_cxx::new_allocator<int>::allocate(unsigned long, void const*) /usr/include/c++/11/ext/new_allocator.h:127
+    #2 0x55555555737a in std::allocator<int>::allocate(unsigned long) /usr/include/c++/11/bits/allocator.h:185
+    #3 0x55555555737a in std::allocator_traits<std::allocator<int> >::allocate(std::allocator<int>&, unsigned long) /usr/include/c++/11/bits/alloc_traits.h:464
+    #4 0x5555555568ad in std::_Vector_base<int, std::allocator<int> >::_M_allocate(unsigned long) /usr/include/c++/11/bits/stl_vector.h:346
+    #5 0x555555556362 in void std::vector<int, std::allocator<int> >::_M_range_initialize<int const*>(int const*, int const*, std::forward_iterator_tag) /usr/include/c++/11/bits/stl_vector.h:1582
+    #6 0x555555555cc6 in std::vector<int, std::allocator<int> >::vector(std::initializer_list<int>, std::allocator<int> const&) /usr/include/c++/11/bits/stl_vector.h:629
+    #7 0x555555555655 in main ~/session/invalidation.cpp:8
+    #8 0x7ffff6c29d8f  (/lib/x86_64-linux-gnu/libc.so.6+0x29d8f)
+
+SUMMARY: AddressSanitizer: heap-use-after-free ~/session/invalidation.cpp:9 in main
+Shadow bytes around the buggy address:
+  0x0a047fff7fb0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0a047fff7fc0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0a047fff7fd0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0a047fff7fe0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0a047fff7ff0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x0a047fff8000: fa fa fd[fd]fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a047fff8010: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a047fff8020: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a047fff8030: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a047fff8040: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0a047fff8050: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+  Shadow gap:              cc
+==1000==ABORTING
+[exit status 1]

@@ -1,0 +1,498 @@
+% Book 4, Year 2, chapter 18 -- The network layer: IP and routing.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 18.
+\chapter{The Network Layer: IP and Routing}\label{ch:b2:network-layer}
+
+A packet leaves the laptop at the library for a server at the far end of town. Each \omterm{def:b2:network-layer:routing}{router} on the way takes one off
+a counter in the packet, and the \omterm{def:b2:network-layer:routing}{router} that brings it to zero sends back a note. Sending packets with counters 1,
+2, 3, \dots\ therefore reveals the path, one \omterm{def:b2:network-layer:routing}{router} at a time:
+
+\omoutput{code/bachelor-2/18-network-layer/outputs/traceroute_town.txt}{The town's network, traced (a simulation,
+with one \omterm{def:b2:network-layer:routing}{router} at each place of the town).}\label{out:b2:network-layer:hook}
+
+Eight \omterm{def:b2:network-layer:routing}{routers}, then the server: the laptop knew none of them, and each \omterm{def:b2:network-layer:routing}{router} chose the next one on its own. The \omterm{def:b2:link-layer:frame}{link layer} of
+\cref{ch:b2:link-layer} carries a frame across one link; the \emph{network layer} carries a packet across many,
+from any machine to any other. This chapter covers its addresses, how a \omterm{def:b2:network-layer:routing}{router} chooses where a packet goes next, and
+how \omterm{def:b2:network-layer:routing}{routers} learn the routes in the first place.
+
+\begin{recall}
+Book 2: an IPv4 address is four numbers from 0 to 255; a mask says which part names the network; a \omterm{def:b2:network-layer:routing}{routing} table,
+read by hand, tells a \omterm{def:b2:network-layer:routing}{router} where to send a packet, and \omterm{def:b2:network-layer:routing}{routers} learn routes either from their neighbours' distances
+or from a map of the whole network. Year 1: Dijkstra's algorithm and the Bellman--Ford algorithm compute shortest
+paths. \cref{ch:b2:link-layer}: the \omterm{def:b2:link-layer:inet-checksum}{Internet checksum}; frames, MAC addresses and ARP.
+\end{recall}
+
+\section{Addresses and prefixes}\label{sec:b2:network-layer:addresses}
+
+An IPv4 address is a 32-bit number, written as four bytes in decimal: \code{203.0.113.77} is the number whose
+bits are
+\[ 11001011\;00000000\;01110001\;01001101 . \]
+Addresses are handed out in blocks that share their first bits.
+
+\begin{definition}[Prefix]\label{def:b2:network-layer:prefix}
+% ledger: b2:cidr-longest-match
+A \emph{prefix}\index{prefix (IP)} $a/p$, with $0 \le p \le 32$, is the set of addresses whose first $p$ bits are
+those of $a$. Its \emph{mask} is the 32-bit number made of $p$ ones then $32 - p$ zeros. An address $x$ belongs to
+$a/p$ exactly when $x \mathbin{\&} \text{mask} = a \mathbin{\&} \text{mask}$; that common value is the
+\emph{network address}, and the address with the $32 - p$ last bits all ones is the \emph{\omterm{def:b2:link-layer:mac-address}{broadcast address}}.
+\end{definition}
+
+\begin{omfigure}
+\begin{bytefield}[bitwidth=0.95em]{32}
+\bitheader{0,7,8,15,16,23,24,25,26,31} \\
+\bitbox{8}{\scriptsize 203} & \bitbox{8}{\scriptsize 0} & \bitbox{8}{\scriptsize 113} & \bitbox{2}{\scriptsize 01}
+& \bitbox{6}{\scriptsize 001101} \\
+\bitbox{26}{\scriptsize network part: 26 bits, the prefix 203.0.113.64/26} & \bitbox{6}{\scriptsize host: 13}
+\end{bytefield}
+\par\smallskip{\small The address 203.0.113.77 in the \omterm{def:b2:network-layer:prefix}{prefix} /26: the first 26 bits name the network, the last 6 a
+machine in it. The mask is 255.255.255.192.}
+\end{omfigure}
+
+\omcode{code/bachelor-2/18-network-layer/listings/cidr.py}{16}{25}{The mask, the network and the \omterm{def:b2:link-layer:mac-address}{broadcast
+address}}
+
+\omoutput{code/bachelor-2/18-network-layer/outputs/cidr.txt}{Three \omterm{def:b2:network-layer:prefix}{prefixes}, each checked against Python's
+\code{ipaddress}.}\label{out:b2:network-layer:cidr}
+
+\begin{method}[Subnet arithmetic]\label{met:b2:network-layer:subnet}
+A \omterm{def:b2:network-layer:prefix}{prefix} $/p$ holds $2^{32-p}$ addresses, of which $2^{32-p} - 2$ can name machines (the network and broadcast
+addresses are kept). To split $a/p$ into $2^k$ equal subnets, extend the \omterm{def:b2:network-layer:prefix}{prefix} by $k$ bits: the subnets are $a + i
+\cdot 2^{32-p-k}$ over $/(p + k)$, for $i = 0, \dots, 2^k - 1$. To find the smallest \omterm{def:b2:network-layer:prefix}{prefix} for $h$ machines, take
+the least $s$ with $2^s - 2 \ge h$: the \omterm{def:b2:network-layer:prefix}{prefix} is $/(32 - s)$.
+\end{method}
+
+% ledger: b2:doc-ipv4
+% ledger: b2:private-blocks
+Some blocks are set aside. Every address printed in this chapter comes from the three blocks reserved for
+documentation, \code{192.0.2.0/24}, \code{198.51.100.0/24} and \code{203.0.113.0/24}, except for the private
+blocks \code{10.0.0.0/8}, \code{172.16.0.0/12} and \code{192.168.0.0/16}, which any home or company may use inside
+its own network and which never appear on the Internet itself (\cref{sec:b2:network-layer:nat}).
+
+\begin{history}
+% ledger: b2:ipv4-exhaustion
+$2^{32}$ is about 4.3 billion addresses, fewer than the machines that want one. On 3 February 2011 the body that
+hands out address blocks gave its last five blocks of $2^{24}$ addresses, one to each regional registry, and had none
+left. Address translation (\cref{sec:b2:network-layer:nat}) and IPv6 (\cref{sec:b2:network-layer:ipv6}) are the two
+answers.
+\end{history}
+
+\section{Forwarding}\label{sec:b2:network-layer:forwarding}
+
+\begin{definition}[Router, forwarding, routing]\label{def:b2:network-layer:routing}
+A \emph{router}\index{router} is a machine with interfaces on several links that passes packets from one to another. It
+does two different jobs. \emph{Forwarding}\index{forwarding} is what it does for each packet, millions of times a
+second: look at the destination address and send the packet out of one interface. \emph{Routing}\index{routing} is how
+it fills the table it forwards with, by exchanging messages with other routers (\cref{sec:b2:network-layer:routing}).
+\end{definition}
+
+\begin{definition}[Forwarding table, longest-prefix match]\label{def:b2:network-layer:lpm}
+A \emph{forwarding table}\index{forwarding table} is a list of \omterm{def:b2:network-layer:prefix}{prefixes}, each with a next hop. A packet for address
+$x$ goes to the next hop of the \emph{longest} \omterm{def:b2:network-layer:prefix}{prefix} of the table that contains $x$
+(\emph{longest-prefix match}\index{longest-prefix match}). The \omterm{def:b2:network-layer:prefix}{prefix} \code{0.0.0.0/0}, which contains every
+address, is the \emph{default route}.
+\end{definition}
+
+The longest \omterm{def:b2:network-layer:prefix}{prefix} wins because it is the most precise: a provider announces its whole block, and one customer
+inside it, reached another way, announces its own smaller block. Trying every \omterm{def:b2:network-layer:prefix}{prefix} costs one test per entry, and
+backbone \omterm{def:b2:network-layer:routing}{routers} hold hundreds of thousands of them. A \emph{binary trie} does better: a tree in which each node has
+a child for bit 0 and one for bit 1, and each \omterm{def:b2:network-layer:prefix}{prefix} of length $p$ marks the node reached by its $p$ bits.
+
+\omcode{code/bachelor-2/18-network-layer/listings/lpm_trie.py}{5}{24}{\omterm{def:b2:network-layer:lpm}{Longest-prefix match} on a binary
+trie}\label{lst:b2:network-layer:trie}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, n/.style={circle, draw, minimum size=6mm, inner sep=0pt},
+  h/.style={n, fill=omDef!30}, e/.style={draw, gray}]
+\node[h] (r) at (0,0) {0};
+\node[n] (a) at (-2,-1.1) {}; \node[h] (b) at (2,-1.1) {1};
+\node[h] (a1) at (-1,-2.2) {3}; \node[n] (b0) at (1,-2.2) {};
+\node[h] (b01) at (2,-3.3) {2};
+\draw[e] (r) -- node[above left] {0} (a); \draw[e] (r) -- node[above right] {1} (b);
+\draw[e] (a) -- node[above right] {1} (a1); \draw[e] (b) -- node[above left] {0} (b0);
+\draw[e] (b0) -- node[above right] {1} (b01);
+\draw[omThm, very thick, -{Stealth[length=2mm]}] (r) -- (b);
+\draw[omThm, very thick, -{Stealth[length=2mm]}] (b) -- (b0);
+\node[anchor=west, align=left, text=omThm] at (3.0,-2.2) {lookup of 1001\dots: root, 1, 10;\\ no child for 0 at
+10;\\ the last mark met is 1: port 1};
+\end{tikzpicture}
+\par\smallskip{\small The trie of the table $\ast \to 0$, $01\ast \to 3$, $1\ast \to 1$, $101\ast \to 2$ (shaded
+nodes carry a next hop). A lookup walks down the bits of the address and remembers the last mark it met.}
+\end{omfigure}
+
+\begin{proposition}[Lookup in a trie]\label{prop:b2:network-layer:lpm}
+\code{lookup} returns the next hop of the longest \omterm{def:b2:network-layer:prefix}{prefix} of the table that contains the address, after at most 32
+steps.
+\end{proposition}
+
+\begin{proof}
+After $k$ steps the walk is at the node of the address's first $k$ bits. The node of a \omterm{def:b2:network-layer:prefix}{prefix} $a/p$ lies on this
+path exactly when the first $p$ bits of the address are those of $a$, that is, when the \omterm{def:b2:network-layer:prefix}{prefix} contains the address.
+The walk passes the marked nodes of all these \omterm{def:b2:network-layer:prefix}{prefixes} in order of length, keeping the last, and stops only when the
+path leaves the trie, below which no node is marked, or after 32 bits. So it returns the longest. Each step consumes
+one bit of a 32-bit address.
+\end{proof}
+
+\omoutput{code/bachelor-2/18-network-layer/outputs/lpm_trie.txt}{Five lookups in a table of five
+\omterm{def:b2:network-layer:prefix}{prefixes}.}\label{out:b2:network-layer:lpm}
+
+\omoutput{code/bachelor-2/18-network-layer/outputs/lpm_bench.txt}{Lookup time against table size on the laptop,
+for 500 random addresses.}\label{out:b2:network-layer:bench}
+
+The linear scan's time grows with the table; the trie's barely moves. Hardware \omterm{def:b2:network-layer:routing}{routers} use compressed tries, and
+special memories that compare an address with every \omterm{def:b2:network-layer:prefix}{prefix} at once.
+
+\subsection{The IPv4 header}
+
+\begin{omfigure}
+\begin{bytefield}[bitwidth=0.95em]{32}
+\bitheader{0,4,8,16,19,31} \\
+\bitbox{4}{\scriptsize version} & \bitbox{4}{\scriptsize IHL} & \bitbox{8}{\scriptsize type of service} &
+\bitbox{16}{\scriptsize total length} \\
+\bitbox{16}{\scriptsize identification} & \bitbox{3}{\scriptsize flags} & \bitbox{13}{\scriptsize fragment offset}
+\\
+\bitbox{8}{\scriptsize time to live} & \bitbox{8}{\scriptsize protocol} & \bitbox{16}{\scriptsize header checksum}
+\\
+\bitbox{32}{\scriptsize source address} \\
+\bitbox{32}{\scriptsize destination address}
+\end{bytefield}
+\par\smallskip{\small The IPv4 header without options: 20 bytes, five rows of 32 bits. IHL is the header's length in
+rows; the protocol says what the payload is (6 for TCP, 17 for UDP).}
+\end{omfigure}
+
+% ledger: b2:ipv4-header
+% ledger: b2:ipv4-checksum
+% ledger: b2:ipv4-ttl-zero
+Every packet starts with this header. Two fields change at every \omterm{def:b2:network-layer:routing}{router}.
+
+\begin{definition}[Time to live]\label{def:b2:network-layer:ttl}
+The \emph{time to live}\index{time to live} of a packet is a counter in its header that every \omterm{def:b2:network-layer:routing}{router} decreases by
+one; a \omterm{def:b2:network-layer:routing}{router} that brings it to zero destroys the packet, so that a packet caught in a \omterm{def:b2:network-layer:routing}{routing} loop cannot circle
+forever, and sends back a ``time exceeded'' message.
+\end{definition}
+
+That message is what \cref{out:b2:network-layer:hook} used. The \emph{header \omterm{def:b2:link-layer:edc}{checksum}}, the \omterm{def:b2:link-layer:inet-checksum}{Internet checksum} of \cref{ch:b2:link-layer} computed over the header with the
+field taken as 0, must then be computed again.
+
+\omcode{code/bachelor-2/18-network-layer/listings/ipv4_header.py}{26}{33}{What a \omterm{def:b2:network-layer:routing}{router} does to each header}
+
+\omoutput{code/bachelor-2/18-network-layer/outputs/ipv4_header.txt}{A header built, decoded and forwarded once.}
+
+The \omterm{def:b2:network-layer:ttl}{time to live} dropped from 64 (\code{0x40}) to 63, and the \omterm{def:b2:link-layer:edc}{checksum} went up by \code{0x0100}, the same amount in
+the same byte. Error reports such as ``time exceeded'' or ``destination unreachable'' travel in small packets of
+their own protocol, ICMP, which is also what \code{ping} sends.
+
+\section{Address translation}\label{sec:b2:network-layer:nat}
+
+A home has one public address and many machines with private ones. Its \omterm{def:b2:network-layer:routing}{router} translates.
+
+\begin{definition}[Network address and port translation]\label{def:b2:network-layer:nat}
+% ledger: b2:napt
+A \emph{NAT}\index{network address translation} \omterm{def:b2:network-layer:routing}{router} rewrites each packet that leaves the private network: the
+private source address and port become its own public address and a port it chooses, and it records the pair in a
+table. A packet that comes back to that public port is rewritten the other way and delivered. A packet that arrives
+for a port with no entry has nobody to go to, and is dropped.
+\end{definition}
+
+\omcode{code/bachelor-2/18-network-layer/listings/nat_sim.py}{5}{20}{The translation table}
+
+\omoutput{code/bachelor-2/18-network-layer/outputs/nat_sim.txt}{Two machines inside, one address
+outside.}\label{out:b2:network-layer:nat}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, b/.style={draw, rounded corners=2pt, align=center, inner sep=3pt},
+  w/.style={-{Stealth[length=1.8mm]}, thick}]
+\node[b, fill=omDef!12] (h) at (0,0) {machine inside\\ 192.168.1.11};
+\node[b, fill=omThm!12] (n) at (4.6,0) {home router (NAT)\\ outside: 203.0.113.7};
+\node[b, fill=omDef!12] (s) at (9.2,0) {server\\ 198.51.100.20};
+\draw[w] (h.north east) -- node[above, align=center] {from 192.168.1.11:50000\\ to 198.51.100.20:80}
+  (n.north west);
+\draw[w] (n.north east) -- node[above, align=center] {from 203.0.113.7:40001\\ to 198.51.100.20:80}
+  (s.north west);
+\draw[w, omDef] (s.south west) -- node[below, align=center] {to 203.0.113.7:40001} (n.south east);
+\draw[w, omDef] (n.south west) -- node[below, align=center] {to 192.168.1.11:50000} (h.south east);
+\node[draw, dashed, below=9mm of n, align=center] {table: 40001 $\leftrightarrow$ 192.168.1.11:50000};
+\end{tikzpicture}
+\par\smallskip{\small One connection through a \omterm{def:b2:network-layer:nat}{NAT}. The server sees only the \omterm{def:b2:network-layer:routing}{router}'s address; the table maps the
+\omterm{def:b2:network-layer:routing}{router}'s port back to the machine inside.}
+\end{omfigure}
+
+Translation saved the Internet from running out of addresses, at a price. A machine inside cannot be reached until
+it has spoken first, so two machines both behind \omterm{def:b2:network-layer:nat}{NATs} cannot simply connect to each other; a protocol that writes
+addresses inside its messages sees them unchanged while the headers are rewritten; and the \omterm{def:b2:network-layer:routing}{router} must keep state for
+every conversation, which the end-to-end design of the Internet had avoided.
+
+\section{Fragmentation}\label{sec:b2:network-layer:fragmentation}
+
+\begin{definition}[Maximum transmission unit, fragmentation]\label{def:b2:network-layer:fragmentation}
+The \emph{maximum transmission unit}\index{MTU} (MTU) of a link is its largest frame payload (1500 bytes on Ethernet).
+\emph{Fragmentation}\index{fragmentation} cuts a packet larger than the next link's MTU into \emph{fragments}, each with
+its own header, which the destination puts back together.
+\end{definition}
+
+An IPv4 \omterm{def:b2:network-layer:routing}{router} fragments a packet whose ``don't fragment'' flag is not set.
+
+% ledger: b2:ipv4-frag-offset
+% ledger: b2:ipv4-576
+\omoutput{code/bachelor-2/18-network-layer/outputs/fragment.txt}{4000 bytes of payload through links of \omterm{def:b2:network-layer:fragmentation}{MTU} 1500 and
+576.}\label{out:b2:network-layer:fragment}
+
+Each fragment keeps the packet's identification; its \emph{offset} says where its data starts, in units of 8 bytes,
+which is why every fragment but the last carries a multiple of 8 bytes; the \emph{more fragments} flag is 1 on all
+but the last. One lost fragment loses the whole packet. Modern hosts avoid \omterm{def:b2:network-layer:fragmentation}{fragmentation}: they send with ``don't
+fragment'' set and lower their packet size when a \omterm{def:b2:network-layer:routing}{router} reports that a packet was too big. Every host must accept
+packets of up to 576 bytes.
+
+\section{IPv6}\label{sec:b2:network-layer:ipv6}
+
+% ledger: b2:ipv6-header
+\begin{definition}[IPv6 address]\label{def:b2:network-layer:ipv6}
+An \emph{IPv6 address}\index{IPv6 address} has 128 bits, written as eight groups of four hexadecimal digits separated by
+colons, with leading zeros dropped and one run of zero groups shortened to \code{::}.
+\end{definition}
+
+$2^{128}$ addresses are enough to give every machine a public one. The header is simpler
+than IPv4's: a fixed 40 bytes with version, traffic class, flow label, payload length, next header (the protocol
+field), hop limit (the \omterm{def:b2:network-layer:ttl}{time to live}), and the two addresses. There is no header \omterm{def:b2:link-layer:edc}{checksum}, since the link and
+transport layers each have their own, and \omterm{def:b2:network-layer:routing}{routers} never fragment: only the sender does, and every link must carry
+at least 1280 bytes.
+
+% ledger: b2:ipv6-text
+% ledger: b2:doc-ipv6
+An address is written as eight groups of 16 bits in hexadecimal, separated by colons. Leading zeros in a group are
+dropped, and one run of at least two groups of zeros, the longest (the first if two are equally long), is written
+\code{::}. Letters are in lowercase. The \omterm{def:b2:network-layer:prefix}{prefix} \code{2001:db8::/32} is reserved for documentation.
+
+\omoutput{code/bachelor-2/18-network-layer/outputs/ipv6_text.txt}{Short forms expanded to eight groups, as
+\code{ipaddress} does.}
+
+\section{Routing}\label{sec:b2:network-layer:routing}
+
+\omterm{def:b2:network-layer:lpm}{Forwarding tables} are filled by \omterm{def:b2:network-layer:routing}{routing} protocols. Inside one network, \omterm{def:b2:network-layer:routing}{routers} use one of two families, both
+computing shortest paths in the graph of \omterm{def:b2:network-layer:routing}{routers} and links, where each link has a cost.
+
+\subsection{Distance vector}
+
+\begin{definition}[Distance-vector routing]\label{def:b2:network-layer:dv}
+In \emph{distance-vector routing}\index{distance vector routing}, each \omterm{def:b2:network-layer:routing}{router} knows only its neighbours and the cost of
+its links to them, and repeatedly sends its table of distances to its neighbours, keeping for each destination the
+neighbour that offers the shortest total. A \emph{count to infinity} is the slow rise of distances after a failure;
+\emph{split horizon} is a remedy, below.
+\end{definition}
+
+ Periodically, every \omterm{def:b2:network-layer:routing}{router} sends its table of distances to its neighbours, and rebuilds its own
+table from theirs: the distance to $d$ is the least, over neighbours $v$, of the link cost to $v$ plus $v$'s distance
+to $d$, and the next hop is that $v$. This is the Bellman--Ford algorithm, run by all the \omterm{def:b2:network-layer:routing}{routers} together.
+
+\omcode{code/bachelor-2/18-network-layer/listings/distance_vector.py}{5}{18}{One synchronous round of distance
+vector}
+
+\omoutput[1-5]{code/bachelor-2/18-network-layer/outputs/distance_vector.txt}{Four \omterm{def:b2:network-layer:routing}{routers}, links A--B 1, B--C 2,
+A--C 4, C--D 1; the tables after each round.}\label{out:b2:network-layer:dv}
+
+After round 1 each \omterm{def:b2:network-layer:routing}{router} knows its neighbours; A reaches C at cost 4 directly. In round 2 it hears B's distance 2
+to C and switches to the path through B, cost 3. After round 3 nothing changes.
+
+\begin{theorem}[Convergence]\label{thm:b2:network-layer:dv-converge}
+Let the network have $n$ \omterm{def:b2:network-layer:routing}{routers} and positive link costs, and let every table start with only the \omterm{def:b2:network-layer:routing}{router} itself, at
+distance 0. After round $k$ of synchronous distance vector, each \omterm{def:b2:network-layer:routing}{router}'s distance to each destination is the least
+cost of a path to it with at most $k$ links. Hence after $n - 1$ rounds every distance is the shortest-path distance,
+and no table changes after that.
+\end{theorem}
+
+The proof, by induction on $k$, is \cref{exo:b2:network-layer:8}. On the town's 30 \omterm{def:b2:network-layer:routing}{routers} the tables stop changing
+after 8 rounds, the most links on any shortest path, and agree with Dijkstra's algorithm run at each \omterm{def:b2:network-layer:routing}{router}:
+
+\omoutput[1-3]{code/bachelor-2/18-network-layer/outputs/town_network.txt}{Distance vector against link state on the
+town's network.}
+
+Good news travels fast. Bad news does not. When the link from B to C fails on the line A--B--C, B no longer reaches C
+directly, but A still announces C at distance 2, through B. B takes that route, at distance 3; A then hears 3 from
+B, and so on:
+
+\omoutput[1-1,6-21]{code/bachelor-2/18-network-layer/outputs/distance_vector.txt}{The count to infinity.}
+
+\begin{proposition}[Count to infinity]\label{prop:b2:network-layer:count-to-infinity}
+In this situation, where A's only route to C goes through B and B's through A, the larger of their two distances to C
+grows by exactly the cost of the link A--B at each round, until it reaches the value taken as infinity.
+\end{proposition}
+
+\begin{proof}
+Each one's only neighbour with a route to C is the other, so with $c$ the link cost, $a_{r} = b_{r-1} + c$ and $b_r =
+a_{r-1} + c$ (capped at infinity). Hence $\max(a_r, b_r) = \max(a_{r-1}, b_{r-1}) + c$.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=0.62\linewidth, height=4.6cm, xlabel={round after the failure},
+    ylabel={distance to C}, ymin=0, ymax=17.5, xmin=0, xmax=16, legend pos=south east,
+    legend style={font=\scriptsize}]
+  \addplot[const plot, omDef, thick, mark=*, mark size=1.2pt] table[x=round, y=A]
+    {code/bachelor-2/18-network-layer/figures/count.dat};
+  \addlegendentry{A}
+  \addplot[const plot, omThm, thick, mark=square*, mark size=1.2pt] table[x=round, y=B]
+    {code/bachelor-2/18-network-layer/figures/count.dat};
+  \addlegendentry{B}
+  \draw[dashed, gray] (axis cs:0,16) -- (axis cs:16,16) node[pos=0.12, below, font=\scriptsize] {infinity: 16};
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small A and B take turns raising their distance to C by 2, each believing the other still has a
+route. 15 rounds pass before both declare C unreachable.}
+\end{omfigure}
+
+% ledger: b2:rip-infinity
+That is why distance-vector protocols take a small number for infinity: RIP, the classic one, uses 16 and sends its
+tables every 30 seconds, so a count to infinity could take minutes. A remedy, \emph{split horizon with poisoned
+reverse}, has a \omterm{def:b2:network-layer:routing}{router} tell the neighbour it routes through that its distance is infinite; it cures this \omterm{def:b2:network-layer:routing}{two-router}
+loop, but not every loop (\cref{exo:b2:network-layer:10}).
+
+\subsection{Link state}
+
+% ledger: b2:ospf-link-state
+\begin{definition}[Link-state routing]\label{def:b2:network-layer:ls}
+In \emph{link-state routing}\index{link state routing}, each \omterm{def:b2:network-layer:routing}{router} floods to every other \omterm{def:b2:network-layer:routing}{router} a description of its
+own links, so that every \omterm{def:b2:network-layer:routing}{router} holds the same map of the whole network, and each computes its shortest paths from
+itself with Dijkstra's algorithm.
+\end{definition}
+
+ When a link fails, the two \omterm{def:b2:network-layer:routing}{routers} at its ends flood the news, and every \omterm{def:b2:network-layer:routing}{router}
+computes again, once. OSPF, the common link-state protocol, works this way. The cost is that every \omterm{def:b2:network-layer:routing}{router} stores the
+whole map and runs Dijkstra on each change; the gain is fast, loop-free convergence.
+
+\omcode{code/bachelor-2/18-network-layer/listings/link_state.py}{5}{19}{Each \omterm{def:b2:network-layer:routing}{router}'s computation in link state:
+Dijkstra, keeping the first hop}
+
+\subsection{Between operators}
+
+% ledger: b2:bgp-as
+The Internet is a network of networks.
+
+\begin{definition}[Autonomous system, path-vector routing]\label{def:b2:network-layer:as}
+An \emph{autonomous system}\index{autonomous system} is a set of \omterm{def:b2:network-layer:routing}{routers} under one technical administration, which
+uses its own \omterm{def:b2:network-layer:routing}{routing} protocol inside. In \emph{path-vector routing}\index{path-vector routing}, each announcement of a
+\omterm{def:b2:network-layer:prefix}{prefix} carries the list of autonomous systems it passed through, so that a system that finds itself in the list knows
+there is a loop and ignores the announcement.
+\end{definition}
+
+Between \omterm{def:b2:network-layer:as}{autonomous systems} runs BGP, a path-vector protocol. The choice among
+routes is a matter of policy (which neighbour is a customer, which one is paid) rather than of shortest paths.
+
+\omimg{book4/interface-message-processor.jpg}{0.4\linewidth}{An Interface Message Processor, one of the first packet
+switches: in the network that grew into the Internet, each of these minicomputers forwarded packets between its
+host computers and its neighbours. Photograph: ArnoldReinhold, CC BY 4.0.}
+
+\section{Exercises}\label{sec:b2:network-layer:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:network-layer:1}
+Give the mask, network address, \omterm{def:b2:link-layer:mac-address}{broadcast address} and number of host addresses of \code{198.51.100.77/27} and of
+\code{192.0.2.130/25}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:network-layer:2}
+This mask is one bit short. What \omterm{def:b2:network-layer:prefix}{prefix} does it really compute, and is the answer to the membership test right?
+\omcode{code/bachelor-2/18-network-layer/listings/exo_mask.py}{5}{6}{A shifted mask}
+\omoutput{code/bachelor-2/18-network-layer/outputs/exo_mask.txt}{For 203.0.113.77/26.}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:network-layer:3}
+Write \code{contains(prefix, address)} for \omterm{def:b2:network-layer:prefix}{prefixes} and addresses in text, using \code{cidr.py}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:network-layer:4}
+How many machines can a \code{/26} hold? Split \code{203.0.113.0/24} into the smallest \omterm{def:b2:network-layer:prefix}{prefixes} for four offices of
+50, 20, 10 and 2 machines, without overlap.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:network-layer:5}
+A \omterm{def:b2:network-layer:routing}{router} has the routes \code{0.0.0.0/0} $\to$ W, \code{198.51.100.0/24} $\to$ X, \code{198.51.100.64/26}
+$\to$ Y and \code{198.51.100.96/27} $\to$ Z. Where do packets for \code{198.51.100.70}, \code{198.51.100.100},
+\code{198.51.100.130} and \code{192.0.2.1} go?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:network-layer:6}
+After the \omterm{def:b2:network-layer:ttl}{time to live} is lowered, this \omterm{def:b2:network-layer:routing}{router} computes the \omterm{def:b2:link-layer:edc}{checksum} without first clearing the field. What does the
+next \omterm{def:b2:network-layer:routing}{router} see, and how does the error show in the output?
+\omcode{code/bachelor-2/18-network-layer/listings/exo_hdrsum.py}{4}{7}{A \omterm{def:b2:link-layer:edc}{checksum} over itself}
+\omoutput{code/bachelor-2/18-network-layer/outputs/exo_hdrsum.txt}{The receiver's sum.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:network-layer:7}
+Write \code{aggregate(prefixes)}, which replaces a set of \omterm{def:b2:network-layer:prefix}{prefixes} with the same next hop by the fewest \omterm{def:b2:network-layer:prefix}{prefixes}
+covering exactly the same addresses: drop a \omterm{def:b2:network-layer:prefix}{prefix} inside another, merge two halves of a \omterm{def:b2:network-layer:prefix}{prefix}. Test it against
+\code{ipaddress.collapse_addresses}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:network-layer:8}
+Prove \cref{thm:b2:network-layer:dv-converge}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:network-layer:9}
+Write \code{fragment(payload_len, mtu)}, returning the offset, size and flag of each fragment, check it against
+\cref{out:b2:network-layer:fragment}, and give by hand the fragments of 3000 bytes for an \omterm{def:b2:network-layer:fragmentation}{MTU} of 1006. Why must
+every fragment but the last carry a multiple of 8 bytes?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:network-layer:10}
+Add split horizon with poisoned reverse to the rounds of distance vector. Show that it cures the line A--B--C when
+B--C fails, but not a triangle A, B, C with D behind C, when C--D fails. Explain the second case.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:network-layer:11}
+Compare the cost of a lookup in a trie, in a linear table, and by binary search in a sorted list of \omterm{def:b2:network-layer:prefix}{prefixes}, which
+must also handle nested \omterm{def:b2:network-layer:prefix}{prefixes}. Relate your estimates to \cref{out:b2:network-layer:bench}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:network-layer:12}
+Write \code{compress(groups)}, which gives the recommended text form of an \omterm{def:b2:network-layer:ipv6}{IPv6 address} from its eight groups, and
+test it against \code{ipaddress} on many addresses with runs of zeros.
+\end{exercise}
+
+\section{Problem: Routing the town's network}\label{sec:b2:network-layer:problem}
+
+\begin{problem}[{Weekend problem --- Routing the town's network}]\label{pb:b2:network-layer:1}
+The town puts a \omterm{def:b2:network-layer:routing}{router} at each of its 30 places, joined along its 53 roads, and numbers them from the block
+\code{198.51.100.0/24}.
+
+\medskip\noindent\textbf{Part I --- An addressing plan.}\par\nopagebreak
+\begin{enumerate}
+\item Each \omterm{def:b2:network-layer:routing}{router} gets one address, \code{198.51.100.}$k$ for place $k$. How many addresses of the block are left?
+\item Each place also has a small network of at most 5 machines. What is the smallest \omterm{def:b2:network-layer:prefix}{prefix} for one, and how many
+such \omterm{def:b2:network-layer:prefix}{prefixes} fit in a \code{/24}?
+\item Could the 30 small networks all fit in \code{198.51.100.0/24} besides the \omterm{def:b2:network-layer:routing}{routers}' addresses? Justify.
+\item The town gets a second block, \code{203.0.113.0/24}, and gives place $k$ the \code{/29} that starts at
+\code{203.0.113.}$8k$. Check that the 30 \omterm{def:b2:network-layer:prefix}{prefixes} fit, and give the \omterm{def:b2:network-layer:prefix}{prefix} of place 12.
+\item Write the network and broadcast addresses of that \omterm{def:b2:network-layer:prefix}{prefix}.
+\item Why does this plan make \omterm{def:b2:network-layer:lpm}{forwarding tables} easy to read?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Forwarding tables.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item In \cref{out:b2:network-layer:hook}, which \omterm{def:b2:network-layer:routing}{router} forwards the packet to the Town Square \omterm{def:b2:network-layer:routing}{router}?
+\item How many entries does a \omterm{def:b2:network-layer:routing}{router}'s table need with one \code{/29} per place, and how many if the town announces
+itself to the outside as one \omterm{def:b2:network-layer:prefix}{prefix}?
+\item Write the two entries a \omterm{def:b2:network-layer:routing}{router} at the edge of town needs for the outside world.
+\item A packet for \code{203.0.113.97} arrives. Which place's network is it in?
+\item Count the steps of a trie lookup for that address in a table of the 30 \code{/29}s and a default route.
+\item Why is the \omterm{def:b2:network-layer:ttl}{time to live} set to 64 rather than to the 9 hops the hook needed?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Distance vector against link state.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item With road lengths as costs, distance vector stops changing after 8 rounds. What does
+\cref{thm:b2:network-layer:dv-converge} say the number of rounds is at most, and what does 8 measure?
+\item With hop counts as costs, it takes 7 rounds. Why fewer?
+\item How many messages does one round of distance vector send in the town's network?
+\item How many link descriptions does each \omterm{def:b2:network-layer:routing}{router} store in link state?
+\item Estimate the work of one Dijkstra run on 30 \omterm{def:b2:network-layer:routing}{routers} and 53 links.
+\item Which design would you choose for the town, and why?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- A router fails.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item The \omterm{def:b2:network-layer:routing}{router} at the Lighthouse Café breaks down. Why do the others not learn at once that it is unreachable?
+\omoutput[1-1,4-9]{code/bachelor-2/18-network-layer/outputs/town_network.txt}{After the failure, with hop counts.}
+\item Explain the first three lines: why does the nearest \omterm{def:b2:network-layer:routing}{router}'s distance go 1, 2, 3, 4?
+\item Why does it take 15 rounds, whatever the \omterm{def:b2:network-layer:routing}{router}'s distance before?
+\item With RIP's 30 seconds per round, how long is the café's network wrongly announced as reachable?
+\item What does link state do instead, and how long does it take?
+\item State the result: count to infinity, 15 rounds to reach the limit 16, against one recomputation in link state.
+\end{enumerate}
+\end{problem}

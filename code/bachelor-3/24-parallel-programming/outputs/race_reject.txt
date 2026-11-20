@@ -1,0 +1,32 @@
+$ rustc --edition 2021 -O -o race_reject race_reject.rs && ./race_reject
+error[E0499]: cannot borrow `count` as mutable more than once at a time
+   --> race_reject.rs:14:17
+    |
+  8 |       thread::scope(|s| {
+    |                      - has type `&'1 Scope<'1, '_>`
+  9 |           s.spawn(|| {
+    |           -       -- first mutable borrow occurs here
+    |  _________|
+    | |
+ 10 | |             for _ in 0..1000 {
+ 11 | |                 count += 1;
+    | |                 ----- first borrow occurs due to use of `count` in closure
+ 12 | |             }
+ 13 | |         });
+    | |__________- argument requires that `count` is borrowed for `'1`
+ 14 |           s.spawn(|| {
+    |                   ^^ second mutable borrow occurs here
+ 15 |               for _ in 0..1000 {
+ 16 |                   count += 1;
+    |                   ----- second borrow occurs due to use of `count` in closure
+    |
+note: requirement that the value outlives `'1` introduced here
+   --> /home/ada/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/scoped.rs:203:35
+    |
+203 |         F: FnOnce() -> T + Send + 'scope,
+    |                                   ^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0499`.
+[exit status 1]

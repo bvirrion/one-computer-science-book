@@ -1,0 +1,399 @@
+% Book 3, Year 1, chapter 12 -- program correctness.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 12.
+% ledger: b1:bsearch-bug
+\chapter{Program Correctness}\label{ch:b1:program-correctness}
+
+A well-known book on programming presented a binary search, proved it correct, and tested it. The code was copied
+into the standard library of a major programming language, where it ran for about nine years before it failed: on an
+\omterm{def:b1:pointers-and-arrays:array}{array} of $2^{30}$ elements or more, the line \code{mid = (low + high) / 2} overflowed, and the search read outside the
+\omterm{def:b1:pointers-and-arrays:array}{array}. The proof had assumed integers without limits; the machine had 32-bit ones. Proofs of programs are worth their
+assumptions, and this chapter teaches how to state them: a \omterm{def:b1:program-correctness:specification}{specification} says what a program must do, a \omterm{def:b1:program-correctness:invariant}{loop
+invariant} says why a loop does it, a variant says why it stops, and tests derived from the \omterm{def:b1:program-correctness:specification}{specification} check the
+code against it on the cases a proof might have missed.
+
+\begin{recall}
+An \omterm{def:b1:c-modules-make-tests:assertion}{assertion} states a condition the program expects to hold at a point, and stops the program when it does not
+(\cref{ch:b1:c-modules-make-tests}). A variant is a quantity in a \omterm{def:b1:induction-and-termination:well-founded}{well-founded} set that decreases at every iteration
+(\cref{ch:b1:induction-and-termination}). Binary search finds a value in a sorted \omterm{def:b1:pointers-and-arrays:array}{array} by halving the part still to
+search.
+\end{recall}
+
+\section{Specifications}\label{sec:b1:program-correctness:specifications}
+
+\begin{definition}[Precondition, postcondition, specification]\label{def:b1:program-correctness:specification}
+A \emph{precondition}\index{precondition} is a condition on the inputs, and on the state, that a caller must ensure
+before calling a function. A \emph{postcondition}\index{postcondition} is a condition relating the result and the final
+state to the inputs, which the function guarantees when it returns. The pair is the function's
+\emph{specification}\index{specification}: a contract, in which the function owes nothing to a caller who broke the
+precondition.
+\end{definition}
+
+\omcode{code/bachelor-1/12-program-correctness/listings/division.py}{4}{13}{Integer
+division by repeated subtraction, with its contract checked}\label{lst:b1:program-correctness:division}
+
+The docstring states the \omterm{def:b1:program-correctness:specification}{specification} in words; the \omterm{def:b1:c-modules-make-tests:assertion}{assertions} check it while the program runs. The \omterm{def:b1:program-correctness:specification}{postcondition}
+$a = qb + r$ and $0 \leq r < b$ determines $q$ and $r$ completely: it is a definition of integer division, while the
+loop is one way to compute it.
+
+\omoutput{code/bachelor-1/12-program-correctness/outputs/division.txt}{Three divisions; the loop without its
+\omterm{def:b1:program-correctness:specification}{precondition}, stopped by a step cap; and the \omterm{def:b1:program-correctness:specification}{precondition} refusing $b = 0$.}\label{out:b1:program-correctness:division}
+
+\section{Partial and total correctness}\label{sec:b1:program-correctness:correctness}
+
+\begin{definition}[Partial correctness, total correctness]\label{def:b1:program-correctness:correctness}
+A program is \emph{partially correct}\index{partial correctness} with respect to a \omterm{def:b1:program-correctness:specification}{specification} if every execution
+that starts in a state satisfying the \omterm{def:b1:program-correctness:specification}{precondition} and \emph{terminates} ends in a state satisfying the \omterm{def:b1:program-correctness:specification}{postcondition}.
+It is \emph{totally correct}\index{total correctness} if, moreover, every such execution terminates.
+\end{definition}
+
+\omterm{def:b1:program-correctness:correctness}{Partial correctness} says nothing about the runs that never end: a loop \code{while True: pass} is \omterm{def:b1:program-correctness:correctness}{partially correct}
+for every \omterm{def:b1:program-correctness:specification}{specification}. The division loop, run without its \omterm{def:b1:program-correctness:specification}{precondition}, illustrates the difference: with $b = 0$,
+$r \geq b$ stays true for ever, and the loop never ends; but whenever it does end, its result satisfies the
+\omterm{def:b1:program-correctness:specification}{postcondition}, so it is \omterm{def:b1:program-correctness:correctness}{partially correct} even then. \omterm{def:b1:program-correctness:correctness}{Total correctness} is \omterm{def:b1:program-correctness:correctness}{partial correctness} plus termination,
+proved separately, by a variant: here $r$, which decreases by $b > 0$ at each iteration, and only because of the
+\omterm{def:b1:program-correctness:specification}{precondition}.
+
+\begin{omfigure}
+\begin{tikzpicture}[s/.style={circle, fill=black, inner sep=1.2pt}, >={Stealth[length=2mm]}]
+\draw[rounded corners, fill=omCode!8] (-0.4,-1.9) rectangle (1.6,1.2);
+\node[font=\scriptsize\bfseries] at (0.6,1.45) {precondition holds};
+\draw[rounded corners, fill=omDef!12] (6.0,-0.4) rectangle (8.4,1.2);
+\node[font=\scriptsize\bfseries] at (7.2,1.45) {postcondition holds};
+\node[s] (a) at (0.2,0.8) {}; \node[s] (b) at (0.2,0.0) {}; \node[s] (c) at (0.2,-0.9) {};
+\node[s] (a2) at (7.0,0.6) {};
+\node[s] (b2) at (7.0,-1.1) {};
+\draw[->, thick] (a) .. controls (3,1.6) and (5,1.2) .. node[above, font=\scriptsize] {stops, right} (a2);
+\draw[->, thick, omThm] (b) .. controls (3,-0.3) and (5,-1.2) .. node[above, sloped, font=\scriptsize, pos=0.45]
+  {stops, wrong} (b2);
+\draw[->, thick, dashed] (c) .. controls (2,-1.8) and (3.5,-1.4) .. (4.6,-1.7);
+\node[font=\scriptsize, anchor=west] at (4.7,-1.7) {never stops};
+\node[font=\scriptsize, align=left, anchor=west] at (8.7,0.4) {partial correctness:\\no run of the middle
+kind\\[1mm]total correctness:\\no run of the last two kinds};
+\end{tikzpicture}
+\par\smallskip{\small Three kinds of runs from a state satisfying the \omterm{def:b1:program-correctness:specification}{precondition}. \omterm{def:b1:program-correctness:correctness}{Partial correctness} forbids a
+run that stops in a state violating the \omterm{def:b1:program-correctness:specification}{postcondition}; \omterm{def:b1:program-correctness:correctness}{total correctness} also forbids a run that never stops.}
+\end{omfigure}
+
+\section{Loop invariants}\label{sec:b1:program-correctness:invariants}
+
+\begin{definition}[Loop invariant]\label{def:b1:program-correctness:invariant}
+A \emph{loop invariant}\index{loop invariant} is a condition on the variables of a loop that holds before the first
+test of the loop condition and is preserved by each iteration: if it holds and the loop condition is true before an
+iteration, it holds after it. It therefore holds at every test, and in particular when the loop exits.
+\end{definition}
+
+\begin{method}[Finding and using an invariant]\label{met:b1:program-correctness:invariant-method}
+\begin{enumerate}
+\item Start from the \omterm{def:b1:program-correctness:specification}{postcondition}, and weaken it into a condition that holds part of the way: \emph{drop a conjunct}
+that the loop condition will supply at the exit (for division, keep $a = qb + r \wedge r \geq 0$ and drop $r < b$, which
+is the negation of \code{r >= b}), or \emph{replace a constant by a variable} (for the maximum of $xs$, ``$m$ is the
+maximum of $xs[0{:}i]$'' with $i$ in place of $\text{len}(xs)$).
+\item \emph{Initialisation}: prove that the invariant holds after the code before the loop.
+\item \emph{Preservation}: assuming the invariant and the loop condition, prove the invariant after one iteration.
+\item \emph{Conclusion}: prove that the invariant and the negation of the loop condition imply the \omterm{def:b1:program-correctness:specification}{postcondition}.
+\item \emph{Termination}: find a variant, and prove that it decreases at every iteration.
+\end{enumerate}
+\end{method}
+
+\omcode{code/bachelor-1/12-program-correctness/listings/maximum.py}{4}{13}{The maximum, with its invariant as an
+\omterm{def:b1:c-modules-make-tests:assertion}{assertion}}\label{lst:b1:program-correctness:maximum}
+
+\omoutput{code/bachelor-1/12-program-correctness/outputs/maximum.txt}{Three maxima, every invariant check
+passed.}\label{out:b1:program-correctness:maximum}
+
+The \omterm{def:b1:c-modules-make-tests:assertion}{assertion} turns the invariant into a check that runs at every iteration, which costs time (here it makes the loop
+quadratic) and is for development and tests only. The proof itself is \cref{exo:b1:program-correctness:8}. For the
+division, the obligations are short. Initialisation: $q = 0$ and $r = a$ give $a = 0 \cdot b + a$ and $r = a \geq 0$.
+Preservation: if $a = qb + r$ and $r \geq b$, then $a = (q + 1)b + (r - b)$ and $r - b \geq 0$. Conclusion: with $r < b$
+at the exit, the \omterm{def:b1:program-correctness:specification}{postcondition} holds. Termination: $r$ is a natural number that decreases by $b \geq 1$.
+
+\section{Proofs for array algorithms}\label{sec:b1:program-correctness:arrays}
+
+\subsection*{Partition}
+
+Partitioning around a pivot rearranges a slice so that the elements smaller than the pivot come first, then the
+pivot, then the others; quicksort is built on it in \cref{ch:b1:sorting}. Lomuto's version scans the slice
+once, with two indices.
+
+\omcode{code/bachelor-1/12-program-correctness/listings/partition.py}{4}{17}{Lomuto's
+partition}\label{lst:b1:program-correctness:partition}
+
+\omoutput{code/bachelor-1/12-program-correctness/outputs/partition.txt}{The three regions before each step: smaller,
+not smaller, not yet seen.}\label{out:b1:program-correctness:partition}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=7mm, y=7mm]
+\fill[omDef!20] (0,0) rectangle (3,1); \fill[omCode!12] (3,0) rectangle (6,1); \fill[black!4] (6,0) rectangle (10,1);
+\fill[omThm!20] (10,0) rectangle (11,1);
+\draw (0,0) rectangle (11,1); \foreach \i in {1,...,10} {\draw (\i,0) -- (\i,1);}
+\node[font=\small] at (1.5,1.4) {$< p$}; \node[font=\small] at (4.5,1.4) {$\geq p$};
+\node[font=\small] at (8,1.4) {not yet seen}; \node[font=\small] at (10.5,1.4) {$p$};
+\foreach \x/\t in {0/lo, 3/k, 6/j, 10/hi-1, 11/hi} {\draw[thick] (\x,-0.15) -- (\x,0); \node[font=\scriptsize\ttfamily,
+  below] at (\x,-0.15) {\t};}
+\node[font=\scriptsize, align=left, anchor=west] at (11.6,0.5) {if $a[j] < p$: swap $a[k]$ and $a[j]$,\\then $k$
+and $j$ move right;\\otherwise only $j$ moves right};
+\end{tikzpicture}
+\par\smallskip{\small The invariant of Lomuto's partition: $a[lo{:}k] < p$ and $a[k{:}j] \geq p$, the rest unseen. A
+step looks at $a[j]$ and extends one of the two regions; when $j$ reaches $hi - 1$, the pivot is swapped into place
+$k$, between them.}
+\end{omfigure}
+
+\begin{proposition}[Lomuto's partition is correct]\label{prop:b1:program-correctness:partition}
+If $lo < hi$, \code{partition(a, lo, hi)} terminates, permutes $a[lo{:}hi]$, and returns $k$ with $a[lo{:}k] < a[k]$ and
+$a[k + 1{:}hi] \geq a[k]$, where $a[k]$ is the original $a[hi - 1]$.
+\end{proposition}
+
+\begin{proof}
+The loop runs $j$ from $lo$ to $hi - 2$, so it terminates, and the only changes to $a$ are swaps: a permutation.
+Invariant: $a[lo{:}k] < p$ and $a[k{:}j] \geq p$. At the start, $k = j = lo$, both regions are empty. If $a[j] \geq p$,
+only $j$ moves: the second region gains $a[j]$. If $a[j] < p$, swapping $a[k]$ and $a[j]$ puts $a[j]$ at the end of the
+first region and moves the first element of the second region (if any) to its end; then $k$ and $j$ move. At the exit,
+$j = hi - 1$: the slice is $< p$ on $[lo, k)$, $\geq p$ on $[k, hi - 1)$, and $p$ at $hi - 1$. The final swap puts $p$ at
+$k$ and the element $a[k] \geq p$ (if $k < hi - 1$) at $hi - 1$, inside the second region.
+\end{proof}
+
+\subsection*{Binary search on a half-open interval}
+
+The half-open interval $[lo, hi)$, the integers $i$ with $lo \leq i < hi$, is the convenient way to describe a slice:
+its length is $hi - lo$, it is empty when $lo = hi$, and $[lo, mid)$ and $[mid, hi)$ split it without overlap. Binary
+search keeps such an interval of candidates.
+
+\omcode{code/bachelor-1/12-program-correctness/listings/bsearch.py}{4}{15}{The leftmost position of $x$, on
+$[lo, hi)$}\label{lst:b1:program-correctness:bsearch}
+
+\omoutput{code/bachelor-1/12-program-correctness/outputs/bsearch.txt}{Present, with duplicates, at both ends, absent
+inside and outside, and the empty list.}\label{out:b1:program-correctness:bsearch}
+
+\begin{proposition}[Binary search is correct]\label{prop:b1:program-correctness:bsearch}
+If $a$ is sorted, \code{leftmost(a, x)} terminates and returns the least $i$ with $a[i] \geq x$, or $\text{len}(a)$ if
+there is none.
+\end{proposition}
+
+\begin{proof}
+Invariant: $0 \leq lo \leq hi \leq n$, every element of $a[{:}lo]$ is $< x$, and every element of $a[hi{:}]$ is $\geq
+x$. Initially $lo = 0$ and $hi = n$, and both slices are empty. In an iteration $lo < hi$, so $lo \leq mid < hi$: $mid$
+is a valid index, and the interval shrinks whichever branch runs. If $a[mid] < x$, then, $a$ being sorted, all of
+$a[{:}mid + 1]$ is $< x$, and $lo = mid + 1$ keeps the invariant; otherwise all of $a[mid{:}]$ is $\geq x$, and $hi = mid$
+keeps it. Variant: $hi - lo$, which decreases since $mid + 1 > lo$ and $mid < hi$. At the exit $lo = hi$: everything
+before $lo$ is $< x$ and everything from $lo$ on is $\geq x$, so $lo$ is the least index with $a[lo] \geq x$, or $n$.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=6mm, y=6mm]
+\fill[omDef!20] (0,0) rectangle (4,1); \fill[black!4] (4,0) rectangle (9,1); \fill[omCode!12] (9,0) rectangle (13,1);
+\draw (0,0) rectangle (13,1); \foreach \i in {1,...,12} {\draw (\i,0) -- (\i,1);}
+\node[font=\small] at (2,1.4) {$< x$}; \node[font=\small] at (6.5,1.4) {candidates}; \node[font=\small] at (11,1.4)
+{$\geq x$};
+\foreach \x/\t in {0/0, 4/lo, 6/mid, 9/hi, 13/n} {\draw[thick] (\x,-0.15) -- (\x,0); \node[font=\scriptsize\ttfamily,
+  below] at (\x,-0.15) {\t};}
+\node[font=\scriptsize, align=left, anchor=north west] at (0,-1.0) {boundary cases: empty list ($n = 0$: no
+iteration, result 0); $x$ below every element (result 0);\\$x$ above every element (result $n$); $x$ present several
+times (its first position);\\$x$ absent between two elements (where to insert it, keeping the list sorted)};
+\end{tikzpicture}
+\par\smallskip{\small The invariant of binary search on $[lo, hi)$: everything left of $lo$ is smaller than $x$,
+everything from $hi$ on is at least $x$, and the answer lies in $[lo, hi]$. Each step moves one end past $mid$.}
+\end{omfigure}
+
+At most $\lfloor \log_2 n \rfloor + 1$ iterations run (\cref{exo:b1:program-correctness:9}). The midpoint is written
+$lo + (hi - lo)/2$ rather than $(lo + hi)/2$: in Python both are correct, but in C the sum of two large \code{int}
+indices overflows (\cref{ch:b1:c-types-and-control}), which is exactly the failure of the opening story. The
+difference between the two versions is invisible to the proof unless the proof states that the variables are
+mathematical integers.
+
+\subsection*{The three-colour flag}
+
+A list holds only the values 0, 1 and 2 (three colours); sort it in one pass, with swaps only. This is the
+\emph{three-colour flag problem}\index{three-colour flag problem}, posed by Edsger Dijkstra. Its invariant has four
+regions.
+
+\omcode{code/bachelor-1/12-program-correctness/listings/flag.py}{4}{19}{The three-colour flag in one
+pass}\label{lst:b1:program-correctness:flag}
+
+\omoutput{code/bachelor-1/12-program-correctness/outputs/flag.txt}{Nine values sorted, with six
+swaps.}\label{out:b1:program-correctness:flag}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=6mm, y=6mm]
+\fill[omDef!20] (0,0) rectangle (3,1); \fill[omCode!12] (3,0) rectangle (6,1); \fill[black!4] (6,0) rectangle (10,1);
+\fill[omThm!20] (10,0) rectangle (13,1);
+\draw (0,0) rectangle (13,1); \foreach \i in {1,...,12} {\draw (\i,0) -- (\i,1);}
+\node[font=\small] at (1.5,1.4) {0}; \node[font=\small] at (4.5,1.4) {1}; \node[font=\small] at (8,1.4) {unknown};
+\node[font=\small] at (11.5,1.4) {2};
+\foreach \x/\t in {0/0, 3/low, 6/mid, 10/high, 13/n} {\draw[thick] (\x,-0.15) -- (\x,0); \node[font=\scriptsize\ttfamily,
+  below] at (\x,-0.15) {\t};}
+\node[font=\scriptsize, align=left, anchor=west] at (13.6,0.5) {$a[mid] = 0$: swap with $a[low]$, low and mid
+advance\\$a[mid] = 1$: mid advances\\$a[mid] = 2$: high retreats, swap with $a[high]$};
+\end{tikzpicture}
+\par\smallskip{\small The four regions of the three-colour flag and the three cases of a step. Each step shrinks the
+unknown region by one, so $high - mid$ is a variant; when it is empty, the list is sorted.}
+\end{omfigure}
+
+In the case 2, \code{mid} does not advance: the value swapped in from \code{high} has not been examined yet. In the
+case 0, it may advance, because the value swapped out from \code{low} came from the region of 1s (or is the same
+element, when $low = mid$).
+
+\section{Testing against the specification}\label{sec:b1:program-correctness:testing}
+
+A proof covers every input but rests on assumptions and can contain errors; tests run the real code on the real
+machine but cover only the inputs they try. The \omterm{def:b1:program-correctness:specification}{specification} connects them: it says what any correct output is, so
+it can judge outputs automatically.
+
+\begin{definition}[Test oracle, property-based test]\label{def:b1:program-correctness:oracle}
+A \emph{test oracle}\index{test oracle} is a procedure that decides whether an output is correct for an input: a
+check of the \omterm{def:b1:program-correctness:specification}{postcondition}, or a comparison with a simpler program known to be correct (a brute-force or library
+version). A \emph{property-based test}\index{property-based test} states a property that must hold for all inputs of
+a kind, generates many inputs at random, checks the property on each, and on a failure reports a smallest failing
+input it can find.
+\end{definition}
+
+\omcode{code/bachelor-1/12-program-correctness/tests/test_bsearch.py}{18}{26}{Two oracles for binary search: the
+library and the \omterm{def:b1:program-correctness:specification}{postcondition}}\label{lst:b1:program-correctness:test}
+
+The library \code{hypothesis} generates the sorted lists and the values; the standard module \code{bisect} serves as
+the first oracle, and the \omterm{def:b1:program-correctness:specification}{postcondition}, checked element by element, as the second. A test is only as good as its
+inputs: these lists hold small values, so that duplicates and absent values are frequent, which is where binary
+searches fail. No test, however many inputs it tries, would have found the overflow of the opening story on a machine
+with too little memory for an \omterm{def:b1:pointers-and-arrays:array}{array} of $2^{30}$ elements: tests can show the presence of errors, and proofs their
+absence under stated assumptions.
+
+\begin{safety}
+An \omterm{def:b1:c-modules-make-tests:assertion}{assertion} that checks an invariant can be expensive and can be disabled (\cref{ch:b1:c-modules-make-tests}); it
+must never have a \omterm{def:b1:c-types-and-control:side-effect}{side effect} the program relies on. Inputs from users or files are checked by code that reports an
+error, not by \omterm{def:b1:c-modules-make-tests:assertion}{assertions}: a violated \omterm{def:b1:program-correctness:specification}{precondition} at a public boundary is the caller's error, and the program must
+say so.
+\end{safety}
+
+\section{Exercises}\label{sec:b1:program-correctness:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:program-correctness:1}
+\texttt{def f(a, b): return a - a \% b} is called with integers. Which of these \omterm{def:b1:program-correctness:specification}{specifications} does it meet? (a) pre
+$a \geq 0, b > 0$; post $b$ divides the result. (b) pre $a \geq 0, b > 0$; post $a - b < f(a, b) \leq a$. (c) pre $b
+\neq 0$; post the result is at most $a$. (d) pre $b > 0$; post the result is a multiple of $b$, at most $a$, and the
+largest such.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:program-correctness:2}
+Give the values of $i$ and $m$ at each test of the loop of \code{maximum([3, 9, 2, 9, 4])}, and check the invariant at
+each.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:program-correctness:3}
+Does each loop terminate for every natural number $n$? Give a variant or a run that does not stop.
+(a) \code{while n != 0: n = n - 2}. (b) \code{while n > 1: n = n // 2}. (c) \texttt{while n > 0: n = n - 1 if n \% 2 else
+n + 1}. (d) \texttt{while n \% 7 != 0: n = n + 3}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:program-correctness:4}
+Predict what the program prints.
+\omcode{code/bachelor-1/12-program-correctness/listings/exo_dups.py}{3}{6}{Duplicates and the leftmost position}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:program-correctness:5}
+This search uses a closed interval $[lo, hi]$ but updates it as a half-open one. Find the inputs on which it never
+stops, explain why with the variant, and correct it with its invariant.
+\omcode{code/bachelor-1/12-program-correctness/listings/bsearch_bug.py}{4}{18}{A search that can loop}
+\omoutput[2-3]{code/bachelor-1/12-program-correctness/outputs/bsearch_bug.txt}{Two answers, then a step cap.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:program-correctness:6}
+A student writes the partition with a copy instead of a swap. Which part of the proof of
+\cref{prop:b1:program-correctness:partition} fails, and what happens to the list?
+\omcode{code/bachelor-1/12-program-correctness/listings/exo_partition_bug.py}{4}{12}{A partition with a copy}
+\omoutput[2-3]{code/bachelor-1/12-program-correctness/outputs/exo_partition_bug.txt}{The result.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:program-correctness:7}
+Write \code{rightmost(a, x)}, which returns the least $i$ with $a[i] > x$ in a sorted list, on a half-open interval,
+with its invariant as a comment. Deduce the number of occurrences of $x$, and test both against \code{bisect}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:program-correctness:8}
+Prove that \code{maximum} is \omterm{def:b1:program-correctness:correctness}{totally correct}, with the invariant of \cref{lst:b1:program-correctness:maximum} and the
+variant $\text{len}(xs) - i$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:program-correctness:9}
+Prove that binary search on $n \geq 1$ elements makes at most $\lfloor \log_2 n \rfloor + 1$ iterations, and that the
+bound is reached.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:program-correctness:10}
+The flag of \cref{lst:b1:program-correctness:flag} sorts in one pass, but not with the fewest swaps. Find a list on which
+it makes more swaps than necessary. Then write \code{min_swaps(a)}, the least number of swaps that sort a list of 0, 1
+and 2, and check it against a search over all orders for lists of up to six values.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:program-correctness:11}
+Find what this function computes, state its \omterm{def:b1:program-correctness:specification}{specification}, and prove it \omterm{def:b1:program-correctness:correctness}{totally correct} with an invariant relating
+\code{acc}, \code{base} and \code{e} to $x$ and $n$. How many iterations does it make?
+\omcode{code/bachelor-1/12-program-correctness/listings/exo_mystery.py}{4}{12}{A loop to understand}
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:program-correctness:12}
+A student proves that the loop \code{s = 0; i = 0; while i < n: i = i + 1; s = s + i} computes $s = n(n + 1)/2$ with the
+invariant ``$s = i(i + 1)/2$ and $i \leq n$'', and proves the conclusion as follows: ``at the exit $i \leq n$ and $i \geq n$,
+so $i = n$''. The same student proves that \code{while i != n: i = i + 2} (from $i = 0$) ends with $i = n$, with the
+invariant ``$i$ is even''. Which proof is right, which is wrong, and where exactly?
+\end{exercise}
+
+\section{Problem: The square root that never lies}\label{sec:b1:program-correctness:problem}
+
+\begin{problem}[{Weekend problem --- The square root that never lies}]\label{pb:b1:program-correctness:1}
+The integer square root of a natural number $n$ is the $r$ with $r^2 \leq n < (r + 1)^2$. Two programs compute it:
+bisection on the half-open interval $[0, n + 1)$, and Newton's method on integers, started at $n$. Both are compared
+with the library's \code{math.isqrt} on twelve values up to $2^{64} - 1$, and by a \omterm{def:b1:program-correctness:oracle}{property-based test} on random 64-bit
+values.
+\omcode{code/bachelor-1/12-program-correctness/listings/isqrt.py}{7}{28}{Two integer square
+roots}\label{lst:b1:program-correctness:isqrt}
+\omoutput{code/bachelor-1/12-program-correctness/outputs/isqrt.txt}{Equal roots, and the iterations of each
+method.}\label{out:b1:program-correctness:isqrt}
+
+\medskip\noindent\textbf{Part I --- The specification.}
+\begin{enumerate}
+\item Show that for each $n \geq 0$ exactly one natural number $r$ satisfies $r^2 \leq n < (r + 1)^2$.
+\item Show that the \omterm{def:b1:program-correctness:specification}{specification} can be checked with two multiplications, without computing any square root.
+\item Why is $\lfloor \sqrt{n} \rfloor$, computed in floating point, not a correct implementation for 64-bit $n$? Give
+the order of magnitude of $n$ beyond which \code{float} cannot even represent every integer.
+\item Give the \omterm{def:b1:program-correctness:specification}{specification} of \code{isqrt_bisect} and \code{isqrt_newton} as \omterm{def:b1:program-correctness:specification}{precondition} and \omterm{def:b1:program-correctness:specification}{postcondition},
+counting the returned number of steps.
+\item Write a \omterm{def:b1:program-correctness:oracle}{test oracle} for the integer square root that uses only the \omterm{def:b1:program-correctness:specification}{specification}.
+\item Why do the programs return the step counts with the result?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Bisection.}
+\begin{enumerate}[resume]
+\item Check that the invariant $lo^2 \leq n < hi^2$ holds initially.
+\item Show that it is preserved, and that $lo < mid < hi$ in every iteration.
+\item Show that $hi - lo$ is a variant, and deduce termination.
+\item Prove the conclusion: at the exit, $lo$ satisfies the \omterm{def:b1:program-correctness:specification}{specification}.
+\item Show that the number of iterations is at most $\lceil \log_2 (n + 1) \rceil$, and compare with the table.
+\item In C with 64-bit unsigned integers, which expressions of \code{isqrt_bisect} can overflow for $n = 2^{64} - 1$? How
+would you avoid it?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Newton's method on integers.}
+\begin{enumerate}[resume]
+\item Let $s$ be the integer square root of $n \geq 1$. For an integer $r \geq 1$, show that $\lfloor (r + \lfloor n/r
+\rfloor)/2 \rfloor = \lfloor (r + n/r)/2 \rfloor$.
+\item Show that $(r + n/r)/2 \geq \sqrt{n}$ for $r > 0$, and deduce that the new $r$ is at least $s$: the invariant
+$r \geq s$ is preserved.
+\item Show that if $r^2 > n$, the new $r$ is strictly smaller than $r$.
+\item Deduce that the loop terminates, and that at the exit $r = s$.
+\item Why must the case $n = 0$ be treated apart?
+\item Why does the loop test $r^2 > n$ rather than $r \neq$ new $r$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Tests and counts.}
+\begin{enumerate}[resume]
+\item Read the table: for which $n$ does bisection reach $\lceil \log_2 (n + 1) \rceil$, and for which does it stay
+below?
+\item Newton's method needs 37 iterations for $2^{64} - 1$. Explain why the first iterations roughly halve $r$, and
+why the last few are fast.
+\item Suggest a better starting value than $n$ and say what must be proved again.
+\item The \omterm{def:b1:program-correctness:oracle}{property-based test} draws $n$ at random below $2^{64}$. Why does it also check every $n < 2000$ separately?
+\item What would the test have caught if \code{isqrt_newton} returned $r$ with $r^2 \geq n$ rather than $r^2 > n$ in its
+loop condition? Check by reasoning on $n = 16$.
+\item State the named result of the problem, \emph{Newton's integer square root is \omterm{def:b1:program-correctness:correctness}{totally correct}}, with the measured
+iteration counts against bisection's.
+\end{enumerate}
+\end{problem}

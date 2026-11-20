@@ -1,0 +1,105 @@
+\section*{Chapter \ref{ch:b3:software-security} --- Software Security}
+
+\begin{solution}{exo:b3:software-security:1}
+\omterm{def:b3:software-security:threat}{Assets}: the bookings and the rooms' availability; the residents' personal data, names and e-mail addresses; the clerk's back-office account, whose approvals are binding; the town hall's e-mail sender, whose messages residents trust. Adversaries: a resident who wants rooms without approval, or to block others' bookings; an outsider who wants the personal data or to send e-mail in the town hall's name. A booking crosses the network into the web form's server; then from the server into the database, as SQL; then from the database into the back-office page, where the clerk's browser renders it as HTML; then from the database into the nightly script and on to the mail server, where its fields become e-mail headers and text. Each crossing hands the booking to a new interpreter, and each needs its own encoding.
+\end{solution}
+
+\begin{solution}{exo:b3:software-security:2}
+In HTML text, escape \code{&}, \code{<} and \code{>}. Inside an attribute, also escape the quotes, and always quote the attribute. In a URL query string, percent-encode it, with \code{urllib.parse.quote}. In SQL, pass it as a parameter. In a shell command, pass it as one element of an argument list, with no shell. Validation at login cannot replace these: a perfectly valid name, O'Brien, contains a quote that matters in SQL and in an attribute and nowhere else, and the code that validates does not know every place where the name will be used. Each encoding belongs to the place of use.
+\end{solution}
+
+\begin{solution}{exo:b3:software-security:3}
+With an ACL, Ada adds the club with right r to her note's list, and removes it after a week. Who can read the note is in one place, the list, and \omterm{def:b3:public-key-cryptography:certificate}{revocation} is one deletion. With a \omterm{def:b3:software-security:access}{capability}, Ada gives the club a reference with right r. The club can pass it on, so who can read is whoever holds a copy, which nobody can list; revoking it needs a \omterm{def:b3:software-security:access}{capability} designed for that, one that goes through a forwarder Ada can disable, or one with an expiry date. Capabilities are better at delegation without a central authority, and at avoiding the \omterm{def:b3:software-security:privilege}{confused deputy}; ACLs at reviewing and revoking.
+\end{solution}
+
+\begin{solution}{exo:b3:software-security:4}
+The output is
+\begin{center}\texttt{Tom \&amp; Jerry\&\#x27;s \&lt;b\&gt;\&quot;best\&quot;\&lt;/b\&gt;}\end{center}
+With its default \code{quote=True}, \code{html.escape} also replaces both kinds of quote; the browser shows the original text, tags included, and makes nothing bold. A test checks the string.
+\end{solution}
+
+\begin{solution}{exo:b3:software-security:5}
+The name \code{../secret.txt} joined to \code{public} names \code{public/../secret.txt}, which is \code{secret.txt} next to the folder. \code{serve_fixed} resolves the joined path, which removes every \code{..} and follows symbolic links, and refuses it unless it lies inside the resolved folder and is a regular file. A test reads a file outside the folder through the buggy version and checks that the fixed one refuses \code{../secret.txt}, \code{../public/../secret.txt}, an absolute path, the folder itself, an empty name, and a symbolic link inside the folder that points outside. Checking the name for \code{..} instead would miss the link and absolute paths.
+\end{solution}
+
+\begin{solution}{exo:b3:software-security:6}
+\code{exercises/ex6_csrf.py}: \code{new_session} stores, for a random cookie value, the user and a second random token; \code{csrf_ok} looks up the session of the cookie and compares the form's token with \code{hmac.compare_digest}; \code{require_csrf} wraps a handler and answers 403 when the app is in safe mode and the check fails. The app uses it on its two state-changing routes. A comparison that stops at the first differing character takes longer the more leading characters are right, so an attacker who can submit guesses and time the answers could recover the token character by character; a constant-time comparison gives the timing nothing to reveal. A test checks the refusals with no token and with a wrong one.
+\end{solution}
+
+\begin{solution}{exo:b3:software-security:7}
+In the canary build \code{name} starts at \code{-0x20} and the canary at \code{-0x8}: byte 24 of the name is the canary's lowest byte. A 24-byte name writes its terminating zero there and passes, so that byte of the canary must already be zero; a 25-byte name changes it, and the program aborts. A test runs both. No name can open the admin desk in this build: \code{is_admin} lies at \code{-0x24}, below the array, and \code{strcpy} only writes upwards from the array's start.
+\end{solution}
+
+\begin{solution}{exo:b3:software-security:8}
+Facts used: the SQL engine tokenizes and parses the statement text before binding. The statement text with placeholders is fixed by the program; the tokenizer turns it into a sequence of tokens in which each \code{?} is one placeholder token, and the parser builds a tree from these tokens alone, where each placeholder is a leaf of type literal. Binding then attaches a value to each placeholder leaf, without tokenizing it. So whatever its characters, quotes or \code{--} included, a value can only fill a literal leaf: the tree, hence the statement's structure, is the same for all values. With string formatting, the value's characters are part of the text that the tokenizer reads, so a quote in the value ends the string token and the following characters become keywords, as \code{admin' --} does in \cref{out:b3:software-security:sql}. A property test checks, on 200 random names given Ada's password, that the safe login never returns anyone but Ada.
+\end{solution}
+
+\begin{solution}{exo:b3:software-security:9}
+\code{count * sizeof(loan)} is computed in 32 bits, modulo $2^{32}$: $(2^{29} + 1) \cdot 8 = 2^{32} + 8 \equiv 8$. The allocation gets 8 bytes, and the loop writes $2^{29} + 1$ records of 8 bytes. The function \code{alloc_loans} of the exercise's program refuses when \code{count > UINT32_MAX / sizeof(loan)}, a test done before the multiplication, which cannot overflow. $\lfloor (2^{32} - 1)/8 \rfloor = 536{,}870{,}911$, so every count from $2^{29} = 536{,}870{,}912$ up is refused; $2^{29}$ itself would have wrapped to 0. The program tries 3, 1,000,000 and $2^{29} + 1$, and a test checks the refusal of the last.
+\end{solution}
+
+\begin{solution}{exo:b3:software-security:10}
+Facts used: in the model, the data state emits every character other than \code{<} and \code{&} as text and stays in the data state; \code{&} starts a character reference, which emits the character it names and returns to the data state; \code{<} enters the tag-open state. \code{html.escape} replaces \code{&}, \code{<}, \code{>}, \code{"} and \code{'} by references that start with \code{&}, end with \code{;}, and contain only letters, digits and \texttt{\#}. Its output therefore contains no \code{<} at all, so the machine never leaves the data state except for references. By induction on the output: every character not inside a reference is emitted as itself, and each reference, introduced only by escaping, is emitted as the one character it replaced; an \code{&} of the input has become \code{&amp;}, so it cannot start a reference by accident. So the emitted text is exactly the input. A property test checks, on random strings, that the escaped text contains no \code{<}, \code{>} or double quote, and that unescaping gives the input back. The argument holds for text content only: inside a script element or an unquoted attribute the tokenizer is in other states, and other encodings are needed.
+\end{solution}
+
+\begin{solution}{exo:b3:software-security:11}
+\code{exercises/ex11_roles.py}: a visitor may only view; a reader may also comment and renew their own loans; a librarian may also renew any loan, delete comments and export the loans; an administrator may view and manage users, and nothing else. Every route calls \code{allowed(role, route)}, which denies anything not granted, so an unknown role or a new route is refused by default. The administrator's account is the most attacked and the most powerful; keeping loans and comments out of its rights means a stolen administrator session cannot quietly change loans, and an administrator who wants to must give himself a second role, which leaves a trace. The test checks the visitor's row, that every granted right names a real route, and two refusals.
+\end{solution}
+
+\begin{solution}{exo:b3:software-security:12}
+In the randomised runs the stack addresses and \code{main}'s address change at each run, while \texttt{main \% 4096} stays 361: whole mappings move, by multiples of the 4096-byte page, and offsets within them do not. With \code{setarch -R} every run gives the same addresses.
+
+\omoutput{code/bachelor-3/29-software-security/outputs/aslr.txt}{Five runs of the same program with ASLR and five without, on the author's laptop: the addresses of a stack array and of \code{main}, in decimal.}\label{out:b3:software-security:aslr}
+
+ The flag overwrite uses only offsets inside one frame, 28 bytes from \code{name} to \code{is_admin}, which ASLR does not change, so it works as before. ASLR makes harder the attacks that need an absolute address: returning into injected code or into a library function, or overwriting a pointer with the address of something. It can be defeated by any bug that leaks one address, since the rest of a mapping follows from it. A canary does not depend on hiding anything from the attacker: a contiguous overwrite of the return address must pass over the canary and changes it, so the two defences protect against different steps and are used together.
+\end{solution}
+
+\begin{solution}{pb:b3:software-security:1}
+\textbf{1.} \texttt{movl \$0x0,-0x4(\%rbp)}: \code{is_admin} is at offset $-4$ from the frame pointer.
+
+\textbf{2.} \texttt{lea -0x20(\%rbp),\%rax}, whose result is then moved to \texttt{\%rdi}, the first argument: \code{name} starts at offset $-32$.
+
+\textbf{3.} The function's argument \code{typed}, the pointer to the line, stored from \texttt{\%rdi} on entry.
+
+\textbf{4.} $32 - 4 = 28$ bytes, of which 16 are \code{name} and 12 are unused.
+
+\textbf{5.} The compiler is free to arrange the frame. Here it keeps the array on a 16-byte boundary and places the integer at the top; the rest is left unused.
+
+\textbf{6.} No: the standard says nothing about the order or the gaps of local variables, and a write past the array is undefined behaviour. The attack depends on this compiler, these flags and this program; the canary build shows another layout from the same source.
+
+\textbf{7.} Byte 28, counting from 0: the 29th character typed.
+
+\textbf{8.} A 28-byte name occupies bytes 0 to 27 and \code{strcpy} writes its terminating zero at byte 28, the low byte of \code{is_admin}, which was already 0.
+
+\textbf{9.} 29 bytes: the last line of \cref{out:b3:software-security:login}, 29 bytes ending in \code{X}, opens the admin desk.
+
+\textbf{10.} Yes: any 29-byte name works, since its 29th byte is not zero. A name cannot have a zero 29th byte: \code{strcpy} stops at the first zero, so such a name would be shorter.
+
+\textbf{11.} 16 to 28 bytes: they write between 17 and 29 bytes, past the 16 of \code{name}, into the gap or the zero byte of \code{is_admin}.
+
+\textbf{12.} Its bytes are \code{58 00 00 00} from the lowest address up: \code{X}, then the terminating zero, then the two bytes left at 0. Little-endian, that is $\mathrm{0x58} = 88$, non-zero, so true.
+
+\textbf{13.} It greets the first three and aborts on the fourth, the 28-byte name, which writes bytes 24 to 28 of \code{name}'s region and so changes the canary; the check at the end of \code{check} ends the program before the result is used.
+
+\textbf{14.} The protector moved \code{is_admin} below the array, at $-36$, and \code{strcpy} writes only upwards from \code{name}.
+
+\textbf{15.} At the 16-byte name: its terminating zero is the 17th byte written, at offset 48 of AddressSanitizer's frame, one past \code{name}'s region from 32 to 47; the shadow memory marks the bytes after the array as unusable.
+
+\textbf{16.} It greets \code{ada}, refuses the four longer names as too long, and opens no admin desk.
+
+\textbf{17.} It greets the 3-byte and the 16-byte name, then panics on the 17-byte name and exits with status 101. A Rust string carries its length and needs no terminating zero, so 16 bytes fit exactly.
+
+\textbf{18.} Ship the length-checked version, compiled with the stack protector and run with ASLR, as defences in depth; or the Rust version. Use AddressSanitizer while testing: it finds the overflow at its first byte but costs time, memory and a run-time library.
+
+\textbf{19.} The canary adds $67 - 58 = 9$ instructions to \code{main}; the length check $69 - 58 = 11$.
+
+\textbf{20.} $136 - 58 = 78$ instructions, more than doubling \code{main}, and $21{,}896 - 16{,}280 = 5{,}616$ bytes of program file; at run time it also needs its library and shadow memory, and runs about 2 times slower according to its documentation.
+
+\textbf{21.} The canary and AddressSanitizer detect the overflow and stop the program; the length check and Rust's checked copy prevent it, by refusing before anything is written.
+
+\textbf{22.} AddressSanitizer, which checks each write, and the two bounds checks, which refuse before writing. The canary is checked only at the function's exit, after the changed variable was used.
+
+\textbf{23.} One \code{strlen} over at most 255 bytes and one comparison per login, next to a \code{printf} and a read from the terminal: nothing that a measurement could separate from noise.
+
+\textbf{24.} The attack needs 29 bytes: the frame puts \code{is_admin} 28 bytes above the start of the 16-byte array, so the 29th byte typed sets its low byte. With the stack protector, the flag moves below the array, and an overflow long enough to reach the canary ends the program with an abort. The length check refuses every name that does not fit, for 11 instructions in \code{main} and one \code{strlen} per login.
+\end{solution}

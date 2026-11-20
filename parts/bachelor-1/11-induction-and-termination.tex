@@ -1,0 +1,464 @@
+% Book 3, Year 1, chapter 11 -- induction, recursion and termination.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 11.
+\chapter{Induction, Recursion and Termination}\label{ch:b1:induction-and-termination}
+
+A function reverses a list; applied twice, it should give the list back. A program can check this on three thousand
+lists in a fraction of a second, and it does below, but lists have no largest length: a check, however long, says
+nothing about the lists it did not try. This chapter gives the two tools that cover every case. \omterm{def:b1:induction-and-termination:structural}{Structural induction}
+proves a property of every list, tree or formula by following the rules that build them. \omterm{def:b1:induction-and-termination:well-founded}{Well-founded orders} prove
+that a loop or a recursive function stops, by attaching to each state a quantity that cannot decrease forever.
+
+\begin{recall}
+To prove a property $P(n)$ for every natural number $n$ by induction, prove $P(0)$, and prove $P(n + 1)$ from $P(n)$
+(or from all of $P(0), \dots, P(n)$: strong induction). An order relation is reflexive, antisymmetric and transitive.
+A recursive function calls itself on smaller arguments and stops on base cases.
+\end{recall}
+
+\section{Inductively defined sets}\label{sec:b1:induction-and-termination:sets}
+
+\begin{definition}[Inductively defined set]\label{def:b1:induction-and-termination:inductive}
+A set is \emph{inductively defined}\index{inductively defined set} by rules when it is the smallest set closed under
+them: \emph{base rules} put given elements in the set, and \emph{construction rules} build an element from elements
+already in it. Every element is obtained by finitely many applications of the rules.
+\end{definition}
+
+The natural numbers are defined by the base rule ``0'' and the rule ``if $n$, then $n + 1$''; the lists of the
+elements of a set $A$ by ``the empty list'' and ``if $x \in A$ and $\ell$ is a list, then $x$ followed by $\ell$'';
+the \omterm{def:b1:propositional-logic:formula}{propositional formulas} of \cref{ch:b1:propositional-logic} by their variables and \omterm{def:b1:propositional-logic:formula}{connectives}.
+
+\begin{definition}[Rooted tree, root, child, leaf, internal node, subtree]\label{def:b1:induction-and-termination:rooted-tree}
+A \emph{rooted tree}\index{rooted tree} is a node, its \emph{root}\index{root (of a tree)}, holding a key and a finite
+sequence of rooted trees, the subtrees of the root; the roots of these subtrees are the \emph{children}\index{child (of a
+node)} of the root, which is their \emph{parent}. A node without children is a \emph{leaf}\index{leaf (of a tree)};
+the others are \emph{internal nodes}\index{internal node}. The \emph{subtrees}\index{subtree} of a tree are the tree
+and the subtrees of its subtrees.
+\end{definition}
+
+\begin{definition}[Binary tree, full binary tree]\label{def:b1:induction-and-termination:binary-tree}
+The set of \emph{binary trees}\index{binary tree} is defined inductively: the \emph{empty tree} is a binary tree, and if
+$\ell$ and $r$ are binary trees and $k$ a key, the node $(\ell, k, r)$, with left \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} $\ell$ and right \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} $r$,
+is a binary tree. A binary tree is \emph{full}\index{full binary tree} if every node has either two non-empty \omterm{def:b1:induction-and-termination:rooted-tree}{subtrees}
+or two empty ones.
+\end{definition}
+
+\begin{definition}[Depth, size, height]\label{def:b1:induction-and-termination:height}
+The \emph{depth}\index{depth (of a node)} of a node is the number of links from the \omterm{def:b1:induction-and-termination:rooted-tree}{root} to it. The
+\emph{size}\index{size (of a tree)} of a \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} is its number of nodes, 0 for the empty tree. Its
+\emph{height}\index{height (of a tree)} is the largest depth of its nodes, and $-1$ for the empty tree: by induction,
+$h(\text{empty}) = -1$ and $h((\ell, k, r)) = 1 + \max(h(\ell), h(r))$.
+\end{definition}
+
+\omcode{code/bachelor-1/11-induction-and-termination/listings/inductive.py}{6}{35}{\omterm{def:b1:induction-and-termination:binary-tree}{Binary trees}, and every tree of
+\omterm{def:b1:induction-and-termination:height}{height} at most $h$}\label{lst:b1:induction-and-termination:inductive}
+
+\omoutput{code/bachelor-1/11-induction-and-termination/outputs/inductive.txt}{A tree of four nodes, the empty tree,
+and the trees produced by the rules up to \omterm{def:b1:induction-and-termination:height}{height} 3.}\label{out:b1:induction-and-termination:inductive}
+
+\code{shapes} applies the rules literally: the trees of \omterm{def:b1:induction-and-termination:height}{height} at most $h$ are the empty tree and the nodes built from
+two trees of \omterm{def:b1:induction-and-termination:height}{height} at most $h - 1$, so their number $a_h$ satisfies $a_{-1} = 1$ and $a_h = 1 + a_{h-1}^2$. The
+convention $-1$ for the empty tree makes this rule, and the bounds below, hold without exceptions.
+
+\begin{omfigure}
+\begin{tikzpicture}[n/.style={circle, draw, fill=omCode!10, minimum size=4mm, inner sep=0pt},
+                    e/.style={rectangle, draw, dashed, minimum size=2.5mm, inner sep=0pt}, level distance=7mm,
+                    sibling distance=7mm]
+\node[draw, rounded corners=2pt, align=left, font=\scriptsize] at (-1.2,0.2) {rule 1: the empty tree
+\tikz\node[e]{}; \\ rule 2: from trees $\ell$, $r$, the node\\[1mm] \hspace*{8mm}\tikz[level distance=6mm, sibling
+distance=7mm]\node[n]{} child {node[font=\scriptsize] {$\ell$}} child {node[font=\scriptsize] {$r$}};};
+\node[font=\scriptsize\bfseries] at (6.2,1.0) {the 5 binary trees of height at most 1};
+\node[e] at (3.6,0) {};
+\node[n] at (4.8,0) {} child {node[e] {}} child {node[e] {}};
+\node[n] at (6.2,0) {} child {node[n] {} child {node[e] {}} child {node[e] {}}} child {node[e] {}};
+\node[n] at (7.6,0) {} child {node[e] {}} child {node[n] {} child {node[e] {}} child {node[e] {}}};
+\node[n] at (9.0,0) {} child {node[n] {} child {node[e] {}} child {node[e] {}}} child {node[n] {} child {node[e] {}}
+  child {node[e] {}}};
+\end{tikzpicture}
+\par\smallskip{\small The two rules that generate \omterm{def:b1:induction-and-termination:binary-tree}{binary trees}, and what they produce from trees of \omterm{def:b1:induction-and-termination:height}{height} at most 0
+(the empty tree, dashed, and the single node). \omterm{def:b1:induction-and-termination:height}{Height} $-1$, 0, 1, 1 and 1; the last tree is \omterm{def:b1:induction-and-termination:binary-tree}{full}.}
+\end{omfigure}
+
+\section{Structural induction}\label{sec:b1:induction-and-termination:structural}
+
+\begin{definition}[Structural induction]\label{def:b1:induction-and-termination:structural}
+To prove a property $P$ of every element of an \omterm{def:b1:induction-and-termination:inductive}{inductively defined set} by \emph{structural
+induction}\index{structural induction}, prove that $P$ holds for the elements given by the base rules, and that each
+construction rule, applied to elements satisfying $P$, builds an element satisfying $P$.
+\end{definition}
+
+\begin{proposition}[Structural induction is sound]\label{prop:b1:induction-and-termination:structural}
+If the two parts of a \omterm{def:b1:induction-and-termination:structural}{structural induction} are proved, then $P$ holds for every element of the set.
+\end{proposition}
+
+\begin{proof}
+Every element is built by finitely many applications of the rules; call its \emph{rank} the least number of rule
+applications in such a construction. We prove ``$P$ holds for every element of rank at most $n$'' by induction on
+$n \geq 1$. An element of rank 1 comes from a base rule: $P$ holds. An element of rank $n + 1$ comes from a
+construction rule applied to elements of smaller rank, which satisfy $P$ by the induction hypothesis, so it satisfies
+$P$. (For \omterm{def:b1:induction-and-termination:binary-tree}{binary trees}, an induction on the \omterm{def:b1:induction-and-termination:height}{height} does the same work.)
+\end{proof}
+
+\begin{proposition}[Size, height and leaves of a binary tree]\label{prop:b1:induction-and-termination:bounds}
+A \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} of \omterm{def:b1:induction-and-termination:height}{height} $h$ has a \omterm{def:b1:induction-and-termination:height}{size} $n$ with $h + 1 \leq n \leq 2^{h + 1} - 1$. A \omterm{def:b1:induction-and-termination:binary-tree}{full} non-empty \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} has one
+more \omterm{def:b1:induction-and-termination:rooted-tree}{leaf} than \omterm{def:b1:induction-and-termination:rooted-tree}{internal nodes}.
+\end{proposition}
+
+\begin{proof}
+By \omterm{def:b1:induction-and-termination:structural}{structural induction}. The empty tree has $h = -1$ and $n = 0 = h + 1 = 2^0 - 1$. For a node with \omterm{def:b1:induction-and-termination:rooted-tree}{subtrees} of
+\omterm{def:b1:induction-and-termination:height}{heights} $h_\ell$, $h_r$ and \omterm{def:b1:induction-and-termination:height}{sizes} $n_\ell$, $n_r$ satisfying the bounds, $h = 1 + \max(h_\ell, h_r)$ and $n = 1 + n_\ell +
+n_r$. The higher \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} alone has at least $\max(h_\ell, h_r) + 1 = h$ nodes, so $n \geq h + 1$; and $n \leq 1 +
+2(2^{h} - 1) = 2^{h + 1} - 1$, since both \omterm{def:b1:induction-and-termination:height}{heights} are at most $h - 1$. For \omterm{def:b1:induction-and-termination:binary-tree}{full} trees: a single node has one \omterm{def:b1:induction-and-termination:rooted-tree}{leaf} and no
+\omterm{def:b1:induction-and-termination:rooted-tree}{internal node}. A node with two non-empty \omterm{def:b1:induction-and-termination:binary-tree}{full} \omterm{def:b1:induction-and-termination:rooted-tree}{subtrees} having $f_\ell = i_\ell + 1$ and $f_r = i_r + 1$ leaves has
+$f_\ell + f_r = i_\ell + i_r + 2$ leaves and $i_\ell + i_r + 1$ \omterm{def:b1:induction-and-termination:rooted-tree}{internal nodes}, itself included.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[n/.style={circle, draw, fill=omDef!15, minimum size=4.5mm, inner sep=0pt},
+                    l/.style={circle, draw, fill=omCode!10, minimum size=4.5mm, inner sep=0pt}, level distance=8mm,
+                    level 1/.style={sibling distance=26mm}, level 2/.style={sibling distance=13mm},
+                    level 3/.style={sibling distance=7mm}]
+\node[n] {} child {node[n] {} child {node[l] {}} child {node[n] {} child {node[l] {}} child {node[l] {}}}}
+            child {node[n] {} child {node[l] {}} child {node[l] {}}};
+\draw[dashed, omThm, rounded corners] (-2.4,-0.5) rectangle (0.05,-2.85);
+\draw[dashed, omThm, rounded corners] (0.25,-0.5) rectangle (2.4,-2.0);
+\node[font=\scriptsize, align=left, anchor=west] at (2.8,-0.4) {left subtree: 3 leaves, 2 internal\\right subtree:
+2 leaves, 1 internal\\the whole: $3 + 2 = 5$ leaves,\\$2 + 1 + 1 = 4$ internal (the root added)};
+\end{tikzpicture}
+\par\smallskip{\small The induction step for \omterm{def:b1:induction-and-termination:binary-tree}{full} trees: each \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} has one more \omterm{def:b1:induction-and-termination:rooted-tree}{leaf} than \omterm{def:b1:induction-and-termination:rooted-tree}{internal nodes}, and the
+\omterm{def:b1:induction-and-termination:rooted-tree}{root} adds one \omterm{def:b1:induction-and-termination:rooted-tree}{internal node} and no \omterm{def:b1:induction-and-termination:rooted-tree}{leaf}, so the whole tree keeps the difference of one. Leaves are pale, \omterm{def:b1:induction-and-termination:rooted-tree}{internal nodes}
+shaded.}
+\end{omfigure}
+
+Lists are proved about in the same way. With the recursive definition $\mathit{rev}([\,]) = [\,]$ and
+$\mathit{rev}([x] + \ell) = \mathit{rev}(\ell) + [x]$, first prove $\mathit{rev}(\ell + m) = \mathit{rev}(m) +
+\mathit{rev}(\ell)$ by induction on $\ell$: for $\ell = [\,]$ both sides are $\mathit{rev}(m)$; and
+$\mathit{rev}([x] + \ell + m) = \mathit{rev}(\ell + m) + [x] = \mathit{rev}(m) + \mathit{rev}(\ell) + [x] =
+\mathit{rev}(m) + \mathit{rev}([x] + \ell)$. Then $\mathit{rev}(\mathit{rev}(\ell)) = \ell$ by induction on $\ell$:
+$\mathit{rev}(\mathit{rev}([x] + \ell)) = \mathit{rev}(\mathit{rev}(\ell) + [x]) = \mathit{rev}([x]) +
+\mathit{rev}(\mathit{rev}(\ell)) = [x] + \ell$.
+
+\omcode{code/bachelor-1/11-induction-and-termination/listings/reverse_twice.py}{6}{21}{Reverse, and a check on 3280
+lists}\label{lst:b1:induction-and-termination:reverse}
+
+\omoutput{code/bachelor-1/11-induction-and-termination/outputs/reverse_twice.txt}{The check passes; the proof above
+covers the lists it did not try.}\label{out:b1:induction-and-termination:reverse}
+
+The first lemma was needed because the property of $\mathit{rev}(\mathit{rev}(\ell))$ alone does not carry through the
+induction step: proving a stronger or more general statement is often what makes an induction go through.
+
+\section{Well-founded orders}\label{sec:b1:induction-and-termination:orders}
+
+\begin{definition}[Strict order, minimal element, immediate predecessor]\label{def:b1:induction-and-termination:strict-order}
+A \emph{strict order}\index{strict order} $<$ on a set is irreflexive ($x < x$ never holds) and transitive; from an
+order $\leq$ one gets the strict order $x < y$ when $x \leq y$ and $x \neq y$. An element $m$ of a subset $S$ is
+\emph{minimal}\index{minimal element} in $S$ if no element of $S$ is smaller than $m$. An \emph{immediate
+predecessor}\index{immediate predecessor} of $y$ is an $x < y$ with no $z$ such that $x < z < y$.
+\end{definition}
+
+\begin{definition}[Well-founded order]\label{def:b1:induction-and-termination:well-founded}
+A \omterm{def:b1:induction-and-termination:strict-order}{strict order} is \emph{well-founded}\index{well-founded order} if there is no infinite strictly descending chain $x_0
+> x_1 > x_2 > \cdots$.
+\end{definition}
+
+The natural numbers with $<$ are \omterm{def:b1:induction-and-termination:well-founded}{well-founded}; the integers are not ($0 > -1 > -2 > \cdots$), nor the non-negative
+rationals ($1 > 1/2 > 1/4 > \cdots$). Proper \omterm{def:b1:induction-and-termination:rooted-tree}{subtrees} of a tree, or the order ``is a proper \omterm{def:b1:propositional-logic:size}{subformula} of'', are
+\omterm{def:b1:induction-and-termination:well-founded}{well-founded}, since each step down a tree loses at least one node.
+
+\begin{proposition}[Two definitions agree]\label{prop:b1:induction-and-termination:minimal}
+A \omterm{def:b1:induction-and-termination:strict-order}{strict order} is \omterm{def:b1:induction-and-termination:well-founded}{well-founded} if and only if every non-empty subset has a \omterm{def:b1:induction-and-termination:strict-order}{minimal element}.
+\end{proposition}
+
+\begin{proof}
+If a non-empty set $S$ has no \omterm{def:b1:induction-and-termination:strict-order}{minimal element}, pick $x_0$ in $S$; it is not \omterm{def:b1:induction-and-termination:strict-order}{minimal}, so some $x_1 \in S$ is smaller;
+and so on, which builds an infinite descending chain. Conversely, an infinite descending chain is a non-empty set
+without \omterm{def:b1:induction-and-termination:strict-order}{minimal element}: each of its elements has a smaller one after it.
+\end{proof}
+
+The second form gives \emph{\omterm{def:b1:induction-and-termination:well-founded}{well-founded} induction}: if $P(y)$ follows from $P(x)$ for all $x < y$, then $P$ holds
+everywhere, for otherwise the set of counterexamples would have a \omterm{def:b1:induction-and-termination:strict-order}{minimal element} $y$, all of whose smaller elements
+satisfy $P$, and so would $y$. Induction on $\mathbb{N}$ and \omterm{def:b1:induction-and-termination:structural}{structural induction} are the cases of $<$ on numbers and
+of the ``is a proper \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} of'' order.
+
+\begin{definition}[Product order, lexicographic order]\label{def:b1:induction-and-termination:lex}
+On pairs of elements of ordered sets $A$ and $B$, the \emph{product order}\index{product order} sets $(a, b) \leq (a',
+b')$ when $a \leq a'$ and $b \leq b'$; the \emph{lexicographic order}\index{lexicographic order} sets $(a, b) < (a', b')$
+when $a < a'$, or $a = a'$ and $b < b'$. Both extend to tuples of a fixed length $k$, the lexicographic order comparing
+the first component where two tuples differ.
+\end{definition}
+
+\begin{proposition}[Lexicographic order is well-founded]\label{prop:b1:induction-and-termination:lex}
+If $<_A$ and $<_B$ are \omterm{def:b1:induction-and-termination:well-founded}{well-founded}, the \omterm{def:b1:induction-and-termination:lex}{lexicographic order} on $A \times B$ is \omterm{def:b1:induction-and-termination:well-founded}{well-founded}, and so is the strict
+\omterm{def:b1:induction-and-termination:lex}{product order}. By induction, so are both orders on $k$-tuples.
+\end{proposition}
+
+\begin{proof}
+Take a descending chain $(a_0, b_0) > (a_1, b_1) > \cdots$. Along it, $a_0 \geq a_1 \geq \cdots$, since each step
+either decreases $a$ or keeps it. As $A$ is \omterm{def:b1:induction-and-termination:well-founded}{well-founded}, $a$ decreases only finitely many times: from some index on,
+$a$ is constant, and then $b$ decreases at every step, which can happen only finitely often in $B$. So the chain is
+finite. A strict decrease in the \omterm{def:b1:induction-and-termination:lex}{product order} is a decrease in the \omterm{def:b1:induction-and-termination:lex}{lexicographic order}, so the \omterm{def:b1:induction-and-termination:lex}{product order} has no
+infinite chain either. For $k$-tuples, write $A_1 \times \dots \times A_k$ as $A_1 \times (A_2 \times \dots \times A_k)$.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=6mm, y=6mm, >={Stealth[length=2mm]}]
+\foreach \i in {0,...,5} {\foreach \j in {0,...,7} {\fill[black!25] (\i,\j) circle (1.2pt);}}
+\draw[->] (-0.5,0) -- (6,0) node[right, font=\scriptsize] {$i$};
+\draw[->] (0,-0.5) -- (0,8) node[above, font=\scriptsize] {$j$};
+\foreach \a/\b/\c/\d in {4/1/4/0, 4/0/3/7, 3/7/3/4, 3/4/3/0, 3/0/2/6, 2/6/2/0, 2/0/1/3, 1/3/1/0, 1/0/0/2, 0/2/0/0} {
+  \draw[->, thick, omThm] (\a,\b) -- (\c,\d);
+}
+\fill[omThm] (4,1) circle (2.5pt);
+\node[font=\scriptsize, anchor=west, align=left] at (6.6,4.5) {each step lowers $j$ with $i$ fixed,\\or lowers $i$ and
+sets $j$ to any value;\\$i$ can drop only 4 times, and between\\two drops $j$ only finitely often:\\the chain stops at
+$(0, 0)$};
+\end{tikzpicture}
+\par\smallskip{\small A descending chain in the \omterm{def:b1:induction-and-termination:lex}{lexicographic order} on $\mathbb{N}^2$ from $(4, 1)$. A step may jump
+upwards in $j$, without bound, but only by lowering $i$: the chain is finite, although no bound on its length can be
+given in advance.}
+\end{omfigure}
+
+The \omterm{def:b1:induction-and-termination:lex}{lexicographic order} on $\mathbb{N}^2$ shows why well-foundedness is more than ``the values stay positive'': the
+pair $(1, 0)$ has infinitely many smaller elements $(0, j)$, and no \omterm{def:b1:induction-and-termination:strict-order}{immediate predecessor}, yet every descending chain is
+finite. A directed graph whose arcs all go from a larger to a smaller element has no cycle; the converse view, the
+order of reachability in a directed acyclic graph, returns with graphs in \cref{ch:b1:graph-traversals}.
+
+\section{Termination by a variant}\label{sec:b1:induction-and-termination:variant}
+
+\begin{definition}[Termination, variant]\label{def:b1:induction-and-termination:variant}
+A loop or a recursive function \emph{terminates}\index{termination} if every execution reaches its end after finitely
+many steps. A \emph{variant}\index{variant (termination)} is a function from the states of the loop (or the arguments
+of the function) to a set with a \omterm{def:b1:induction-and-termination:well-founded}{well-founded order} that strictly decreases at each iteration (or at each recursive
+call). A loop with a variant terminates: otherwise the values of the variant would form an infinite descending chain.
+\end{definition}
+
+Euclid's algorithm, which replaces $(a, b)$ by $(b, a \bmod b)$ while $b > 0$, has the \omterm{def:b1:induction-and-termination:variant}{variant} $b$ in $\mathbb{N}$:
+$a \bmod b < b$. A \omterm{def:b1:induction-and-termination:variant}{variant} need not be a number. The loop below has none in $\mathbb{N}$, since it sometimes increases
+$j$, but the pair $(i, j)$ decreases in the \omterm{def:b1:induction-and-termination:lex}{lexicographic order} at every step.
+
+\omcode{code/bachelor-1/11-induction-and-termination/listings/lex_loop.py}{3}{12}{A loop with a lexicographic
+\omterm{def:b1:induction-and-termination:variant}{variant}}\label{lst:b1:induction-and-termination:lex-loop}
+
+\omoutput[1-5,14-17]{code/bachelor-1/11-induction-and-termination/outputs/lex_loop.txt}{The \omterm{def:b1:induction-and-termination:variant}{variant} at each step (the
+middle steps are left out).}\label{out:b1:induction-and-termination:lex-loop}
+
+Ackermann's function, named after the mathematician Wilhelm Ackermann, \omterm{def:b1:induction-and-termination:variant}{terminates} for the same reason, although it
+calls itself on an argument that is the result of another call.
+
+\omcode{code/bachelor-1/11-induction-and-termination/listings/ackermann.py}{9}{16}{Ackermann's
+function}\label{lst:b1:induction-and-termination:ackermann}
+
+\omoutput{code/bachelor-1/11-induction-and-termination/outputs/ackermann.txt}{Values, and calls in parentheses: the third
+row already doubles at each step.}\label{out:b1:induction-and-termination:ackermann}
+
+\begin{proposition}[Ackermann's function terminates]\label{prop:b1:induction-and-termination:ackermann}
+For all natural numbers $m$ and $n$, the call $\mathit{ack}(m, n)$ \omterm{def:b1:induction-and-termination:variant}{terminates}.
+\end{proposition}
+
+\begin{proof}
+By \omterm{def:b1:induction-and-termination:well-founded}{well-founded} induction on $(m, n)$ in the \omterm{def:b1:induction-and-termination:lex}{lexicographic order} of $\mathbb{N}^2$. Suppose every call on a smaller
+pair \omterm{def:b1:induction-and-termination:variant}{terminates}. If $m = 0$, there is no call. If $n = 0$, the call is on $(m - 1, 1) < (m, 0)$. Otherwise the inner call
+is on $(m, n - 1) < (m, n)$ and \omterm{def:b1:induction-and-termination:variant}{terminates} with some value $v$; the outer call is on $(m - 1, v) < (m, n)$, whatever
+$v$ is, and \omterm{def:b1:induction-and-termination:variant}{terminates}.
+\end{proof}
+
+\omterm{def:b1:induction-and-termination:variant}{Termination} says nothing about speed: $\mathit{ack}(4, 2)$ has 19\,729 decimal digits, and its call count is beyond
+reach. The third row is $2^{n + 3} - 3$, which the test checks.
+
+\section{Recursive functions proved correct}\label{sec:b1:induction-and-termination:recursion}
+
+\omcode{code/bachelor-1/11-induction-and-termination/listings/merge.py}{4}{11}{Merging two sorted
+lists}\label{lst:b1:induction-and-termination:merge}
+
+\omoutput{code/bachelor-1/11-induction-and-termination/outputs/merge.txt}{Two sorted lists merged, and the base
+cases.}\label{out:b1:induction-and-termination:merge}
+
+\begin{proposition}[Merge is correct]\label{prop:b1:induction-and-termination:merge}
+If $xs$ and $ys$ are sorted, $\mathit{merge}(xs, ys)$ \omterm{def:b1:induction-and-termination:variant}{terminates} and returns a sorted list holding the elements of
+both, with their multiplicities.
+\end{proposition}
+
+\begin{proof}
+\omterm{def:b1:induction-and-termination:variant}{Termination}: $\text{len}(xs) + \text{len}(ys)$ is a \omterm{def:b1:induction-and-termination:variant}{variant}, since each call removes one element. Correctness, by
+induction on the same quantity: if one list is empty, the other is returned, sorted. Otherwise, say $xs[0] \leq
+ys[0]$. By induction, the recursive call returns a sorted list of the elements of $xs[1{:}]$ and $ys$; each of them is
+at least $xs[0]$, since $xs$ is sorted and $ys[0] \geq xs[0]$. Putting $xs[0]$ in front keeps the list sorted, and adds
+the one missing element. The other case is symmetric.
+\end{proof}
+
+\begin{definition}[Left-child right-sibling representation]\label{def:b1:induction-and-termination:lcrs}
+The \emph{left-child right-sibling representation}\index{left-child right-sibling representation} stores a tree of
+any arity as a \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} with the same nodes: the left \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} of a node is its first child, and its right \omterm{def:b1:induction-and-termination:rooted-tree}{subtree}
+is its next sibling.
+\end{definition}
+
+\omcode{code/bachelor-1/11-induction-and-termination/listings/lcrs.py}{9}{32}{From any arity to binary, and
+back}\label{lst:b1:induction-and-termination:lcrs}
+
+\omoutput{code/bachelor-1/11-induction-and-termination/outputs/lcrs.txt}{The tree of the figure below as a \omterm{def:b1:induction-and-termination:binary-tree}{binary tree}
+(\code{.} is the empty tree), and the round trip.}\label{out:b1:induction-and-termination:lcrs}
+
+\begin{omfigure}
+\begin{tikzpicture}[n/.style={circle, draw, fill=omCode!10, minimum size=5mm, inner sep=0pt, font=\scriptsize},
+                    >={Stealth[length=1.6mm]}]
+\begin{scope}
+\node[n] (1) at (1.8,0) {1};
+\foreach \k/\x in {2/0, 3/1.2, 4/2.4, 5/3.6} {\node[n] (\k) at (\x,-1.1) {\k}; \draw (1) -- (\k);}
+\node[n] (6) at (0.8,-2.2) {6}; \node[n] (7) at (1.6,-2.2) {7}; \node[n] (8) at (3.6,-2.2) {8};
+\draw (3) -- (6); \draw (3) -- (7); \draw (5) -- (8);
+\node[font=\scriptsize] at (1.8,-3.0) {a tree of arity 4};
+\end{scope}
+\begin{scope}[xshift=6cm]
+\node[n] (b1) at (0,0) {1};
+\node[n] (b2) at (-0.6,-0.9) {2}; \draw[->, thick] (b1) -- (b2);
+\node[n] (b3) at (0.3,-1.6) {3}; \draw[->, dashed, omThm] (b2) -- (b3);
+\node[n] (b6) at (-0.3,-2.4) {6}; \draw[->, thick] (b3) -- (b6);
+\node[n] (b7) at (0.5,-3.1) {7}; \draw[->, dashed, omThm] (b6) -- (b7);
+\node[n] (b4) at (1.2,-2.3) {4}; \draw[->, dashed, omThm] (b3) -- (b4);
+\node[n] (b5) at (2.1,-3.0) {5}; \draw[->, dashed, omThm] (b4) -- (b5);
+\node[n] (b8) at (1.6,-3.8) {8}; \draw[->, thick] (b5) -- (b8);
+\node[font=\scriptsize, align=left, anchor=west] at (2.6,-0.9) {solid: left = first child\\dashed: right = next
+sibling};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small A tree of arity 4 and its left-child right-sibling \omterm{def:b1:induction-and-termination:binary-tree}{binary tree}. The same eight nodes; the
+\omterm{def:b1:induction-and-termination:rooted-tree}{children} of a node become a chain of right links starting at its left child.}
+\end{omfigure}
+
+The two conversions are inverse to each other, which is proved by \omterm{def:b1:induction-and-termination:structural}{structural induction} on trees (and on lists of
+trees, the two definitions depending on each other); the test checks it on random trees. \omterm{def:b1:c-functions-and-stack:mutual}{Mutually recursive} functions,
+such as the even and odd test of \cref{ch:b1:c-functions-and-stack}, terminate by a common \omterm{def:b1:induction-and-termination:variant}{variant}: here $n$ decreases
+at every call, whichever function makes it.
+
+\omcode{code/bachelor-1/11-induction-and-termination/listings/even_odd.py}{4}{13}{Even and odd, in
+Python}\label{lst:b1:induction-and-termination:even-odd}
+
+\omoutput{code/bachelor-1/11-induction-and-termination/outputs/even_odd.txt}{The even numbers below 12, and seven is
+odd.}\label{out:b1:induction-and-termination:even-odd}
+
+\section{Exercises}\label{sec:b1:induction-and-termination:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:induction-and-termination:1}
+Give the \omterm{def:b1:induction-and-termination:height}{size} and \omterm{def:b1:induction-and-termination:height}{height} of: the empty tree; a single node; a node whose left \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} is a single node and right
+\omterm{def:b1:induction-and-termination:rooted-tree}{subtree} empty; and the tree \code{t} of \cref{out:b1:induction-and-termination:inductive}, \code{Node(Node(None, 2,
+None), 5, Node(Node(None, 7, None), 9, None))}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:induction-and-termination:2}
+Euclid's algorithm runs on $(252, 105)$. Give the successive values of the \omterm{def:b1:induction-and-termination:variant}{variant} $b$, and the result.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:induction-and-termination:3}
+Predict the output of the program.
+\omcode{code/bachelor-1/11-induction-and-termination/listings/exo_lcrs.py}{3}{6}{Two small trees converted}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:induction-and-termination:4}
+Which \omterm{def:b1:induction-and-termination:strict-order}{strict orders} are \omterm{def:b1:induction-and-termination:well-founded}{well-founded}? (a) $<$ on the integers greater than $-10$; (b) ``divides and is different'' on
+positive integers; (c) ``is a proper prefix of'' on finite words; (d) $<$ on the real numbers of $[0, 1]$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:induction-and-termination:5}
+A student claims that $n$ is a \omterm{def:b1:induction-and-termination:variant}{variant} of \code{steps}. Show that it is not, prove that the function \omterm{def:b1:induction-and-termination:variant}{terminates} for
+all natural numbers $n$ and $\mathit{step} \in \{0, 1\}$ with a lexicographic \omterm{def:b1:induction-and-termination:variant}{variant}, and give its result.
+\omcode{code/bachelor-1/11-induction-and-termination/listings/exo_variant.py}{4}{13}{A recursion with two kinds of
+call}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:induction-and-termination:6}
+A library defines the \omterm{def:b1:induction-and-termination:height}{height} of the empty tree as 0. Which statements of
+\cref{prop:b1:induction-and-termination:bounds} fail with that convention, and how must they be rewritten?
+\omcode{code/bachelor-1/11-induction-and-termination/listings/exo_height0.py}{6}{14}{Another \omterm{def:b1:induction-and-termination:height}{height}}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:induction-and-termination:7}
+Write \code{count_paths(t)}, the number of paths from the \omterm{def:b1:induction-and-termination:rooted-tree}{root} of a \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} to a \omterm{def:b1:induction-and-termination:rooted-tree}{leaf}, by recursion on the tree.
+Prove by \omterm{def:b1:induction-and-termination:structural}{structural induction} that it equals the number of leaves, and give its value on a \omterm{def:b1:induction-and-termination:binary-tree}{full} tree with $i$ \omterm{def:b1:induction-and-termination:rooted-tree}{internal
+nodes}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:induction-and-termination:8}
+With $\mathit{flatten}(\text{empty}) = [\,]$ and $\mathit{flatten}((\ell, k, r)) = \mathit{flatten}(\ell) + [k] +
+\mathit{flatten}(r)$, prove $\text{len}(\mathit{flatten}(t)) = \text{size}(t)$ by \omterm{def:b1:induction-and-termination:structural}{structural induction}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:induction-and-termination:9}
+Prove that a non-empty \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} of \omterm{def:b1:induction-and-termination:height}{height} $h$ has at most $2^h$ leaves. Which trees reach the bound?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:induction-and-termination:10}
+On the finite words over a finite alphabet, the \emph{shortlex} order compares lengths first and, between words of
+the same length, uses the dictionary order. Prove that it is \omterm{def:b1:induction-and-termination:well-founded}{well-founded}. Show that the dictionary order alone, on the
+words over $\{a, b\}$, is not.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:induction-and-termination:11}
+In the sorting game, a move swaps two adjacent numbers of a list that are out of order. Prove that every game ends, with
+a \omterm{def:b1:induction-and-termination:variant}{variant}, that it ends on the sorted list, and that the number of moves does not depend on the choices. Write the
+game and test the claims.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:induction-and-termination:12}
+McCarthy's 91 function is $f(n) = n - 10$ if $n > 100$, and $f(n) = f(f(n + 11))$ otherwise. Prove that $f(n) = 91$ for
+every integer $n \leq 100$, by \omterm{def:b1:induction-and-termination:well-founded}{well-founded} induction on $101 - n$ (with a separate argument for $90 \leq n \leq 100$),
+and deduce that $f$ \omterm{def:b1:induction-and-termination:variant}{terminates} on every integer.
+\end{exercise}
+
+\section{Problem: The game that always ends}\label{sec:b1:induction-and-termination:problem}
+
+\begin{problem}[{Weekend problem --- The game that always ends}]\label{pb:b1:induction-and-termination:1}
+A position is a list of natural numbers. A move picks an entry $k > 0$ and replaces it by two entries $k - 1$; the play
+ends when every entry is 0. From $(2)$ one may play $(2) \to (1, 1) \to (0, 0, 1) \to (0, 0, 0, 0)$, or replace the
+other 1 first. The program lists the possible lengths of all plays from a few positions, and counts the plays.
+\omcode{code/bachelor-1/11-induction-and-termination/listings/game.py}{6}{30}{The game, its plays and their
+lengths}\label{lst:b1:induction-and-termination:game}
+\omoutput{code/bachelor-1/11-induction-and-termination/outputs/game.txt}{One length per position, whatever the
+choices, among up to 21\,964\,800 different plays.}\label{out:b1:induction-and-termination:game}
+
+\medskip\noindent\textbf{Part I --- Positions and plays as data.}
+\begin{enumerate}
+\item Define the set of plays inductively: a play from a position $s$ is either $s$ alone, if no move is possible, or
+$s$ followed by a play from a position one move away.
+\item List the two plays from $(2)$ and the two from $(1, 1)$.
+\item Why does \code{plays((4,))} equal \code{plays((3, 3))}?
+\item Explain the recursion of \code{lengths}, and why its base case returns $\{0\}$.
+\item Why is \code{@cache} needed to count 21\,964\,800 plays?
+\item Does the order of the entries in a position matter for the lengths? For the number of plays?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Termination.}
+\begin{enumerate}[resume]
+\item Show that the sum of the entries is not a \omterm{def:b1:induction-and-termination:variant}{variant}, nor the number of entries, nor the largest entry.
+\item Let $K$ be the largest entry of the starting position. Show that no entry ever exceeds $K$.
+\item For a position $s$, let $c(s) = (c_K, c_{K-1}, \dots, c_0)$, where $c_j$ is the number of entries equal to $j$.
+Show that a move decreases $c(s)$ in the \omterm{def:b1:induction-and-termination:lex}{lexicographic order} of $\mathbb{N}^{K+1}$.
+\item Deduce from \cref{prop:b1:induction-and-termination:lex} that every play is finite.
+\item Is $c$ a \omterm{def:b1:induction-and-termination:variant}{variant} in the \omterm{def:b1:induction-and-termination:lex}{product order}? Why does that not matter?
+\item Could a play from $(3, 1, 0)$ be longer than 1000 moves? Answer from Part II alone, then from the table.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- A single entry.}
+\begin{enumerate}[resume]
+\item Let $M(k)$ be the number of moves of a play from $(k)$, assuming it does not depend on the choices. Show
+$M(0) = 0$ and $M(k) = 1 + 2M(k - 1)$.
+\item Deduce $M(k) = 2^k - 1$ by induction, and compare with the table.
+\item In a play from $(k)$, the two copies of $k - 1$ evolve independently. Make this precise: a play from a position
+is an interleaving of plays from its entries.
+\item Deduce that a play from $(a_1, \dots, a_n)$ makes $\sum_i (2^{a_i} - 1)$ moves, if each single-entry play has a
+fixed length.
+\item Where did Part III assume what it set out to prove? Why does the interleaving argument still need the
+single-entry result as an induction hypothesis?
+\item Give the number of plays from $(2)$, $(3)$ and $(1, 2)$ from the table, and check $(2)$ and $(1, 2)$ by hand.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- A potential.}
+\begin{enumerate}[resume]
+\item Let $\Phi(s) = \sum_i (2^{a_i} - 1)$. Compute the change of $\Phi$ in a move that replaces $k$ by two copies of $k -
+1$.
+\item Show that $\Phi(s) \geq 0$, with equality exactly when the play has ended.
+\item Deduce that every play from $s$ has exactly $\Phi(s)$ moves.
+\item Compare this proof with that of Part II: which one gives \omterm{def:b1:induction-and-termination:variant}{termination}, which one the length, and why is
+$\Phi$ a \omterm{def:b1:induction-and-termination:variant}{variant} in $\mathbb{N}$ although the sum of entries was not?
+\item The program checks the result on every position of at most three entries below 4. What does that check add to
+the proof, and what does the proof add to the check?
+\item State the named result: \emph{every play from $(a_1, \dots, a_n)$ has the same length $\sum_i (2^{a_i} - 1)$}.
+\end{enumerate}
+\end{problem}

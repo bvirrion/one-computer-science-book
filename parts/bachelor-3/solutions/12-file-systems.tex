@@ -1,0 +1,103 @@
+\section*{Chapter \ref{ch:b3:file-systems} --- Storage Devices and File Systems}
+
+\begin{solution}{exo:b3:file-systems:1}
+Half a revolution takes $0.5 \times 60/7{,}200$~s = 4.17~ms. 4~KiB transfer in $4{,}096/(150 \times 10^6)$~s = 0.027~ms: in all $9 + 4.17 + 0.03 \approx 13.2$~ms, of which 0.2~\% moves data. 4~MiB transfer in 28.0~ms: $9 + 4.17 + 27.96 \approx 41.1$~ms, 68~\% of it moving data. Reading in large runs is what makes a disk efficient.
+\end{solution}
+
+\begin{solution}{exo:b3:file-systems:2}
+Up first: 82, 140, 190, then on to cylinder 199; back down: 43, 24, 17, 16. The head travels $(199 - 50) + (199 - 16) = 332$ cylinders (\code{test_exercise_2_scan_by_hand}).
+\end{solution}
+
+\begin{solution}{exo:b3:file-systems:3}
+50 data blocks of 1~KiB: 10 through the direct pointers and 40 through the \omterm{def:b3:file-systems:layout}{indirect block}, which is a 51st block. The inode itself sits in the \omterm{def:b3:file-systems:layout}{inode table}, which is allocated once for all.
+\end{solution}
+
+\begin{solution}{exo:b3:file-systems:4}
+\code{unlink} frees inode 2 and block 44, and both \omterm{def:b3:garbage-collection:allocator}{allocators} take the lowest free number: \code{todo.txt} gets inode 2 and block 44 (\code{minifs_test.c}). Its entry is appended after \code{big.dat}, since \code{fs_create} always appends: the root lists \code{src}, \code{big.dat}, \code{todo.txt}, and the cleared entry at offset 0 stays unused.
+\end{solution}
+
+\begin{solution}{exo:b3:file-systems:5}
+The checker reports the file's three data blocks, 44, 45 and 46 on a fresh image, as allocated but used by no file: the function clears the entry, the inode and its bit, but never frees the blocks, and with the inode zeroed nothing records them any more. The fix reads the inode first, \code{struct inode in = iget(e.ino)}, and calls \code{free_blocks(&in)} before clearing it, as \code{fs_unlink} does (\code{unlink_bug_test.c}). Since the blocks are marked in use, nothing is corrupted: the space is lost until a checker returns it.
+\end{solution}
+
+\begin{solution}{exo:b3:file-systems:6}
+\code{exercises/ex6_double.c}: the outer block, allocated zeroed when first needed, holds 256 numbers of \omterm{def:b3:file-systems:layout}{indirect blocks}; entry $k / 256$ names the \omterm{def:b3:file-systems:layout}{indirect block}, allocated zeroed when first needed and written back into the outer block, and its entry $k \bmod 256$ names the data block. Every block allocated on the way is written back to the block that points to it. A byte at 290~KiB, file block 290, is in the double region: 4 reads, the inode, the outer block, the \omterm{def:b3:file-systems:layout}{indirect block} and the data (\code{double_test.c} writes and reads back 300~KiB).
+\end{solution}
+
+\begin{solution}{exo:b3:file-systems:7}
+Facts used: a block write is atomic; the journal's blocks are never the home of a logged block; the descriptor carries the commit mark only between the commit write and the final clear.
+
+Replay copies each logged block $i$ to its home $h_i$, then clears the descriptor. Copying changes only home blocks, never the journal, so a second replay reads the same descriptor and the same logged blocks and writes the same contents to the same homes: the result is the same, and replay is \omterm{def:b3:file-systems:consistency}{idempotent}. A replay cut by a crash leaves the descriptor committed (the clear comes last), so the next mount replays again; by \omterm{def:b3:file-systems:consistency}{idempotence}, any number of interrupted replays followed by a complete one give the state of one replay.
+
+Now a crash during an operation. Before the commit write, no home block has been written (in-place writes come after the commit) and the descriptor is not committed, so the mount replays nothing: the disk holds the state before the operation. From the commit write on, every home block holds either its old or its new contents, and the logged copies of all the new contents are on disk: the replay writes every home block's new contents, giving the state after the operation. After the final clear, all homes hold their new contents already. In every case, before or after, never between.
+\end{solution}
+
+\begin{solution}{exo:b3:file-systems:8}
+\code{fs_read} reads the inode's block of the \omterm{def:b3:file-systems:layout}{inode table} (1), then, for a file block below 10, the data block: 2 reads. For a block from 10 to 265 it also reads the \omterm{def:b3:file-systems:layout}{indirect block}: 3. A block never written, a hole, costs no data read. \Cref{out:b3:file-systems:reads} shows 2, 2, 3, 3 and 3, and \code{minifs_test.c} checks 2 at offset 5,000 and 3 at 15,000.
+\end{solution}
+
+\begin{solution}{exo:b3:file-systems:9}
+$\mathtt{0x3C} \oplus \mathtt{0xA5} = \mathtt{0x99}$, $\oplus\ \mathtt{0x0F} = \mathtt{0x96}$, $\oplus\ \mathtt{0x81} = \mathtt{0x17}$: the parity is \code{0x17}. Rebuild: $\mathtt{0x3C} \oplus \mathtt{0x0F} \oplus \mathtt{0x81} \oplus \mathtt{0x17} = \mathtt{0x33} \oplus \mathtt{0x81} \oplus \mathtt{0x17} = \mathtt{0xB2} \oplus \mathtt{0x17} = \mathtt{0xA5}$ (\code{test_exercise_9_parity_by_hand}).
+\end{solution}
+
+\begin{solution}{exo:b3:file-systems:10}
+Clean $N$ segments of $S$ blocks: read $NS$ blocks, write back the $uNS$ live ones, and the $(1 - u)NS$ blocks freed take new data, written once. Disk traffic: $NS + uNS + (1 - u)NS = 2NS$ for $(1 - u)NS$ blocks of new data, $2/(1 - u)$ per block. When $u = 0$ the segment need not be read at all, so the cost is 1, the write itself. The emptiest segments are not always the best: a segment of data that rarely changes (cold) stays nearly full for a long time, and its free space, waiting there, is lost for that whole time, whereas a segment of data that changes often (hot) empties itself if left alone. Cleaning cold segments at a higher utilisation, and letting hot ones empty, can lower the total cost; that was the cost-benefit policy of the 1992 design.
+\end{solution}
+
+\begin{solution}{exo:b3:file-systems:11}
+Shortest \omterm{def:b3:file-systems:disk}{seek time} first: put the head at 50 and a request at 190, then let a request at 50, 51 or 52 arrive before each decision. Each new request is nearer than 190, so 190 is never chosen, for as long as the stream lasts (\code{test_exercise_11_sstf_starves}, over 100 decisions).
+
+SCAN: take a request at cylinder $c$, arriving when the head is at $x$. If the head is moving up and $x \le c$, it reaches $c$ in this sweep, after at most $C - 1$ cylinders. Otherwise it goes on to the last cylinder and turns back; on the way down it passes $c$, or, if $c$ is above where it turned, it reaches the end of that sweep and comes back up to $c$. In every case the head reaches $c$ within one full sweep in each direction, at most $2(C - 1)$ cylinders of travel, and it serves the request when it passes. The time also depends on how many requests are served on the way, but none of them can push $c$ back: the head never turns before the end.
+\end{solution}
+
+\begin{solution}{exo:b3:file-systems:12}
+A file grows by one block $B$. Metadata \omterm{def:b3:file-systems:consistency}{journaling} commits the bitmap with $B$ marked and the inode pointing to $B$. If the data are written after the commit and the machine stops in between, the replay restores the bitmap and the inode, and the file now ends with block $B$ as it was, the contents of some file deleted earlier: garbage at best, someone else's data at worst. In ordered mode, $B$'s data reach the disk before the commit. A crash before the commit loses the metadata: $B$ is still free in the bitmap, and its new contents are harmless and unreachable; a crash after the commit finds the data already there. Overwriting existing blocks in place stays unprotected in both modes: a crash may leave some of them new and some old.
+\end{solution}
+
+\begin{solution}{pb:b3:file-systems:1}
+\textbf{1.} $4{,}096/4 = 1{,}024$.
+
+\textbf{2.} Direct: $12 \times 4$~KiB = 48~KiB. Single indirect: $1{,}024$ blocks, 4~MiB. Double: $1{,}024^2$ blocks, 4~GiB. Triple: $1{,}024^3$ blocks, 4~TiB.
+
+\textbf{3.} $(12 + 1{,}024 + 1{,}024^2 + 1{,}024^3) \times 4{,}096 = 4{,}402{,}345{,}721{,}856$ bytes, as printed: just over 4~TiB.
+
+\textbf{4.} The triple indirect part, $1{,}024^3$ of the $1{,}074{,}791{,}436$ blocks, 99.9~\%. Each level multiplies by 1,024; the 48~KiB of \omterm{def:b3:file-systems:layout}{direct blocks} change the maximum by about one part in a hundred million.
+
+\textbf{5.} With 1~KiB blocks the tree reaches 16.1~GiB and with 2~KiB 256.5~GiB, in line with 16~GB and 256~GB. With 4~KiB the tree would allow 4~TiB, twice the documented 2,048~GB: something else limits it.
+
+\textbf{6.} $2^{32} \times 512$ bytes = 2~TiB. It is above the tree's limit for 1 and 2~KiB blocks, so it changes nothing there, and below it for 4~KiB blocks (and for 8~KiB, whose tree reaches 64~TiB): a field of that kind would explain the 2,048~GB of both.
+
+\textbf{7.} Direct: 2, the inode and the data. Single: 3, adding the \omterm{def:b3:file-systems:layout}{indirect block}. Double: 4, the double block and then an \omterm{def:b3:file-systems:layout}{indirect block}. Triple: 5, the inode, three pointer blocks and the data.
+
+\textbf{8.} 1~GiB is file block 262,144. Direct and single cover blocks 0 to 1,035, the double region blocks 1,036 to 1,049,611: double, 4 reads.
+
+\textbf{9.} File block 2,621,440, beyond 1,049,611: triple, 5 reads.
+
+\textbf{10.} 4~GiB is 1,048,576 blocks: 12 direct, 1,024 behind the single \omterm{def:b3:file-systems:layout}{indirect block}, and 1,047,540 in the double region, which need $\lceil 1{,}047{,}540/1{,}024 \rceil = 1{,}023$ \omterm{def:b3:file-systems:layout}{indirect blocks} and the double block. With the single block, 1,025 pointer blocks: about 0.1~\% of the reads.
+
+\textbf{11.} One read, the data block, once the inode and the pointer blocks are in memory; this is why systems cache them.
+
+\textbf{12.} The inode holds the pointers. Its number gives its place: block $\mathit{ITABLE} + \mathit{ino}/16$ of the table in \code{minifs}, at offset $64 \times (\mathit{ino} \bmod 16)$, one read.
+
+\textbf{13.} $(10 + 256) \times 1{,}024 = 272{,}384$ bytes, as measured.
+
+\textbf{14.} The inode's block, then the data block; from file block 10 on, the \omterm{def:b3:file-systems:layout}{indirect block} in between.
+
+\textbf{15.} 266 data blocks and the \omterm{def:b3:file-systems:layout}{indirect block}: 267 blocks of the disk.
+
+\textbf{16.} \code{bmap} for block 266 finds $266 - 10 = 256$ beyond the \omterm{def:b3:file-systems:layout}{indirect block} and returns 0 before allocating anything; the loop stops with nothing written, and the inode is written back unchanged. Nothing was allocated, so nothing leaks.
+
+\textbf{17.} $(10 + 256 + 65{,}536) \times 1$~KiB, about 64.3~MiB; but the image has only 981 data blocks, so the disk fills first.
+
+\textbf{18.} One extent, if the length field can count 1,048,576 blocks (a real format caps an extent's length, and needs a few). The classic inode needed 1,025 pointer blocks, about 4~MiB.
+
+\textbf{19.} A file whose blocks are all apart needs one extent per block, and an extent (start and length) is larger than a block number: worse than pointers, by the ratio of their sizes.
+
+\textbf{20.} With the extents in the inode, read the inode, find the extent by binary search on the offsets, compute the block: 2 reads, whatever the offset.
+
+\textbf{21.} Recording runs encourages the \omterm{def:b3:garbage-collection:allocator}{allocator} to make runs; a file in long runs is read sequentially, without seeks.
+
+\textbf{22.} Three blocks: three direct pointers or one or two extents, all inside the inode: two reads either way; it does not matter.
+
+\textbf{23.} With 12 direct pointers, single, double and triple \omterm{def:b3:file-systems:layout}{indirect blocks}, 4~KiB blocks and 4-byte numbers, a file can reach $(12 + 1{,}024 + 1{,}024^2 + 1{,}024^3) \times 4$~KiB $\approx 4$~TiB, the triple region holding 99.9~\% of it, and its last block costs 5 reads without caching: the inode, three pointer blocks, the data. ext2's documented limits match the tree for 1 and 2~KiB blocks and are lower for 4~KiB. Extents describe a contiguous file in a few entries and reach any byte in two reads, but degrade to worse than pointers on a fragmented file.
+\end{solution}

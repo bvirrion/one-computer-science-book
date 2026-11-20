@@ -1,0 +1,274 @@
+\section*{Chapter \ref{ch:g12:classes-and-objects} --- Classes and Objects}
+
+\begin{solution}{exo:g12:classes-and-objects:1}
+Something like \code{<__main__.Point object at 0x7f3a...>}: the \omterm{def:g12:classes-and-objects:class}{class} name and a memory address, which changes from
+run to run. Defining a \omterm{def:g12:classes-and-objects:special-method}{special method} gives a readable form:
+
+\smallskip\noindent\hspace*{2em}\code{def __repr__(self):}
+
+\noindent\hspace*{4em}\code{return f"({self.x}, {self.y})"}
+
+\smallskip\noindent Without \code{__str__}, \code{print} uses \code{__repr__}.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:2}
+$b = \frac12 + \frac14 = \frac34$ and $c = \frac34 \times \frac23 = \frac{6}{12} = \frac12$: \code{print(b, c)} shows
+\code{3/4 1/2}, and \code{print(repr(c))} shows \code{Fraction(1, 2)}.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:3}
+\smallskip\noindent\hspace*{2em}\code{class Tally:}
+
+\noindent\hspace*{4em}\code{def __init__(self):}
+
+\noindent\hspace*{6em}\code{self._count = 0}
+
+\noindent\hspace*{4em}\code{def add(self, k=1):}
+
+\noindent\hspace*{6em}\code{self._count += k}
+
+\noindent\hspace*{4em}\code{def value(self):}
+
+\noindent\hspace*{6em}\code{return self._count}
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:4}
+\code{p} and \code{q} are one object, moved once: both are at $(3, 2)$. \code{r} is a new object built from those
+values, then moved: $(3, 3)$; moving it changed neither \code{p} nor \code{q}.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:5}
+\code{p.move(1, 1)} is the call \code{Point.move(p, 1, 1)}: three arguments, the object and the two numbers. The
+\omterm{def:g12:classes-and-objects:class}{method} was written with two parameters, as if Python did not pass the object. The repair is
+\code{def move(self, dx, dy):}; without it, even the body could not name the object it should change.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:6}
+\smallskip\noindent\hspace*{2em}\code{def sub(a, b):}
+
+\noindent\hspace*{4em}\code{num = a.numerator() * b.denominator() - b.numerator() * a.denominator()}
+
+\noindent\hspace*{4em}\code{return Fraction(num, a.denominator() * b.denominator())}
+
+\smallskip\noindent The result is built by the \omterm{def:g12:classes-and-objects:constructor}{constructor}, which reduces it: the invariant is the \omterm{def:g12:classes-and-objects:class}{class}'s work, not
+the user's. \code{sub(Fraction(1, 2), Fraction(1, 3))} is \code{1/6}.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:7}
+A set finds its elements by their hash, and equal elements must have equal hashes, or two equal fractions could sit
+in two places of the same set. The hash Python gives every object by default comes from its identity: two equal
+fractions, being two objects, would get different hashes. So a \omterm{def:g12:classes-and-objects:class}{class} that defines \code{__eq__} loses that default,
+and its objects are refused by sets and as dictionary keys until it defines \code{__hash__} from the values it
+compares, for example \code{return hash((self._num, self._den))}. This is only safe because no \omterm{def:g12:classes-and-objects:class}{method} changes a
+fraction once built.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:8}
+\code{B in}, \code{A}, \code{B out}: \code{super().__init__()} runs the \omterm{def:g12:classes-and-objects:constructor}{constructor} of \code{A} in the middle of that
+of \code{B}. Without the call, \code{B in} and \code{B out} only: the \omterm{def:g12:classes-and-objects:constructor}{constructor} of \code{A} never runs, and any
+\omterm{def:g12:classes-and-objects:class}{attribute} it would have set is missing from the object.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:9}
+\smallskip\noindent\hspace*{2em}\code{def previous_day(self):}
+
+\noindent\hspace*{4em}\code{year, month, day = self._ymd}
+
+\noindent\hspace*{4em}\code{if day > 1:}
+
+\noindent\hspace*{6em}\code{return Date(year, month, day - 1)}
+
+\noindent\hspace*{4em}\code{if month > 1:}
+
+\noindent\hspace*{6em}\code{return Date(year, month - 1, days_in_month(year, month - 1))}
+
+\noindent\hspace*{4em}\code{return Date(year - 1, 12, 31)}
+
+\smallskip\noindent 1 March 2028 gives \code{2028-02-29}, a leap year; 1 January 2027 gives \code{2026-12-31}. The
+tests compare the \omterm{def:g12:classes-and-objects:class}{method} with the calendar of the \omterm{def:g11:modules-and-interfaces:library}{standard library} on $1200$ days in a row.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:10}
+Every fraction is made by the \omterm{def:g12:classes-and-objects:constructor}{constructor}, since \code{+} and \code{*} return \code{Fraction(...)}. So it is enough
+to check the \omterm{def:g12:classes-and-objects:constructor}{constructor}, for any numerator $a$ and denominator $b \ne 0$. Let $g = \gcd(a, b)$, positive since
+$b \ne 0$. The divisions $a / g$ and $b / g$ are exact, and two numbers divided by their greatest common divisor have
+no common divisor other than $1$: a common divisor $d > 1$ of $a/g$ and $b/g$ would make $dg$ a common divisor of
+$a$ and $b$ larger than $g$. If $b < 0$, both are divided by $-g$ instead: the signs change, the common divisors do
+not, and the denominator $b / (-g)$ is positive. For \code{+} and \code{*}, the denominator passed is the product of
+two positive denominators, never $0$, so the \omterm{def:g12:classes-and-objects:constructor}{constructor} accepts it and the argument applies.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:11}
+\smallskip\noindent\hspace*{2em}\texttt{total = sum(map(lambda x: x * x, filter(lambda x: x \% 2 == 0, t)))}
+
+\smallskip\noindent or, with a \omterm{def:g10:tuples-sets-comprehensions:comprehension}{comprehension}, \texttt{sum(x * x for x in t if x \% 2 == 0)}. For
+\code{t = range(7)}: $0 + 4 + 16 + 36 = 56$.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:12}
+\smallskip\noindent\hspace*{2em}\code{class Stack:}
+
+\noindent\hspace*{4em}\code{def __init__(self):}
+
+\noindent\hspace*{6em}\code{self._items = []}
+
+\noindent\hspace*{4em}\code{def push(self, x):}
+
+\noindent\hspace*{6em}\code{self._items.append(x)}
+
+\noindent\hspace*{4em}\code{def pop(self):}
+
+\noindent\hspace*{6em}\code{if not self._items:}
+
+\noindent\hspace*{8em}\code{raise IndexError("pop from an empty stack")}
+
+\noindent\hspace*{6em}\code{return self._items.pop()}
+
+\noindent\hspace*{4em}\code{def peek(self):}
+
+\noindent\hspace*{6em}\code{if not self._items:}
+
+\noindent\hspace*{8em}\code{raise IndexError("peek at an empty stack")}
+
+\noindent\hspace*{6em}\code{return self._items[-1]}
+
+\noindent\hspace*{4em}\code{def is_empty(self):}
+
+\noindent\hspace*{6em}\code{return self._items == []}
+
+\noindent\hspace*{4em}\code{def __len__(self):}
+
+\noindent\hspace*{6em}\code{return len(self._items)}
+
+\smallskip\noindent Tests: after pushing $1$ then $2$, \code{pop()} returns $2$, then \code{peek()} returns $1$ and
+\code{len} is $1$; a new stack is empty, and \code{pop()} on it raises \code{IndexError} (checked with
+\code{assertRaises}). The next chapter builds stacks without Python's list.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:13}
+Nine: \code{Fraction(0)}, then at each of the four turns \code{Fraction(1, k)} and the result of \code{+}, made by
+\code{__add__}. At the end only one is reachable, the one named \code{total}, $25/12$; the eight others are no longer
+named by anything, and Python frees their memory.
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:14}
+\code{items = []} in the body of the \omterm{def:g12:classes-and-objects:class}{class} makes one list, an \omterm{def:g12:classes-and-objects:class}{attribute} of the \omterm{def:g12:classes-and-objects:class}{class} itself. \code{self.items} looks
+for an \omterm{def:g12:classes-and-objects:class}{attribute} of the object, finds none, and finds the \omterm{def:g12:classes-and-objects:class}{class}'s: every basket appends to the same list. The repair
+gives each object its own list in the \omterm{def:g12:classes-and-objects:constructor}{constructor}:
+
+\smallskip\noindent\hspace*{2em}\code{def __init__(self):}
+
+\noindent\hspace*{4em}\code{self.items = []}
+\end{solution}
+
+\begin{solution}{exo:g12:classes-and-objects:15}
+\smallskip\noindent\hspace*{2em}\code{class Polynomial:}
+
+\noindent\hspace*{4em}\code{def __init__(self, coefficients):}
+
+\noindent\hspace*{6em}\code{c = list(coefficients)}
+
+\noindent\hspace*{6em}\code{while len(c) > 1 and c[-1] == 0:}
+
+\noindent\hspace*{8em}\code{c.pop()}
+
+\noindent\hspace*{6em}\code{self.c = c}
+
+\noindent\hspace*{4em}\code{def __add__(self, other):}
+
+\noindent\hspace*{6em}\code{n = max(len(self.c), len(other.c))}
+
+\noindent\hspace*{6em}\code{a = self.c + [0] * (n - len(self.c))}
+
+\noindent\hspace*{6em}\code{b = other.c + [0] * (n - len(other.c))}
+
+\noindent\hspace*{6em}\code{return Polynomial([x + y for x, y in zip(a, b)])}
+
+\noindent\hspace*{4em}\code{def __mul__(self, other):}
+
+\noindent\hspace*{6em}\code{out = [0] * (len(self.c) + len(other.c) - 1)}
+
+\noindent\hspace*{6em}\code{for i, x in enumerate(self.c):}
+
+\noindent\hspace*{8em}\code{for j, y in enumerate(other.c):}
+
+\noindent\hspace*{10em}\code{out[i + j] += x * y}
+
+\noindent\hspace*{6em}\code{return Polynomial(out)}
+
+\noindent\hspace*{4em}\code{def __call__(self, x):}
+
+\noindent\hspace*{6em}\code{result = 0}
+
+\noindent\hspace*{6em}\code{for a in reversed(self.c):}
+
+\noindent\hspace*{8em}\code{result = result * x + a}
+
+\noindent\hspace*{6em}\code{return result}
+
+\smallskip\noindent The \omterm{def:g12:classes-and-objects:constructor}{constructor} drops the zero coefficients at the end, so that $(1 + x)^2 - x^2$ is stored as
+\code{[1, 2]}. The term $x^i$ times $x^j$ goes to $x^{i+j}$. \code{__call__} evaluates from the highest coefficient
+down, one multiplication per coefficient: $(1 + x)^2$ at $2$ gives $9$.
+\end{solution}
+
+\begin{solution}{pb:g12:classes-and-objects:1}
+\textbf{1.} \code{_num} and \code{_den}. The underscore says they are internal: users go through the \omterm{def:g12:classes-and-objects:class}{methods}, which
+keep the invariant.
+
+\textbf{2.} $\gcd(10, -4) = 2$; the denominator is negative, so both are divided by $-2$: \code{_num} is $-5$ and
+\code{_den} is $2$.
+
+\textbf{3.} \code{__add__}, with \code{self} the fraction named \code{exact} and \code{other} the new
+\code{Fraction(1, n)}.
+
+\textbf{4.} The \omterm{def:g12:classes-and-objects:constructor}{constructor} stored $2/4$ as $1/2$; \code{__eq__} then compares $1$ with $1$ and $2$ with $2$.
+
+\textbf{5.} The \omterm{def:g12:classes-and-objects:class}{methods} give read access only, so that no user can break the invariant by writing; and the \omterm{def:g12:classes-and-objects:class}{class}
+stays free to store its data otherwise without changing its users.
+
+\textbf{6.} The denominator is positive, and the numerator and denominator have no common divisor other than $1$.
+
+\textbf{7.} Exercise \ref{exo:g12:classes-and-objects:10}.
+
+\textbf{8.} Let $a/b$ and $c/d$ be reduced, with $b, d > 0$. If they are equal numbers, $ad = bc$. Then $b$ divides
+$ad$ and has no common divisor with $a$, so $b$ divides $d$; in the same way $d$ divides $b$. Both being positive,
+$b = d$, and then $a = c$. Equal numbers have equal \omterm{def:g12:classes-and-objects:class}{attributes}, so comparing \omterm{def:g12:classes-and-objects:class}{attributes} is right; without the
+invariant, $1/2$ and $2/4$ would be found different.
+
+\textbf{9.} That it does not protect them: the underscore is a convention, and any program can write
+\code{half._num = 2}. The invariant breaks, and \code{__eq__}, which relies on it, answers wrongly that $2/2$ is not
+$1$.
+
+\textbf{10.} $\frac{12}{12} + \frac{6}{12} + \frac{4}{12} + \frac{3}{12} = \frac{25}{12}$, as printed.
+
+\textbf{11.} $H_9 = 7129/2520$ and $H_{10} = 7381/2520$; $\frac{1}{10} = \frac{252}{2520}$, and $7129 + 252 = 7381$.
+
+\textbf{12.} $434$ digits. A $64$-bit integer holds at most $2^{64} - 1$, which has $20$ digits; Python's integers grow
+as needed (chapter \ref{ch:g10:machine-integers}).
+
+\textbf{13.} A \omterm{def:g10:floating-point:float}{floating-point number} is a whole number of at most $53$ bits times a power of $2$
+(chapter \ref{ch:g10:floating-point}): its denominator is a power of $2$. $11/6$ has the factor $3$ in its reduced
+denominator, so its binary writing never ends, and every \omterm{def:g10:floating-point:float}{floating-point number} differs from it.
+
+\textbf{14.} Each $k$ from $1$ to $n$ divides $\operatorname{lcm}(1, \dots, n)$, so $\frac1k$ is the fraction with
+that denominator and numerator $\operatorname{lcm}(1, \dots, n) / k$, a whole number.
+
+\textbf{15.} For $n = 6$, $7$ and $8$, by a factor $3$; for $n = 20$, by a factor $15$. For the other printed values
+the reduced denominator is the common multiple itself.
+
+\textbf{16.} $\operatorname{lcm}(1, \dots, 6) = 60$, and $H_6 = \frac{60 + 30 + 20 + 15 + 12 + 10}{60} =
+\frac{147}{60}$. $147 = 3 \times 49$ and $60 = 3 \times 20$: $H_6 = 49/20$.
+
+\textbf{17.} $0$ at $n = 10$ and $n = 100$: the floating-point sum is the closest \omterm{def:g10:floating-point:float}{floating-point number} to the exact
+value. At $n = 1000$, $-1.8 \times 10^{-15}$.
+
+\textbf{18.} Each addition rounds its result to the nearest \omterm{def:g10:floating-point:float}{floating-point number}, and $1/k$ is itself rounded; the
+small errors of a thousand roundings add up instead of cancelling out.
+
+\textbf{19.} The value is about $7.49$, so the error is about $2.4 \times 10^{-16}$ of it: two units of the last bit
+for numbers between $4$ and $8$, whose spacing is $2^{-50} \approx 8.9 \times 10^{-16}$. Fifteen significant digits
+are right.
+
+\textbf{20.} \textbf{$H_{10} = 7381/2520$ exactly; summed in floating point up to $n = 1000$, the harmonic sum is off
+by $1.8 \times 10^{-15}$, about $2 \times 10^{-16}$ of its value $7.485\,470\,860\,550\,345$.}
+\end{solution}

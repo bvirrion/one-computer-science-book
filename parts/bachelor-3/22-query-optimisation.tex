@@ -1,0 +1,273 @@
+\chapter{Query Processing and Optimisation}\label{ch:b3:query-optimisation}
+
+An SQL query says what rows are wanted, never how to find them. Between the two stands the optimiser, which turns the query into a tree of algorithms and, among the many equivalent trees, picks one it expects to be cheap. This chapter builds both halves on the page files of \cref{ch:b3:database-storage}: an executor whose operators count every page they read and write, the five ways to join two tables with their exact costs, the algebraic rewrites that keep a query's meaning while shrinking its intermediate results, the statistics that estimate how many rows each step will produce, and the dynamic programming that searches the join orders. The library's report of late loans is planned by hand, by the program and by SQLite, and the three are compared.
+
+\begin{recall}
+Relational algebra builds queries from selection $\sigma$, projection $\pi$, renaming, product and join $\bowtie$, each taking relations to a relation; an equi-join $R \bowtie_{a = b} S$ keeps the pairs of tuples with $r.a = s.b$ (Year~1 volume). Comparison sorting needs $\Omega(n \log n)$ comparisons; a hash table finds a key in expected constant time; dynamic programming solves a problem from the solutions of its subproblems, each computed once (Year~1 volume). A \omterm{def:b3:database-storage:bptree}{B+ tree} of height $h$ finds a key in $h$ page reads (\cref{thm:b3:database-storage:height}).
+\end{recall}
+
+\section{Operators, sorting and joins}\label{sec:b3:query-optimisation:operators}
+
+\begin{definition}[Query plan, physical operator, access path]\label{def:b3:query-optimisation:plan}
+A \emph{query plan}\index{query plan} is a tree whose leaves read stored relations and whose inner nodes are \emph{physical operators}\index{physical operator}: algorithms implementing a relational operator, such as a \omterm{def:b3:query-optimisation:joins}{block nested-loop join} or an external sort, each with a cost in page reads and writes. An \emph{access path}\index{access path} is a way to read the tuples of one stored relation: a full scan, or a search through an index.
+\end{definition}
+
+The executor of this chapter follows the iterator model: each operator is a Python generator that pulls tuples from its children one at a time, so a plan runs without storing what passes between pipelined operators. It is the model of Goetz Graefe's Volcano system of 1994, and his survey of 1993 describes it with the other techniques of query evaluation. % ledger: b3:volcano-1994, b3:graefe-1993
+A relation is a list of pages of ten tuples, and every page read or written goes through a \code{Disk} that counts it.
+
+\omcode{code/bachelor-3/22-query-optimisation/listings/exec.py}{29}{47}{Scan, selection and projection as generators; \code{materialise} writes a stream out as pages.}\label{lst:b3:query-optimisation:exec}
+
+A relation larger than memory cannot be sorted by \code{sorted}. With $B$ pages of memory, it is sorted in passes over the file.
+
+\begin{definition}[External merge sort]\label{def:b3:query-optimisation:sort}
+\emph{External merge sort}\index{external merge sort} sorts a file of $N$ pages with $B$ buffer pages. Pass 0 reads $B$ pages at a time, sorts them in memory and writes them as a sorted \emph{run}, giving $\lceil N/B \rceil$ runs. Each later pass merges groups of $B - 1$ runs into one, reading each through one buffer page and writing through the last, until one run is left.
+\end{definition}
+
+\begin{theorem}[Cost of external merge sort]\label{thm:b3:query-optimisation:sort}
+\omterm{def:b3:query-optimisation:sort}{External merge sort} of $N > B$ pages makes $1 + \lceil \log_{B-1} \lceil N/B \rceil \rceil$ passes and $2N(1 + \lceil \log_{B-1} \lceil N/B \rceil \rceil)$ page reads and writes.
+\end{theorem}
+
+\begin{proof}
+Pass 0 leaves $r_0 = \lceil N/B \rceil$ runs. A merge pass turns $r$ runs into $\lceil r/(B-1) \rceil$, so after $k$ merge passes there are $\lceil r_0 / (B-1)^k \rceil$ runs (ceilings compose: $\lceil \lceil x \rceil / m \rceil = \lceil x/m \rceil$ for an integer $m$). One run is left exactly when $(B-1)^k \ge r_0$, so the least such $k$ is $\lceil \log_{B-1} r_0 \rceil$. Every pass reads every page once and writes every page once: $2N$ per pass.
+\end{proof}
+
+\omcode{code/bachelor-3/22-query-optimisation/listings/sort_ext.py}{12}{28}{\omterm{def:b3:query-optimisation:sort}{External merge sort}: runs of $B$ pages, then $(B-1)$-way merges with \code{heapq.merge}.}\label{lst:b3:query-optimisation:sort}
+
+\omoutput{code/bachelor-3/22-query-optimisation/outputs/sort_ext.txt}{Counted I/O equals the formula for every size. With 100 buffer pages, 10,000 pages sort in three passes; with 3, in thirteen.}\label{out:b3:query-optimisation:sort}
+
+The logarithm's base is what memory buys: with $B = 100$, two passes sort any file of up to $100 \times 99 = 9{,}900$ pages, and three passes almost a million. Most real sorts take two passes.
+
+\begin{definition}[Nested-loop, block nested-loop, index nested-loop, sort--merge and hash joins]\label{def:b3:query-optimisation:joins}
+Let $R$ have $M$ pages and $|R|$ tuples, $S$ have $N$ pages, and $B$ buffer pages be free. The \emph{nested-loop join}\index{nested-loop join} scans $S$ once for each tuple of $R$: $M + |R| N$ page reads. The \emph{block nested-loop join}\index{block nested-loop join} loads $B - 2$ pages of $R$ at a time and scans $S$ once per block: $M + \lceil M/(B-2) \rceil N$. The \emph{index nested-loop join}\index{index nested-loop join} searches an index on $S$'s join column for each tuple of $R$: $M + |R|(h + 1)$ for an index of height $h$ and one matching tuple. The \emph{sort--merge join}\index{sort--merge join} sorts both inputs on the join column and merges them: the two sorts plus $M + N$. The \emph{hash join}\index{hash join} builds a hash table on the smaller input and probes it with the other: $M + N$ if the smaller fits in $B - 2$ pages; otherwise the Grace variant first partitions both inputs into $B - 1$ buckets on disk by a hash of the join column and joins bucket by bucket: $3(M + N)$.
+\end{definition}
+
+\omcode{code/bachelor-3/22-query-optimisation/listings/joins.py}{18}{33}{The two nested loops: once per tuple, or once per block of $B - 2$ pages.}\label{lst:b3:query-optimisation:nested}
+
+\omcode{code/bachelor-3/22-query-optimisation/listings/joins.py}{59}{94}{Sort--merge and \omterm{def:b3:query-optimisation:joins}{hash joins}. The merge advances in $S$ only, since $S$'s column is a key.}\label{lst:b3:query-optimisation:merge-hash}
+
+\omoutput{code/bachelor-3/22-query-optimisation/outputs/join_demo.txt}{The five joins of 10,000 loans with 1,000 books, 12 buffer pages. Each counted cost equals its formula, except the Grace \omterm{def:b3:query-optimisation:joins}{hash join}, whose 22 bucket files end in part-filled pages.}\label{out:b3:query-optimisation:joins}
+
+The tuple-at-a-time nested loop costs a million page reads where the \omterm{def:b3:query-optimisation:joins}{hash join} costs 3,328: three hundred times more for the same 10,000 rows. The block nested loop divides it by the tuples per page and the block size. The index nested loop pays $h + 1 = 3$ reads per loan, which loses here because every loan matches; it wins when few tuples of $R$ take part, after a selective condition. The \omterm{def:b3:query-optimisation:joins}{sort--merge join} pays for two sorts, but leaves its result sorted on the join column, which a later operator may use.
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[omrecord, width=0.72\linewidth, height=6cm, xlabel={$M$, pages of $R$}, ylabel={page I/O}, ymode=log, xmin=100, xmax=1000, legend pos=outer north east, legend cell align=left, legend style={font=\small}]
+    \addplot[omThm, thick, mark=triangle*] table[x=M, y=inl] {code/bachelor-3/22-query-optimisation/figures/joins.dat};
+    \addlegendentry{index nested loop}
+    \addplot[omDef, thick, mark=square*] table[x=M, y=bnl] {code/bachelor-3/22-query-optimisation/figures/joins.dat};
+    \addlegendentry{block nested loop}
+    \addplot[omThm, thick, dashed, mark=o] table[x=M, y=sm] {code/bachelor-3/22-query-optimisation/figures/joins.dat};
+    \addlegendentry{sort--merge}
+    \addplot[omDef, thick, dashed, mark=*] table[x=M, y=hash] {code/bachelor-3/22-query-optimisation/figures/joins.dat};
+    \addlegendentry{hash (Grace)}
+  \end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Counted page I/O of four joins as $R$ grows from 100 to 1,000 pages, $S$ fixed at 100 pages, 12 buffer pages. The tuple nested loop is off the chart: 100,100 already at $M = 100$.}
+\end{omfigure}
+
+\section{Algebraic rewriting}\label{sec:b3:query-optimisation:rewriting}
+
+The same query has many algebra trees. The laws of the Year~1 volume say which trees are equal: a conjunction of conditions is a cascade of selections, $\sigma_{c_1 \wedge c_2}(E) = \sigma_{c_1}(\sigma_{c_2}(E))$; joins are commutative and associative, up to the order of columns; and a selection can move through a join.
+
+\begin{theorem}[Pushing a selection through a join]\label{thm:b3:query-optimisation:push}
+If the condition $c$ uses only columns of $E_1$, then $\sigma_c(E_1 \bowtie_\theta E_2) = \sigma_c(E_1) \bowtie_\theta E_2$.
+\end{theorem}
+
+\begin{proof}
+A tuple of the left side is a pair $(t_1, t_2)$ with $t_1 \in E_1$, $t_2 \in E_2$, $\theta(t_1, t_2)$ true and $c(t_1, t_2)$ true. Since $c$ reads only columns of $E_1$, $c(t_1, t_2) = c(t_1)$, so the conditions are $t_1 \in E_1$ and $c(t_1)$, that is $t_1 \in \sigma_c(E_1)$, together with $t_2 \in E_2$ and $\theta(t_1, t_2)$: exactly the tuples of the right side.
+\end{proof}
+
+The rewrite never changes the result and almost always shrinks it early: a selection pushed down filters before the join instead of after. \code{rewrite.py} pushes every selection as far down as its columns allow and runs both trees on the town's tables.
+
+\omcode{code/bachelor-3/22-query-optimisation/listings/rewrite.py}{25}{39}{Push a selection into the side of a join that holds all the columns it reads.}\label{lst:b3:query-optimisation:push}
+
+\omoutput{code/bachelor-3/22-query-optimisation/outputs/rewrite.txt}{Late mystery loans, as written and rewritten: the same 11 rows, with 1,331 intermediate rows reduced to 162.}\label{out:b3:query-optimisation:rewrite}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, level distance=0.95cm, every node/.style={inner sep=2pt}, sibling distance=1.9cm]
+  \node at (0, 0) {$\pi$}
+    child {node {$\sigma_{\mathit{myst}}$}
+      child {node {$\sigma_{\mathit{late}}$}
+        child {node {$\bowtie$}
+          child {node {$\bowtie$}
+            child {node {$\bowtie$}
+              child {node {loans}}
+              child {node {books}}}
+            child {node {members}}}
+          child {node {people}}}}};
+  \draw[->, thick, omDef] (2.6, -2.6) -- node[above, font=\scriptsize] {push} (3.8, -2.6);
+  \begin{scope}[xshift=7.2cm, sibling distance=2.3cm]
+  \node at (0, 0) {$\pi$}
+    child {node {$\bowtie$}
+      child {node {$\bowtie$}
+        child {node {$\bowtie$}
+          child {node {$\sigma_{\mathit{late}}$} child {node {loans}}}
+          child {node {$\sigma_{\mathit{myst}}$} child {node {books}}}}
+        child {node {members}}}
+      child {node {people}}};
+  \end{scope}
+\end{tikzpicture}
+\par\smallskip{\small The two trees of \cref{out:b3:query-optimisation:rewrite}. On the left, every join carries all 400 loans and the conditions remove 389 of them at the end; on the right, the first join already has only 11 rows.}
+\end{omfigure}
+
+Projections can be pushed down in the same way, provided each keeps the columns that later joins and selections need. A plan built from these rules alone, selections and projections as low as possible, is already good; what remains is to choose the order of the joins and an algorithm for each, and for that the optimiser needs numbers.
+
+\section{Estimating sizes}\label{sec:b3:query-optimisation:estimates}
+
+\begin{definition}[Selectivity, cardinality estimate, equi-depth histogram]\label{def:b3:query-optimisation:estimates}
+The \emph{selectivity}\index{selectivity} of a condition on a relation is the fraction of its tuples that satisfy it. A \emph{cardinality estimate}\index{cardinality estimate} is the optimiser's prediction of the number of tuples an operator will output, computed from stored statistics. An \emph{equi-width histogram} of a column cuts its range into buckets of equal width and stores each bucket's count; an \emph{equi-depth histogram}\index{equi-depth histogram} cuts it at quantiles, so that every bucket holds about the same number of tuples. Within a bucket, values are assumed evenly spread, and each distinct value equally frequent.
+\end{definition}
+
+Without statistics, an optimiser assumes uniform values: an equality on a column with $V$ distinct values selects $1/V$ of the tuples. With histograms it does better where values are skewed. The town's daily rain is very skewed: 447 of 731 days are dry.
+
+\omcode{code/bachelor-3/22-query-optimisation/listings/histogram.py}{17}{37}{An \omterm{def:b3:query-optimisation:estimates}{equi-depth histogram}, and the estimate any histogram gives for a range or an equality.}\label{lst:b3:query-optimisation:histogram}
+
+\omoutput{code/bachelor-3/22-query-optimisation/outputs/histogram.txt}{Two histograms of 8 buckets on the same 731 values, three conditions, and two correlated columns of the loans.}\label{out:b3:query-optimisation:histogram}
+
+The equi-width histogram puts 568 days in its first bucket and spreads them over 2.5\,mm: it estimates 22 dry days instead of 447, and 358 days between 1 and 3\,mm instead of 85. The \omterm{def:b3:query-optimisation:estimates}{equi-depth histogram} gives four buckets to the dry days and is close on both; it is worse only in the long tail, where its last bucket spreads 92 days from 4.6 to 20.1\,mm. Each kind of histogram is good where it puts many buckets.
+
+Conditions on several columns are combined by assuming independence: the \omterm{def:b3:query-optimisation:estimates}{selectivity} of $c_1 \wedge c_2$ is the product of theirs. For two columns of the loans this fails badly: a loan is due 21 days after it goes out, so a loan due before March went out before March. The product predicts 6.4 such loans; there are 40. For a join on columns with $V(R, a)$ and $V(S, b)$ distinct values, the standard estimate assumes every value of the column with fewer values appears in the other:
+\[ |R \bowtie_{a = b} S| \approx \frac{|R|\,|S|}{\max(V(R, a), V(S, b))}. \]
+For a join on a foreign key it is exact; for others the error can be large, and errors multiply along a plan, since each join's estimate is built on the estimates below it. Yannis Ioannidis and Stavros Christodoulakis studied this propagation of errors through joins in 1991. % ledger: b3:ioannidis-1991
+
+\section{Searching for a plan}\label{sec:b3:query-optimisation:search}
+
+\begin{definition}[Left-deep plan, interesting order, cost-based optimiser]\label{def:b3:query-optimisation:search}
+A \emph{left-deep plan}\index{left-deep plan} joins one stored relation at a time: every join has a stored relation as its right input. A \emph{cost-based optimiser}\index{cost-based optimiser} enumerates plans, estimates the cost of each from statistics, and keeps the cheapest. An \emph{interesting order}\index{interesting order} is a sort order of an intermediate result that a later operator can use, such as the order on a join column needed by a later \omterm{def:b3:query-optimisation:joins}{sort--merge join}.
+\end{definition}
+
+For $n$ relations there are $n!$ left-deep orders and $(2n - 2)!/(n - 1)!$ join trees of any shape (\cref{exo:b3:query-optimisation:8}): 720 and 30,240 for six relations. Patricia Selinger and her colleagues described in 1979 the dynamic programming that follows. % ledger: b3:selinger-1979
+The cheapest \omterm{def:b3:query-optimisation:search}{left-deep plan} for a set $S$ of relations ends by joining some $r \in S$ to a plan for $S \setminus \{r\}$, and that plan may as well be the cheapest one for $S \setminus \{r\}$: so the best plans are computed for sets of increasing size, each from the best plans of the sets one smaller. Plans that would join two relations with no condition between them, a Cartesian product, are skipped.
+
+\omcode{code/bachelor-3/22-query-optimisation/listings/selinger.py}{17}{46}{Dynamic programming over sets of relations; each join is costed as a \omterm{def:b3:query-optimisation:joins}{hash join} and as a \omterm{def:b3:query-optimisation:joins}{sort--merge join}.}\label{lst:b3:query-optimisation:selinger}
+
+\omoutput{code/bachelor-3/22-query-optimisation/outputs/selinger.txt}{Chain and star queries on generated relations: a few dozen plans costed instead of $n!$ orders.}\label{out:b3:query-optimisation:selinger}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, x=1cm, y=1.1cm, on/.style={draw, fill=omDef!12, inner sep=2pt, rounded corners=2pt}, off/.style={draw=black!35, text=black!45, inner sep=2pt, rounded corners=2pt}]
+  \foreach \s/\x in {1/1.5, 2/3.5, 3/5.5, 4/7.5} { \node[on] (n\s) at (\x, 0) {\s}; }
+  \node[on] (n12) at (2.5, 1.2) {12}; \node[on] (n23) at (4.5, 1.2) {23}; \node[on] (n34) at (6.5, 1.2) {34};
+  \node[on] (n123) at (3.5, 2.4) {123}; \node[on] (n234) at (5.5, 2.4) {234};
+  \node[on] (n1234) at (4.5, 3.6) {1234};
+  \foreach \a/\b in {1/12, 2/12, 2/23, 3/23, 3/34, 4/34, 12/123, 23/123, 23/234, 34/234, 123/1234, 234/1234} { \draw[omDef] (n\a) -- (n\b); }
+  \draw[black!30, dashed] (8.4, -0.3) -- (8.4, 3.9);
+  \node[off] at (9.2, 1.2) {13}; \node[off] at (10.1, 1.2) {14}; \node[off] at (11.0, 1.2) {24};
+  \node[off] at (9.6, 2.4) {124}; \node[off] at (10.7, 2.4) {134};
+  \node[font=\scriptsize, black!55] at (10.1, 3.6) {skipped};
+\end{tikzpicture}
+\par\smallskip{\small The sets of relations of a chain query $R_1 - R_2 - R_3 - R_4$. The dynamic programming fills the shaded sets from the bottom up; the grey ones, on the right, would need a Cartesian product and are skipped. Each line is a join that is costed.}
+\end{omfigure}
+
+The program keeps one plan per set. That is where \omterm{def:b3:query-optimisation:search}{interesting orders} come in: a plan for $\{R_1, R_2\}$ that costs a little more but leaves its result sorted on the next join column can make the whole plan cheaper. An optimiser can keep, for each set, the cheapest plan for every \omterm{def:b3:query-optimisation:search}{interesting order} as well as the cheapest overall; \cref{exo:b3:query-optimisation:12} adds this and finds a query where it pays. Optimisers for many relations, where even the subsets are too many, fall back on greedy heuristics: join next the relation that gives the smallest intermediate result.
+
+\section{Reading SQLite's plans}\label{sec:b3:query-optimisation:sqlite}
+
+SQLite implements every join as nested scans, and \code{EXPLAIN QUERY PLAN} prints one line per loop, outermost first. % ledger: b3:sqlite-nested
+Its optimiser chooses the order of the loops and the \omterm{def:b3:query-optimisation:plan}{access path} of each: a scan, a search by rowid, or a search through an index. \code{ANALYZE} gathers statistics on the tables and indexes into internal tables that the planner reads; it is never required, but it can change the plans. % ledger: b3:sqlite-analyze
+The table \code{sqlite_stat1} has one row per index: the approximate number of rows, then the average number of rows sharing a value of the first column; a row with no index holds the table's row count. % ledger: b3:sqlite-stat1
+
+\omoutput[1-31]{code/bachelor-3/22-query-optimisation/outputs/plans.txt}{The late-loans report and a count of loans per person on the town's library: every join is a loop, and each inner loop searches by rowid.}\label{out:b3:query-optimisation:plans}
+
+\omoutput[33-77]{code/bachelor-3/22-query-optimisation/outputs/plans.txt}{The same count after an index on \code{loans.member_id}, then after \code{ANALYZE}: with the statistics, the outer loop moves to the 60 members, each searching about 7 loans in the index.}\label{out:b3:query-optimisation:analyze}
+
+Without statistics, SQLite scans the loans and looks up each loan's member and person by rowid: the inner loops are \omterm{def:b3:query-optimisation:joins}{index nested-loop joins} on primary keys. The index on \code{member_id} first only changes the scan of the loans into a scan of the smaller index, which covers the query. Once \code{ANALYZE} has recorded that the index holds 400 rows, about 7 per member, the planner turns the loops round: 60 members on the outside, each with an index search. Statistics change the plan, not the result.
+
+\section{Exercises}\label{sec:b3:query-optimisation:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:query-optimisation:1}
+$R$ has 2,000 pages and $S$ 300 pages. With 52 buffer pages, what does a \omterm{def:b3:query-optimisation:joins}{block nested-loop join} cost with $R$ outside, and with $S$ outside? Which should be the outer relation in general?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:query-optimisation:2}
+How many passes and page I/O does \omterm{def:b3:query-optimisation:sort}{external merge sort} need for 5,000 pages with 11 buffer pages, and with 101? What is the largest file sorted in two passes with 11 pages?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:query-optimisation:3}
+From the histograms of \cref{out:b3:query-optimisation:histogram}, compute by hand the two estimates of the number of dry days. Which assumption of \cref{def:b3:query-optimisation:estimates} makes the equi-width estimate so low?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:query-optimisation:4}
+\code{exercises/ex4_plan.sql} lists the mystery books with their loans, before and after an index on \code{loans.book_id}. Predict SQLite's two plans, then run it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:query-optimisation:5}
+\code{exercises/ex5_hash.py} always builds its hash table on its first input. Its results are correct. Join a relation of 20 pages with one of 5, with 8 buffer pages, and count its I/O against a join that builds on the smaller input. Explain the difference, and fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:query-optimisation:6}
+Write \code{sort_merge_dup}, a \omterm{def:b3:query-optimisation:joins}{sort--merge join} for join columns with duplicates on both sides, every tuple of a group of equal keys in $R$ meeting every tuple of the matching group in $S$. It is tested against the nested loop on random relations.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:query-optimisation:7}
+Prove that a projection can be pushed through a join, $\pi_L(E_1 \bowtie_\theta E_2) = \pi_L(\pi_{L_1}(E_1) \bowtie_\theta \pi_{L_2}(E_2))$, where $L_i$ is the set of columns of $E_i$ that occur in $L$ or in $\theta$. Why must $L_i$ contain the columns of $\theta$?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:query-optimisation:8}
+Show that there are $n!$ left-deep join orders of $n$ relations and $(2n - 2)!/(n - 1)!$ join trees of any shape, the two inputs of each join being ordered. How many left-deep orders avoid Cartesian products in a chain query of $n$ relations?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:query-optimisation:9}
+Estimate the number of pairs of loans made by the same member, a join of the loans with themselves on \code{member_id}, from the 400 loans and 60 members, then count it on the town's data. Prove that for a join of a relation with itself on one column, the estimate of \cref{sec:b3:query-optimisation:estimates} is never too high.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:query-optimisation:10}
+Prove that the Grace \omterm{def:b3:query-optimisation:joins}{hash join} reads and writes $3(M + N)$ pages when every bucket of the smaller input fits in $B - 2$ pages, and that with an even hash this holds when $\min(M, N) \le (B-1)(B-2)$. What does one more round of partitioning cost when it does not?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:query-optimisation:11}
+In \code{exercises/ex11_twocol.py}, compare for four pairs of months the true number of loans out before one month and due before another with the estimate under independence, then build a two-column statistic that counts loans per (month out, month due) and estimate again. When is the two-column estimate exact, and what does it cost to store?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:query-optimisation:12}
+Extend \code{best_plan} to keep, for each set of relations, the cheapest plan for each order of its output. Find, for four relations of 50 tuples joined in a chain on one column, the plan it now chooses and the plan it chose before. Prove that the extended search finds the cheapest \omterm{def:b3:query-optimisation:search}{left-deep plan} under the cost model.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:query-optimisation:problem}
+
+\begin{problem}[{Weekend problem --- The overdue books report}]\label{pb:b3:query-optimisation:1}
+Every week the library prints its late loans, with the title of each book and the name of the borrower: a join of four tables and one condition, \emph{late}, true when a book came back after its due date or is still out. With ten tuples to a page the tables have 40, 8, 6 and 12 pages, and 5 buffer pages are free. This problem plans the report three ways, costs the plans by formula, runs them, and compares the result with Selinger's choice and SQLite's.
+
+\omcode{code/bachelor-3/22-query-optimisation/listings/overdue.py}{21}{43}{Three physical plans; every intermediate result is written out and read back.}\label{lst:b3:query-optimisation:overdue}
+
+\omoutput{code/bachelor-3/22-query-optimisation/outputs/overdue.txt}{The three plans counted, and the plan chosen by \code{selinger.py} with the cost in its own model.}\label{out:b3:query-optimisation:overdue}
+
+\medskip\noindent\textbf{Part I --- The query.}
+\begin{enumerate}
+  \item Write the report in relational algebra, the selection last.
+  \item To which table can \emph{late} be pushed, and by which theorem?
+  \item Why can it not be pushed into the books, members or people?
+  \item Draw the query graph, one node per table and one edge per join condition. What shape is it?
+  \item How many left-deep orders do four relations have, and how many avoid a Cartesian product here?
+  \item Why does the projection on title, name and due date not go below the joins whole?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Costs by formula.}
+\begin{enumerate}[resume]
+  \item Plan A joins with block nested loops in the order of the query and selects last. Compute its reads and writes, every join result having 400 tuples.
+  \item Plan C selects first, writing 109 tuples, then joins by index nested loops on the three primary keys, whose indexes have height 1. Compute its reads and writes.
+  \item Plan B selects first, then joins people with members, the result with the late loans and that with the books, all by Grace \omterm{def:b3:query-optimisation:joins}{hash joins}. Compute its cost by formula, the intermediate results having 60 and 109 tuples.
+  \item Why is plan C, the plan with indexes, the most expensive here?
+  \item What would plan C cost if the three small tables and their indexes stayed in the \omterm{def:b3:database-storage:buffer}{buffer pool}?
+  \item Which plan would you choose for this database, and which if loans had a million rows and 1\,\% were late?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Measured.}
+\begin{enumerate}[resume]
+  \item Check plan A's counted reads and writes against question 7.
+  \item Check plan C's against question 8.
+  \item Plan B counts 244 page I/O against the formula of question 9. Where do the extra pages come from?
+  \item All three plans return the same 109 rows. Which theorems guarantee it?
+  \item How many page reads does plan A spend joining loans that are not late?
+  \item How would pipelining, passing tuples from join to join without writing them, change plans A and B?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The optimisers.}
+\begin{enumerate}[resume]
+  \item \code{selinger.py} chooses plan B's order. Why does its model cost of 162 differ from the 244 counted?
+  \item Why does it start from people and members rather than from the late loans?
+  \item Which of the three plans is SQLite's, in \cref{out:b3:query-optimisation:plans}?
+  \item Why is that plan a good choice for SQLite, though it is the worst in this chapter's count?
+  \item What did \code{ANALYZE} tell SQLite in \cref{out:b3:query-optimisation:analyze}, and why did the plan change?
+  \item Sum up: what does the chosen plan cost against the plan as written, and how many plans did the optimiser look at?
+\end{enumerate}
+\end{problem}

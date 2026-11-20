@@ -1,0 +1,513 @@
+% Book 4, Year 2, chapter 13 -- Processes and system calls.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 13.
+\chapter{Processes and System Calls}\label{ch:b2:processes-and-system-calls}
+
+At the end of this chapter, a shell of sixty lines of C runs this script:
+
+\omoutput[1-10]{code/bachelor-2/13-processes-and-system-calls/outputs/minish.txt}{The chapter's shell,
+\code{minish}, reading its first commands from a file.}\label{out:b2:processes-and-system-calls:hook}
+
+Typing \code{echo hello from a child process} in a shell looks like one action. It is at least two programs: the
+shell, which keeps running, and \code{echo}, which runs, prints and ends. Someone has to start \code{echo}, give it its
+words, wait for it, and learn whether it succeeded. Neither program can do this alone: starting a program, giving it
+memory, and writing to the screen are the work of the operating system's kernel. This chapter is about the narrow
+door through which programs ask the kernel for things, and about the few requests that create and run processes.
+Everything here is about Linux and other Unix-like systems; the tool \code{strace} used to watch the requests exists
+on Linux only.
+
+\begin{recall}
+Book 2: a program is a file of instructions, a \omterm{def:b2:processes-and-system-calls:process}{process} is a program being run, with its own memory and state; the
+operating system lets several processes share the processor. Book 3, ch.~8: a shell reads a command line, cuts it into
+words, and runs the program the first word names with the others as \emph{command-line arguments}; a command ends
+with an \emph{exit status}, 0 for success; \emph{environment variables} are name--value pairs passed to every
+program. Book 3: the memory of a C \omterm{def:b2:processes-and-system-calls:process}{process} holds code, global data, a heap and a stack.
+\cref{ch:b2:assembly-and-calling-convention}: \code{ecall} transfers control to the environment with a request
+number in \code{a7}.
+\end{recall}
+
+\section{The system call}\label{sec:b2:processes-and-system-calls:syscall}
+
+\begin{definition}[User mode, kernel mode]\label{def:b2:processes-and-system-calls:modes}
+A processor runs in \emph{user mode}\index{user mode} or in \emph{kernel mode}\index{kernel mode}. In user mode, the
+instructions that drive devices, change the memory map or stop the machine are refused, and only the memory the
+\omterm{def:b2:processes-and-system-calls:process}{process} was given is reachable. In kernel mode everything is allowed. The kernel of the operating system runs in
+kernel mode; every other program runs in user mode.
+\end{definition}
+
+\begin{definition}[System call]\label{def:b2:processes-and-system-calls:syscall}
+A \emph{system call}\index{system call} is a request from a user-mode program to the kernel. The program puts a
+request number and its arguments in registers and executes a special instruction (\code{ecall} on RISC-V,
+\code{syscall} on x86-64), which switches the processor to \omterm{def:b2:processes-and-system-calls:modes}{kernel mode} and jumps to a fixed entry point in the kernel;
+the kernel checks the request, does the work, puts the result in a register, and returns to \omterm{def:b2:processes-and-system-calls:modes}{user mode} just after the
+instruction.
+\end{definition}
+
+The C library wraps each \omterm{def:b2:processes-and-system-calls:syscall}{system call} in a function of the same name: \code{write(fd, buffer, n)} asks the kernel to
+write $n$ bytes to the open file numbered \code{fd}, and descriptor 1 is the standard output. \code{printf} is a
+different kind of function, a \emph{library call}: it formats its text in the program's own memory, keeps it in a
+buffer, and calls \code{write} later, when the buffer is full, at a newline on a terminal, or when the program ends.
+
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/hello_write.c}{5}{10}{One line through the
+library, one straight to the kernel}
+
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/strace_hello.txt}{The program, then its
+\code{write} and \code{exit_group} \omterm{def:b2:processes-and-system-calls:syscall}{system calls} as \code{strace} reports them.}\label{out:b2:processes-and-system-calls:strace}
+
+The ``library'' line comes second. On a terminal \code{printf} would have flushed it at the newline; here the output
+is not a terminal, so the line waits in the buffer until \code{main} returns, while the \code{write} went to the kernel at
+once. \code{strace} runs a program and prints each of its \omterm{def:b2:processes-and-system-calls:syscall}{system calls} with its arguments and result: two
+\code{write}s, of 14 and 15 bytes, and \code{exit_group}, the call that ends the \omterm{def:b2:processes-and-system-calls:process}{process}, which has no result since
+it never returns.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, box/.style={draw, rounded corners=2pt, align=center, fill=omDef!10,
+  minimum height=8mm, inner sep=3pt}, w/.style={-{Stealth[length=2mm]}}]
+\fill[omThm!8] (-0.6,-0.8) rectangle (11.4,-3.0);
+\node[anchor=west, font=\scriptsize\bfseries] at (-0.5,1.05) {user mode};
+\node[anchor=west, font=\scriptsize\bfseries] at (-0.5,-2.75) {kernel mode};
+\draw[dashed] (-0.6,-0.8) -- (11.4,-0.8);
+\node[box] (p) at (1.2,0.3) {\code{main}};
+\node[box] (lib) at (4.6,0.3) {C library\\ \code{write()}};
+\node[box] (ent) at (4.6,-1.9) {entry point:\\ check the request};
+\node[box] (fs) at (8.6,-1.9) {file layer:\\ descriptor 1};
+\node[box] (dev) at (8.6,0.3) {terminal, file\\ or pipe};
+\draw[w] (p) -- node[above, font=\scriptsize] {call} (lib);
+\draw[w] ([xshift=4mm]lib.south) -- node[pos=0.25, right, font=\scriptsize, align=left] {number in a\\ register,
+\code{syscall}} ([xshift=4mm]ent.north);
+\draw[w] (ent) -- (fs);
+\draw[w] (fs) -- node[pos=0.78, right, font=\scriptsize] {the bytes} (dev);
+\draw[w, omThm] ([xshift=-4mm]ent.north) -- node[pos=0.75, left, font=\scriptsize, align=right] {result in a register,\\
+back in user mode} ([xshift=-4mm]lib.south);
+\end{tikzpicture}
+\par\smallskip{\small The path of a \code{write}. The program calls an ordinary library function, which executes
+the system-call instruction; the processor switches to \omterm{def:b2:processes-and-system-calls:modes}{kernel mode} at a fixed entry point, where the kernel checks
+the descriptor and the buffer before doing the work. The result returns in a register, in \omterm{def:b2:processes-and-system-calls:modes}{user mode}.}
+\end{omfigure}
+
+The crossing is not free: the processor changes mode, saves and restores state, and the kernel checks every
+argument. A measurement compares a call of an ordinary function with the cheapest \omterm{def:b2:processes-and-system-calls:syscall}{system call}, \code{getppid}, which
+only reads a number the kernel keeps:
+
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/syscall_cost.c}{25}{32}{Two million calls of each
+kind}
+
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/syscall_cost.txt}{One run on the author's laptop,
+compiled with \code{-O2}.}\label{out:b2:processes-and-system-calls:cost}
+
+A \omterm{def:b2:processes-and-system-calls:syscall}{system call} costs here about two hundred function calls. That is the reason for \code{printf}'s buffer: a program
+that printed a thousand lines with one \code{write} each would make a thousand crossings instead of three
+(\cref{exo:b2:processes-and-system-calls:11}).
+
+\section{Creating a process: fork}\label{sec:b2:processes-and-system-calls:fork}
+
+\begin{definition}[Process, process identifier]\label{def:b2:processes-and-system-calls:process}
+A \emph{process}\index{process} is a running program together with the resources the kernel keeps for it: its memory,
+its registers when it is not running, its open files, its working directory, its environment. The kernel names each
+process by a \emph{process identifier}\index{process identifier} (PID), a positive integer unique among the
+processes alive at the same time.
+\end{definition}
+
+\begin{definition}[Parent, child, process tree]\label{def:b2:processes-and-system-calls:tree}
+A \omterm{def:b2:processes-and-system-calls:process}{process} that creates another is its \emph{parent}\index{parent process}, and the created one its
+\emph{child}\index{child process}. Since every \omterm{def:b2:processes-and-system-calls:process}{process} but the first is created by another, the processes form a
+\emph{process tree}\index{process tree}, rooted at the first \omterm{def:b2:processes-and-system-calls:process}{process} the kernel starts.
+\end{definition}
+
+% ledger: b2:fork-returns
+\begin{definition}[Fork]\label{def:b2:processes-and-system-calls:fork}
+A \emph{fork}\index{fork} creates a new \omterm{def:b2:processes-and-system-calls:process}{process} by duplicating the caller. The \omterm{def:b2:processes-and-system-calls:syscall}{system call} \code{fork()} makes a
+\omterm{def:b2:processes-and-system-calls:tree}{child} whose memory is a copy of the \omterm{def:b2:processes-and-system-calls:tree}{parent}'s, with the same open files and working directory, and both processes
+continue from the return of \code{fork}. It returns 0 in the \omterm{def:b2:processes-and-system-calls:tree}{child} and the \omterm{def:b2:processes-and-system-calls:tree}{child}'s PID in the \omterm{def:b2:processes-and-system-calls:tree}{parent}, or $-1$ in the
+\omterm{def:b2:processes-and-system-calls:tree}{parent}, with no \omterm{def:b2:processes-and-system-calls:tree}{child}, if it fails.
+\end{definition}
+
+One call, two returns: the only way for the code to know which \omterm{def:b2:processes-and-system-calls:process}{process} it is running in is the value \code{fork}
+returned. The copy is real: a variable changed in the \omterm{def:b2:processes-and-system-calls:tree}{child} keeps its old value in the \omterm{def:b2:processes-and-system-calls:tree}{parent}.
+
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/fork_basic.c}{8}{24}{Two processes, one program}
+
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/fork_basic.txt}{Each \omterm{def:b2:processes-and-system-calls:process}{process} learns its role from
+the value of \code{fork}.}
+
+The program prints relations, never the numbers themselves, because PIDs change from one run to the next.
+\code{waitpid}, the subject of \cref{sec:b2:processes-and-system-calls:wait}, makes the \omterm{def:b2:processes-and-system-calls:tree}{parent} wait until the
+\omterm{def:b2:processes-and-system-calls:tree}{child} has ended, which fixes the order of the two lines. Linux does not copy the memory at the moment of the \omterm{def:b2:processes-and-system-calls:fork}{fork}:
+the two processes share the pages, marked read-only, and a page is copied only when one of them writes to it. The
+program cannot tell the difference, and a \omterm{def:b2:processes-and-system-calls:fork}{fork} followed at once by an \code{exec} copies almost nothing.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, mem/.style={draw, minimum width=3.6cm, minimum height=6mm, fill=omDef!8},
+  w/.style={-{Stealth[length=2mm]}}]
+\node[mem] (pa) at (0,1.3) {code};
+\node[mem] (pb) at (0,0.7) {\code{books = 10}};
+\node[mem] (pc) at (0,0.1) {stack: \code{r} $=$ child's PID};
+\node[mem] (ca) at (6.5,1.3) {code};
+\node[mem] (cb) at (6.5,0.7) {\code{books = 20}};
+\node[mem] (cc) at (6.5,0.1) {stack: \code{r} $= 0$};
+\node[above=2pt of pa, font=\small\bfseries] {parent};
+\node[above=2pt of ca, font=\small\bfseries] {child};
+\draw[w, dashed] (pa.east) -- node[above, font=\scriptsize] {copied by \code{fork}} (ca.west);
+\draw[w, dashed] (pb.east) -- (cb.west);
+\draw[w, dashed] (pc.east) -- (cc.west);
+\node[font=\scriptsize, align=center] at (3.25,-0.75) {after the copy, each process changes only its own memory};
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b2:processes-and-system-calls:fork}{fork} of \code{fork_basic.c}. The two address spaces start equal, except for the value
+\code{fork} returned; the \omterm{def:b2:processes-and-system-calls:tree}{child}'s assignment \code{books = 20} does not reach the \omterm{def:b2:processes-and-system-calls:tree}{parent}.}
+\end{omfigure}
+
+A \omterm{def:b2:processes-and-system-calls:process}{process} that calls \code{fork} several times, with its children doing the same, grows a tree. In
+\code{fork_tree.c} each \omterm{def:b2:processes-and-system-calls:process}{process} names itself \code{p} followed by the indices of the \omterm{def:b2:processes-and-system-calls:fork}{forks} it came out of as the
+\omterm{def:b2:processes-and-system-calls:tree}{child}, and the \omterm{def:b2:processes-and-system-calls:tree}{parent} waits for each \omterm{def:b2:processes-and-system-calls:tree}{child}, so that each subtree finishes before the next \omterm{def:b2:processes-and-system-calls:fork}{fork}:
+
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/fork_tree.c}{7}{23}{Three \omterm{def:b2:processes-and-system-calls:fork}{forks} in a
+row}
+
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/fork_tree.txt}{Eight processes; each prints after
+its children.}\label{out:b2:processes-and-system-calls:tree}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, level distance=11mm, sibling distance=24mm,
+  every node/.style={draw, rounded corners=2pt, fill=omDef!10, inner sep=2pt, minimum width=9mm},
+  level 2/.style={sibling distance=13mm}, level 3/.style={sibling distance=10mm}]
+\node {\code{p}}
+  child {node {\code{p0}}
+    child {node {\code{p01}} child {node {\code{p012}}}}
+    child {node {\code{p02}}}}
+  child {node {\code{p1}} child {node {\code{p12}}}}
+  child {node {\code{p2}}};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b2:processes-and-system-calls:tree}{process tree} of \code{fork_tree.c}: an edge goes from a \omterm{def:b2:processes-and-system-calls:tree}{parent} to a \omterm{def:b2:processes-and-system-calls:tree}{child}. The \omterm{def:b2:processes-and-system-calls:fork}{fork} of
+index $i$ is made by every \omterm{def:b2:processes-and-system-calls:process}{process} alive at that moment, and doubles their number.}
+\end{omfigure}
+
+\begin{proposition}[Counting forks]\label{prop:b2:processes-and-system-calls:fork-count}
+If a \omterm{def:b2:processes-and-system-calls:process}{process} executes $n$ successive \code{fork} calls, and every \omterm{def:b2:processes-and-system-calls:process}{process} created continues from the same point and
+executes the remaining calls, then $2^n$ processes exist at the end, counting the first.
+\end{proposition}
+
+The proof is \cref{exo:b2:processes-and-system-calls:8}. With $n = 3$ the output has eight lines, and the depth of
+each \omterm{def:b2:processes-and-system-calls:process}{process}, the number of \omterm{def:b2:processes-and-system-calls:fork}{forks} it came out of as the \omterm{def:b2:processes-and-system-calls:tree}{child}, takes the value $d$ for $\binom{3}{d}$ of them.
+
+\section{Running a program: exec}\label{sec:b2:processes-and-system-calls:exec}
+
+A \omterm{def:b2:processes-and-system-calls:fork}{fork} makes a copy of the same program. To run another one, a \omterm{def:b2:processes-and-system-calls:process}{process} replaces its own program.
+
+% ledger: b2:exec-no-return
+\begin{definition}[Exec, argument vector]\label{def:b2:processes-and-system-calls:exec}
+An \emph{exec}\index{exec} replaces the program of the calling \omterm{def:b2:processes-and-system-calls:process}{process} by a new one, read from a file: the code,
+data, heap and stack are discarded and rebuilt, and the new program starts at its beginning, in the same \omterm{def:b2:processes-and-system-calls:process}{process},
+with the same PID, open files and working directory. Its arguments are given as an \emph{argument vector}\index{argument
+vector}, an array of strings ending with a null pointer, whose element 0 is by convention the program's name; it
+becomes \code{argv} in the new program's \code{main}. A successful exec does not return; if it returns, it failed.
+\end{definition}
+
+The C library offers several front ends to the one \omterm{def:b2:processes-and-system-calls:syscall}{system call} \code{execve(path, argv, envp)}: \code{execvp} searches
+the directories of the \code{PATH} variable for the program and keeps the environment; \code{execlp} takes the
+arguments one by one; \code{execve} itself takes a full path and a new environment.
+
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/exec_demo.c}{8}{28}{Three \omterm{def:b2:processes-and-system-calls:exec}{execs}: in two children,
+then in the \omterm{def:b2:processes-and-system-calls:process}{process} itself}
+
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/exec_demo.txt}{Each line after the first comes from
+another program.}
+
+\code{echo} receives \code{"two words"} as one argument: no shell cut it, the vector is passed as it is. \code{env},
+started with an environment of two variables, prints exactly those. The last \omterm{def:b2:processes-and-system-calls:exec}{exec} replaces \code{exec_demo} itself
+by \code{printf}, so the line after it is never printed, and the exit status of the \omterm{def:b2:processes-and-system-calls:process}{process} is \code{printf}'s. The
+\code{fflush} at the top matters for the same reason: an \omterm{def:b2:processes-and-system-calls:exec}{exec} discards the memory of the old program, buffer
+included, and a line still waiting in \code{printf}'s buffer would be lost.
+
+\section{Waiting for a child}\label{sec:b2:processes-and-system-calls:wait}
+
+% ledger: b2:waitpid-macros
+\begin{definition}[Waiting for a child]\label{def:b2:processes-and-system-calls:wait}
+A \omterm{def:b2:processes-and-system-calls:process}{process} \emph{waits for a child}\index{waiting for a child} with \code{waitpid(pid, &status, 0)}, which blocks
+until that \omterm{def:b2:processes-and-system-calls:tree}{child} has ended and returns its PID; \code{wait(&status)} does the same for any \omterm{def:b2:processes-and-system-calls:tree}{child}. The integer
+\code{status} encodes how the \omterm{def:b2:processes-and-system-calls:tree}{child} ended: \code{WIFEXITED(status)} is true when it ended by returning from
+\code{main} or calling \code{exit}, and \code{WEXITSTATUS(status)} is then the low 8 bits of its exit status;
+\code{WIFSIGNALED(status)} is true when a signal killed it, and \code{WTERMSIG(status)} is the signal's number.
+\end{definition}
+
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/wait_status.c}{10}{17}{Reading a status}
+
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/wait_status.txt}{Four children, four
+endings.}\label{out:b2:processes-and-system-calls:status}
+
+Signals are the subject of \cref{ch:b2:files-pipes-signals}; here it is enough that \code{raise(SIGTERM)} sends the
+\omterm{def:b2:processes-and-system-calls:process}{process} the ``terminate'' signal, number 15, whose default effect is to end it. \code{exit(300)} gives 44, the low
+8 bits of 300: an exit status is a number from 0 to 255. Shells report a death by signal $n$ as the status
+$128 + n$, so that one number covers both cases.
+
+Between its end and its \omterm{def:b2:processes-and-system-calls:tree}{parent}'s wait, a \omterm{def:b2:processes-and-system-calls:tree}{child} is in a peculiar state: its program, memory and files are gone, but
+the kernel must keep its status until the \omterm{def:b2:processes-and-system-calls:tree}{parent} asks for it.
+
+% ledger: b2:proc-state-z
+\begin{definition}[Zombie, orphan]\label{def:b2:processes-and-system-calls:zombie}
+A \emph{zombie}\index{zombie process} is a \omterm{def:b2:processes-and-system-calls:process}{process} that has ended but whose \omterm{def:b2:processes-and-system-calls:tree}{parent} has not yet waited for it: only
+its entry in the kernel's \omterm{def:b2:processes-and-system-calls:process}{process} table remains, with its PID and its status. An \emph{orphan}\index{orphan
+process} is a \omterm{def:b2:processes-and-system-calls:process}{process} whose \omterm{def:b2:processes-and-system-calls:tree}{parent} has ended before it; the kernel gives it a new \omterm{def:b2:processes-and-system-calls:tree}{parent}, the first \omterm{def:b2:processes-and-system-calls:process}{process} or a
+\omterm{def:b2:processes-and-system-calls:process}{process} that asked to adopt orphans, which waits for it when it ends.
+\end{definition}
+
+On Linux the kernel shows each \omterm{def:b2:processes-and-system-calls:process}{process} as a directory \code{/proc/<pid>}, whose file \code{status} has a line
+\code{State:}, with \code{Z} for a \omterm{def:b2:processes-and-system-calls:zombie}{zombie}. \code{zombie.c} reads that letter for a \omterm{def:b2:processes-and-system-calls:tree}{child} that has ended, before and
+after waiting for it, then makes an \omterm{def:b2:processes-and-system-calls:zombie}{orphan}: a middle \omterm{def:b2:processes-and-system-calls:process}{process} starts a grandchild and ends at once, and the grandchild
+watches its own \omterm{def:b2:processes-and-system-calls:tree}{parent} change.
+
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/zombie.c}{30}{36}{A \omterm{def:b2:processes-and-system-calls:tree}{child} ended, not yet waited
+for}
+
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/zombie.txt}{A \omterm{def:b2:processes-and-system-calls:zombie}{zombie}, then nothing; an \omterm{def:b2:processes-and-system-calls:zombie}{orphan},
+adopted.}
+
+After the wait, \code{/proc} has no entry any more: the letter \code{-} is the program's way of saying so. A
+long-running \omterm{def:b2:processes-and-system-calls:tree}{parent} that never waits accumulates \omterm{def:b2:processes-and-system-calls:zombie}{zombies}, each holding a PID, and PIDs are a finite resource
+(\cref{exo:b2:processes-and-system-calls:2}).
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, node distance=2.6cm, every state/.style={minimum size=13mm, fill=omDef!10,
+  inner sep=1pt}, >={Stealth[length=2mm]}]
+\node[state, initial, initial text={\code{fork}}] (ready) {ready};
+\node[state, right=of ready] (run) {running};
+\node[state, below=1.6cm of run] (blk) {blocked};
+\node[state, right=of run, fill=omThm!15] (z) {zombie};
+\node[right=1.6cm of z, font=\small] (gone) {gone};
+\path[->] (ready) edge[bend left] node[above, font=\scriptsize] {scheduled} (run)
+  (run) edge[bend left] node[below, font=\scriptsize] {preempted} (ready)
+  (run) edge node[right, font=\scriptsize] {waits (\code{read}, \code{waitpid})} (blk)
+  (blk) edge[bend left=20] node[below left, font=\scriptsize] {event} (ready)
+  (run) edge node[above, font=\scriptsize] {\code{exit}, signal} (z)
+  (z) edge node[above, font=\scriptsize, align=center] {parent\\ waits} (gone);
+\end{tikzpicture}
+\par\smallskip{\small The states of a \omterm{def:b2:processes-and-system-calls:process}{process}, with the \omterm{def:b2:processes-and-system-calls:zombie}{zombie} state. Book 2's ready, running and blocked states
+remain; ending leads to the \omterm{def:b2:processes-and-system-calls:zombie}{zombie} state, and only the \omterm{def:b2:processes-and-system-calls:tree}{parent}'s wait removes the \omterm{def:b2:processes-and-system-calls:process}{process}.}
+\end{omfigure}
+
+\section{A minimal shell}\label{sec:b2:processes-and-system-calls:shell}
+
+The four calls are all a shell needs. Its main loop:
+
+\begin{method}[The shell's loop]\label{met:b2:processes-and-system-calls:shell-loop}
+Repeat until the input ends or the command is \code{exit}:
+\begin{enumerate}
+\item print a prompt and read one line;
+\item cut it into words; an empty line is skipped;
+\item if the first word names a \omterm{def:b2:processes-and-system-calls:builtin}{built-in command}, run it in the shell itself;
+\item otherwise \omterm{def:b2:processes-and-system-calls:fork}{fork}; in the \omterm{def:b2:processes-and-system-calls:tree}{child}, \omterm{def:b2:processes-and-system-calls:exec}{exec} the program the first word names with the words as its \omterm{def:b2:processes-and-system-calls:exec}{argument vector}, and
+if the \omterm{def:b2:processes-and-system-calls:exec}{exec} fails, report it and end the \omterm{def:b2:processes-and-system-calls:tree}{child} with status 127;
+\item in the \omterm{def:b2:processes-and-system-calls:tree}{parent}, wait for the \omterm{def:b2:processes-and-system-calls:tree}{child}, and keep its status for the next \code{$?}.
+\end{enumerate}
+\end{method}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, node distance=7mm and 9mm, b/.style={draw, rounded corners=2pt, fill=omDef!10,
+  align=center, minimum height=7mm, inner sep=3pt}, d/.style={draw, diamond, aspect=2.2, fill=omProp!12, inner
+  sep=1pt, align=center}, w/.style={-{Stealth[length=2mm]}}]
+\node[b] (read) {prompt, read a line};
+\node[b, right=of read] (split) {split into words};
+\node[d, right=of split] (bi) {built-in?};
+\node[b, below=of bi] (fork) {\code{fork}};
+\node[b, below left=7mm and 4mm of fork] (child) {child: \code{execvp}\\ or \code{_exit(127)}};
+\node[b, below right=7mm and 4mm of fork] (parent) {parent: \code{waitpid},\\ keep the status};
+\node[b, above=of bi] (run) {run it in the shell\\ (\code{cd}, \code{exit})};
+\draw[w] (read) -- (split); \draw[w] (split) -- (bi);
+\draw[w] (bi) -- node[right, font=\scriptsize] {no} (fork);
+\draw[w] (bi) -- node[right, font=\scriptsize] {yes} (run);
+\draw[w] (fork) -- (child); \draw[w] (fork) -- (parent);
+\draw[w] (parent.south) -- ++(0,-0.4) -| (read.south);
+\draw[w] (run.west) -| (read.north);
+\end{tikzpicture}
+\par\smallskip{\small The loop of \cref{met:b2:processes-and-system-calls:shell-loop}. Only the \omterm{def:b2:processes-and-system-calls:tree}{parent} goes
+round again; the \omterm{def:b2:processes-and-system-calls:tree}{child} either becomes the command or ends.}
+\end{omfigure}
+
+The splitting is a separate file, so that it can be tested alone. It cuts the line in place, at blanks, and points
+each word of the vector into the line; the word \code{$?} becomes the last status.
+
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/minish_parse.c}{7}{20}{Cutting a line into
+words}\label{lst:b2:processes-and-system-calls:split}
+
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/minish.c}{11}{27}{An external command: \omterm{def:b2:processes-and-system-calls:fork}{fork}, \omterm{def:b2:processes-and-system-calls:exec}{exec},
+wait}\label{lst:b2:processes-and-system-calls:run}
+
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/minish.c}{38}{58}{The loop}
+
+The \code{_exit(127)} after a failed \omterm{def:b2:processes-and-system-calls:exec}{exec} is essential. Without it the \omterm{def:b2:processes-and-system-calls:tree}{child} returns from \code{run} into the shell's
+loop, and two shells read the same input from then on (\cref{exo:b2:processes-and-system-calls:6}). It is
+\code{_exit}, not \code{exit}, so that the \omterm{def:b2:processes-and-system-calls:tree}{child} does not flush a copy of the \omterm{def:b2:processes-and-system-calls:tree}{parent}'s buffers. Here is the end of
+the hook's script:
+
+\omoutput[11-24]{code/bachelor-2/13-processes-and-system-calls/outputs/minish.txt}{The rest of the
+script: statuses, a missing command, a failed \code{cd}.}
+
+Why are \code{cd} and \code{exit} built in? \code{exit} must end the shell, not a \omterm{def:b2:processes-and-system-calls:tree}{child}. For \code{cd}, the reason is
+a theorem about processes.
+
+\begin{definition}[Built-in command]\label{def:b2:processes-and-system-calls:builtin}
+A \emph{built-in command}\index{built-in command} is a command that the shell carries out itself, in its own
+\omterm{def:b2:processes-and-system-calls:process}{process}, instead of running a program in a \omterm{def:b2:processes-and-system-calls:tree}{child}.
+\end{definition}
+
+\begin{proposition}[A child cannot move its parent]\label{prop:b2:processes-and-system-calls:cd-builtin}
+A change of working directory made by a \omterm{def:b2:processes-and-system-calls:process}{process} after a \code{fork} has no effect on the working directory of its
+\omterm{def:b2:processes-and-system-calls:tree}{parent}. Hence a shell's \code{cd} that changes the shell's own directory must be built in.
+\end{proposition}
+
+\begin{proof}
+The working directory is part of each \omterm{def:b2:processes-and-system-calls:process}{process}'s state, which \code{fork} copies (\cref{def:b2:processes-and-system-calls:fork}).
+\code{chdir} changes the working directory of the \omterm{def:b2:processes-and-system-calls:process}{process} that calls it only; the copy in the \omterm{def:b2:processes-and-system-calls:tree}{parent} is a separate
+value, which no call of the \omterm{def:b2:processes-and-system-calls:tree}{child} touches. If \code{cd} were a program, the shell would \omterm{def:b2:processes-and-system-calls:fork}{fork} a \omterm{def:b2:processes-and-system-calls:tree}{child} and the \omterm{def:b2:processes-and-system-calls:tree}{child},
+after its \omterm{def:b2:processes-and-system-calls:exec}{exec}, would change its own directory and end, leaving the shell where it was.
+\end{proof}
+
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/cd_child.c}{12}{20}{A \omterm{def:b2:processes-and-system-calls:tree}{child}
+moves}
+
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/cd_child.txt}{Its \omterm{def:b2:processes-and-system-calls:tree}{parent} does not.}
+
+The same proposition explains why a script run as a program, \code{./setup.sh}, cannot change the directory of the
+shell that started it: the script runs in a \omterm{def:b2:processes-and-system-calls:tree}{child} shell.
+
+\begin{inpractice}[Real shells]
+A real shell adds quoting, variables, redirections and pipes (the next chapter's subject), jobs that run in the
+background, and dozens of built-ins: \code{export}, \code{source} and \code{umask} must be built in for the reason of
+\cref{prop:b2:processes-and-system-calls:cd-builtin}, others such as \code{echo} only for speed. Its heart is still
+the loop of \cref{met:b2:processes-and-system-calls:shell-loop}. Processes are also the way servers isolate work:
+a web server that \omterm{def:b2:processes-and-system-calls:fork}{forks} a worker per task gets, from the kernel, a worker that cannot corrupt the others' memory.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b2:processes-and-system-calls:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:processes-and-system-calls:1}
+How many lines does this program print? Draw its \omterm{def:b2:processes-and-system-calls:tree}{process tree}.
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/exo_count.c}{5}{11}{Two \omterm{def:b2:processes-and-system-calls:fork}{forks}, one
+\code{printf}}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:processes-and-system-calls:2}
+This \omterm{def:b2:processes-and-system-calls:tree}{parent} never waits. Explain the output, what remains of each \omterm{def:b2:processes-and-system-calls:tree}{child}, and when it would disappear.
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/exo_nowait.c}{26}{36}{Three children, no
+\code{wait}}
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/exo_nowait.txt}{Counted from \code{/proc}.}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:processes-and-system-calls:3}
+Write \code{runit}, a program that runs the command given on its own command line and exits with that command's
+status, reported as a shell would: \code{runit false} exits with 1, \code{runit sh -c 'kill $$'} with 143, and a
+missing command with 127.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:processes-and-system-calls:4}
+A loop \code{for (int i = 0; i < n; i++) fork();} runs in one \omterm{def:b2:processes-and-system-calls:process}{process}, and nobody waits. How many processes are
+created by the loop? How many times is \code{fork} called in all? How many of the final processes have no children?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:processes-and-system-calls:5}
+In which order are the letters printed? Could another order appear on another run?
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/exo_order.c}{12}{34}{Letters from three
+processes}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:processes-and-system-calls:6}
+This program runs three commands, but a failed \omterm{def:b2:processes-and-system-calls:exec}{exec} is not followed by \code{_exit}. Explain every line of its output.
+\omcode{code/bachelor-2/13-processes-and-system-calls/listings/exo_noexit.c}{6}{22}{A missing
+\code{_exit}}
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/exo_noexit.txt}{One \code{done} too many.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:processes-and-system-calls:7}
+Write \code{xargs_lite n command [argument...]}, which reads words from its standard input and runs the command with
+its arguments followed by at most $n$ of the words at a time, until the words run out, and exits with the largest
+status it met. \code{printf 'a b c d e' | xargs_lite 2 echo X} prints \code{X a b}, \code{X c d}, \code{X e}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:processes-and-system-calls:8}
+Prove \cref{prop:b2:processes-and-system-calls:fork-count} by induction on $n$. How many processes print in
+\code{fork_tree.c} with $n$ \omterm{def:b2:processes-and-system-calls:fork}{forks}, and how many of them have depth $d$?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:processes-and-system-calls:9}
+Write a built-in \code{cd} that also understands \code{cd -}, ``back to the previous directory'', and prints the
+directory it returns to. Why must the previous directory be stored in the shell, and when must it be updated?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:processes-and-system-calls:10}
+Add \code{&&} and \code{||} to \code{minish}: in \code{a && b}, \code{b} runs only if \code{a} succeeded; in
+\code{a || b}, only if it failed; the operators chain from left to right with equal precedence, as in the usual
+shells. Write \code{run_list(argv, run)}, which takes the words of a line and a function running one command, and
+returns the status of the last command run. What does \code{false && x || true} run?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:processes-and-system-calls:11}
+\code{lines.c} prints $n$ numbered lines of 10 bytes, by \code{printf}, with \code{printf}'s buffer or without it.
+Count its \code{write} \omterm{def:b2:processes-and-system-calls:syscall}{system calls} for $n = 1000$ in both modes, explain the two counts, and predict them for
+$n = 10\,000$. What would a terminal change?
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/count_writes.txt}{Each \code{write} is one line of
+\code{strace}'s output.}
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:processes-and-system-calls:12}
+Write \code{ptree}, a program that starts two children, the first with two children of its own, gives them names, and
+prints its own \omterm{def:b2:processes-and-system-calls:tree}{process tree} from \code{/proc}, indented, as \code{pstree} would, before stopping them all. On Linux,
+\code{/proc/<pid>/task/<pid>/children} lists the PIDs of a \omterm{def:b2:processes-and-system-calls:process}{process}'s children and \code{/proc/<pid>/comm} holds its
+name. Make the output the same on every run.
+\end{exercise}
+
+\section{Problem: Building the tiny shell}\label{sec:b2:processes-and-system-calls:problem}
+
+\begin{problem}[{Weekend problem --- Building the tiny shell}]\label{pb:b2:processes-and-system-calls:1}
+The problem rebuilds \code{minish} step by step, then counts the \omterm{def:b2:processes-and-system-calls:syscall}{system calls} it makes to run one command.
+
+\medskip\noindent\textbf{Part I --- Parsing.}\par\nopagebreak
+\begin{enumerate}
+\item What does \code{split} produce for a line made of two spaces, \code{echo}, three spaces, \code{two}, a tab,
+\code{word} and a newline? Where do the strings of the vector live?
+\item Why must the vector end with a null pointer?
+\item What happens to the line \code{echo $? $?} after \code{false}? To \code{echo x$?}?
+\item \code{strtok} keeps its position in a hidden static variable. Why is that harmless in \code{minish} and not in
+a recursive function?
+\item A line of 2000 characters is typed. What does \code{fgets} with a buffer of 1024 do, and what does the shell
+then run?
+\item Give a command line that \code{minish} cuts differently from a real shell.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Fork, exec, wait.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item In \code{run}, which lines run in the \omterm{def:b2:processes-and-system-calls:tree}{parent}, which in the \omterm{def:b2:processes-and-system-calls:tree}{child}, and which in both?
+\item Why does the shell call \code{fflush} before forking? Describe the output of \code{minish} on a script
+without it.
+\item What does the \omterm{def:b2:processes-and-system-calls:tree}{child} do if \code{execvp} succeeds? What does it do if it fails, and why \code{_exit} rather than
+\code{return}?
+\item Where does \code{execvp} look for \code{echo}? What changes if the line is \code{/usr/bin/echo hi}?
+\item Why does the shell wait before printing the next prompt? What would a script's output look like if it did not?
+\item How many processes exist, at most, while \code{minish} runs the script of the hook?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Statuses and built-ins.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Explain the four statuses printed by \code{echo $?} in the hook's script.
+\item What status does \code{run} return for a command killed by signal 9? Why add 128?
+\item What does \code{minish} return when its input ends? When it reads \code{exit}? \code{exit 300}?
+\item Why is \code{exit} built in? Use \cref{prop:b2:processes-and-system-calls:cd-builtin} to say why \code{cd} is.
+\item \code{pwd} is not built into \code{minish}, yet it prints the directory \code{cd} chose. Why?
+\item Name one command that could be built in or not, with the same result, and one that could not.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The system calls of one command.}\par\nopagebreak
+\omoutput{code/bachelor-2/13-processes-and-system-calls/outputs/budget.txt}{The calls of \code{minish} running
+\code{echo hi}, counted by \code{strace -f -c}, with the calls that failed; then two
+baselines.}\label{out:b2:processes-and-system-calls:budget}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item How many \omterm{def:b2:processes-and-system-calls:syscall}{system calls} does running \code{echo hi} through \code{minish} add to the shell's own 41? How many of
+them does \code{echo} make by itself?
+\item Of the 6 calls left, the trace shows that 5 are made by the shell and 1 by the \omterm{def:b2:processes-and-system-calls:tree}{child} before its \omterm{def:b2:processes-and-system-calls:exec}{exec}. Find
+the shell's 5 from the code of \code{run} and of the loop. Under which names do \code{fork} and \code{waitpid}
+appear in the table?
+\item Why are there 2 \code{execve} calls? Why would there be more with a longer \code{PATH}?
+\item \code{echo} alone makes 115 calls to print 3 bytes. Most of them are \code{openat}, \code{mmap},
+\code{newfstatat}, \code{close}. What is it doing before it can print?
+\item Using \cref{out:b2:processes-and-system-calls:cost}, estimate the time of these 162 calls, if each cost what
+\code{getppid} costs. Is that the time of the command?
+\item State the system-call budget of one external command.
+\end{enumerate}
+\end{problem}

@@ -1,0 +1,344 @@
+\chapter{Virtual Memory}\label{ch:b3:virtual-memory}
+
+Every process on a laptop believes it owns the whole memory, from address 0 upwards, and two processes can both store at address \code{0x10000000} without disturbing each other. Neither is true of the hardware: there is one physical memory, shared by all of them and by the kernel. This chapter builds the translation that makes the belief hold, the \omterm{def:b3:virtual-memory:paging}{page tables}, walks it in C exactly as a RISC-V processor walks it, measures the cache that makes it fast, and then uses it for more than isolation: running programs larger than the memory, sharing \omterm{def:b3:virtual-memory:paging}{pages} between processes until one of them writes, and reading files with ordinary loads and stores. Along the way it meets one of the strangest facts of systems, a policy that faults more when given more memory, and proves which policies cannot.
+
+\begin{recall}
+In the Year~2 volume a cache keeps copies of recently used blocks of memory close to the processor, and is fast because programs have locality: they reuse what they used recently, and use what lies next to it. When a cache is full, a replacement policy chooses the block to evict; the least recently used (LRU) policy evicts the block unused for longest. A process is created by \code{fork}, which makes a copy of the calling process.
+\end{recall}
+
+\section{Address spaces}\label{sec:b3:virtual-memory:spaces}
+
+\begin{definition}[Virtual memory, address space, virtual and physical addresses]\label{def:b3:virtual-memory:space}
+\emph{Virtual memory}\index{virtual memory} gives each process its own \emph{address space}\index{address space}, the set of addresses it can use, and translates each address it issues, a \emph{virtual address}\index{virtual address}, into a \emph{physical address}\index{physical address}, a location in the memory chips, by a mapping the kernel controls and the processor applies on every access.
+\end{definition}
+
+The translation does three jobs at once. It isolates: a process can only reach the physical memory its mapping includes, so it cannot read or damage another's. It relocates: every program can be linked to run at the same addresses, wherever its memory really is. And it lets the kernel lie usefully: an address may be mapped to nothing yet, and get memory only when it is first used, or be mapped to the same physical memory as an address of another process.
+
+\begin{definition}[Page, page frame, page table, page-table entry, multi-level page table]\label{def:b3:virtual-memory:paging}
+\emph{Paging} divides the \omterm{def:b3:virtual-memory:space}{virtual address} space into \emph{pages}\index{page}, blocks of a fixed size, and the physical memory into \emph{page frames}\index{page frame} of the same size. A \emph{page table}\index{page table} maps each virtual page number to a frame number; its entries, \emph{page-table entries}\index{page-table entry}, also carry permission bits (readable, writable, executable, accessible from user mode) and a valid bit. A \emph{multi-level page table}\index{multi-level page table} is a tree of small tables: the high bits of the page number index the root, whose entry points to a table indexed by the next bits, and so on.
+\end{definition}
+
+The offset within a \omterm{def:b3:virtual-memory:paging}{page} is not translated: a \omterm{def:b3:virtual-memory:space}{virtual address} is a \omterm{def:b3:virtual-memory:paging}{page} number and an offset, and its \omterm{def:b3:virtual-memory:space}{physical address} is the frame number and the same offset. An older scheme, \emph{segmentation}, translated variable-sized segments (code, data, stack) by adding a base and checking a limit; it needs no tables, but the segments must each find a contiguous hole in physical memory, with the \omterm{def:b3:garbage-collection:fragmentation}{external fragmentation} of chapter~\ref{ch:b3:garbage-collection}. \omterm{def:b3:virtual-memory:paging}{Pages} of one size never fragment physical memory that way: any free frame fits any \omterm{def:b3:virtual-memory:paging}{page}.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=10mm, y=5mm, >=Stealth,
+  pg/.style={draw, minimum width=14mm, minimum height=5mm, inner sep=0pt}]
+  \node[font=\small] at (0.7, 6.2) {process A};
+  \node[font=\small] at (4.2, 6.2) {physical frames};
+  \node[font=\small] at (7.7, 6.2) {process B};
+  \foreach \y/\l/\c in {5/code/omDef!12, 4/data/omThm!12, 3/{}/white, 2/{}/white, 1/stack/omMeth!12}
+    \node[pg, fill=\c] (a\y) at (0.7, \y) {\l};
+  \foreach \y/\l/\c in {5/code/omDef!12, 4/{}/white, 3/data/omThm!25, 2/{}/white, 1/stack/omMeth!25}
+    \node[pg, fill=\c] (b\y) at (7.7, \y) {\l};
+  \foreach \y/\l/\c in {6/{}/white, 5/{}/white, 4/A data/omThm!12, 3/code/omDef!12, 2/B stack/omMeth!25, 1/B data/omThm!25, 0/A stack/omMeth!12}
+    \node[pg, fill=\c] (f\y) at (4.2, \y - 0.5) {\l};
+  \draw[->] (a5.east) -- (f3.west);
+  \draw[->] (a4.east) -- (f4.west);
+  \draw[->] (a1.east) -- (f0.west);
+  \draw[->] (b5.west) -- (f3.east);
+  \draw[->] (b3.west) -- (f1.east);
+  \draw[->] (b1.west) -- (f2.east);
+  \node[align=center, font=\scriptsize, black!60] at (0.7, -0.4) {unmapped pages:\\no frame};
+\end{tikzpicture}
+\par\smallskip{\small Two \omterm{def:b3:virtual-memory:space}{address spaces} over one physical memory. Each \omterm{def:b3:virtual-memory:paging}{page} of a process maps to any free frame; the two copies of the same program share the frame of its code, which neither can write; \omterm{def:b3:virtual-memory:paging}{pages} that are not mapped use no memory at all.}
+\end{omfigure}
+
+\section{Paging and multi-level page tables}\label{sec:b3:virtual-memory:tables}
+
+RISC-V's Sv32 mode, for 32-bit processors, uses \omterm{def:b3:virtual-memory:paging}{pages} of 4~KiB. A \omterm{def:b3:virtual-memory:space}{virtual address} is a 20-bit virtual \omterm{def:b3:virtual-memory:paging}{page} number, split into two 10-bit indices, and a 12-bit offset. % ledger: b3:sv32-va
+The 20-bit \omterm{def:b3:virtual-memory:paging}{page} number is translated into a 22-bit physical \omterm{def:b3:virtual-memory:paging}{page} number, so a 32-bit processor can address more than 4~GiB of physical memory. % ledger: b3:sv32-ppn
+Each \omterm{def:b3:virtual-memory:paging}{page table} holds $2^{10}$ entries of four bytes, exactly one \omterm{def:b3:virtual-memory:paging}{page}, and the physical \omterm{def:b3:virtual-memory:paging}{page} number of the root table is held in the register \code{satp}. % ledger: b3:sv32-table
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=3.2mm, y=6mm, >=Stealth]
+  \foreach \a/\b/\n/\l/\c in {0/10/{VPN[1]}/{31--22}/omDef!15, 10/20/{VPN[0]}/{21--12}/omThm!15, 20/32/{offset}/{11--0}/black!6}
+    { \draw[fill=\c] (\a, 0) rectangle (\b, 1);
+      \node at ({(\a + \b) / 2}, 0.5) {\n};
+      \node[above, black!60] at ({(\a + \b) / 2}, 1) {bits \l}; }
+  \node[anchor=east] at (-0.3, 0.5) {virtual address};
+  \node[draw, fill=black!6, minimum width=14mm] (satp) at (-4, -2.2) {\code{satp}};
+  \draw[fill=omDef!8] (2, -4.6) rectangle (8, -1.6); \node[below] at (5, -4.6) {root table};
+  \draw[fill=omDef!25] (2, -3.4) rectangle (8, -2.9); \node[font=\tiny] at (5, -3.15) {pointer};
+  \draw[fill=omThm!8] (14, -4.6) rectangle (20, -1.6); \node[below] at (17, -4.6) {level-0 table};
+  \draw[fill=omThm!30] (14, -2.6) rectangle (20, -2.1); \node[font=\tiny] at (17, -2.35) {leaf};
+  \draw[fill=black!5] (26, -4.6) rectangle (32, -1.6); \node[below] at (29, -4.6) {page frame};
+  \draw[fill=black!20] (26, -3.9) rectangle (32, -3.5); \node[font=\tiny] at (29, -3.7) {the byte};
+  \draw[->] (satp.east) -- (2, -2.2);
+  \draw[->, omDef] (5, 0) -- (5, -2.9);
+  \draw[->, omThm] (15, 0) -- (15, -1.6);
+  \draw[->, black!60] (26, 0) -- (27, -3.5);
+  \draw[->] (8, -3.15) -- (14, -3.15);
+  \draw[->] (20, -2.35) -- (26, -2.35);
+\end{tikzpicture}
+\par\smallskip{\small An Sv32 translation. \code{satp} locates the root table; VPN[1] selects one of its 1,024 entries, which points to a level-0 table; VPN[0] selects the entry there, a leaf, which holds the frame and the permissions; the offset selects the byte in the frame. Two memory reads before every access the program makes.}
+\end{omfigure}
+
+An entry is valid when its bit V is set. If its bits R, W and X are all 0, it points to the next level; otherwise it is a leaf, and they say whether the \omterm{def:b3:virtual-memory:paging}{page} may be read, written and executed. A \omterm{def:b3:virtual-memory:paging}{page} cannot be writable without being readable. % ledger: b3:sv32-rwx
+The entry's physical \omterm{def:b3:virtual-memory:paging}{page} number fills its top 22 bits; below it come two bits left to software, then D, A, G, U, X, W, R and V. % ledger: b3:sv32-pte
+U allows access from user mode, and G marks a mapping present in every \omterm{def:b3:virtual-memory:space}{address space}. A, the \emph{accessed} bit, records that the \omterm{def:b3:virtual-memory:paging}{page} has been used since A was last cleared, and D, the \emph{dirty} bit, that it has been written. % ledger: b3:sv32-ad
+A leaf may also appear at the root, mapping a whole 4~MiB \emph{megapage} at once. % ledger: b3:sv32-megapage
+
+\Cref{lst:b3:virtual-memory:map,lst:b3:virtual-memory:walk} implement the tables over a byte array of 1~MiB that plays the physical memory: \code{map} installs one \omterm{def:b3:virtual-memory:paging}{page}, creating its level-0 table when the first \omterm{def:b3:virtual-memory:paging}{page} of a 4~MiB region is mapped; \code{translate} walks the tables as the specification describes, printing each step.
+
+\omcode{code/bachelor-3/11-virtual-memory/listings/sv32.c}{16}{29}{The indices and \code{map}. An entry is a frame number shifted left by 10, or-ed with its bits.}\label{lst:b3:virtual-memory:map}
+
+\omcode{code/bachelor-3/11-virtual-memory/listings/sv32.c}{31}{70}{The walk. A missing entry or a forbidden access is a \omterm{def:b3:virtual-memory:fault}{page fault}; a successful access sets A, and D for a store.}\label{lst:b3:virtual-memory:walk}
+
+\omcode{code/bachelor-3/11-virtual-memory/listings/sv32_demo.c}{7}{22}{A process of three \omterm{def:b3:virtual-memory:paging}{pages}, and four accesses.}\label{lst:b3:virtual-memory:demo}
+
+\omoutput{code/bachelor-3/11-virtual-memory/outputs/sv32_demo.txt}{Three translations and two faults. The store into the code \omterm{def:b3:virtual-memory:paging}{page} fails on the permissions, after a walk that succeeded; the load at \code{0x40000000} stops at the root. The fetch set the A bit: the code \omterm{def:b3:virtual-memory:paging}{page}'s entry has become \code{0x85b}.}\label{out:b3:virtual-memory:demo}
+
+Why two levels? A one-level table would need an entry for each of the $2^{20}$ \omterm{def:b3:virtual-memory:paging}{pages}, 4~MiB per process, mapped or not. With two, a region of the \omterm{def:b3:virtual-memory:space}{address space} that is not used costs one empty entry in the root, and level-0 tables exist only for the 4~MiB regions that hold something. \Cref{out:b3:virtual-memory:size} counts the cost for three layouts.
+
+\omcode{code/bachelor-3/11-virtual-memory/listings/table_size.py}{1}{29}{Page-table memory for three layouts: a small program, a large array, and \omterm{def:b3:virtual-memory:paging}{pages} scattered one per 4~MiB.}\label{lst:b3:virtual-memory:size}
+
+\omoutput{code/bachelor-3/11-virtual-memory/outputs/table_size.txt}{Tables, counting the root, and their bytes, in total and per mapped \omterm{def:b3:virtual-memory:paging}{page}.}\label{out:b3:virtual-memory:size}
+
+The small program, with code, heap, libraries and stack far apart, needs five tables, 20~KiB, against the 4~MiB of one level. A large dense array costs 4 bytes per \omterm{def:b3:virtual-memory:paging}{page}, the size of its entries. The scattered layout is the worst case: each \omterm{def:b3:virtual-memory:paging}{page} brings a table of its own, 4,160 bytes of tables per \omterm{def:b3:virtual-memory:paging}{page} of data. With 64-bit addresses the gap grows: RISC-V's Sv39 uses three levels for a 39-bit \omterm{def:b3:virtual-memory:space}{address space}, % ledger: b3:sv39
+and its Sv48 and Sv57 modes four and five. % ledger: b3:sv48-sv57
+ Some processors instead used an \emph{inverted} \omterm{def:b3:virtual-memory:paging}{page table}, one entry per physical frame, searched by hashing the virtual \omterm{def:b3:virtual-memory:paging}{page} number: its size follows the physical memory, not the \omterm{def:b3:virtual-memory:space}{address space}, but sharing a frame between two processes becomes awkward.
+
+\section{The translation cache}\label{sec:b3:virtual-memory:tlb}
+
+Two extra memory reads on every access would make a program that reads memory at every step up to three times slower. Programs have locality, and the same few \omterm{def:b3:virtual-memory:paging}{pages} are translated again and again; the processor keeps the recent translations in a small cache.
+
+\begin{definition}[Translation lookaside buffer, TLB reach, address-space identifier]\label{def:b3:virtual-memory:tlb}
+A \emph{translation lookaside buffer}\index{translation lookaside buffer} (TLB\index{TLB}) is a cache of recent translations, from virtual \omterm{def:b3:virtual-memory:paging}{page} number to \omterm{def:b3:virtual-memory:paging}{page-table entry}, searched on every access. On a hit the access uses the cached translation; on a miss the processor (or, on some processors, the kernel) walks the \omterm{def:b3:virtual-memory:paging}{page table} and stores the result. The \emph{TLB reach}\index{TLB reach} is the memory its entries cover at once: the number of entries times the \omterm{def:b3:virtual-memory:paging}{page} size. An \emph{address-space identifier}\index{address-space identifier} (ASID) is a number tagging each entry with the \omterm{def:b3:virtual-memory:space}{address space} it belongs to.
+\end{definition}
+
+With a \omterm{def:b3:virtual-memory:tlb}{TLB} hit rate $h$, memory access time $m$ and a walk of $L$ reads on a miss, the average time of an access is
+\[ m + (1 - h)\, L\, m, \]
+so with two levels and $h = 0.99$ an access costs 2~\% more than without translation. The hit rate depends on the order of the accesses. \Cref{lst:b3:virtual-memory:tlb} simulates a \omterm{def:b3:virtual-memory:tlb}{TLB} of 16 to 128 entries while a $1{,}024 \times 1{,}024$ matrix of 4-byte numbers is summed, each row filling exactly one \omterm{def:b3:virtual-memory:paging}{page}.
+
+\omcode{code/bachelor-3/11-virtual-memory/listings/tlb.c}{10}{25}{A fully associative \omterm{def:b3:virtual-memory:tlb}{TLB} with LRU replacement: \code{access_page} hits or refills one entry.}\label{lst:b3:virtual-memory:tlb}
+
+\omoutput{code/bachelor-3/11-virtual-memory/outputs/tlb.txt}{\omterm{def:b3:virtual-memory:tlb}{TLB} hit rates for three orders of the same sum, by number of entries.}\label{out:b3:virtual-memory:tlb}
+
+By rows, each \omterm{def:b3:virtual-memory:paging}{page} is used 1,024 times in a row: one miss per \omterm{def:b3:virtual-memory:paging}{page}, whatever the size. By columns, each access touches the next row, a new \omterm{def:b3:virtual-memory:paging}{page}, and the 1,024 \omterm{def:b3:virtual-memory:paging}{pages} come back only after all the others: every access misses, even with 128 entries, because the \omterm{def:b3:virtual-memory:paging}{pages} in use far exceed the reach, 512~KiB. In strips of 32 rows, the program reuses 32 \omterm{def:b3:virtual-memory:paging}{pages} before moving on: a \omterm{def:b3:virtual-memory:tlb}{TLB} of 32 entries or more holds them all, and one of 16 misses every time. Large \omterm{def:b3:virtual-memory:paging}{pages} raise the reach: one megapage entry covers as much as 1,024 small ones.
+
+A \omterm{def:b3:kernel-and-scheduling:switch}{context switch} changes \code{satp}, and with it every translation. Without tags the kernel must flush the whole \omterm{def:b3:virtual-memory:tlb}{TLB}, and the next process starts with misses. With an ASID, kept in \code{satp} beside the root table and up to 9 bits wide in Sv32, entries of several processes coexist. % ledger: b3:rv-asid
+When the kernel changes a \omterm{def:b3:virtual-memory:paging}{page table}, it must also tell the processor: on RISC-V the instruction \code{sfence.vma} invalidates cached translations, for one address or all, one ASID or all. % ledger: b3:rv-sfence
+
+\section{Demand paging and page replacement}\label{sec:b3:virtual-memory:replacement}
+
+\begin{definition}[Page fault, demand paging]\label{def:b3:virtual-memory:fault}
+A \emph{page fault}\index{page fault} is the exception the processor raises when a translation fails: no valid entry, or an access the entry does not allow. With \emph{demand paging}\index{demand paging}, the kernel maps a \omterm{def:b3:virtual-memory:paging}{page} only when the program first touches it: the fault is the request.
+\end{definition}
+
+The kernel's fault handler takes the faulting address from a register the trap filled, \code{stval} on RISC-V, % ledger: b3:rv-stval
+finds which region of the process it belongs to, and decides. An address in no region is an error: the process receives a signal, usually fatal, the familiar segmentation fault. Otherwise the handler finds a free frame, fills it (with zeros for a new heap or stack \omterm{def:b3:virtual-memory:paging}{page}, from the file for a \omterm{def:b3:virtual-memory:paging}{page} of code or of a mapped file, from the swap area for a \omterm{def:b3:virtual-memory:paging}{page} evicted earlier), writes the entry, and returns to the faulting instruction, which runs again and succeeds. A fault that needs no disk is a \emph{minor} fault; one that must wait for the disk is a \emph{major} fault, and costs milliseconds instead of microseconds.
+
+When no frame is free, one must be taken from some \omterm{def:b3:virtual-memory:paging}{page}, written back to disk first if it is dirty. Which \omterm{def:b3:virtual-memory:paging}{page}? The choice is a replacement policy, as for a cache, but \omterm{def:b3:virtual-memory:fault}{page faults} cost so much that the kernel can afford to think. LRU, recalled above, applies to \omterm{def:b3:virtual-memory:paging}{pages} unchanged.
+
+\begin{definition}[Optimal replacement, clock algorithm, second-chance bit]\label{def:b3:virtual-memory:replacement}
+\emph{Optimal replacement}\index{optimal replacement} (OPT) evicts the \omterm{def:b3:virtual-memory:paging}{page} whose next use lies furthest in the future. The \emph{clock algorithm}\index{clock algorithm} keeps the frames in a circle with a hand; each frame has a \emph{second-chance bit}\index{second-chance bit}, set when its \omterm{def:b3:virtual-memory:paging}{page} is used. To evict, the hand advances: a frame with the bit set has it cleared and is passed over; the first frame with the bit clear is evicted.
+\end{definition}
+
+OPT needs the future, so no kernel can run it; it is the yardstick that others are measured against, and it is optimal (exercise~\ref{exo:b3:virtual-memory:7}). LRU needs a timestamp on every access, which only the hardware could keep. Clock needs one bit per \omterm{def:b3:virtual-memory:paging}{page}, which the hardware sets for free: it is the A bit of the \omterm{def:b3:virtual-memory:paging}{page-table entry}. It approximates LRU: a \omterm{def:b3:virtual-memory:paging}{page} used since the hand last passed survives one more turn.
+
+\omcode{code/bachelor-3/11-virtual-memory/listings/replace.py}{5}{27}{FIFO evicts the \omterm{def:b3:virtual-memory:paging}{page} loaded first; LRU the \omterm{def:b3:virtual-memory:paging}{page} used least recently.}\label{lst:b3:virtual-memory:fifo}
+
+\omcode{code/bachelor-3/11-virtual-memory/listings/replace.py}{29}{54}{Clock and OPT.}\label{lst:b3:virtual-memory:clock}
+
+\omoutput{code/bachelor-3/11-virtual-memory/outputs/replace.txt}{Faults of each policy with 1 to 5 frames, on two reference strings.}\label{out:b3:virtual-memory:replace}
+
+The first string is the one L.~A. Belady, R.~A. Nelson and G.~S. Shedler published in 1969. % ledger: b3:belady-nelson-shedler-1969
+FIFO faults 9 times with 3 frames and 10 times with 4. More memory, more faults.
+
+\begin{definition}[Belady's anomaly, stack algorithm]\label{def:b3:virtual-memory:belady}
+\emph{Belady's anomaly}\index{Belady's anomaly} is a reference string on which a policy makes more faults with $f + 1$ frames than with $f$. A policy is a \emph{stack algorithm}\index{stack algorithm} if, on every reference string and at every moment, the set of \omterm{def:b3:virtual-memory:paging}{pages} it holds with $f$ frames is contained in the set it holds with $f + 1$ frames.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[omrecord, width=0.72\linewidth, height=5.2cm, xmin=0.7, xmax=5.3, ymin=4, ymax=13,
+      xtick={1, 2, 3, 4, 5}, xlabel={frames}, ylabel={page faults}, legend pos=south west,
+      legend cell align=left]
+    \addplot[omThm, thick, mark=*] table[x=frames, y=FIFO]
+      {code/bachelor-3/11-virtual-memory/figures/faults.dat};
+    \addlegendentry{FIFO (and clock)}
+    \addplot[omDef, thick, mark=square*] table[x=frames, y=LRU]
+      {code/bachelor-3/11-virtual-memory/figures/faults.dat};
+    \addlegendentry{LRU}
+    \addplot[omMeth, thick, mark=triangle*] table[x=frames, y=OPT]
+      {code/bachelor-3/11-virtual-memory/figures/faults.dat};
+    \addlegendentry{OPT}
+    \node[omThm, font=\scriptsize, anchor=south] at (axis cs:4, 10.2) {anomaly: 9 $\to$ 10};
+  \end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Faults on Belady's string 1 2 3 4 1 2 5 1 2 3 4 5, from \cref{out:b3:virtual-memory:replace}. LRU and OPT never fault more with more frames; FIFO, and clock with it, fault once more with 4 frames than with 3.}
+\end{omfigure}
+
+\begin{theorem}[Stack algorithms have no anomaly]\label{thm:b3:virtual-memory:stack}
+A \omterm{def:b3:virtual-memory:belady}{stack algorithm} never makes more faults with $f + 1$ frames than with $f$, on any reference string.
+\end{theorem}
+
+\begin{proof}
+A reference that hits with $f$ frames finds its \omterm{def:b3:virtual-memory:paging}{page} among the \omterm{def:b3:virtual-memory:paging}{pages} held with $f$ frames, hence, by inclusion, among those held with $f + 1$: it hits there too. So the faults with $f + 1$ frames are among the faults with $f$.
+\end{proof}
+
+LRU is a \omterm{def:b3:virtual-memory:belady}{stack algorithm}: with $f$ frames it holds the $f$ \omterm{def:b3:virtual-memory:paging}{pages} most recently used, which are among the $f + 1$ most recently used (exercise~\ref{exo:b3:virtual-memory:10} writes the proof in full). OPT is one too. FIFO is not: after 1~2~3~4~1~2~5, FIFO holds $\{1, 2, 5\}$ with 3 frames and $\{2, 3, 4, 5\}$ with 4. \omterm{def:b3:virtual-memory:belady}{Stack algorithms} were defined by R.~L. Mattson, J. Gecsei, D.~R. Slutz and I.~L. Traiger in 1970, in a paper on evaluating storage hierarchies. % ledger: b3:mattson-1970
+
+\begin{definition}[Working set, thrashing]\label{def:b3:virtual-memory:working-set}
+The \emph{working set}\index{working set} of a process at time $t$, for a window $\Delta$, is the set of \omterm{def:b3:virtual-memory:paging}{pages} it used during the last $\Delta$ references. \emph{Thrashing}\index{thrashing} is the collapse of a system whose processes do not all have their working sets in memory: each evicts \omterm{def:b3:virtual-memory:paging}{pages} another will need at once, and the machine spends its time on \omterm{def:b3:virtual-memory:fault}{page faults} instead of work.
+\end{definition}
+
+The second string of \cref{out:b3:virtual-memory:replace} shows the cliff in miniature: a loop over 5 \omterm{def:b3:virtual-memory:paging}{pages} faults on every reference with 4 frames or fewer, under FIFO, LRU and clock alike, and faults only 5 times once 5 frames hold the loop. The remedy for \omterm{def:b3:virtual-memory:working-set}{thrashing} is not a better policy but fewer processes: the kernel suspends some until the \omterm{def:b3:virtual-memory:working-set}{working sets} of the others fit. Peter Denning proposed the \omterm{def:b3:virtual-memory:working-set}{working set} model in 1968. % ledger: b3:denning-1968
+
+\section{Copy on write and memory-mapped files}\label{sec:b3:virtual-memory:cow}
+
+\begin{definition}[Copy on write, memory-mapped file]\label{def:b3:virtual-memory:cow}
+\emph{Copy on write}\index{copy on write} shares a \omterm{def:b3:virtual-memory:paging}{page} between two \omterm{def:b3:virtual-memory:space}{address spaces}, mapped read-only in both, and copies it only when one of them writes, in the page-fault handler. A \emph{memory-mapped file}\index{memory-mapped file} is a file whose bytes are mapped into an \omterm{def:b3:virtual-memory:space}{address space}: loads read the file, and stores, in a shared mapping, change it.
+\end{definition}
+
+\code{fork} copies the \omterm{def:b3:virtual-memory:space}{address space} of a process; copying every \omterm{def:b3:virtual-memory:paging}{page} would make it slow and, when the child replaces its program at once, useless. Linux implements \code{fork} with \omterm{def:b3:virtual-memory:cow}{copy on write}: what it duplicates is the \omterm{def:b3:virtual-memory:paging}{page tables}. % ledger: b3:linux-fork-cow
+\Cref{lst:b3:virtual-memory:cow} measures it with the count of minor \omterm{def:b3:virtual-memory:fault}{page faults}, the faults served without any disk activity, that \code{getrusage} keeps for each process. % ledger: b3:linux-minflt
+
+\omcode{code/bachelor-3/11-virtual-memory/listings/cow.c}{26}{51}{A parent touches 4,096 \omterm{def:b3:virtual-memory:paging}{pages}, forks, and the child reads them, writes them, and writes them again.}\label{lst:b3:virtual-memory:cow}
+
+\omoutput{code/bachelor-3/11-virtual-memory/outputs/cow.txt}{Minor \omterm{def:b3:virtual-memory:fault}{page faults} on the laptop. The first touch of a \omterm{def:b3:virtual-memory:fault}{page faults} once, \omterm{def:b3:virtual-memory:fault}{demand paging}; reading a shared \omterm{def:b3:virtual-memory:paging}{page} costs nothing; the first write to each \omterm{def:b3:virtual-memory:paging}{page} copies it; the second write costs nothing.}\label{out:b3:virtual-memory:cow}
+
+The parent's 4,097 faults are its 4,096 \omterm{def:b3:virtual-memory:paging}{pages}, each mapped on first touch, and one more elsewhere in the program. The child's reads fault zero times: \code{fork} copied the entries, which still point at the parent's frames. Its writes fault once per \omterm{def:b3:virtual-memory:paging}{page}, and each fault copies one \omterm{def:b3:virtual-memory:paging}{page}. The parent still reads 1: the child's writes went to its own copies.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=10mm, y=6mm, >=Stealth,
+  e/.style={draw, minimum width=15mm, minimum height=5mm, inner sep=1pt},
+  f/.style={draw, minimum width=13mm, minimum height=6mm, align=center}]
+  \begin{scope}
+    \node[font=\small] at (1.6, 2.4) {after \code{fork}};
+    \node[e, fill=omDef!10] (p) at (0, 1) {parent: R};
+    \node[e, fill=omThm!10] (c) at (0, -0.2) {child: R};
+    \node[f, fill=black!6] (fr) at (3, 0.4) {frame 7\\1 1 1 \dots};
+    \draw[->] (p.east) -- (fr.west); \draw[->] (c.east) -- (fr.west);
+  \end{scope}
+  \draw[->, thick] (4.2, 0.4) -- node[above, align=center] {child writes:\\page fault} (6.2, 0.4);
+  \begin{scope}[xshift=75mm]
+    \node[font=\small] at (1.6, 2.4) {after the copy};
+    \node[e, fill=omDef!10] (p2) at (0, 1) {parent: R};
+    \node[e, fill=omThm!10] (c2) at (0, -0.2) {child: RW};
+    \node[f, fill=black!6] (f7) at (3, 1.2) {frame 7\\1 1 1 \dots};
+    \node[f, fill=omThm!12] (f9) at (3, -0.4) {frame 9\\2 1 1 \dots};
+    \draw[->] (p2.east) -- (f7.west); \draw[->] (c2.east) -- (f9.west);
+  \end{scope}
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b3:virtual-memory:cow}{Copy on write}, for one \omterm{def:b3:virtual-memory:paging}{page}. After \code{fork} both entries point to the same frame, read-only. The child's store faults; the handler copies the frame, points the child's entry at the copy, writable, and the store runs again. The parent's entry stays read-only: its next store faults too, and the handler, finding the frame no longer shared, makes the entry writable without copying.}
+\end{omfigure}
+
+A shared mapping of a file turns the file into memory: \code{mmap} returns an address, the \omterm{def:b3:virtual-memory:paging}{pages} are filled from the file on first touch, and a store to a \omterm{def:b3:virtual-memory:paging}{page} marks it dirty; the kernel writes dirty \omterm{def:b3:virtual-memory:paging}{pages} back to the file, at the latest when \code{msync} asks it to. % ledger: b3:linux-map-shared
+
+\omcode{code/bachelor-3/11-virtual-memory/listings/mmap_file.c}{10}{32}{A file edited in place by stores to memory.}\label{lst:b3:virtual-memory:mmap}
+
+\omoutput{code/bachelor-3/11-virtual-memory/outputs/mmap_file.txt}{The file, read back with \code{read}, holds the stores.}\label{out:b3:virtual-memory:mmap}
+
+The same mechanism loads programs: the kernel maps the program file's code \omterm{def:b3:virtual-memory:paging}{pages}, and they come from disk only when executed; and two processes that map the same library share its frames.
+
+\begin{history}[Paging]
+L.~A. Belady published a study of replacement algorithms for a virtual-storage computer in 1966. % ledger: b3:belady-1966
+Peter Denning published the \omterm{def:b3:virtual-memory:working-set}{working set} model in May 1968. % ledger: b3:denning-1968
+Belady, Nelson and Shedler described the anomaly in June 1969, % ledger: b3:belady-nelson-shedler-1969
+and Mattson, Gecsei, Slutz and Traiger the \omterm{def:b3:virtual-memory:belady}{stack algorithms} in 1970. % ledger: b3:mattson-1970
+\end{history}
+
+\section{Exercises}\label{sec:b3:virtual-memory:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:virtual-memory:1}
+Split the Sv32 \omterm{def:b3:virtual-memory:space}{virtual address} \code{0x7ffff123}. In the process of \cref{lst:b3:virtual-memory:demo} (root in frame 1, the stack \omterm{def:b3:virtual-memory:paging}{page} in frame 6, its level-0 table in frame 7), which two entry addresses does the walk read, and what is the \omterm{def:b3:virtual-memory:space}{physical address}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:virtual-memory:2}
+A memory access takes 80~ns, a \omterm{def:b3:virtual-memory:tlb}{TLB} lookup no extra time, and a \omterm{def:b3:virtual-memory:tlb}{TLB} miss a walk of two memory reads. What is the average access time with a hit rate of 99~\%, and of 99.9~\%? Which hit rate keeps the slowdown under 5~\%?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:virtual-memory:3}
+Count the faults of LRU with 3 frames on 7 0 1 2 0 3 0 4 2 3.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:virtual-memory:4}
+\Cref{lst:b3:virtual-memory:demo} adds the line \code{translate(root, 0x10001000, 'r', &pa);}. Predict what it prints.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:virtual-memory:5}
+A first version of \code{sv32.c} defined its index as below. Loads from the first kilobyte of a mapped \omterm{def:b3:virtual-memory:paging}{page} work; a load from \code{0x10000abc} faults although the \omterm{def:b3:virtual-memory:paging}{page} \code{0x10000000} is mapped. Explain, and fix it.
+
+\omcode{code/bachelor-3/11-virtual-memory/exercises/ex5_vpn_bug.h}{2}{2}{The index as first written.}\label{lst:b3:virtual-memory:vpnbug}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:virtual-memory:6}
+Write clock with a dirty bit: references are (\omterm{def:b3:virtual-memory:paging}{page}, \code{'r'} or \code{'w'}); to evict, the hand first looks, over one full turn and changing nothing, for a \omterm{def:b3:virtual-memory:paging}{page} neither used nor dirty; failing that, over one more turn, for a \omterm{def:b3:virtual-memory:paging}{page} not used, clearing the bits it passes; and repeats. Count the faults and the write-backs. On (1, w), (2, r), (3, r), (4, r) with 3 frames, which \omterm{def:b3:virtual-memory:paging}{page} does it evict, and which does plain clock evict?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:virtual-memory:7}
+Prove that OPT makes the fewest possible faults on every reference string, for every number of frames.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:virtual-memory:8}
+A process has 64~KiB of code at \code{0x00400000}, 8~MiB of heap at \code{0x20000000}, and 64~KiB of stack just below \code{0x80000000}. How many \omterm{def:b3:virtual-memory:paging}{pages} of Sv32 \omterm{def:b3:virtual-memory:paging}{page tables} does it need?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:virtual-memory:9}
+In \cref{lst:b3:virtual-memory:cow}, the child first writes every other \omterm{def:b3:virtual-memory:paging}{page}, then reads every \omterm{def:b3:virtual-memory:paging}{page}, then writes every \omterm{def:b3:virtual-memory:paging}{page}. Predict the three counts of minor faults.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:virtual-memory:10}
+Prove that LRU is a \omterm{def:b3:virtual-memory:belady}{stack algorithm}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:virtual-memory:11}
+For any $k$, build a reference string on which clock makes about $k$ times as many faults as LRU with the same number of frames (you choose it).
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:virtual-memory:12}
+Sv39 translates 39-bit virtual addresses with 4~KiB \omterm{def:b3:virtual-memory:paging}{pages} through three levels of tables of $2^9$ entries of eight bytes, and also allows 2~MiB megapages and 1~GiB gigapages. % ledger: b3:sv39
+Compute the \omterm{def:b3:virtual-memory:tlb}{TLB reach} of 64 entries with each \omterm{def:b3:virtual-memory:paging}{page} size, and the \omterm{def:b3:virtual-memory:paging}{pages} of tables needed to map a 1~GiB array aligned on 1~GiB with small \omterm{def:b3:virtual-memory:paging}{pages}, with megapages, and with one gigapage. Compare with Sv32 in \cref{out:b3:virtual-memory:size}.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:virtual-memory:problem}
+
+\begin{problem}[{Weekend problem --- Belady's anomaly}]\label{pb:b3:virtual-memory:1}
+More memory should never hurt. This problem checks the claim on FIFO by hand, defines what makes a policy safe, searches every short reference string for counterexamples, and proves that the safe policies are safe.
+
+\omcode{code/bachelor-3/11-virtual-memory/listings/belady_search.py}{5}{37}{Every string up to renaming, extended one reference at a time, with the state of FIFO and LRU with 3 and with 4 frames carried along.}\label{lst:b3:virtual-memory:search}
+
+\omoutput{code/bachelor-3/11-virtual-memory/outputs/belady_search.txt}{The search, lengths 1 to 12, and the anomalous strings found.}\label{out:b3:virtual-memory:search}
+
+\medskip\noindent\textbf{Part I --- FIFO by hand.}
+\begin{enumerate}
+\item Run FIFO with 3 frames on 1 2 3 4 1 2 5 1 2 3 4 5, writing the frames after each reference. Count the faults.
+\item Do the same with 4 frames.
+\item From which reference on does the 4-frame run hold \omterm{def:b3:virtual-memory:paging}{pages} the 3-frame run has evicted, and which references then fault only with 4 frames?
+\item Clock makes the same counts in \cref{out:b3:virtual-memory:replace}. Why does clock behave exactly as FIFO on this string with 3 frames?
+\item Run OPT by hand with 3 frames: which \omterm{def:b3:virtual-memory:paging}{page} does it evict at each fault?
+\item What is the fewest faults any policy can make on this string, whatever the number of frames, and why?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The stack property.}
+\begin{enumerate}[resume]
+\item Give FIFO's \omterm{def:b3:virtual-memory:paging}{pages} with 3 and with 4 frames after 1 2 3 4 1 2 5. Is the inclusion of the definition true?
+\item Give LRU's \omterm{def:b3:virtual-memory:paging}{pages} at the same moment.
+\item Show that the inclusion at every moment implies that every hit with $f$ frames is a hit with $f + 1$.
+\item Can clock be a \omterm{def:b3:virtual-memory:belady}{stack algorithm}? Answer from \cref{out:b3:virtual-memory:replace}.
+\item LRU holds the $f$ \omterm{def:b3:virtual-memory:paging}{pages} most recently used. Describe FIFO's \omterm{def:b3:virtual-memory:paging}{pages} in the same way, and say why that description depends on $f$.
+\item Explain how a single pass over a string can then give LRU's faults for every number of frames at once.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The search.}
+\begin{enumerate}[resume]
+\item Why may the search consider only strings in which \omterm{def:b3:virtual-memory:paging}{page} $k + 1$ first appears after \omterm{def:b3:virtual-memory:paging}{page} $k$?
+\item The numbers of strings are 1, 2, 5, 15, 52, \dots: check the first four by listing the strings.
+\item What is the length of the shortest anomalous string for FIFO with 3 and 4 frames, and how many \omterm{def:b3:virtual-memory:paging}{pages} does it use?
+\item How many anomalous strings of that length are there, and what do they share?
+\item Some anomalous strings use 6 or 7 \omterm{def:b3:virtual-memory:paging}{pages}. What do the extra \omterm{def:b3:virtual-memory:paging}{pages} do?
+\item What does the LRU column show, and why is that no surprise?
+\item The count of strings grows faster than any power of a fixed base. Why can the search still afford length 12?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The proof.}
+\begin{enumerate}[resume]
+\item Prove \cref{thm:b3:virtual-memory:stack} from question 9.
+\item Deduce that LRU never shows the anomaly, using exercise~\ref{exo:b3:virtual-memory:10}.
+\item Why does the search not prove that FIFO has no anomaly with 2 and 3 frames?
+\item Why does FIFO fail to be a \omterm{def:b3:virtual-memory:belady}{stack algorithm}, in one sentence?
+\item Clock shows the anomaly, yet kernels use clock rather than LRU. Why?
+\item Sum up: which policies can show the anomaly, how short can an anomalous string be, and why can LRU never show one?
+\end{enumerate}
+\end{problem}

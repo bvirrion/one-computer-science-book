@@ -1,0 +1,264 @@
+\chapter{Time and Space Complexity}\label{ch:b3:complexity-classes}
+
+\Cref{ch:b3:computability} separated the problems that have a program from those that have none. Among the problems that do, some are solved in a fraction of a second on inputs of millions of items and others take longer than any computer can run once the input has a hundred. This chapter measures problems, not programs: it groups them into classes by the time or the space the best machine needs, and asks how the classes relate. Checking a proposed answer turns out to be easy for many problems whose search looks hard, which defines NP; a search can be built from a yes-or-no oracle; more time and more space provably give more power; and space behaves better than time: a nondeterministic search through a maze can be replaced by a deterministic one using only the square of its memory.
+
+\begin{recall}
+$f = O(g)$ means $f(n) \le c\,g(n)$ for some constant $c$ and all large $n$; a polynomial bound is $O(n^c)$ for a constant $c$ (Year~1 volume). \Cref{ch:b3:computability} defined \omterm{def:b3:computability:tm}{Turing machines} with one or several tapes, and showed that one tape simulates $k$ with a quadratic slowdown. Backtracking explores the choices of a search one at a time, undoing each choice that leads nowhere, and may try exponentially many (Year~1 volume).
+\end{recall}
+
+\section{Classes of time and space}\label{sec:b3:complexity-classes:classes}
+
+\begin{definition}[Decision problem, instance size]\label{def:b3:complexity-classes:decision}
+A \emph{decision problem}\index{decision problem} is a set of instances, each with the answer yes or no; formally, the language of the encodings of the yes-instances. The \emph{instance size}\index{instance size} $n$ is the length of the encoding: a list of numbers takes the total number of their digits, a graph its number of vertices and edges, up to a constant factor.
+\end{definition}
+
+The encoding matters only in one way: numbers must be written in a base of at least 2. Written in unary, the number $N$ takes $N$ symbols instead of about $\log_2 N$, and an algorithm that takes $N$ steps would look linear when it is exponential in the length of $N$.
+
+\begin{definition}[Time complexity class, space complexity class, class P]\label{def:b3:complexity-classes:classes}
+For a function $f$, the \emph{time complexity class}\index{time complexity class} $\mathrm{TIME}(f)$ is the set of \omterm{def:b3:complexity-classes:decision}{decision problems} decided by a \omterm{def:b3:computability:multitape}{multi-tape Turing machine} in $O(f(n))$ steps on inputs of size $n$. The \emph{space complexity class}\index{space complexity class} $\mathrm{SPACE}(f)$ is the set decided using $O(f(n))$ cells of work tapes, the input being on a read-only tape that does not count. The \emph{class P}\index{class P} is $\bigcup_c \mathrm{TIME}(n^c)$: the problems \omterm{def:b3:computability:languages}{decidable} in polynomial time.
+\end{definition}
+
+P is robust: one tape simulates several with a quadratic slowdown (\cref{thm:b3:computability:multitape}), and a random-access machine, or a Python program whose integers stay of polynomial size, is simulated by a \omterm{def:b3:computability:tm}{Turing machine} with a polynomial slowdown too. So whether a problem is in P does not depend on the model, while whether it is in $\mathrm{TIME}(n^2)$ does. Cobham and Edmonds proposed in 1965 to take P as the formal meaning of ``feasibly computable''. % ledger: b3:cobham-edmonds
+% ledger: b3:edmonds-1965
+The time and space classes go back to Hartmanis and Stearns, and to Stearns, Hartmanis and Lewis, both in 1965. % ledger: b3:hartmanis-stearns-1965
+% ledger: b3:stearns-hartmanis-lewis-1965
+
+\section{P and NP}\label{sec:b3:complexity-classes:np}
+
+To decide whether some of the numbers $3, 34, 4, 12, 5, 2$ add up to $9$, a search may try all 64 subsets. To be convinced that they do, it is enough to be shown $\{4, 5\}$ and to add. Many problems share that shape: finding is hard, checking is easy.
+
+\begin{definition}[Certificate, verifier, class NP, nondeterministic Turing machine]\label{def:b3:complexity-classes:np}
+A \emph{verifier}\index{verifier} for a \omterm{def:b3:complexity-classes:decision}{decision problem} $A$ is an algorithm $V$ that takes an instance $x$ and a word $c$, the \emph{certificate}\index{certificate}, such that $x$ is a yes-instance if and only if $V(x, c)$ accepts for some $c$. The \emph{class NP}\index{class NP} is the set of problems that have a verifier running in time polynomial in the size of $x$ (so only certificates of polynomial length matter). A \emph{nondeterministic Turing machine}\index{nondeterministic Turing machine} may have several transitions for the same state and symbol; it accepts when some sequence of choices leads to acceptance.
+\end{definition}
+
+NP stands for ``nondeterministic polynomial time'': a problem has a polynomial-time \omterm{def:b3:complexity-classes:np}{verifier} if and only if a nondeterministic machine decides it in polynomial time, since the machine can guess the \omterm{def:b3:complexity-classes:np}{certificate} one symbol per step, and conversely its choices form a \omterm{def:b3:complexity-classes:np}{certificate}. P is contained in NP: a problem decided in polynomial time has the \omterm{def:b3:complexity-classes:np}{verifier} that ignores the \omterm{def:b3:complexity-classes:np}{certificate}. Whether the inclusion is strict is the question of \cref{ch:b3:np-completeness}.
+
+\code{verifiers.py} checks \omterm{def:b3:complexity-classes:np}{certificates} for subset sum (a set of indices), Hamiltonian path (an ordering of the vertices, each consecutive pair joined by an edge) and 3-colouring (a colour per vertex, different at the ends of each edge), and counts its steps.
+
+\omcode{code/bachelor-3/16-complexity-classes/listings/verifiers.py}{18}{39}{Two of the three \omterm{def:b3:complexity-classes:np}{verifiers}. Each looks at every vertex and edge once.}\label{lst:b3:complexity-classes:verifiers}
+
+\omoutput{code/bachelor-3/16-complexity-classes/outputs/verifiers.txt}{Verification steps on graphs with $n$ vertices and $2n$ edges: linear in $n$.}\label{out:b3:complexity-classes:verifiers}
+
+Without a \omterm{def:b3:complexity-classes:np}{certificate}, the obvious algorithm for subset sum tries every subset. The program \code{search_vs_verify.py} builds all $2^n$ subset sums of $n$ even numbers, looking for an odd target that is never there; checking a \omterm{def:b3:complexity-classes:np}{certificate} would take $n$ steps.
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[omrecord, width=0.8\linewidth, height=5.4cm, ymode=log, xmin=3, xmax=23,
+      xlabel={$n$, the number of numbers}, ylabel={steps}, ymax=1e9, legend pos=north west, legend cell align=left]
+    \addplot[omThm, thick, mark=*, mark size=1.2pt] table[x=n, y=search]
+      {code/bachelor-3/16-complexity-classes/figures/steps.dat};
+    \addlegendentry{search: $2^n$ subset sums}
+    \addplot[omDef, thick, mark=square*, mark size=1.2pt] table[x=n, y=verify]
+      {code/bachelor-3/16-complexity-classes/figures/steps.dat};
+    \addlegendentry{verify a certificate: $n$ steps}
+  \end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Searching against checking, for subset sum with no solution, on a logarithmic scale: from \code{search_vs_verify.py}. At $n = 22$ the search computes 4,194,304 sums.}
+\end{omfigure}
+
+An optimisation problem becomes a \omterm{def:b3:complexity-classes:decision}{decision problem} with a threshold: ``what is the shortest tour?'' becomes ``is there a tour of length at most $B$?''. If the decision is easy, so is the optimum, by binary search on $B$ (\cref{exo:b3:complexity-classes:2}). The search for a solution, not only its value, also reduces to decisions.
+
+\begin{definition}[Self-reducibility]\label{def:b3:complexity-classes:self-reducibility}
+A problem in NP is \emph{self-reducible}\index{self-reducibility} when a \omterm{def:b3:complexity-classes:np}{certificate} for a yes-instance can be found in polynomial time with the help of an oracle that answers the \omterm{def:b3:complexity-classes:decision}{decision problem} itself, each call counting as one step.
+\end{definition}
+
+\begin{theorem}[SAT is self-reducible]\label{thm:b3:complexity-classes:self-reduce}
+Given an oracle that decides whether a Boolean formula in conjunctive normal form is satisfiable, a satisfying assignment of a satisfiable formula with $n$ variables can be found with $n + 1$ calls.
+\end{theorem}
+
+\begin{proof}
+One call checks that $\varphi$ is satisfiable. Then, for $i = 1, \ldots, n$: let $\varphi_1$ be $\varphi$ with $x_i$ set to true and simplified. If the oracle says $\varphi_1$ is satisfiable, keep $x_i = $ true and continue with $\varphi_1$. Otherwise every satisfying assignment of $\varphi$, and there is one by the invariant ``the current formula is satisfiable'', has $x_i = $ false, so continue with $\varphi$ with $x_i$ set to false, without asking. The invariant holds at every step, and after $n$ steps all variables are set and the formula is satisfied.
+\end{proof}
+
+\omcode{code/bachelor-3/16-complexity-classes/listings/self_reduce.py}{18}{36}{Finding an assignment with a yes-or-no oracle: one call per variable, plus one.}\label{lst:b3:complexity-classes:self-reduce}
+
+\omoutput{code/bachelor-3/16-complexity-classes/outputs/self_reduce.txt}{$n + 1$ oracle calls when the formula is satisfiable, one when it is not.}\label{out:b3:complexity-classes:self-reduce}
+
+The oracle here is an exhaustive search, but the algorithm uses only its answers: whatever the oracle costs, finding costs at most $n + 1$ times as much as deciding.
+
+\section{The hierarchy theorems}\label{sec:b3:complexity-classes:hierarchy}
+
+More time should give more power. Hartmanis and Stearns proved it, by diagonalisation.
+
+\begin{theorem}[Time hierarchy theorem, space hierarchy theorem]\label{thm:b3:complexity-classes:hierarchy}\index{time hierarchy theorem}\index{space hierarchy theorem}
+For a function $f$ computable in time $f$ itself, some problem is decided in time $O(f(n) \log f(n))$ but not in time $o(f(n))$. For a function $f \ge \log n$ computable in space $f$, some problem is decided in space $O(f(n))$ but not in space $o(f(n))$.
+\end{theorem}
+
+\begin{proof}[Proof idea]
+The machine $D$, on input $\langle M \rangle$ padded with symbols, simulates $M$ on its own input for $f(n)$ steps and does the opposite of what $M$ answers. No machine $M$ running in time $o(f)$ decides the same problem as $D$: on long enough paddings of $\langle M \rangle$ the simulation finishes and $D$ disagrees with $M$. The factor $\log f(n)$ pays for the simulation's step counter and for moving $M$'s description along the tapes; the space version needs no such factor.
+\end{proof}
+
+So $\mathrm{TIME}(n^a)$ is strictly smaller than $\mathrm{TIME}(n^b)$ when $a < b$, and P is strictly smaller than \omterm{def:b3:complexity-classes:pspace}{EXP}, the class defined in \cref{sec:b3:complexity-classes:space} (\cref{exo:b3:complexity-classes:11}). % ledger: b3:time-hierarchy
+% ledger: b3:space-hierarchy
+The theorems separate classes of the same kind, time from time and space from space. They say nothing about P against NP, whose machines differ in kind.
+
+\section{Polynomial space}\label{sec:b3:complexity-classes:space}
+
+\begin{definition}[EXP, PSPACE, TQBF]\label{def:b3:complexity-classes:pspace}
+\emph{EXP}\index{EXP} is $\bigcup_c \mathrm{TIME}(2^{n^c})$ and \emph{PSPACE}\index{PSPACE} is $\bigcup_c \mathrm{SPACE}(n^c)$; NPSPACE is the same with nondeterministic machines. \emph{TQBF}\index{TQBF} is the problem of deciding whether a fully quantified Boolean formula $Q_1 x_1\, Q_2 x_2 \cdots Q_n x_n\, \varphi$, each $Q_i$ being $\exists$ or $\forall$, is true.
+\end{definition}
+
+Space can be reused and time cannot, so space is the more generous resource: a machine that runs for $t$ steps uses at most $t$ cells, and a machine that uses $s$ cells has at most $2^{O(s)}$ configurations, so if it halts it does within that many steps. Hence $\mathrm{P} \subseteq \mathrm{PSPACE} \subseteq \mathrm{EXP}$, and NP is inside \omterm{def:b3:complexity-classes:pspace}{PSPACE} too (\cref{exo:b3:complexity-classes:8}).
+
+\omterm{def:b3:complexity-classes:pspace}{TQBF} is a game. $\exists x_1\, \forall x_2\, \exists x_3 \ldots \varphi$ says: the first player can choose $x_1$ so that whatever the second chooses for $x_2$, the first can choose $x_3$ so that \dots, and in the end $\varphi$ holds. A recursion evaluates it in space proportional to $n$, keeping only one branch at a time: the depth is $n$, the time $2^n$.
+
+\omcode{code/bachelor-3/16-complexity-classes/listings/qbf.py}{7}{14}{Evaluating a quantified formula by recursion: \code{any} for $\exists$, \code{all} for $\forall$.}\label{lst:b3:complexity-classes:qbf}
+
+\omoutput{code/bachelor-3/16-complexity-classes/outputs/qbf.txt}{The game ``take 1 or 2 tokens, whoever takes the last wins'': the second player wins exactly when $m$ is a multiple of 3.}\label{out:b3:complexity-classes:qbf}
+
+\omterm{def:b3:complexity-classes:pspace}{TQBF} is in \omterm{def:b3:complexity-classes:pspace}{PSPACE}, and every problem in \omterm{def:b3:complexity-classes:pspace}{PSPACE} reduces to it in polynomial time: it is complete for \omterm{def:b3:complexity-classes:pspace}{PSPACE}, as Stockmeyer and Meyer showed in 1973. % ledger: b3:stockmeyer-meyer-1973
+% ledger: b3:tqbf-complete
+
+\subsection{Savitch's theorem}
+
+Nondeterminism seems to buy exponential time; for space it buys at most a square. The key is reachability: is there a path from $u$ to $v$ in a graph of $n$ vertices? A nondeterministic machine walks, guessing each next vertex and remembering only the current one and a step counter: $O(\log n)$ bits. Breadth-first search is deterministic but stores a set of up to $n$ visited vertices. Savitch's algorithm stores neither.
+
+\begin{theorem}[Savitch's theorem]\label{thm:b3:complexity-classes:savitch}\index{Savitch's theorem}
+Reachability in a directed graph of $n$ vertices can be decided deterministically in space $O(\log^2 n)$. More generally, every problem decided by a nondeterministic machine in space $f(n) \ge \log n$ is decided by a deterministic machine in space $O(f(n)^2)$; in particular NPSPACE $=$ \omterm{def:b3:complexity-classes:pspace}{PSPACE}.
+\end{theorem}
+
+\begin{proof}
+Let $R(u, v, k)$ say that a path of length at most $2^k$ leads from $u$ to $v$. $R(u, v, 0)$ holds when $u = v$ or $(u, v)$ is an edge. For $k > 0$, $R(u, v, k)$ holds if and only if there is a vertex $w$ with $R(u, w, k - 1)$ and $R(w, v, k - 1)$: cut the path in its middle. Compute $R$ by this recursion, trying $w = 1, \ldots, n$ and evaluating the two halves one after the other. A frame stores $u$, $v$, $k$ and $w$, $O(\log n)$ bits, and the recursion is $k + 1$ frames deep. Paths need at most $n - 1$ edges, so $k = \lceil \log_2 n \rceil$ suffices: $O(\log n)$ frames of $O(\log n)$ bits. The general statement applies the same recursion to the graph of configurations of the nondeterministic machine, which has $2^{O(f(n))}$ vertices, each written in $O(f(n))$ bits (\cref{exo:b3:complexity-classes:10}).
+\end{proof}
+
+Walter Savitch published it in 1970. % ledger: b3:savitch-1970
+% ledger: b3:savitch-thm
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, level distance=11mm, sibling distance=50mm,
+    every node/.style={draw, rounded corners, fill=omDef!12, inner sep=2pt},
+    level 2/.style={sibling distance=25mm}]
+  \node {$R(u, v, 3)$}
+    child { node {$R(u, w, 2)$}
+      child { node {$R(u, w', 1)$} }
+      child { node {$R(w', w, 1)$} } }
+    child { node {$R(w, v, 2)$}
+      child { node {$R(w, w'', 1)$} }
+      child { node {$R(w'', v, 1)$} } };
+  \draw[omThm, very thick, ->] (-4.9, -0.1) -- node[draw=none, fill=none, left, align=right] {stored now:\\one chain,\\$k + 1$ frames} (-4.9, -2.3);
+\end{tikzpicture}
+\par\smallskip{\small Savitch's recursion for paths of length at most 8: each node tries every midpoint, but only the current chain of calls from the root is in memory.}
+\end{omfigure}
+
+\omcode{code/bachelor-3/16-complexity-classes/listings/savitch.py}{15}{28}{The midpoint recursion, with its calls and its depth counted.}\label{lst:b3:complexity-classes:savitch}
+
+\omoutput{code/bachelor-3/16-complexity-classes/outputs/savitch.txt}{The depth is $k + 1$; the calls grow like $n^{\log_2 n}$. On the town's road map BFS visits all 30 places.}\label{out:b3:complexity-classes:savitch}
+
+The memory is tiny and the time is not: on 16 vertices the unreachable query makes 88,741 calls, about $2^{16} = 16^{\log_2 16}$. Savitch's algorithm is a statement about space, not a way to find a route; the weekend problem measures the trade-off.
+
+\section{Logarithmic space}\label{sec:b3:complexity-classes:logspace}
+
+\begin{definition}[Class L, class NL, log-space reduction]\label{def:b3:complexity-classes:logspace}
+The \emph{class L}\index{class L} is $\mathrm{SPACE}(\log n)$: a deterministic machine with a read-only input and a work tape of $O(\log n)$ cells, enough for a constant number of counters and pointers into the input. The \emph{class NL}\index{class NL} is the same for nondeterministic machines. A \emph{log-space reduction}\index{log-space reduction} is a \omterm{def:b3:computability:reduction}{many-one reduction} computed by such a machine with a write-only output tape.
+\end{definition}
+
+Reachability is in NL, by the guessing walk, and every problem in NL reduces to it in logarithmic space: it is complete for NL. Savitch's theorem puts NL inside $\mathrm{SPACE}(\log^2 n)$. The complement, ``is there no path?'', seems to need a \omterm{def:b3:complexity-classes:np}{certificate} as long as the whole set of reachable vertices, yet Immerman and Szelepcsényi showed independently in 1987 that it is in NL too: NL is closed under complement. % ledger: b3:immerman-thm
+% ledger: b3:immerman-1988
+% ledger: b3:szelepcsenyi-1988
+The known inclusions form a chain.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small]
+  \foreach \w/\h/\l/\c in {11/3.3/EXP/black!4, 9.2/2.7/PSPACE/omDef!8, 7.4/2.1/NP/omThm!10, 5.6/1.5/P/omDef!16, 3.8/0.95/NL/omThm!18, 2.0/0.5/L/omDef!28} {
+    \draw[fill=\c] ({\w/2}, 0) ellipse ({\w/2} and {\h/2});
+    \node at ({\w - 0.9}, 0) {\l};
+  }
+\end{tikzpicture}
+\par\smallskip{\small $\mathrm{L} \subseteq \mathrm{NL} \subseteq \mathrm{P} \subseteq \mathrm{NP} \subseteq \mathrm{PSPACE} \subseteq \mathrm{EXP}$. The hierarchy theorems make $\mathrm{NL} \ne \mathrm{PSPACE}$ and $\mathrm{P} \ne \mathrm{EXP}$; every other inclusion drawn might be an equality.}
+\end{omfigure}
+
+\section{Exercises}\label{sec:b3:complexity-classes:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:complexity-classes:1}
+For each problem, say what a \omterm{def:b3:complexity-classes:np}{certificate} is and how to check it in polynomial time: (a) the number $N$ is composite; (b) the graph has a cycle through every vertex; (c) the graph has $k$ vertices that are pairwise adjacent; (d) a partly filled grid of a puzzle can be completed by the rules.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:complexity-classes:2}
+The optimisation problem: given distances between $n$ towns, the length of the shortest tour visiting each once. Write the decision version with a threshold, and show that a polynomial-time algorithm for the decision version gives one for the optimum when distances are integers below $2^{32}$.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:complexity-classes:3}
+How much work space, in bits, do these use on a list of $n$ numbers of at most $b$ bits? (a) Computing the maximum in one pass. (b) Checking that the list is sorted. (c) Sorting a copy. (d) Breadth-first search on a graph of $n$ vertices.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:complexity-classes:4}
+Predict the number of oracle calls of \code{find_assignment} on a satisfiable formula with 20 variables, on an unsatisfiable one, and on a satisfiable one in which every variable must be false.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:complexity-classes:5}
+\code{exercises/ex5_hampath.py} has a Hamiltonian-path \omterm{def:b3:complexity-classes:np}{verifier} that accepts the \omterm{def:b3:complexity-classes:np}{certificate} 0, 1, 0, 1 on the path $0 - 1 - 2 - 3$. Explain why and fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:complexity-classes:6}
+Write \code{verify_clique(n, edges, k, chosen)}, a \omterm{def:b3:complexity-classes:np}{verifier} for ``the graph has a clique of $k$ vertices'' running in $O(m + k^2)$ steps. It is tested against brute force on every small graph.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:complexity-classes:7}
+Prove that 3-colouring is \omterm{def:b3:complexity-classes:self-reducibility}{self-reducible}: given an oracle for ``is this graph 3-colourable?'', find a colouring with a polynomial number of calls. (Try joining two vertices by an edge, or merging them.)
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:complexity-classes:8}
+Prove $\mathrm{NP} \subseteq \mathrm{PSPACE}$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:complexity-classes:9}
+Bound the number of calls of \code{reach(u, v, k)} on a graph of $n$ vertices, and compare with \cref{out:b3:complexity-classes:savitch}. Why does the reachable query make fewer calls than the unreachable one?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:complexity-classes:10}
+Complete the proof of Savitch's theorem: a nondeterministic machine using space $f(n) \ge \log n$ is simulated deterministically in space $O(f(n)^2)$. Say what the vertices and edges of the configuration graph are, how many there are, and how the simulation reads an edge without storing the graph.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:complexity-classes:11}
+Prove $\mathrm{P} \ne \mathrm{EXP}$ from the time hierarchy theorem.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:complexity-classes:12}
+A graph is 2-colourable if and only if it has no cycle of odd length. Write \code{two_colourable(n, edges)} that stores no list or set, only a few vertex numbers per recursive call, by running Savitch's recursion on the graph whose vertices are pairs (vertex, parity of the walk so far). What space does it use? It is tested against breadth-first colouring on random graphs.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:complexity-classes:problem}
+
+\begin{problem}[{Weekend problem --- Savitch in the maze}]\label{pb:b3:complexity-classes:1}
+Brenmoor's road map has 30 places and 53 roads, one of them one-way. This problem compares two ways of deciding whether one place can be reached from another: breadth-first search, fast but with a memory that grows with the map, and Savitch's recursion, which remembers almost nothing and pays for it in time. The counts are those of \cref{out:b3:complexity-classes:savitch}.
+
+\medskip\noindent\textbf{Part I --- Breadth-first search.}
+\begin{enumerate}
+  \item How many steps does BFS take on a graph of $n$ vertices and $m$ edges? Count them for the town, with each two-way road as two directed edges.
+  \item How much memory does BFS use, in vertices and in bits, when every place is reachable?
+  \item Why can BFS not do with less, when it must remember which places it has seen?
+  \item Depth-first search uses a stack instead of a queue. Is its memory smaller in the worst case?
+  \item With $n = 10^9$ vertices, how much memory does BFS need, at 4 bytes per vertex?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The midpoint recursion.}
+\begin{enumerate}[resume]
+  \item What $k$ does \code{path_exists} use for the town, and why is it enough?
+  \item What does one frame store, and how many bits does it need for 30 places?
+  \item Check the printed depth for the town against $k + 1$.
+  \item Bound the total memory in bits, and compare with BFS.
+  \item For $n = 10^9$, how many frames and how many bytes does the recursion need?
+  \item Why does the recursion evaluate the two halves one after the other rather than both at once?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- What it costs.}
+\begin{enumerate}[resume]
+  \item Write a recurrence for the number of calls $C(k)$ on the unreachable query, in the worst case.
+  \item Solve it: show $C(k) \le (2n + 1)^k$.
+  \item Compute $\log_2$ of the printed calls of the unreachable query for $n = 4, 8, 16$ and compare with $(\log_2 n)^2$.
+  \item From that fit, predict the calls for $n = 32$ and $n = 1{,}024$. How long would $n = 32$ take at a million calls per second?
+  \item Why is the time $n^{O(\log n)}$, more than any polynomial but less than $2^n$?
+  \item The town's query made only 1,858 calls with 30 places. Why so few?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The trade-off.}
+\begin{enumerate}[resume]
+  \item Which would you run on the town, and which on a graph given only as a function that returns the neighbours of a vertex, too large to store?
+  \item Can a deterministic algorithm use $O(\log n)$ space and polynomial time for reachability in directed graphs? What would that say about L and NL?
+  \item Why does nondeterminism make reachability easy in $O(\log n)$ space?
+  \item Savitch's theorem gives $\mathrm{NL} \subseteq \mathrm{SPACE}(\log^2 n)$. Why is the corresponding statement for time, NP inside a small power of P, not known?
+  \item Explain how the configuration graph of a machine turns any space-bounded computation into a maze.
+  \item Why does the result imply $\mathrm{NPSPACE} = \mathrm{PSPACE}$?
+  \item Sum up: what does each method spend, and what does it save?
+\end{enumerate}
+\end{problem}

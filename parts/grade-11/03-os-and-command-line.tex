@@ -1,0 +1,366 @@
+% Provenance (never printed): NSI premiere "Systemes d'exploitation" (role, commandes de base, droits et
+% permissions, logiciel libre). See sources/book2/BRIEFS.md.
+\chapter{Operating Systems and the Command Line}\label{ch:g11:os-and-command-line}
+
+Two programs want to print at the same moment; two others want to write the same file; a third would like to read a
+file that belongs to someone else. None of them may decide alone. A program that runs underneath all the others, and
+that alone may touch the hardware, decides for them: the \omterm{def:g11:os-and-command-line:kernel}{kernel} of the operating system.
+
+This chapter looks at what that \omterm{def:g11:os-and-command-line:kernel}{kernel} does, then works with it the way programmers do every day, by typing \omterm{def:g11:os-and-command-line:shell}{commands}:
+moving through the tree of files, copying and removing, setting who may read what, and joining small \omterm{def:g11:os-and-command-line:shell}{commands} into
+pipelines that answer questions about the town's data.
+
+\begin{recall}
+A program is a list of instructions run by the computer; the operating system is the program that starts the
+others and shares the machine between them (Book 1, grade 4). Files are kept in folders, folders in other folders,
+and a path names a file by the folders that lead to it (Book 1, grade 3). A text file holds characters only, line by
+line (Book 1, grade 8).
+\end{recall}
+
+\section{What the kernel does}\label{sec:g11:os-and-command-line:kernel}
+
+\begin{definition}[Kernel, system call]\label{def:g11:os-and-command-line:kernel}
+The \emph{kernel}\index{kernel} is the part of the operating system that runs with full control of the hardware. It
+shares the processor between the running programs, gives each its own memory, keeps the files, drives the devices,
+and checks who may do what. A program asks the kernel for a service through a \emph{system call}\index{system call},
+such as opening a file, reading from it, or starting another program.
+\end{definition}
+
+A program never drives the disk or the printer itself. When Python runs \code{open("loans.csv")}, it ends in a \omterm{def:g11:os-and-command-line:kernel}{system
+call}; the \omterm{def:g11:os-and-command-line:kernel}{kernel} checks that the file exists and that this \omterm{def:g11:os-and-command-line:permission}{user} may read it, and only then hands back a number by
+which the program will refer to the open file. Two programs that print at once get their pages one after the other,
+because both go through the \omterm{def:g11:os-and-command-line:kernel}{kernel}, which keeps a queue.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, l/.style={draw, text width=92mm, minimum height=8mm, align=center}]
+  \node[l, fill=black!8] (hw) at (0,0) {hardware: processor, memory, disks, network, screen, printer};
+  \node[l, fill=omDef!15, above=0mm of hw] (k) {kernel: processes, memory, files, devices, rights};
+  \node[l, fill=omDef!6, above=0mm of k] (s) {system programs: the shell, \code{ls}, \code{cp}, \code{sort}, \dots};
+  \node[l, fill=omMeth!8, above=0mm of s] (a) {applications: a browser, an editor, your Python programs};
+  \node[above=2mm of a] (u) {the user};
+  \draw[<->, thick, omThm] ([xshift=48mm]a.north) -- node[right, align=left, font=\footnotesize] {system\\calls}
+    ([xshift=48mm]k.north);
+\end{tikzpicture}
+
+{\small The layers of a computer. Programs above the \omterm{def:g11:os-and-command-line:kernel}{kernel} reach the hardware only by asking the \omterm{def:g11:os-and-command-line:kernel}{kernel}, through
+\omterm{def:g11:os-and-command-line:kernel}{system calls}.}
+\end{omfigure}
+
+The operating system is the \omterm{def:g11:os-and-command-line:kernel}{kernel} and the system programs around it. Some are \omterm{def:g11:os-and-command-line:free-software}{free software}, some are not.
+
+\begin{definition}[Free software]\label{def:g11:os-and-command-line:free-software}
+A program is \emph{free software}\index{free software} when its licence gives every \omterm{def:g11:os-and-command-line:permission}{user} the freedom to share it,
+to study how it works, and to modify it, which requires access to its source code. A \emph{proprietary} program's
+licence withholds some of these freedoms.
+\end{definition}
+% ledger: g11:free-software
+
+A related term, \textit{open source}, comes with its own definition, a list of ten criteria starting with free
+redistribution and access to the source code; in practice most licences meet both definitions.
+% ledger: g11:osd-10
+
+\begin{dated}{2026}
+The operating systems in common use form a few families. The Linux \omterm{def:g11:os-and-command-line:kernel}{kernel}, \omterm{def:g11:os-and-command-line:free-software}{free software}, runs most servers and,
+modified, Android phones, whose \omterm{def:g11:os-and-command-line:kernel}{kernel} is based on a long-term-supported Linux \omterm{def:g11:os-and-command-line:kernel}{kernel}. Apple's systems run its
+computers and phones. Microsoft's Windows runs many personal computers. They differ in many details, but the
+\omterm{def:g11:os-and-command-line:shell}{commands} of this chapter work on Linux and on Apple's computers, and on Windows inside a Linux environment.
+% ledger: g11:android-linux
+\end{dated}
+
+\section{The file-system tree}\label{sec:g11:os-and-command-line:tree}
+
+\begin{definition}[File-system tree, root directory]\label{def:g11:os-and-command-line:fs-tree}
+The \emph{file-system tree}\index{file-system tree} is the arrangement of all the directories (folders) and files of
+a system: each directory may contain files and other directories, and all of them are inside one directory, the
+\emph{root directory}\index{root directory}, written \code{/}.
+\end{definition}
+
+\begin{definition}[Absolute path, relative path, working directory]\label{def:g11:os-and-command-line:abs-rel}
+An \emph{absolute path}\index{absolute path} names a file from the root, starting with \code{/}, such as
+\code{/home/ada/library/books/books.csv}. Each running program has a \emph{working directory}\index{working
+directory}, and a \emph{relative path}\index{relative path}, which does not start with \code{/}, names a file from
+there. In a path, \code{.} is the directory itself and \code{..} its parent.
+\end{definition}
+
+The \omterm{def:g11:os-and-command-line:shell}{shell} is the program that reads \omterm{def:g11:os-and-command-line:shell}{commands} and runs them. The sessions of this chapter are captured from a real
+\omterm{def:g11:os-and-command-line:shell}{shell}: each line after \texttt{\$} is a \omterm{def:g11:os-and-command-line:shell}{command}, and the lines below it are what it printed. They run in a fresh
+directory, shown as \texttt{\textasciitilde/session}, where \texttt{\textasciitilde} is the \omterm{def:g11:os-and-command-line:permission}{user}'s home directory.
+
+\omoutput{code/grade-11/03-os-and-command-line/outputs/tree_moves.txt}{Making directories and moving through them.
+When its output goes to a file, as here, \code{ls} prints one name per line; at a terminal it uses
+columns.}\label{out:g11:os-and-command-line:tree-moves}
+
+\code{mkdir} makes a directory, \code{cd} changes the \omterm{def:g11:os-and-command-line:abs-rel}{working directory}, \code{pwd} prints it. A name starting with a
+dot is hidden: \code{ls} leaves it out, \code{ls -a} shows it, along with \code{.} and \code{..}. Settings files are
+hidden this way, so that they do not clutter the listing.
+
+\omoutput{code/grade-11/03-os-and-command-line/outputs/paths.txt}{\omterm{def:g11:os-and-command-line:abs-rel}{Relative paths} with \code{..}, and the \omterm{def:g11:os-and-command-line:abs-rel}{absolute path}
+that \code{realpath} computes.}\label{out:g11:os-and-command-line:paths}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small\ttfamily, level distance=11mm, sibling distance=26mm,
+    every node/.style={draw, rounded corners=1.5pt, inner sep=2pt, fill=white},
+    edge from parent/.style={draw, black!60}]
+  \node {\textasciitilde/session}
+    child {node (lib) {library}
+      child {node (bk) {books}
+        child {node[fill=omMeth!12] (csv) {books.csv}}}
+      child {node[fill=omDef!15, very thick] (mb) {members}}};
+  \begin{scope}[every node/.style={font=\footnotesize\rmfamily, text=omThm}]
+    \draw[->, thick, omThm] (mb.east) to[bend right=50] node[right] {1: \code{..}} (lib.east);
+    \draw[->, thick, omThm] (lib.west) to[bend right=50] node[left] {2: \code{books}} (bk.west);
+    \draw[->, thick, omThm] (bk.west) to[bend right=50] node[left] {3: \code{books.csv}} (csv.west);
+  \end{scope}
+  \node[draw=none, fill=none, below=1mm of mb, font=\footnotesize\rmfamily] {working directory};
+\end{tikzpicture}
+
+{\small The session's tree. From the \omterm{def:g11:os-and-command-line:abs-rel}{working directory} \code{members}, the \omterm{def:g11:os-and-command-line:abs-rel}{relative path} \code{../books/books.csv}
+takes three steps: up to \code{library}, down into \code{books}, then to the file.}
+\end{omfigure}
+
+\section{The shell}\label{sec:g11:os-and-command-line:shell}
+
+\begin{definition}[Shell, command, option]\label{def:g11:os-and-command-line:shell}
+A \emph{shell}\index{shell} is a program that reads command lines and runs them. A \emph{command}\index{command}
+line is a program's name followed by its arguments, separated by spaces. An argument that starts with \code{-} is an
+\emph{option}\index{option}: it changes how the command works, such as \code{-a} for \code{ls}.
+\end{definition}
+
+\omoutput{code/grade-11/03-os-and-command-line/outputs/copy_move.txt}{\code{cp} copies, \code{mv} moves or renames,
+\code{rm} removes a file, \code{rmdir} an empty directory.}\label{out:g11:os-and-command-line:copy-move}
+
+\begin{safety}
+\code{rm} does not move a file to a bin: the file is gone, and there is no \omterm{def:g11:os-and-command-line:shell}{command} to bring it back. \code{rm -r}
+removes a directory with everything inside it. Before removing, list what will go with \code{ls}, never remove with
+a pattern you have not checked, and keep copies of what matters somewhere else.
+\end{safety}
+
+Every \omterm{def:g11:os-and-command-line:shell}{command} describes itself. \code{--help} prints a short summary, and \code{man} followed by the \omterm{def:g11:os-and-command-line:shell}{command}'s name
+shows its full manual.
+
+\omoutput{code/grade-11/03-os-and-command-line/outputs/manual.txt}{The beginning of \code{ls}'s own summary, cut
+by \code{head}, which keeps the first lines.}\label{out:g11:os-and-command-line:manual}
+
+\section{Users, rights and permissions}\label{sec:g11:os-and-command-line:permissions}
+
+\begin{definition}[User, group, permission]\label{def:g11:os-and-command-line:permission}
+Each person or service on a system is a \emph{user}\index{user}, with a name and a number, and belongs to one or
+more \emph{groups}\index{group}. Each file has an owner and a group, and nine \emph{permission}\index{permission} bits:
+read, write and execute, for the owner, for the members of the group, and for all the others. For a directory, read
+lets one list it, write lets one create or remove names in it, and execute lets one enter it and reach what is
+inside.
+\end{definition}
+
+The \omterm{def:g11:os-and-command-line:kernel}{kernel} checks the bits of one class only: the owner's if the \omterm{def:g11:os-and-command-line:permission}{user} owns the file, otherwise the \omterm{def:g11:os-and-command-line:permission}{group}'s if the
+\omterm{def:g11:os-and-command-line:permission}{user} is in the file's \omterm{def:g11:os-and-command-line:permission}{group}, otherwise the others'. \code{ls -l} prints them as ten characters: the type (\code{d}
+for a directory, \code{-} for a file), then \code{r}, \code{w}, \code{x} or \code{-} for each class.
+% ledger: g11:ls-mode
+
+\omoutput{code/grade-11/03-os-and-command-line/outputs/perms.txt}{\code{chmod} changes the bits. Once its owner has
+no \code{r}, even the owner cannot read the file, until the bit comes back.}\label{out:g11:os-and-command-line:perms}
+
+\code{chmod} takes the bits either as letters, \code{u}, \code{g}, \code{o} for the classes, \code{+} or \code{-}
+and the rights, or as a number in octal: one digit per class, the sum of $4$ for read, $2$ for write and $1$ for
+execute.
+% ledger: g11:chmod-octal
+
+\begin{omfigure}
+\begin{bytefield}[bitwidth=3.4em]{10}
+  \bitheader[endianness=big, lsb=0]{0-9} \\
+  \bitbox{1}{\code{-}} & \bitbox{1}{\code{r}} & \bitbox{1}{\code{w}} & \bitbox{1}{\code{-}} &
+  \bitbox{1}{\code{r}} & \bitbox{1}{\code{-}} & \bitbox{1}{\code{-}} & \bitbox{1}{\code{-}} & \bitbox{1}{\code{-}} &
+  \bitbox{1}{\code{-}} \\
+  \bitbox{1}{type} & \bitbox{3}{owner: $4 + 2 = 6$} & \bitbox{3}{group: $4$} & \bitbox{3}{others: $0$}
+\end{bytefield}
+
+{\small The mode \code{-rw-r-----} of \code{books.csv} after \code{chmod 640}: the owner reads and writes, the \omterm{def:g11:os-and-command-line:permission}{group}
+reads, the others have nothing.}
+\end{omfigure}
+
+\begin{inpractice}[The administrator]
+Every system has an administrator account, called \code{root} on Linux, for which the \omterm{def:g11:os-and-command-line:kernel}{kernel} skips the \omterm{def:g11:os-and-command-line:permission}{permission}
+checks. A program run as the administrator can read, change or remove any file; a bug in it, or an attacker who takes
+it over, can too. Programs run as an ordinary \omterm{def:g11:os-and-command-line:permission}{user}, with the fewest rights that let them work, and the administrator
+account is used only for the tasks that need it.
+\end{inpractice}
+
+\section{Redirection and pipes}\label{sec:g11:os-and-command-line:pipes}
+
+\begin{definition}[Standard input and output, redirection, pipe]\label{def:g11:os-and-command-line:redirection}
+Each program starts with a \emph{standard input}\index{standard input/output}, where it reads, and a \emph{standard
+output}, where it writes; at a terminal they are the keyboard and the screen. A \emph{redirection}\index{redirection}
+connects them to a file instead: \code{> f} writes the output into \code{f}, emptying it first, \code{>> f} adds at
+the end of \code{f}, and \code{< f} reads the input from \code{f}. A \emph{pipe}\index{pipe}, \code{a | b},
+connects the standard output of \code{a} to the standard input of \code{b}.
+\end{definition}
+
+\omoutput{code/grade-11/03-os-and-command-line/outputs/redirect.txt}{\code{>} replaces, \code{>>} adds. The
+town's \code{books.csv} has $81$ lines, a header and $80$ books.}\label{out:g11:os-and-command-line:redirect}
+
+Small \omterm{def:g11:os-and-command-line:shell}{commands}, each doing one thing, join into pipelines. \code{cut -d, -f3} keeps the third field of each line,
+fields being separated by commas; \code{tail -n +2} drops the first line; \code{sort} sorts the lines;
+\code{uniq -c} counts each run of equal lines, which must be adjacent, hence the \code{sort} before it; \code{sort -n} sorts by
+numerical value; \code{grep -c} counts the lines that match a pattern.
+% ledger: g11:uniq-c
+% ledger: g11:sort-n
+
+\omoutput{code/grade-11/03-os-and-command-line/outputs/pipes.txt}{Which members borrowed most? Member $55$, with
+$12$ loans. The last \omterm{def:g11:os-and-command-line:shell}{command} counts the loans whose return date is empty: $22$ books are still
+out.}\label{out:g11:os-and-command-line:pipes}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize\ttfamily, b/.style={draw, rounded corners=2pt, fill=omDef!8, minimum height=8mm,
+    inner sep=3pt, text height=1.6ex, text depth=0.4ex}]
+  \node[b, fill=omMeth!12] (f) at (0,0) {loans.csv};
+  \node[b, right=5mm of f] (c) {cut -d, -f3};
+  \node[b, right=5mm of c] (t) {tail -n +2};
+  \node[b, right=5mm of t] (s) {sort};
+  \node[b, right=5mm of s] (u) {uniq -c};
+  \node[b, right=5mm of u] (n) {sort -n};
+  \node[b, right=5mm of n] (l) {tail -3};
+  \draw[->, thick] (f) -- (c);
+  \foreach \a/\b in {c/t, t/s, s/u, u/n, n/l} \draw[->, thick, omThm] (\a) -- (\b);
+  \node[below=1mm of c, font=\scriptsize\rmfamily] {member numbers};
+  \node[below=1mm of u, font=\scriptsize\rmfamily] {count per member};
+  \node[below=1mm of l, font=\scriptsize\rmfamily] {the three largest};
+\end{tikzpicture}
+
+{\small A pipeline: each red arrow is a \omterm{def:g11:os-and-command-line:redirection}{pipe} from one program's standard output to the next one's \omterm{def:g11:os-and-command-line:redirection}{standard input}.
+The six programs run at the same time, each working on the lines as they arrive.}
+\end{omfigure}
+
+\section{Exercises}\label{sec:g11:os-and-command-line:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g11:os-and-command-line:1}
+The \omterm{def:g11:os-and-command-line:abs-rel}{working directory} is \code{/home/ada/library/books}. What does \code{pwd} print after \code{cd ../members}?
+After \code{cd ../../notes}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:os-and-command-line:2}
+The \omterm{def:g11:os-and-command-line:abs-rel}{working directory} is \code{/home/ada/library/members}. Give the \omterm{def:g11:os-and-command-line:abs-rel}{absolute path} of \code{../books/./books.csv}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:os-and-command-line:3}
+Write the mode \code{rw-r-----} in octal, and \code{chmod 754} in letters.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:os-and-command-line:4}
+A directory holds \code{a.txt} and \code{b.txt}. What does \code{ls} print after \code{mv a.txt c.txt}? After
+\code{mv b.txt c.txt}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g11:os-and-command-line:5}
+Write a \omterm{def:g11:os-and-command-line:shell}{command} line that prints the number of books in \code{books.csv}, without counting its header.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:os-and-command-line:6}
+To add a line at the top of \code{f.txt}, a student types \code{cat top.txt f.txt > f.txt}. What does
+\code{f.txt} contain afterwards, and why? Write a \omterm{def:g11:os-and-command-line:shell}{command} line that works.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:os-and-command-line:7}
+A file has owner \code{ana}, \omterm{def:g11:os-and-command-line:permission}{group} \code{teachers} and mode \code{640}. The \omterm{def:g11:os-and-command-line:permission}{group} has the members \code{ana} and
+\code{ben}. Which of \code{ana}, \code{ben} and \code{chloe} may read it? Write it?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:os-and-command-line:8}
+Write a pipeline that prints the three authors with the most books in \code{books.csv}, with their counts.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:os-and-command-line:9}
+A directory is named \code{My Notes}. What happens with \code{cd My Notes}? Give two ways to enter it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:os-and-command-line:10}
+What does \code{g.txt} contain after \code{echo a >> g.txt} and then \code{echo b >> g.txt}, if it did not exist
+before? And if the second \code{>>} is a \code{>}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g11:os-and-command-line:11}
+Give a \code{chmod} \omterm{def:g11:os-and-command-line:shell}{command} that lets the \omterm{def:g11:os-and-command-line:permission}{group} read a file but not write it, without changing the bits of the owner
+and of the others.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:os-and-command-line:12}
+How many different values can the nine \omterm{def:g11:os-and-command-line:permission}{permission} bits take? In how many of them may the others write?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:os-and-command-line:13}
+Explain why any \omterm{def:g11:os-and-command-line:abs-rel}{relative path}, together with the \omterm{def:g11:os-and-command-line:abs-rel}{absolute path} of the \omterm{def:g11:os-and-command-line:abs-rel}{working directory}, can be written as an
+\omterm{def:g11:os-and-command-line:abs-rel}{absolute path} that contains neither \code{.} nor \code{..}. Describe the steps, and why they always end.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:os-and-command-line:14}
+Write a \omterm{def:g11:os-and-command-line:shell}{shell} script \code{count_loans.sh} that takes a member number as its argument, written \code{$1} inside the
+script, and prints how many loans of \code{loans.csv} that member made. It should print a usage message and stop
+with an error status if it gets no argument.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g11:os-and-command-line:15}
+To find the largest book number in \code{loans.csv}, a student types
+\smallskip\noindent\hspace*{2em}\code{cut -d, -f2 loans.csv | tail -n +2 | sort | tail -1}
+
+\smallskip\noindent and gets \code{9}. Why? Fix the \omterm{def:g11:os-and-command-line:shell}{command} line.
+\end{exercise}
+
+\section{Problem: Who May Read the Timetable?}\label{sec:g11:os-and-command-line:problem}
+
+\begin{problem}[{Weekend problem --- the fewest rights that meet a policy}]\label{pb:g11:os-and-command-line:1}
+A school's small server has four \omterm{def:g11:os-and-command-line:permission}{users}: the teachers \code{ana} and \code{ben}, in the \omterm{def:g11:os-and-command-line:permission}{group} \code{teachers}, and the
+students \code{chloe} and \code{dev}. The program below holds its files with their owner, \omterm{def:g11:os-and-command-line:permission}{group} and mode, and computes
+who may read and write each one, following the \omterm{def:g11:os-and-command-line:kernel}{kernel}'s rule, including the execute bit of every directory above.
+
+\omcode{code/grade-11/03-os-and-command-line/listings/timetable.py}{1}{38}{The server's files and the \omterm{def:g11:os-and-command-line:kernel}{kernel}'s rule,
+simulated.}\label{lst:g11:os-and-command-line:timetable}
+
+\omoutput{code/grade-11/03-os-and-command-line/outputs/timetable.txt}{Who may read (\code{r}) and write (\code{w})
+each file, with its present mode.}\label{out:g11:os-and-command-line:timetable}
+
+The head of the school then writes a policy: everyone reads the timetable and the news, but only teachers change the
+timetable and only \code{ben} the news; only teachers may see the marks; the exam is \code{ben}'s alone. The second
+program tries all $512$ modes of each file, parents first, and keeps the one with the fewest bits among those that
+meet the policy exactly.
+
+\omcode{code/grade-11/03-os-and-command-line/listings/policy.py}{1}{35}{The policy, and a search for the smallest
+modes that meet it.}\label{lst:g11:os-and-command-line:policy}
+
+\omoutput{code/grade-11/03-os-and-command-line/outputs/policy.txt}{The modes to set, and the bits that
+change.}\label{out:g11:os-and-command-line:policy}
+
+\medskip\noindent\textbf{Part I --- Users and groups.}
+\begin{enumerate}
+  \item For the file \code{/school/news.txt}, which class of bits applies to each of the four \omterm{def:g11:os-and-command-line:permission}{users}?
+  \item Why does \code{bits} test the owner before the \omterm{def:g11:os-and-command-line:permission}{group}?
+  \item \code{ana} owns \code{/school/news.txt}'s directory but not the file. Can she change the file? Can she remove
+    it?
+  \item What does \code{can} check about the directories above the file, and why?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The present modes.}
+\begin{enumerate}[resume]
+  \item Write the mode of each file as ten characters, as \code{ls -l} would.
+  \item Explain the row of \code{/school/timetable.txt}: why may \code{chloe} change it?
+  \item Explain why \code{dev} may read the marks.
+  \item \code{ana} owns the timetable; how could a student who may write it harm her?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Directories.}
+\begin{enumerate}[resume]
+  \item What do the bits $r$, $w$, $x$ allow on \code{/school/marks}?
+  \item If \code{/school/marks} had mode \code{774}, could \code{chloe} list its names? Read \code{g11.csv}?
+  \item If it had mode \code{771}, could she read \code{g11.csv} if she knew its name?
+  \item With the new mode \code{770}, why do $8$ modes of \code{g11.csv} meet the policy?
+  \item Why does \code{policy.py} handle the directories before the files inside them?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The least privileges.}
+\begin{enumerate}[resume]
+  \item Check by hand that \code{664} meets the policy for the timetable, and that no mode with fewer bits does.
+  \item For each file, write the \code{chmod} \omterm{def:g11:os-and-command-line:shell}{command}, in octal and in letters.
+  \item Count the bits changed for each file from its old and new modes, and check the total.
+  \item The exam file's \omterm{def:g11:os-and-command-line:permission}{group} is \code{teachers}. Why is \code{600} still needed although \code{ana} is a teacher?
+  \item A new teacher arrives. Which single change gives her every right the policy grants to teachers, without any \code{chmod}?
+  \item Why is it better to give the fewest rights that work, rather than open everything and close what goes wrong?
+  \item State the result: the modes to set and the number of \omterm{def:g11:os-and-command-line:permission}{permission} bits that change.
+\end{enumerate}
+\end{problem}

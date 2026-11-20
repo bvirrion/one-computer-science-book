@@ -1,0 +1,105 @@
+\section*{Chapter \ref{ch:b3:concurrency} --- Concurrency: Deadlock, Monitors and Lock-Free Structures}
+
+\begin{solution}{exo:b3:concurrency:1}
+9 units are held, so 3 are available; the needs are $10 - 5 = 5$, $4 - 2 = 2$ and $9 - 2 = 7$. The second thread can finish (2 of 3), leaving 5; then the first (5 of 5), leaving 10; then the third (7 of 10): the state is safe. One more unit to the second thread leaves 2 available and needs 5, 1, 7: the order second, first, third still works, so the banker grants it. One more unit to the third leaves 2 available and needs 5, 2, 6: the second finishes, leaving 4, and then neither 5 nor 6 fits. The state would be unsafe, so the third thread waits, although nothing is deadlocked yet (\code{test_banker_example_and_exercise_1}).
+\end{solution}
+
+\begin{solution}{exo:b3:concurrency:2}
+Edges P1~$\to$~R1~$\to$~P2~$\to$~R2~$\to$~P3~$\to$~R3~$\to$~P1, and P4~$\to$~R1. The cycle makes P1, P2 and P3 deadlocked; P4 is not in the cycle but waits behind it for ever. If P1 releases R3, the cycle is broken: P3 takes R3, finishes and releases R2, then P2 finishes and releases R1, which P1 or P4 obtains, and the other one after it (\code{test_rag_cycle_and_exercise_2}).
+\end{solution}
+
+\begin{solution}{exo:b3:concurrency:3}
+$r_1 = 0, r_2 = 1$: thread 1 runs entirely first ($x = 1$, $r_1 = y = 0$), then thread 2 ($y = 1$, $r_2 = x = 1$). $r_1 = 1, r_2 = 0$: thread 2 first. $r_1 = r_2 = 1$: $x = 1$, $y = 1$, then both reads, in either order.
+\end{solution}
+
+\begin{solution}{exo:b3:concurrency:4}
+14 states, and one deadlocked, \code{((1, 1, 1), (0, 1, 2))}: everyone holds the left fork. By hand, a state is a tuple of positions in which no eater's right neighbour holds a fork (weekend problem, question 8): with no eater, $2^3 = 8$ tuples of T and H; with one eater, 3 places for it, its right neighbour thinking and the third guest T or H, 6 tuples; two eaters at a table of three are neighbours, which is impossible. $8 + 6 = 14$.
+\end{solution}
+
+\begin{solution}{exo:b3:concurrency:5}
+C1 waits on the empty buffer; the spurious wake-up takes it off the waiting list with no signal; C1 resumes after its \code{wait}, does not test again, and takes from an empty buffer. Hoare's guarantee is about signals: a thread woken by a signal finds the condition true. A spurious wake-up is no signal, so it guarantees nothing. With \code{while}, C1 tests again, finds the buffer empty and waits again, under both semantics (\code{test_monitor_semantics_and_exercise_5}).
+\end{solution}
+
+\begin{solution}{exo:b3:concurrency:6}
+\code{exercises/ex6_detect.py} simulates the most favourable future: any thread whose request fits in $\mathit{work}$ may receive it, finish and return what it holds, so $\mathit{work}$ only grows, and the order in which they are tried does not matter (the argument of theorem~\ref{thm:b3:concurrency:greedy}). The threads never marked finished cannot finish in any future: they are deadlocked. Example: resource A has two instances and B one. P1 holds one A and waits for B; P2 holds B and waits for an A; P3 holds the other A and waits for nothing. P1~$\to$~B~$\to$~P2~$\to$~A~$\to$~P1 is a cycle, but P3 finishes and frees its A, P2 takes it and finishes, and then P1 (\code{test_exercise_6_detection}).
+\end{solution}
+
+\begin{solution}{exo:b3:concurrency:7}
+A philosopher never waits while holding a fork: when the right fork is taken, it puts the left one down instead of waiting. So no thread is ever blocked holding a resource, hold and wait fails, and there is no \omterm{def:b3:concurrency:deadlock}{deadlock}. With two philosophers, run them in lockstep: both take their left fork, both find their right fork taken, both put their left fork down, and again for ever. Steps are taken but nobody eats: a \omterm{def:b3:concurrency:deadlock}{livelock}. A random wait before trying again makes the lockstep unlikely to last.
+\end{solution}
+
+\begin{solution}{exo:b3:concurrency:8}
+At a table of three every two guests are neighbours, so at most one eats. With nobody eating, $2^3 = 8$ tuples of T and H; with one eater, 3 choices for it and $2^2$ for the others, 12. In all 20, and every one is reachable: the eater, if any, eats first, then the hungry ones become hungry.
+\end{solution}
+
+\begin{solution}{exo:b3:concurrency:9}
+(a)~A.enq(1), B.deq()~$\to$~1, C.enq(2), B.deq()~$\to$~2. The only constraint of real time is B's first dequeue (ending at 3) before its second (starting at 4); A's enqueue overlaps B's first dequeue and can take effect before it, and C's enqueue overlaps both. (b)~All four intervals are disjoint, so the order is forced: 1 and then 2 are enqueued, and a FIFO queue must return 1 first; C's dequeue returned 2. No linearisation exists (\code{test_linearizable_histories_and_exercise_9}).
+\end{solution}
+
+\begin{solution}{exo:b3:concurrency:10}
+Facts used: a granted request leaves a \omterm{def:b3:concurrency:banker}{safe state} (the banker's rule); a finishing thread returns everything; the scheduler keeps running every thread that is not waiting.
+
+Releases keep a state safe: the same order still works, with at least as much available at each step. So every state is safe. Take a state with unfinished threads and a safe order $q_1, \dots, q_k$. Every request $r$ of $q_1$ is granted: $\mathit{need}_{q_1} \le \mathit{available}$, so after the grant $\mathit{need}_{q_1} - r \le \mathit{available} - r$, and $q_1$ can still finish first, after which $\mathit{work}$ is the same as before; the rest of the order is unchanged and still works. So $q_1$ never waits, receives its whole claim after finitely many of its own steps, and finishes. The number of unfinished threads drops by one, the state is still safe, and by induction on that number every thread finishes.
+\end{solution}
+
+\begin{solution}{exo:b3:concurrency:11}
+Facts used: CAS is atomic and every successful CAS increments the tag, which never wraps round; a node's \code{next} is written only by a push of that node, by the thread that holds it, before the push's CAS.
+
+\omterm{def:b3:concurrency:linearisability}{Linearisation points}: the successful CAS of a push or of a pop that returns a node, and, for a pop that returns empty, its last load of the head, which saw \code{NIL}. Each lies within its operation.
+
+Invariant: at every moment the list from the head, following \code{next}, is the stack obtained by applying, in the order of their points, the operations whose points have passed. Only successful CASes change the head. A push of $n$ read the head \code{old}, then set \code{next[n]} to its index; its CAS succeeds only if the head, tag included, still equals \code{old}, so no CAS succeeded in between and the list below \code{old} is as it was. After the CAS the list is $n$ followed by the old list: a push. A pop read top $t$, then \code{next[t]}; its CAS succeeds only if no CAS succeeded since the read, so $t$ stayed on top, nobody held it, and \code{next[t]} was not written: it read the true successor, and after the CAS the list is the old one without $t$, returned: a pop. A pop that saw \code{NIL} saw an empty list, so the empty stack at its point. Points inside the intervals respect real time, so the history is \omterm{def:b3:concurrency:linearisability}{linearisable}.
+\end{solution}
+
+\begin{solution}{exo:b3:concurrency:12}
+A CAS fails only if the counter changed between the thread's load and its CAS, that is, only if another thread's CAS succeeded in between: every failure is someone else's completed increment, so the system as a whole progresses, and the counter is \omterm{def:b3:concurrency:lock-free}{lock-free}. It is not \omterm{def:b3:concurrency:lock-free}{wait-free}: a scheduler can let another thread increment between each load and CAS of one thread, which then retries for ever while the others progress. \code{atomic_fetch_add} is a single atomic operation: each increment takes one step of its own thread, whatever the others do, so a counter built on it is \omterm{def:b3:concurrency:lock-free}{wait-free} as far as the program can see. Both lose no update (\code{counter_test.c}).
+\end{solution}
+
+\begin{solution}{pb:b3:concurrency:1}
+\textbf{1.} Guests 0, 1, 2, 3, 4 each take their left fork, in turn: every fork is held and everyone waits for the right one.
+
+\textbf{2.} An eater can always put its forks down, so in a state with no move nobody eats. A thinking guest $i$ cannot move only if fork $i$ is held, by guest $i$ itself (impossible, it thinks) or by guest $i - 1$ as a right fork (impossible, nobody eats). So nobody thinks: everyone holds its left fork, the state of the output.
+
+\textbf{3.} All four: a fork has one holder; each guest holds one fork and waits for another; nobody takes a fork back; guest $i$ waits for fork $i + 1$, held by guest $i + 1$, round the table. The graph is the cycle G0~$\to$~F1~$\to$~G1~$\to$~F2~$\to \dots \to$~G4~$\to$~F0~$\to$~G0.
+
+\textbf{4.} From any reachable state, let every eater put its forks down; then nobody eats, so fork $i$ is free unless guest $i$ holds it. Let every thinking guest take its left fork: all hold their left fork, the \omterm{def:b3:concurrency:deadlock}{deadlock}.
+
+\textbf{5.} Yes. From any state, the schedule of question 4 has at most $2n$ steps, and the random scheduler follows it with probability at least $p = n^{-2n} > 0$. The probability of avoiding \omterm{def:b3:concurrency:deadlock}{deadlock} over $k$ such stretches is at most $(1 - p)^k$, which tends to 0.
+
+\textbf{6.} $p$ is tiny: the \omterm{def:b3:concurrency:deadlock}{deadlock} needs every guest to take its left fork before any of them takes a right one, and a real thread usually takes its two forks within a few instructions. A few hundred runs explore a few hundred interleavings among an astronomical number.
+
+\textbf{7.} Fork $i$ is held by guest $i$ if guest $i$ is in H or E (its left fork), by guest $i - 1$ if that guest is in E (its right fork), and is free otherwise.
+
+\textbf{8.} By question 7, a fork can be claimed twice only as fork $i + 1$ by an eating guest $i$ and by guest $i + 1$ in H or E. If no eater has such a right neighbour, every fork has at most one holder, and the tuple is a state.
+
+\textbf{9.} With rows the guest's position and columns its right neighbour's, in the order T, H, E: $M = \begin{psmallmatrix} 1 & 1 & 1 \\ 1 & 1 & 1 \\ 1 & 0 & 0 \end{psmallmatrix}$. A cyclic tuple is a closed walk of length $n$ in the graph of $M$, and their number is $\operatorname{tr} M^n$.
+
+\textbf{10.} $\det(M - \lambda I) = -\lambda(\lambda^2 - 2\lambda - 1)$, so the eigenvalues are 0 and $1 \pm \sqrt{2}$, and $\operatorname{tr} M^n$ is the sum of their $n$-th powers: $S(n) = (1 + \sqrt{2})^n + (1 - \sqrt{2})^n$. It gives 6, 14, 34, 82, 198, 478, as printed.
+
+\textbf{11.} From everyone thinking, let the future eaters take their two forks, one eater after another. When eater $i$ does, fork $i + 1$ is free, since its other user, guest $i + 1$, thinks (question 8); and fork $i$ is free, since its other user, guest $i - 1$, could hold it only by eating, and an eater is never followed by an eater. Then the guests in H take their left fork, which no eater holds, since an eater is never followed by H.
+
+\textbf{12.} Every state is reachable and exactly one has no move, so there is one deadlocked state among $S(n)$. Both $1 \pm \sqrt{2}$ are roots of $\lambda^2 = 2\lambda + 1$, so $S(n) = 2S(n - 1) + S(n - 2)$: $2 \times 14 + 6 = 34$.
+
+\textbf{13.} Only guest $n - 1$, whose forks are $n - 1$ and $0$: it takes fork 0 first. Every guest now takes its lower-numbered fork first, so the locks are acquired in increasing order and the theorem applies.
+
+\textbf{14.} $6 - 5 = 1$, $14 - 12 = 2$, then 5, 12, 29 and 70: they satisfy the recurrence ($2 \times 12 + 5 = 29$), and so do the ordered counts ($2 \times 70 + 29 = 169$).
+
+\textbf{15.} Any tuple in which no two neighbours eat. $M' = \begin{psmallmatrix} 1 & 1 & 1 \\ 1 & 1 & 1 \\ 1 & 1 & 0 \end{psmallmatrix}$ has eigenvalues 0 and $1 \pm \sqrt{3}$, so the count is $(1 + \sqrt{3})^n + (1 - \sqrt{3})^n$: 20, 56, 152, 416, 1,136. Each tuple is reachable: its eaters eat first, then its hungry guests get hungry.
+
+\textbf{16.} In any state, an eater can stop; if nobody eats, a thinking guest can get hungry; if everybody is hungry, nobody eats, and any of them can eat.
+
+\textbf{17.} Under the mutex, a hungry guest marks itself hungry, and \code{while} a neighbour is eating, waits on its own condition; then it marks itself eating. A guest who stops eating marks itself thinking and signals both neighbours, who test again: under \omterm{def:b3:concurrency:monitor}{Mesa semantics} a neighbour's other neighbour may have started eating in the meantime, hence the \code{while}.
+
+\textbf{18.} The waiter. With ordered acquisition a guest holding one fork while it waits blocks a neighbour who could eat; the waiter never lets a fork be held by someone not eating.
+
+\textbf{19.} From H~T~T~T~E: guest 1 gets hungry (H~H~T~T~E), and can eat since guests 0 and 2 do not eat (H~E~T~T~E); guest 1 stops (H~T~T~T~E). Guest 0 is hungry throughout, and guest 4 eats throughout.
+
+\textbf{20.} Every other guest eats in each round of the walk, so the system makes progress: no \omterm{def:b3:concurrency:deadlock}{deadlock}, and no \omterm{def:b3:concurrency:deadlock}{livelock} either. Guest 0 alone never eats, and it is never even able to: a neighbour is eating at every moment. Repeating the walk for ever starves it.
+
+\textbf{21.} Yes. With $n = 3$, guests 0 and 2 both take fork 0 first. Let guest 2 take fork 0, then fork 2, eat and put both down, again and again, and let the scheduler run guest 0 only while fork 0 is held. Here guest 0 is able to move between guest 2's meals, so a scheduler that runs every guest able to move infinitely often would save it; under the waiter's walk, no scheduler can.
+
+\textbf{22.} For instance, let a hungry guest whose neighbour has been hungry longer not start eating. Every guest then waits for at most a bounded number of meals of its neighbours; the cost is that forks may lie unused while a guest waits for its turn, so fewer guests eat at once.
+
+\textbf{23.} A guarantee must hold for every schedule. Timings that repeat, two neighbours with the same rhythm, can reproduce the walk for a long time, and a \omterm{def:b3:kernel-and-scheduling:metrics}{waiting time} that no rule bounds cannot be promised to anyone.
+
+\textbf{24.} The naive protocol has exactly one deadlocked state, everyone holding its left fork, among $S(n) = (1 + \sqrt{2})^n + (1 - \sqrt{2})^n$ reachable states, and can reach it from every state. Ordered acquisition removes it, as \omterm{def:b3:concurrency:rag}{lock ordering} always does. The waiter, a \omterm{def:b3:concurrency:monitor}{monitor}, also never \omterm{def:b3:concurrency:deadlock}{deadlocks} and lets more guests eat at once, among $(1 + \sqrt{3})^n + (1 - \sqrt{3})^n$ states; but neither fix rules out starvation, which needs a rule about whose turn it is.
+\end{solution}

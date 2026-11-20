@@ -1,0 +1,101 @@
+\section*{Chapter \ref{ch:b3:distributed-systems} --- Distributed Systems: Time, Failures and Remote Calls}
+
+\begin{solution}{exo:b3:distributed-systems:1}
+P1 has x1 (send n1) then x2 (receive n3); P2 has y1, y2 (receive n1), y3 (send n2); P3 has z1 (send n3) then z2 (receive n2). Timestamps: x1, y1 and z1 are each the first event of their process, with no receive: 1. y2 receives n1 stamped 1, after y1 at 1: $\max(1, 1) + 1 = 2$. y3: 3. x2 receives n3 stamped 1 after x1 at 1: 2. z2 receives n2 stamped 3 after z1 at 1: 4. Equal timestamps: x1, y1 and z1 (all 1), and y2 and x2 (both 2). y1 has 1 and x2 has 2, yet no chain of messages leads from y1 to P1: they are not related by $\to$.
+\end{solution}
+
+\begin{solution}{exo:b3:distributed-systems:2}
+x1 $= [1, 0, 0]$, y1 $= [0, 1, 0]$, z1 $= [0, 0, 1]$, y2 $= \max([0, 1, 0], [1, 0, 0])$ plus 1 in entry 2 $= [1, 2, 0]$, y3 $= [1, 3, 0]$, x2 $= \max([1, 0, 0], [0, 0, 1])$ plus 1 in entry 1 $= [2, 0, 1]$, z2 $= \max([0, 0, 1], [1, 3, 0])$ plus 1 in entry 3 $= [1, 3, 2]$. By \cref{thm:b3:distributed-systems:vector}: $[1, 0, 0] < [1, 3, 2]$, so x1 $\to$ z2 (through n1 and n2); $[2, 0, 1]$ and $[1, 3, 2]$ are incomparable (2 > 1 in the first entry, 0 < 3 in the second), so x2 $\parallel$ z2; $[0, 0, 1] < [2, 0, 1]$, so z1 $\to$ x2 (through n3); $[0, 1, 0]$ and $[2, 0, 1]$ are incomparable, so y1 $\parallel$ x2. A test checks every value.
+\end{solution}
+
+\begin{solution}{exo:b3:distributed-systems:3}
+$(2, 2, 1)$ contains a1, a2, b1, b2, c1. Its only receive, b1, receives m1 sent by a2, inside: consistent. m2 is sent inside (b2) and received outside (c2): in transit. $(1, 1, 1)$ contains b1, which receives m1 from a2, outside: inconsistent. $(3, 3, 2)$ contains a3, which receives m3 from b4, outside: inconsistent. $(4, 4, 2)$ contains everything but c3; its receives b1, c2 and a3 have their sends inside: consistent, with m4 in transit. A test checks all four.
+\end{solution}
+
+\begin{solution}{exo:b3:distributed-systems:4}
+The proxy counts the replies it carries, so the lost ones are the second and third reply lines. \emph{At-least-once}: c-1 runs and the client is told 10. c-2 runs (20), its reply is lost; the retry runs it again (30), its reply is lost too; the third attempt runs it a third time (40) and the client is told 40. c-3 runs: 50. Five deposits, balance 50, and the client was told 10, 40, 50. \emph{At-most-once}: c-1, 10. c-2 runs once (20); both retries are answered from memory, the first answer lost, the second delivered: the client is told 20. c-3: 30. Three deposits, balance 30. A test runs both on other ports.
+\end{solution}
+
+\begin{solution}{exo:b3:distributed-systems:5}
+The buggy version gives a2 and b1 the same vector, $[2, 0, 0]$: b1's own clock is $[0, 0, 0]$, the message carries $[2, 0, 0]$, and nothing counts the receive. Yet a2 $\to$ b1, and \code{before} requires the vectors to differ, so it calls them concurrent; the lemma of \cref{thm:b3:distributed-systems:vector} fails because b1 is not counted in P2's entry. The fix, \code{vector_clocks_fixed}, adds 1 to the process's own entry at every event, after the merge for a receive. A test checks that the buggy version misclassifies some pair of the run and the fixed one none.
+\end{solution}
+
+\begin{solution}{exo:b3:distributed-systems:6}
+\code{exercises/ex6_causal.py}: each member keeps $v$, the number of broadcasts of each member it has delivered. To broadcast, it adds 1 to its own entry, delivers its message to itself, and sends the message with a copy of $v$ to every other member. A received message from member $j$ with vector $w$ goes into a buffer; after each arrival, the member delivers every buffered message with $w_j = v_j + 1$ and $w_k \le v_k$ for $k \ne j$, adding 1 to $v_j$ each time, until none qualifies. P2 is a member that broadcasts its answer as soon as it has delivered P1's first message, so the answer carries $[1, 1, 0]$, and P3 holds it until it has delivered P1's first message. The network delays are 1 to 12 time units with FIFO order off. Over 200 seeds, P3 sees the answer before the question in 20 runs without the rule and in none with it; in 50 runs a test also checks that every member delivers all four messages.
+\end{solution}
+
+\begin{solution}{exo:b3:distributed-systems:7}
+Facts used: \cref{thm:b3:distributed-systems:clock-condition}; within one process, timestamps increase strictly. Compare events by the pair $(L(e), i)$, $i$ the number of $e$'s process, first by $L$, then by $i$. This is lexicographic order on pairs, a strict total order on pairs; it is total on events because distinct events have distinct pairs: on different processes the second components differ, on the same process the timestamps differ. If $e \to f$, then $L(e) < L(f)$ by the clock condition, so $e$ comes first: the order extends $\to$. Every process that knows the timestamps and process numbers of a set of events sorts them identically, with no message exchanged to agree on the order: requests for a shared resource can be served in this order by every process alike.
+\end{solution}
+
+\begin{solution}{exo:b3:distributed-systems:8}
+Facts used: the lemma in the proof of \cref{thm:b3:distributed-systems:vector}. ($\Rightarrow$) If $e \to f$, then $V(e) < V(f)$, so in particular $V(e)_i \le V(f)_i$. ($\Leftarrow$) Let $e$ be the $c$-th event of process $i$; then $V(e)_i = c$, and $V(f)_i \ge c$ means at least $c$ events of process $i$ precede or equal $f$. They form a prefix of process $i$'s events, so the $c$-th, $e$, precedes or equals $f$; since $e \ne f$, $e \to f$. Knowing the process of $e$, one comparison of two integers replaces $n$. A test checks the equivalence on 200 random runs.
+\end{solution}
+
+\begin{solution}{exo:b3:distributed-systems:9}
+Every process records exactly once, and when it does it sends one marker on each of its outgoing channels; no other marker is sent. So a snapshot sends one marker per channel: $c$ markers on $c$ one-way channels, and $n(n - 1)$ when every process has a channel to every other. For the bank, $5 \times 4 = 20$ per snapshot and $2{,}000$ for 100 snapshots, the count printed.
+\end{solution}
+
+\begin{solution}{exo:b3:distributed-systems:10}
+\emph{Counterexample.} P starts a snapshot: it records its balance, 100, sends a marker to Q, then sends 10 to Q. The channel reorders them: the 10 arrives first, Q's balance becomes 60 from 50, then the marker arrives and Q records 60. P recorded 100, before sending the 10; Q recorded 60, after receiving it. The recorded total is 160, against 150: the 10 is counted twice, and the \omterm{def:b3:distributed-systems:cuts}{cut} is inconsistent, since the receive is inside it and the send outside. On the bank, \code{ex10_nonfifo.py} finds 98 of 100 snapshots wrong when channels reorder.
+
+\emph{Repair.} Facts used: channels lose nothing; every transfer carries the set of snapshots its sender had recorded when it sent it. \emph{Consistency.} Suppose $q$ receives a transfer $m$ before recording snapshot $s$, and $p$ sent $m$ after recording $s$. Then $m$ carries $s$, and $q$, receiving a tag it has not recorded, records $s$ before applying $m$: $m$ is received after $q$ recorded, a contradiction. \emph{Channels.} The transfers from $p$ to $q$ sent before $p$ recorded are exactly those without the tag $s$, and $p$'s marker tells $q$ how many there are, say $c$. Any of them received before $q$ recorded is received inside the \omterm{def:b3:distributed-systems:cuts}{cut}; $q$ counts these when it records, and from then on counts every untagged transfer from $p$ into the channel's state, and closes the channel once it has received $c$ untagged transfers in all. Since nothing is lost, all $c$ arrive, so the channel closes, and the recorded transfers are exactly the untagged ones received after $q$ recorded: sent inside the \omterm{def:b3:distributed-systems:cuts}{cut}, received outside it. A transfer tagged with $s$ is never recorded, as it was sent outside the \omterm{def:b3:distributed-systems:cuts}{cut}. The file finds 0 of 100 snapshots wrong and no channel left open, and a test repeats it on five other seeds.
+\end{solution}
+
+\begin{solution}{exo:b3:distributed-systems:11}
+Facts used: \cref{thm:b3:distributed-systems:chandy-lamport}. Call an event \emph{pre} if it happens at its process before that process records, and \emph{post} otherwise. Every event before the snapshot started is pre, since every process records at or after the start; every event after it completed is post. Take the events between $S_0$ and $S_1$, and reorder them: all the pre events first, in their original order, then all the post events, in their original order. This is a valid run. Each process runs its events in the same order, since its pre events all precede its post events. A receive that is pre has a pre send, by consistency, which comes earlier in the original order and so earlier in the new run; a receive that is post has its send either pre, so earlier in the new run, or post, earlier in the original order and so in the new run. The new run starts from $S_0$ and, having run the same events, ends in $S_1$. After its pre events, each process is in the state it recorded, and each channel holds the messages sent by pre events and not yet received by pre events, which is the recorded \omterm{def:b3:distributed-systems:cuts}{channel state}: the new run passes through $S$. A stable property, once true, stays true along every run. If it held in $S_0$, it holds in $S$, reached from $S_0$ in the new run; if it holds in $S$, it holds in $S_1$.
+\end{solution}
+
+\begin{solution}{exo:b3:distributed-systems:12}
+With two transactions: a crash before running the deposit changes nothing and the retry runs it once; a crash after storing the reply is answered from the stored reply, once; but a crash after the deposit is committed and before its reply is stored leaves no trace of the request, and the retry runs the deposit again: twice. With one transaction, the deposit and its reply are committed together; a crash before the commit rolls back both, and the retry runs it once. Every case runs once. This is exactly-once for this server under three conditions. The server must come back: if it never does, the client can only give up, without knowing whether the deposit happened. The client must keep its request identifier across its own crash: a client that restarts and sends the deposit again under a new identifier gets it twice. And the effect must live in the same database as the reply: a deposit that sent money to another bank, or printed a receipt, cannot be rolled back with the transaction. The stored replies also grow without end unless clients tell the server which replies they have received.
+\end{solution}
+
+\begin{solution}{pb:b3:distributed-systems:1}
+\textbf{1.} The processes are the five branches, the messages are the transfers (and the markers), and the channels are the 20 one-way channels between ordered pairs of branches. In the simulator every delay is between 1 and 6 time units, so the system is in fact synchronous; but nothing in the bank's program or in the algorithm uses that bound.
+
+\textbf{2.} $1{,}000 + 936 + 931 + 918 + 990 = 4{,}775$. The remaining 225 is in transit, recorded in the channels.
+
+\textbf{3.} Neither: the money has left the sender and not yet reached the receiver. It is in the channel.
+
+\textbf{4.} So that at every moment the total is the balances plus the money in transit, each unit in exactly one place, as in a bank where a transfer leaves the sending account at once.
+
+\textbf{5.} A lost transfer would leave the system: the total would fall below 5,000. This is an \omterm{def:b3:distributed-systems:failures}{omission failure}.
+
+\textbf{6.} Yes, if each transfer carries an identifier and the receiving branch remembers the identifiers it has credited, ignoring a repeated one: at-most-once on the receiving side with retries on the sending side. The sender keeps retrying until the receiver acknowledges.
+
+\textbf{7.} All four, b1 to b4: b4 sends m3, received at a3, which comes before a4, which sends m4, received at c3.
+
+\textbf{8.} The transfer received at c2 is m2, sent at b2: it can have been caused by b1 and b2, and through m1 by a1 and a2.
+
+\textbf{9.} c1, c2, c3 have 1, 5 and 9. $L(\mathrm{c1}) = 1 < L(\mathrm{a2}) = 2$, yet c1 and a2 are concurrent.
+
+\textbf{10.} $V(\mathrm{b3}) = [2, 3, 0] < [4, 4, 0] = V(\mathrm{a4})$, so b3 happened before a4.
+
+\textbf{11.} 12 of the 55 pairs are concurrent and 43 are ordered.
+
+\textbf{12.} Yes, by the clock condition: the set of events with timestamp at most $t$ is a \omterm{def:b3:distributed-systems:cuts}{consistent cut}, since every event that happened before one of them has a smaller timestamp. Each branch records its state just before its clock first passes $t$ (a receive may jump past $t$), and the transfers sent with a timestamp at most $t$ and received at an event with a larger one are in transit. But the branches must keep their clocks running, and an auditor cannot know when every branch has passed $t$.
+
+\textbf{13.} $2{,}000$ markers, 20 per snapshot.
+
+\textbf{14.} Twice as many markers as transfers: each snapshot costs $5 \times 4 = 20$ markers, and the auditors take one every 5 time units: four markers per time unit, while the 1,000 transfers spread over about 510 time units make about two per time unit.
+
+\textbf{15.} 245 in transit, and the sum is 5,000.
+
+\textbf{16.} Short by 145 at least and 680 at most: the naive totals range from 4,320 to 4,855.
+
+\textbf{17.} By \cref{thm:b3:distributed-systems:chandy-lamport}, the recorded balances lie on a \omterm{def:b3:distributed-systems:cuts}{consistent cut} and the channels hold exactly the money in transit at that \omterm{def:b3:distributed-systems:cuts}{cut}, so each unit is counted once.
+
+\textbf{18.} The question reaches B2 first: B2 reports a balance that includes 50, then sends the 50 to B3. The question reaches B3 after the 50 has arrived, and B3's balance includes it too. Here B2 reports from inside the \omterm{def:b3:distributed-systems:cuts}{cut} and B3's report includes a receive whose send is outside it.
+
+\textbf{19.} B2 held 1,529 when it recorded, which was at the start only if B2 started snapshot 99, and the run starts snapshot 99 at B5. The recorded balances may never have been held all at once: the snapshot is a state the bank could have passed through, by exercise~\ref{exo:b3:distributed-systems:11}, not one it is known to have passed through.
+
+\textbf{20.} The total, counting the channels, is always 5,000: it is true in every state, so it is stable. ``B2 holds more than 1,000'' is not stable: B2 can send money away.
+
+\textbf{21.} ``Every branch is idle and no transfer is in transit'' is stable: nothing can then start a transfer. A snapshot sees it if it held when the snapshot started (exercise~\ref{exo:b3:distributed-systems:11}); the auditors repeat snapshots until one shows every branch idle and every channel empty, and then the property holds at the end, by the same exercise.
+
+\textbf{22.} Each process of the cycle waits for a message from the next one, which sends nothing while it waits: no process of the cycle ever moves again.
+
+\textbf{23.} 20 markers per snapshot, and memory for the channels being recorded. No transfer is stopped or delayed: the branches record while the transfers go on.
+
+\textbf{24.} All 100 Chandy--Lamport snapshots add up to 5,000 exactly; all 100 naive audits are short, by 145 to 680. The difference comes from recording the channels and from FIFO order: exercise~\ref{exo:b3:distributed-systems:10} finds 98 of 100 snapshots wrong on channels that reorder.
+\end{solution}

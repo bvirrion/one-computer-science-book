@@ -1,0 +1,196 @@
+% Solutions of chapter 27 -- Randomised algorithms.
+\section*{Chapter \ref{ch:b2:randomised-algorithms} --- Randomised Algorithms}
+
+\begin{solution}{exo:b2:randomised-algorithms:1}
+Each round draws a base uniformly in $2, \dots, 1727$ and 1729 passes with probability $q = 160/1726 \approx 0.0927$. The
+test answers ``composite'' unless all $k$ rounds pass, so it answers ``prime'', wrongly, with probability $q^k$: about
+$9.3\%$, $0.86\%$, $0.080\%$ and $0.0007\%$ for $k = 1, 2, 3, 5$. ``Composite'' is always right.
+
+\omoutput{code/bachelor-2/27-randomised-algorithms/outputs/exo_monte_carlo.txt}{The wrong answers counted over 100,000
+runs.}
+\end{solution}
+
+\begin{solution}{exo:b2:randomised-algorithms:2}
+\omoutput{code/bachelor-2/27-randomised-algorithms/outputs/exo_shuffle.txt}{Every sequence of choices of the two shuffles
+for $n = 3$.}
+
+The 27 equally likely sequences give the orders $012$, $201$, $210$ four times each and the three others five times. No
+shuffle that makes $n$ uniform choices among $n$ can be uniform for $n = 3$: each order would need $27/6$ sequences, which
+is not a whole number. Fisher--Yates makes $3 \cdot 2 \cdot 1 = 6$ choices, one per order.
+\end{solution}
+
+\begin{solution}{exo:b2:randomised-algorithms:3}
+\omcode{code/bachelor-2/27-randomised-algorithms/listings/exo_reservoir.py}{8}{19}{Reservoir sampling}
+
+\omoutput{code/bachelor-2/27-randomised-algorithms/outputs/exo_reservoir.txt}{All $3 \cdot 4 \cdot 5 \cdot 6$ sequences of
+choices for $n = 6$, $k = 2$.}
+
+By induction on $i \geq k$: after the items $0, \dots, i - 1$, every set of $k$ of them is the sample with probability
+$1/\binom{i}{k}$. Item $i$ enters with probability $k/(i + 1)$, replacing a uniform one of the $k$. A set $S$ of $k$ items
+among $0, \dots, i$ that does not contain $i$ is the new sample if it was the old one and $i$ did not enter:
+$\frac{1}{\binom{i}{k}} \cdot \frac{i + 1 - k}{i + 1} = \frac{1}{\binom{i + 1}{k}}$. A set $S$ containing $i$ is the new
+sample if the old one was $S \setminus \{i\}$ plus one of the $i - k + 1$ other items, $i$ entered, and replaced that
+item: $(i - k + 1) \cdot \frac{1}{\binom{i}{k}} \cdot \frac{1}{i + 1} = \frac{1}{\binom{i + 1}{k}}$.
+\end{solution}
+
+\begin{solution}{exo:b2:randomised-algorithms:4}
+Let $E$ be the expectation. The first trial succeeds with probability $p$; otherwise one trial is spent and the process
+starts again: $E = 1 + (1 - p)E$, so $E = 1/p$ (the sum $\sum_{t \geq 1} t p (1 - p)^{t - 1}$ gives the same). With $p =
+2/\ln 2^{256}$, $E = 256 \ln 2 / 2 \approx 88.7$; \cref{out:b2:randomised-algorithms:random-prime} measured $94.7$.
+\end{solution}
+
+\begin{solution}{exo:b2:randomised-algorithms:5}
+$2^{10} \equiv 1 \pmod{341}$, so $2^{340} = (2^{10})^{34} \equiv 1$: base 2 passes. Base 3 does not.
+
+\omoutput{code/bachelor-2/27-randomised-algorithms/outputs/exo_341.txt}{The Fermat liars of 341, and base 2 in
+Miller--Rabin.}
+
+98 of the 298 bases coprime to 341 pass, fewer than half, as \cref{prop:b2:randomised-algorithms:fermat} requires. For
+Miller--Rabin, $340 = 2^2 \cdot 85$: $2^{85} \equiv 32$, not $\pm 1$, and $2^{170} \equiv 1$, not $-1$, so 2 is a
+witness. The square root $32$ of $1$ that is neither $1$ nor $-1$ proves 341 composite: $341$ divides $(32 - 1)(32 + 1)$
+without dividing either factor, and indeed $31$ and $11$ are its factors.
+\end{solution}
+
+\begin{solution}{exo:b2:randomised-algorithms:6}
+\omoutput{code/bachelor-2/27-randomised-algorithms/outputs/exo_bloom_bug.txt}{Consecutive positions against independent
+functions, $n = 1000$, $m = 8000$, $k = 6$.}
+
+Both set about the same number of bits, but the consecutive version sets them in runs of six. A key not added is
+rejected only if one of its six bits is $0$; its bits are consecutive too, and inside a run, or across two runs that
+touch, they are all $1$. The six tests are no longer independent: once $h(y)$ falls in a run, the next bits are very
+likely set. The rate, $25\%$, is closer to that of a single test than to $(1 - e^{-kn/m})^k$.
+\end{solution}
+
+\begin{solution}{exo:b2:randomised-algorithms:7}
+\omoutput{code/bachelor-2/27-randomised-algorithms/outputs/exo_las_vegas.txt}{The Monte Carlo version for three values
+of $k$, and the Las Vegas version.}
+
+Each draw is a non-square with probability $1/2$, independently. The Monte Carlo version stops at the first draw that
+passes the check, or after $k$ draws, and is wrong only if all $k$ fail: probability $2^{-k}$. The Las Vegas version
+draws until the check passes; its number of draws follows a geometric law of mean $1/(1/2) = 2$
+(\cref{exo:b2:randomised-algorithms:4}), and the measured mean is $2.03$.
+\end{solution}
+
+\begin{solution}{exo:b2:randomised-algorithms:8}
+Let $Z = \{z_i, \dots, z_j\}$, of $j - i + 1$ keys. As long as no pivot has been drawn from $Z$, the whole of $Z$ stays in
+one call: a pivot smaller than $z_i$ or larger than $z_j$ sends all of $Z$ to the same side. Consider the first pivot
+drawn from $Z$. It is drawn uniformly from the list of the call, which contains $Z$, so given that it falls in $Z$ it is
+uniform on $Z$. If it is $z_i$ or $z_j$, it is compared with every key of the call, the other one among them. Otherwise
+it lies strictly between them, sends $z_i$ to the left and $z_j$ to the right, and they are never in the same call
+again. So they are compared with probability $2/(j - i + 1)$.
+\end{solution}
+
+\begin{solution}{exo:b2:randomised-algorithms:9}
+\omoutput{code/bachelor-2/27-randomised-algorithms/outputs/exo_karger_rep.txt}{The best of $r$ runs, 2,000 trials each.}
+
+With independent runs, the best of $r$ is the minimum cut unless every run misses it: $1 - (1 - p)^r$. The measured
+values follow this law with the measured $p = 0.2147$. The bound, $p \geq 2/56$, predicts much less: it promises $99\%$ only
+after about $\frac{56}{2} \ln 100 \approx 129$ runs, where 20 are enough on this graph.
+\end{solution}
+
+\begin{solution}{exo:b2:randomised-algorithms:10}
+The longest chain $j$ contributes $L(L - 1)$ to the sum, and the other terms are non-negative. The sum $\sum_j c_j(c_j -
+1)$ counts the ordered pairs of distinct keys in the same bucket, so its expectation is $\sum_{x \neq y} \Pr[h(x) =
+h(y)] \leq n(n - 1)/m = n - 1$. Since $(L - 1)^2 \leq L(L - 1)$, $L \leq 1 + \sqrt{S}$ with $S$ the sum, and
+$E[\sqrt{S}] \leq \sqrt{E[S]}$ (the variance of $\sqrt{S}$ is non-negative), so $E[L] \leq 1 + \sqrt{n - 1} \leq 1 +
+\sqrt{n}$. Universality bounds only pairs of keys, and some universal families reach this order of growth; the family of
+\cref{thm:b2:randomised-algorithms:carter-wegman} behaves on these keys almost like a random function, for which the
+longest chain grows like $\ln n / \ln \ln n$, about 5 here.
+\end{solution}
+
+\begin{solution}{exo:b2:randomised-algorithms:11}
+The shuffle makes $n - 1$ choices, the $i$-th uniform among $n - i$ values, independently: $n(n - 1) \cdots 2 = n!$
+equally likely sequences. Each sequence gives one order, and each order comes from exactly one sequence: given the final
+order, position $0$ must hold its final element, which fixes the first choice (the position where that element was);
+the list after the first swap is then fixed, and the same argument applies to position $1$ and the rest. A bijection
+between $n!$ equally likely sequences and the $n!$ orders gives each order the probability $1/n!$. For $n = 3$, the
+second line of \cref{exo:b2:randomised-algorithms:2}'s output shows it.
+\end{solution}
+
+\begin{solution}{exo:b2:randomised-algorithms:12}
+\omcode{code/bachelor-2/27-randomised-algorithms/listings/exo_skiplist.py}{13}{23}{Search in a skip list, from the top
+level down}
+
+\omoutput{code/bachelor-2/27-randomised-algorithms/outputs/exo_skiplist.txt}{The cost of a search against $2 \log_2 n$.}
+
+The number of levels is about $\log_2 n$, since a key reaches level $\ell$ with probability $2^{-\ell}$. Followed
+backwards, a search goes up a level each time the node reached was promoted, with probability $1/2$, and left
+otherwise: on average two steps per level, so about $2 \log_2 n$ nodes, as measured. The insertion follows the same path
+and links the new node on each of its levels.
+\end{solution}
+
+\begin{solution}{pb:b2:randomised-algorithms:1}
+\textbf{1.} $0$: the two groups have no friendship between them. Contractions never join the groups, so every run ends
+with the two groups and returns the empty cut.
+
+\textbf{2.} A cycle 16, 19, 23, 27; a triangle 17, 19, 23; and the people 15 and 22 (friends of 27), 21 (of 16), 24 and
+26 (of 23), each with a single friend.
+
+\textbf{3.} $1$, and there are five minimum cuts, one for each of the five people with a single friend: their
+friendships are the only ones whose removal splits the group.
+
+\textbf{4.} The contractions build one vertex from all but 21; the two vertices are 21 and the rest, and the cut is the
+friendship 16-21.
+
+\textbf{5.} Contract 16-21 first, then 15-27, 22-27, 23-27, 17-23, 19-23, 23-24, 23-26: the two vertices are $\{16,
+21\}$ and the rest, joined by 16-19 and 16-27.
+
+\textbf{6.} Yes: any of the five minimum cuts may come out, and each separates a different person. The algorithm finds a
+minimum cut, not a particular one.
+
+\textbf{7.} A vertex of the multigraph stands for a set $X$ of people, and its edges are the friendships between $X$ and
+the rest: a cut of the original graph, so at least $c$.
+
+\textbf{8.} $\prod_{r = 3}^{n} \frac{r - 2}{r}$: the numerators are $1, \dots, n - 2$ and the denominators $3, \dots, n$,
+which leaves $\frac{1 \cdot 2}{(n - 1)n}$.
+
+\textbf{9.} $2/(29 \cdot 28) \approx 0.0025$ and $2/(22 \cdot 21) \approx 0.0043$, as printed; the measured rates of each
+single cut, about $0.10$ and $0.04$ to $0.056$, are far above.
+
+\textbf{10.} The events ``the run returns $C$'', for different minimum cuts $C$, are disjoint, and each has probability
+at least $2/(n(n - 1))$; their probabilities add up to at most $1$.
+
+\textbf{11.} In a cycle every vertex has degree 2, every cut has at least 2 edges, and any 2 of the $n$ edges form a cut
+of size 2 (the two arcs between them): $\binom{n}{2} = n(n - 1)/2$ minimum cuts.
+
+\textbf{12.} The bound is for one given minimum cut in the worst graph. The group has 7, each found about $10\%$ of the
+time; and its many people with one or two friends make most contractions harmless.
+
+\textbf{13.} $\frac{22 \cdot 21}{2} \ln 100 \approx 1{,}064$ runs.
+
+\textbf{14.} $(1 - 0.0558)^N \leq 0.01$ for $N \geq \ln 100 / -\ln(1 - 0.0558) \approx 81$ runs.
+
+\textbf{15.} It is the smallest over the runs, so at most any single one. It is wrong when no run found a minimum cut;
+the answer is then a cut, but not a minimum one.
+
+\textbf{16.} Monte Carlo: the running time is fixed and the answer may be too large. Checking that a cut is minimum
+needs a minimum-cut computation, so there is no cheap check.
+
+\textbf{17.} One maximum flow by Edmonds--Karp costs $O(n m^2)$ for $m$ edges, and $n - 1$ of them, from a fixed vertex
+to each other one, find a minimum cut (the fixed vertex is on one side, some other on the other side): $O(n^2 m^2)$. The
+$n^2 \ln n$ runs of almost-linear cost give $O(n^2 m \log n)$ up to the cost of the unions, which is smaller when $m$ is
+large.
+
+\textbf{18.} Most of the risk is in the last contractions, when $2/r$ is large. \omterm{def:b2:randomised-algorithms:contraction}{Contracting} to about $n/\sqrt{2}$
+vertices keeps a given minimum cut with probability about $1/2$; recursing twice on the result, independently, spends
+the repetitions where the risk is.
+
+\textbf{19.} The seven friendships 4-9, 12-20, 18-20, 25-37, 29-31, 33-35 and 33-39; the program prints the smaller side
+of the three most frequent: 18 (friend of 20 only), 25, and 18 with 20.
+
+\textbf{20.} Cuts of 2 or more friendships: a run fails when it contracts one of the seven friendships before the end.
+It still returns a cut, only not a minimum one; the minimum over several runs corrects it.
+
+\textbf{21.} 1-28 and 5-37: from the larger part, 28 is a friend of 1, and 37 of 5.
+
+\textbf{22.} Ten, those with exactly two friends in the core: a cut that separates one person consists of that person's
+friendships, so it has size 2 exactly when the person has two.
+
+\textbf{23.} The result: Karger's bound guarantees that a given minimum cut is found with probability at least $2/(n(n -
+1))$, $0.43\%$ for the 22 people of the core; the cut that sets apart nine people is found in $5.6\%$ of the runs, and a
+minimum cut of some kind in about $70\%$.
+
+\textbf{24.} Ask for a cut whose two sides both have at least a given number of people, or divide the size of a cut by
+the size of its smaller side; the single people with two friends then stop being the answer. That problem is harder, and
+contraction alone no longer solves it.
+\end{solution}

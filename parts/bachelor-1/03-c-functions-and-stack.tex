@@ -1,0 +1,486 @@
+% Book 3, Year 1, chapter 3 -- functions and the call stack.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 3.
+\chapter{Functions and the Call Stack}\label{ch:b1:c-functions-and-stack}
+
+The function \code{swap} below exchanges its two parameters, and prints them to prove it. Back in \code{main},
+\code{x} is still 1 and \code{y} is still 2. The function did its work on copies, which disappeared when it
+returned. Where those copies lived, how long they lived, and why a function that calls itself a million times can
+crash a program, is the matter of this chapter: it opens the machine room under every function call.
+
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/swap_value.c}{2}{18}{A swap that
+swaps nothing}\label{lst:b1:c-functions-and-stack:swap}
+
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/swap_value.txt}{Swapped inside, unchanged
+outside.}\label{out:b1:c-functions-and-stack:swap}
+
+\begin{recall}
+A recursive function calls itself on a smaller input and stops at a base case; its correctness is proved by
+induction on the size of the input. The school volume drew the calls of a recursive Python function as a stack of
+frames, one per call still running. This chapter shows what those frames are made of in a compiled program, and
+\cref{ch:b1:induction-and-termination} returns to the proofs.
+\end{recall}
+
+\section{Declaring and defining functions}\label{sec:b1:c-functions-and-stack:declaring}
+
+A C function has a type for each parameter and a type for its result, and the \omterm{def:b1:compilation-pipeline:compiler}{compiler} checks every call against
+them. To do so it must have seen the function's types before the call: a C file is read once, from top to bottom.
+
+\begin{definition}[Function declaration, function definition]\label{def:b1:c-functions-and-stack:declaration}
+A \emph{function declaration}\index{function declaration}, or \emph{prototype}\index{prototype}, gives a function's
+name, the types of its parameters and the type of its result, followed by a semicolon:
+\code{int digit_sum(unsigned n);}. A \emph{function definition}\index{function definition} gives the same heading
+followed by the body between braces. A function has exactly one definition in a program, and may be declared many
+times; every call must come after a declaration or the definition.
+\end{definition}
+
+A function whose result type is \code{void} returns nothing, and a parameter list \code{(void)} means ``no
+parameters''. The header files of \cref{ch:b1:compilation-pipeline} are, for the most part, lists of
+declarations: \texttt{<stdio.h>} declares \code{printf}, whose definition is in the C library. The order of
+definitions in a file matters only through this rule; two functions that call each other need a declaration of
+the second before the first (\cref{lst:b1:c-functions-and-stack:even-odd}).
+
+\begin{definition}[Passing by value]\label{def:b1:c-functions-and-stack:by-value}
+C passes every argument \emph{by value}\index{passing by value}: at a call, each argument expression is evaluated
+and its value is copied into the corresponding parameter, which is a new variable of the called function. An
+assignment to a parameter changes the copy, never the caller's variable.
+\end{definition}
+
+That is the whole story of \code{swap}: \code{a} and \code{b} were copies of \code{x} and \code{y}. A function hands a
+value back to its caller through its result; to change a caller's variable it needs that variable's address, the
+subject of \cref{ch:b1:pointers-and-arrays}. Arrays are the exception that is not one: \cref{ch:b1:pointers-and-arrays}
+shows that the value copied for an array argument is its address.
+
+\section{The call stack and its frames}\label{sec:b1:c-functions-and-stack:stack}
+
+When \code{main} calls \code{swap}, the processor must jump to the code of \code{swap}, give it room for
+\code{a}, \code{b} and \code{t}, and, when \code{swap} finishes, come back to the instruction after the call in
+\code{main} with \code{main}'s variables intact. All of this is done with one region of memory, the \omterm{def:b1:c-functions-and-stack:call-stack}{call stack} met
+in \cref{ch:b1:compilation-pipeline}.
+
+\begin{definition}[Call stack, stack frame]\label{def:b1:c-functions-and-stack:call-stack}
+The \emph{call stack}\index{call stack} is a region of memory used last in, first out: each call of a function
+pushes a \emph{stack frame}\index{stack frame} (or activation record) holding what that call needs, and the return
+pops it. A frame holds the call's parameters and local variables that do not fit in registers, the registers it
+must save for its caller, and the \omterm{def:b1:c-functions-and-stack:return-address}{return address}. Only the frames of calls that have started and not yet returned
+are on the stack, the most recent on top.
+\end{definition}
+
+\begin{definition}[Return address]\label{def:b1:c-functions-and-stack:return-address}
+The \emph{return address}\index{return address} of a call is the address of the instruction that follows the call
+instruction in the caller. The call instruction pushes it on the stack before jumping to the called function, and
+the function's final \code{ret} instruction pops it and jumps there.
+\end{definition}
+% ledger: b1:psabi-call
+
+On this machine the conventions are fixed by a document every \omterm{def:b1:compilation-pipeline:compiler}{compiler} for 64-bit x86 Linux follows, the System~V
+application binary interface: the \code{call} instruction pushes the 8-byte \omterm{def:b1:c-functions-and-stack:return-address}{return address}, and at the entry of
+every function the stack pointer, plus 8, is a multiple of 16. On x86-64 the stack grows towards lower addresses:
+a new frame sits below its caller's. The program below prints, at each depth of a recursive call, how far below the
+first call's local variable the current one lies.
+
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/frames.c}{3}{23}{Measuring the distance between
+frames}\label{lst:b1:c-functions-and-stack:frames}
+
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/frames.txt}{Built at \code{-O0}: each call's frame is 64
+bytes below the previous one.}\label{out:b1:c-functions-and-stack:frames}
+
+Each frame of \code{descend} takes 64 bytes: the \omterm{def:b1:c-functions-and-stack:return-address}{return address} (8), the caller's saved frame pointer (8), and
+48 bytes reserved below them, which hold the parameter and the two locals stored at \code{-O0} (16 bytes), an
+8-byte guard value that this \omterm{def:b1:compilation-pipeline:compiler}{compiler} adds next to the locals of any function that takes a local's address, and
+padding that keeps the 16-byte alignment. The printed differences
+are the same at every run, though the addresses themselves are not; this is why the program prints differences.
+At \code{-O2} the \omterm{def:b1:compilation-pipeline:compiler}{compiler} keeps most variables in registers, and the frames shrink or vanish: a measurement of
+frames is a measurement of one build.
+
+\begin{omfigure}
+\begin{tikzpicture}[f/.style={draw, minimum width=46mm, minimum height=6mm, font=\small, anchor=north},
+                    >={Stealth[length=2mm]}]
+\node[f, fill=omCode!6] (m1) at (0,0) {\code{x = 1}, \code{y = 2}};
+\node[f, fill=omCode!6] (m2) at (0,-0.6) {saved registers of \code{main}};
+\node[f, fill=omThm!10] (r) at (0,-1.2) {return address (into \code{main})};
+\node[f, fill=omDef!8] (s1) at (0,-1.8) {\code{a = 2}, \code{b = 1}};
+\node[f, fill=omDef!8] (s2) at (0,-2.4) {\code{t = 1}};
+\draw[decorate, decoration={brace, amplitude=4pt}] (2.45,0) -- (2.45,-1.2)
+  node[midway, right=5pt, font=\small, align=left] {frame of \code{main}};
+\draw[decorate, decoration={brace, amplitude=4pt}] (2.45,-1.2) -- (2.45,-3.0)
+  node[midway, right=5pt, font=\small, align=left] {frame of \code{swap}};
+\draw[->, thick] (-3.3,-3.0) node[left, font=\small] {stack pointer} -- (-2.35,-3.0);
+\draw[->] (-3.6,0.2) -- node[left, font=\scriptsize, align=right] {lower\\addresses} (-3.6,-2.6);
+\end{tikzpicture}
+\par\smallskip{\small The stack while \code{swap} prints its line, the latest frame at the bottom. The parameters
+\code{a} and \code{b} were filled with copies of \code{x} and \code{y}, then exchanged; \code{main}'s variables
+are untouched. When \code{swap} returns, its frame is popped and the processor jumps to the \omterm{def:b1:c-functions-and-stack:return-address}{return address}.}
+\end{omfigure}
+
+The figure is a model. At \code{-O2}, \code{a}, \code{b} and \code{t} would live in registers and never reach the
+stack; what is certain is the \omterm{def:b1:c-functions-and-stack:return-address}{return address}, and the rule that every call that has not returned keeps its frame.
+
+\section{Recursion on the stack}\label{sec:b1:c-functions-and-stack:recursion}
+
+A recursive call is a call like any other: it pushes a new frame, with new copies of the parameters and locals.
+Here are three recursive functions on numbers; each stops at a base case and calls itself on a smaller number.
+
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/digits.c}{2}{33}{Digit sum, binary writing and fast
+power}\label{lst:b1:c-functions-and-stack:digits}
+
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/digits.txt}{Three results.}
+
+The call \code{digit_sum(2026)} pushes frames for 2026, 202, 20 and 2: four frames, one per digit, before the
+first return. \code{print_binary} prints after its recursive call, so the leading bits come out first.
+\code{power} halves its exponent at each call, so \code{power(3, 13)} makes five calls (exponents 13, 6, 3, 1, 0),
+not thirteen. A function that calls itself twice builds a richer structure.
+
+\begin{definition}[Tree of activations]\label{def:b1:c-functions-and-stack:call-tree}
+The \emph{tree of activations}\index{tree of activations} (or \emph{call tree}\index{call tree}) of a run has one
+node per call; the children of a node are the calls made directly by that call, in order. Its root is the first
+call, its leaves the calls that made no call. The number of calls is the number of nodes; the greatest number of
+frames on the stack at once is the height of the tree, counted in nodes.
+\end{definition}
+
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/calltree.c}{2}{20}{Printing the \omterm{def:b1:c-functions-and-stack:call-tree}{tree of activations},
+one indented line per call}\label{lst:b1:c-functions-and-stack:calltree}
+
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/calltree.txt}{Eleven calls, never more than four frames
+at once.}\label{out:b1:c-functions-and-stack:calltree}
+
+\begin{omfigure}
+\begin{tikzpicture}[level distance=12mm, every node/.style={tnode, minimum size=9mm, font=\scriptsize\ttfamily},
+  level 1/.style={sibling distance=52mm}, level 2/.style={sibling distance=26mm},
+  level 3/.style={sibling distance=13mm}, leaf/.style={fill=omThm!12}, live/.style={very thick, draw=omDef}]
+\node[live] {4,2}
+  child {node {3,1}
+    child {node[leaf] {2,0}}
+    child {node {2,1} child {node[leaf] {1,0}} child {node[leaf] {1,1}}}}
+  child {node[live] {3,2}
+    child {node[live] {2,1} child {node[leaf] {1,0}} child {node[leaf, live] {1,1}}}
+    child {node[leaf] {2,2}}};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b1:c-functions-and-stack:call-tree}{tree of activations} of \code{binom(4, 2)}, nodes labelled $(n, k)$, leaves shaded. Thick
+outlines: the four frames on the stack when the call \code{binom(1, 1)} of the right subtree runs, which is a path
+from the root. The run makes 11 calls, the number of nodes, but needs at most 4 frames, the height.}
+\end{omfigure}
+
+Each leaf returns 1, and every result is a sum of leaf results, so the tree of \code{binom(n, k)} has
+$\binom{n}{k}$ leaves; being a tree in which every inner node has two children, it has $2\binom{n}{k} - 1$ nodes in
+all (\cref{exo:b1:c-functions-and-stack:8}). Calls grow like the result, which is huge; the depth is at most $n+1$.
+That gap, between the work done and the memory held, is the theme of the weekend problem.
+
+\begin{definition}[Mutual recursion]\label{def:b1:c-functions-and-stack:mutual}
+Two or more functions are \emph{mutually recursive}\index{mutual recursion} when each calls another, so that a call
+of one can lead, through the others, to a call of itself. In C the first one called before its definition must be
+declared beforehand.
+\end{definition}
+
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/even_odd.c}{2}{22}{Even and odd, each defined through
+the other}\label{lst:b1:c-functions-and-stack:even-odd}
+
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/even_odd.txt}{Parity by \omterm{def:b1:c-functions-and-stack:mutual}{mutual
+recursion}.}
+
+Parity is a toy, but \omterm{def:b1:c-functions-and-stack:mutual}{mutual recursion} is the natural shape of anything defined by a grammar whose rules refer to
+each other. An arithmetic expression is a sum of terms, a term is a product of factors, and a factor is a digit or
+a whole expression in parentheses. One function per rule gives an evaluator in which \code{factor} calls
+\code{expr}, which calls \code{term}, which calls \code{factor}.
+
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/evaluator.c}{1}{36}{An evaluator in three \omterm{def:b1:c-functions-and-stack:mutual}{mutually
+recursive} functions (the end of the file, \code{expr} and \code{evaluate}, follows the same
+pattern)}\label{lst:b1:c-functions-and-stack:evaluator}
+
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/calc.txt}{Products bind tighter than sums, as the
+grammar says.}\label{out:b1:c-functions-and-stack:calc}
+
+The depth of the recursion follows the nesting of the parentheses: \code{2*(3+(4*5))} reaches \code{factor} three
+times on one path. The program that evaluates text from a user must therefore ask how deep a call chain can go.
+
+\begin{definition}[Stack overflow]\label{def:b1:c-functions-and-stack:stack-overflow}
+The \omterm{def:b1:c-functions-and-stack:call-stack}{call stack} has a maximal size, set when the program starts. A \emph{stack overflow}\index{stack overflow}
+happens when a call needs a frame that does not fit in it any more. In C it is not reported by the language: the
+program writes past the end of the stack region, and the system stops it.
+\end{definition}
+
+The program below makes each frame about 1 KiB, by giving the function a local array of 1000 bytes, and calls
+itself until the stack runs out, printing each depth reached into a file. The shell command \code{ulimit -s},
+covered with the shell in \cref{ch:b1:the-shell}, shows the stack limit of the programs it starts, in KiB, and
+sets a smaller one; the parentheses keep the change to one command.
+
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/deep.c}{2}{25}{Going down until the stack runs
+out}\label{lst:b1:c-functions-and-stack:deep}
+
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/depth.txt}{The program was stopped with exit status 139
+at each limit; the last depth it reached grows with the limit.}\label{out:b1:c-functions-and-stack:depth}
+% ledger: b1:linux-stack-default
+
+The default limit on this system is 8192~KiB, that is 8~MiB. With 512~KiB and frames of 1040 bytes, the program
+reached depth 500, and $512 \times 1024 / 1040 \approx 504.1$: the stack held the frames we predict, less about
+two and a half kibibytes used before \code{dive} started (the program's arguments, its environment, the frames of
+the start-up code and of \code{main}). The status 139 is how the system reports a program stopped for touching memory it may
+not; \cref{ch:b1:the-shell} explains exit statuses, and the operating-system volume how the stop is delivered.
+From one run to the next the last depth can differ by a few levels, because the system starts the stack at a
+slightly random place, and from one machine to another because the environment differs; the run shown turned the
+randomness off and started the program with an empty environment.
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=10cm, height=5.6cm, xlabel={stack limit $S$ (KiB)}, ylabel={depth reached},
+  xmin=0, xmax=2200, ymin=0, ymax=2200, xtick={256,512,1024,2048}, ytick={0,500,1000,1500,2000},
+  legend pos=north west, legend style={font=\small}, tick label style={font=\small}]
+\addplot[domain=0:2150, thick, omDef, samples=2] {x*1024/1040};
+\addlegendentry{$S / s$ with $s = 1040$ bytes}
+\addplot[only marks, mark=*, omThm] coordinates {(256,248) (512,500) (1024,1004) (2048,2013)};
+\addlegendentry{measured last depth}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The last depth reached by \cref{lst:b1:c-functions-and-stack:deep} for four stack limits.
+The points lie 3 or 4 levels below the line $S/s$: the frames that fit in what is left once a
+constant start-up cost, about 2.5~KiB, is paid. A loop doing the same work would use one frame at every limit.}
+\end{omfigure}
+
+When the last action of a function is a call whose result it returns unchanged, as \code{sum_to} does below,
+that call is a tail call: nothing in the frame is needed after the inner call returns. An optimising \omterm{def:b1:compilation-pipeline:compiler}{compiler} may then
+reuse the frame, turning the recursion into a jump. GCC does it at \code{-O2}, not at \code{-O0}; the language does
+not require it, and the Year~2 volume treats the transformation. A program must not count on it.
+
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/sum_to.c}{2}{15}{A tail-recursive
+sum}\label{lst:b1:c-functions-and-stack:sum-to}
+
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/tail.txt}{Ten million frames do not fit in 8~MiB; at
+\code{-O2} there is only one.}\label{out:b1:c-functions-and-stack:tail}
+
+\section{Scope and lifetime}\label{sec:b1:c-functions-and-stack:scope}
+
+Two different questions are asked about a variable: where in the text its name can be used, and when, during the
+run, the variable exists. They have different answers, and confusing them causes the bug at the end of this section.
+
+\begin{definition}[Scope, shadowing]\label{def:b1:c-functions-and-stack:scope}
+The \emph{scope}\index{scope} of a name is the part of the program text where it refers to a given declaration. A
+name declared inside a block (between braces, or in the parentheses of a \code{for}) has \emph{block scope}: from
+its declaration to the end of the block. A name declared outside every function has \emph{file scope}: from its
+declaration to the end of the file. A declaration in an inner block \emph{shadows}\index{shadowing} a declaration of
+the same name in an enclosing scope: inside the inner block, the name refers to the inner declaration.
+\end{definition}
+
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/shadow.c}{2}{21}{One name, three
+variables}\label{lst:b1:c-functions-and-stack:shadow}
+
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/shadow.txt}{Each use finds the nearest enclosing
+declaration in the text.}
+
+\code{show} sees the global \code{level}, not \code{main}'s: \omterm{def:b1:c-functions-and-stack:scope}{scope} is a property of the text, not of who called
+whom. \omterm{def:b1:c-functions-and-stack:scope}{Shadowing} is legal and almost always a mistake waiting to happen; \code{-Wshadow} warns about it.
+
+\begin{definition}[Lifetime; automatic, static and global variables]\label{def:b1:c-functions-and-stack:lifetime}
+The \emph{lifetime}\index{lifetime (of a variable)} (or storage duration) of a variable is the part of the run
+during which it exists and keeps its value. An \emph{automatic variable}\index{automatic variable}, a parameter or a
+local declared without \code{static}, lives from the entry into its block to the exit from it, in the current
+frame; each call has its own. A \emph{static variable}\index{static variable}, a local declared with
+\code{static}, has block \omterm{def:b1:c-functions-and-stack:scope}{scope} but lives for the whole run, in the \omterm{def:b1:compilation-pipeline:layout}{data segment}, and is initialised once, before
+\code{main} starts. A \emph{global variable}\index{global variable}, declared at file \omterm{def:b1:c-functions-and-stack:scope}{scope}, also lives for the
+whole run, and its name is visible to the whole file.
+\end{definition}
+
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/counter_static.c}{2}{19}{A static local counts the
+calls}\label{lst:b1:c-functions-and-stack:counter}
+
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/counter_static.txt}{\code{visits} survives the calls,
+\code{fresh} does not.}
+
+\begin{definition}[Internal linkage]\label{def:b1:c-functions-and-stack:linkage}
+A function or a variable declared at file \omterm{def:b1:c-functions-and-stack:scope}{scope} with \code{static} has \emph{internal
+linkage}\index{internal linkage}: its name is local to its file, and the \omterm{def:b1:compilation-pipeline:compiler}{linker} never matches it with a name of
+another file. Without \code{static}, a \omterm{def:b1:c-functions-and-stack:scope}{file-scope} name has \emph{external linkage}: it is visible to the \omterm{def:b1:compilation-pipeline:compiler}{linker}, as
+the global symbols of \cref{ch:b1:compilation-pipeline}.
+\end{definition}
+
+The word \code{static} thus means two things, depending on where it is written: inside a function it changes the
+\omterm{def:b1:c-functions-and-stack:lifetime}{lifetime}; at file \omterm{def:b1:c-functions-and-stack:scope}{scope} it changes the linkage. In the evaluator, \code{p}, \code{good}, \code{factor},
+\code{term} and \code{expr} are \code{static}: helpers that no other file needs, which cannot then collide with
+another file's \code{expr}. A module shows the rest of the program only what it declares in its header, a practice
+\cref{ch:b1:c-modules-make-tests} makes systematic.
+
+\begin{omfigure}
+\begin{tikzpicture}[>={Stealth[length=2mm]}, bar/.style={line width=5pt}]
+\draw[->] (0,0) -- (11,0) node[right, font=\small] {time};
+\foreach \x/\t in {0.4/start, 2/call 1, 4.2/return, 6/call 2, 8.2/return, 10.4/end}
+  {\draw (\x,0.1) -- (\x,-0.1) node[below, font=\scriptsize] {\t};}
+\draw[bar, omCode] (0.4,4) -- (10.4,4); \node[left, font=\small] at (0.3,4) {global \code{level}};
+\draw[bar, omCode] (0.4,3.2) -- (10.4,3.2); \node[left, font=\small] at (0.3,3.2) {static \code{visits}};
+\draw[bar, omDef] (2,2.4) -- (4.2,2.4); \draw[bar, omDef] (6,2.4) -- (8.2,2.4);
+\node[left, font=\small] at (0.3,2.4) {automatic \code{fresh}};
+\draw[bar, omDef] (2.4,1.6) -- (3.8,1.6); \node[left, font=\small] at (0.3,1.6) {inner block's local};
+\draw[bar, omThm] (4.2,0.8) -- (10.4,0.8); \node[left, font=\small] at (0.3,0.8) {returned address};
+\node[font=\scriptsize, omThm, above] at (7.3,0.9) {points to a dead variable};
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b1:c-functions-and-stack:lifetime}{Lifetimes} along a run. Global and \omterm{def:b1:c-functions-and-stack:lifetime}{static variables} exist from start to end. An \omterm{def:b1:c-functions-and-stack:lifetime}{automatic
+variable} exists once per call (two calls, two separate lives), a block's local only inside its block. An address
+returned from a call outlives the variable it names.}
+\end{omfigure}
+
+The last line of the figure is a classic bug. A function that returns the address of one of its \omterm{def:b1:c-functions-and-stack:lifetime}{automatic
+variables} returns the address of something that ceases to exist at the return; its frame will be reused by the
+next call.
+
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/dangling_local.c}{2}{15}{Returning the address of a
+local}\label{lst:b1:c-functions-and-stack:dangling}
+
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/dangling_local.txt}{GCC warns, then returns a null
+address.}\label{out:b1:c-functions-and-stack:dangling}
+% ledger: b1:gcc-return-local-addr
+
+Using the dead variable is \omterm{def:b1:c-types-and-control:ub}{undefined behaviour}, and GCC, knowing this, chose to return the null address, which no
+object has: a later use crashes at once instead of reading garbage. Another \omterm{def:b1:compilation-pipeline:compiler}{compiler} may return the stale address.
+The fix is to return a value, or an object whose \omterm{def:b1:c-functions-and-stack:lifetime}{lifetime} the caller controls: a \omterm{def:b1:c-functions-and-stack:lifetime}{static variable}, a variable of the
+caller passed by address (\cref{ch:b1:pointers-and-arrays}), or a block of the heap
+(\cref{ch:b1:dynamic-memory}).
+
+\begin{history}[The stack before C]
+Early languages such as Fortran gave each function fixed places for its variables, which ruled out recursion: a
+second call would overwrite the first one's values. Algol~60 required recursion, and with it a stack of activation
+records; its implementers made the stack the standard way to compile procedure calls, and every language since,
+C included, has inherited it.
+\end{history}
+
+\section{Exercises}\label{sec:b1:c-functions-and-stack:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-functions-and-stack:1}
+Predict the line printed by the program below, and explain the \omterm{def:b1:compilation-pipeline:compiler}{compiler}'s warning.
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/exo_reset.c}{2}{22}{Two resets}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-functions-and-stack:2}
+Predict the two lines printed, naming for each use of \code{x} the declaration it refers to.
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/exo_shadow.c}{2}{24}{Which \code{x}?}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-functions-and-stack:3}
+Predict the three numbers printed.
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/exo_static.c}{2}{19}{A total kept between calls}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:c-functions-and-stack:4}
+Draw the \omterm{def:b1:c-functions-and-stack:call-stack}{call stack} at the moment the marked line runs for the second time: which frames are present, in which
+order, and what values do their parameters and locals hold? Which \omterm{def:b1:c-functions-and-stack:return-address}{return address} does the top frame hold?
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/exo_frames.c}{2}{18}{Frames at a marked line}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-functions-and-stack:5}
+The program below prints \code{greeting: (null)}. Explain why, using the warning, and give two correct versions of
+\code{greeting}.
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/exo_name.c}{2}{16}{A greeting built in a local array}
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/exo_name.txt}{The warning and the result.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-functions-and-stack:6}
+The function \code{steps} counts the steps from \code{n} down to zero, by twos. What happens for \code{steps(7)}?
+Describe the chain of calls, say what the program does at \code{-O0}, and correct the base case so that
+\code{steps} is defined for every \code{n} $\geq 0$.
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/exo_steps.c}{2}{15}{Down by twos}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-functions-and-stack:7}
+Write \code{int digit_sum_iter(unsigned long long n)}, a version of \code{digit_sum} with a loop instead of
+recursion, and state a loop invariant that shows it computes the same value. How many frames does it use for a
+20-digit number?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-functions-and-stack:8}
+Prove that the naive \code{binom(n, k)} of \cref{lst:b1:c-functions-and-stack:calltree} makes exactly
+$2\binom{n}{k} - 1$ calls, for $0 \leq k \leq n$. Deduce the number of calls for \code{binom(30, 15)}, given that
+$\binom{30}{15} = 155\,117\,520$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:c-functions-and-stack:9}
+Trace the calls made by \code{is_odd(7)} in the program below and give its output. What would \code{is_odd(-1)} do?
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/exo_parity.c}{2}{24}{Parity with a trace}
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-functions-and-stack:10}
+The naive Fibonacci function returns $n$ for $n < 2$ and \code{fib(n-1) + fib(n-2)} otherwise, with $F(0) = 0$,
+$F(1) = 1$. Prove that \code{fib(n)}, for $n \geq 1$, makes $C(n) = 2F(n+1) - 1$ calls, and that at most $n$ of
+them are on the stack at once. Compare the two for $n = 30$ ($F(31) = 1\,346\,269$).
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-functions-and-stack:11}
+Write a recursive function that solves the towers of Hanoi for $n$ discs, records each move (\code{A->C}), returns
+the number of moves and the greatest depth of recursion reached. Prove that it makes $2^n - 1$ moves and reaches
+depth $n + 1$ when the first call has depth 1 and the calls with no disc count.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:c-functions-and-stack:12}
+A recursive function has frames of $s$ bytes, and the stack holds $S$ bytes, of which $c$ are used before the first
+call. Give the greatest depth $d$ that fits, and prove it. Using the measurements of
+\cref{out:b1:c-functions-and-stack:depth}, find $c$, and predict the last depth reached under a limit of 4096~KiB.
+\end{exercise}
+
+\section{Problem: How deep can a program go?}\label{sec:b1:c-functions-and-stack:problem}
+
+\begin{problem}[{Weekend problem --- How deep can a program go?}]\label{pb:b1:c-functions-and-stack:1}
+A recursive program uses two resources: time, counted in calls, and memory, counted in frames on the stack at once.
+The problem measures both for several shapes of recursion and turns the stack limit into a predicted depth. It uses
+the outputs of \cref{lst:b1:c-functions-and-stack:frames,lst:b1:c-functions-and-stack:deep}, and the two programs
+below.
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/shapes.c}{15}{31}{Three shapes, instrumented by a call to
+\code{enter(depth)} (the rest of the file prints the table)}\label{lst:b1:c-functions-and-stack:shapes}
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/shapes.txt}{Calls and greatest depth for $n = 5, 10, 15,
+20$.}\label{out:b1:c-functions-and-stack:shapes}
+\omcode{code/bachelor-1/03-c-functions-and-stack/listings/parity_deep.c}{7}{20}{\omterm{def:b1:c-functions-and-stack:mutual}{Mutual recursion} ten million
+deep}
+\omoutput{code/bachelor-1/03-c-functions-and-stack/outputs/problem.txt}{The same program at \code{-O0} and
+\code{-O2}, and the calls left in the \code{-O2} assembly.}\label{out:b1:c-functions-and-stack:problem}
+
+\medskip\noindent\textbf{Part I --- Frames measured.}
+\begin{enumerate}
+\item In \cref{out:b1:c-functions-and-stack:frames}, what is the size of one frame of \code{descend}? Why do we
+print differences of addresses rather than addresses?
+\item List what a frame of \code{descend} must contain at \code{-O0}, with sizes, and check that it can fit in that
+size with the alignment rule (the stack pointer plus 8 is a multiple of 16 at each function's entry).
+\item In \cref{out:b1:c-functions-and-stack:depth}, the frame of \code{dive} measures 1040 bytes. Why more than
+1000? Why is 1040 a multiple of 16?
+\item The program measures the frame size at depth 1, as the distance from depth 0. Why would it be wrong to
+measure it as the distance from a local of \code{main}?
+\item Why may the same programs give smaller frames at \code{-O2}? Which part of a frame can never disappear for a
+call that is not a tail call?
+\item Why must \code{deep.c} call \code{fflush} at each level, and why is its output sent to a file?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Calls against depth.}
+\begin{enumerate}[resume]
+\item Prove that \code{count_down(n, 1)} makes $n + 1$ calls and reaches depth $n + 1$; check the table.
+\item Prove by induction that \code{hanoi(n, 1)} makes $2^{n+1} - 1$ calls and reaches depth $n + 1$; check the
+table.
+\item For \code{fib}, the table gives 15 calls for $n = 5$. Check it against $2F(n+1) - 1$, with $F(6) = 8$.
+\item Why does \code{fib(n, 1)} reach depth $n$, not $n + 1$?
+\item Between $n = 15$ and $n = 20$, by what factor did the calls of \code{fib} grow? Compare with
+$\varphi^5$, where $\varphi = (1 + \sqrt 5)/2$.
+\item For each shape, give the ratio of calls to depth at $n = 20$.
+\item The \omterm{def:b1:c-functions-and-stack:call-tree}{tree of activations} of \code{hanoi(n, 1)} is a complete binary tree. Which nodes are its leaves, and how
+many are there?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Mutual recursion and tail calls.}
+\begin{enumerate}[resume]
+\item How many calls does \code{is_even(10000000)} make, and what is the greatest number of frames on the stack at
+\code{-O0}? Why did the \code{-O0} program stop with status 139?
+\item In the \code{-O2} assembly, \code{is_odd} ends with \code{jmp is_even} instead of \code{call is_even}. What
+does that change on the stack?
+\item The only \code{call} left is \code{main}'s. Why can the \omterm{def:b1:compilation-pipeline:compiler}{compiler} not replace it by a jump?
+\item Is the call \code{fib(n - 1, depth + 1)} in \code{fib} a tail call? And the call
+\code{count_down(n - 1, depth + 1)} in \code{1 + count_down(...)}?
+\item Rewrite \code{count_down} with an accumulator so that its recursive call is a tail call.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The stack budget.}
+\begin{enumerate}[resume]
+\item With $S = 512$~KiB and $s = 1040$ bytes, compute $\lfloor S / s \rfloor$ and compare with the last depth
+reached, 500.
+\item Do the same for the three other limits of \cref{out:b1:c-functions-and-stack:depth}. Is the difference
+always the same? Explain why a constant cost counted in bytes, not in levels, accounts for all four.
+\item What does that cost consist of? Estimate in bytes the stack used before \code{dive(0)} starts.
+\item Under the default limit, 8192~KiB, predict the last depth reached by \code{deep.c}.
+\item Under the default limit and at \code{-O0}, how deep can \code{descend} of \cref{lst:b1:c-functions-and-stack:frames}
+go, roughly?
+\item The evaluator nests one call of \code{expr}, \code{term} and \code{factor} per pair of parentheses. If its
+three frames take 48 bytes each, how many nested parentheses can a text have under 8192~KiB? What should a program
+that evaluates untrusted text do about it?
+\item State the named result of the problem, \emph{the depth bound}, with the values measured here.
+\end{enumerate}
+\end{problem}

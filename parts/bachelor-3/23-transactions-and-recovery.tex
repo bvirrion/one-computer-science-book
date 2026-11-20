@@ -1,0 +1,329 @@
+\chapter{Concurrency Control and Recovery}\label{ch:b3:transactions-and-recovery}
+
+A database promises each transaction two things it cannot see being kept: that the other transactions running at the same time do not disturb it, and that a crash at any moment loses nothing it committed and keeps nothing it did not. This chapter builds both promises. A schedule of interleaved reads and writes is judged by a graph; \omterm{def:b3:transactions-and-recovery:2pl}{two-phase locking} makes every schedule pass the test, at the price of waiting and \omterm{def:b3:concurrency:deadlock}{deadlocks}; multiversion concurrency avoids most of the waiting and lets one anomaly through, which the two doctors of the Brenmoor clinic meet at the end of the chapter. SQLite is then watched doing all this with two connections, and a mini database with a \omterm{def:b3:transactions-and-recovery:wal}{write-ahead log} is crashed after every single write it makes to its disk and recovered each time.
+
+\begin{recall}
+A transaction is a sequence of reads and writes that the database runs as one unit: it ends by a commit, which makes its changes permanent, or by a rollback, which cancels them. ACID names its four guarantees: atomicity, consistency, isolation and durability. A schedule interleaves the operations of several transactions. The anomalies an interleaving can show are the dirty read, the non-repeatable read, the phantom read, the lost update and the write skew; an isolation level names the anomalies a database rules out (Year~2 volume). A set of threads is in \omterm{def:b3:concurrency:deadlock}{deadlock} when each waits for something only another of the set can provide (\cref{def:b3:concurrency:deadlock}). A directed graph has a topological order, listing every edge's tail before its head, exactly when it has no cycle (Year~1 volume).
+\end{recall}
+
+\section{Schedules and serialisability}\label{sec:b3:transactions-and-recovery:schedules}
+
+A schedule is written as a list of operations: $R_1(A)$ is a read of item $A$ by transaction $T_1$, $W_2(A)$ a write of it by $T_2$. A schedule is \omterm{def:b3:transactions-and-recovery:schedule}{serial} when the transactions run one after the other, with no interleaving. \omterm{def:b3:transactions-and-recovery:schedule}{Serial schedules} are correct by definition, since each transaction alone keeps the database consistent; the question is which interleaved schedules are as good as a \omterm{def:b3:transactions-and-recovery:schedule}{serial} one.
+
+\begin{definition}[Conflicting operations, conflict serialisability, precedence graph, view serialisability, serial schedule]\label{def:b3:transactions-and-recovery:schedule}
+A schedule is \emph{serial}\index{serial schedule} when the operations of each transaction are consecutive. Two operations are \emph{conflicting operations}\index{conflicting operations} when they belong to different transactions, touch the same item and at least one of them is a write. Two schedules of the same operations are conflict-equivalent when every pair of conflicting operations comes in the same order in both. A schedule has \emph{conflict serialisability}\index{conflict serialisability} when it is conflict-equivalent to a serial schedule. Its \emph{precedence graph}\index{precedence graph} has one node per transaction and an edge $T_i \to T_j$ whenever an operation of $T_i$ conflicts with a later operation of $T_j$. \emph{View serialisability}\index{view serialisability} is the weaker property of being view-equivalent to a serial schedule: every read reads the value written by the same write in both, and every item's last write is the same.
+\end{definition}
+
+Swapping two adjacent operations that do not conflict changes nothing any transaction can observe: two reads see the same values in either order, and operations on different items are independent. Conflict-equivalent schedules are exactly those that such swaps transform into each other, which is why they leave the database in the same state.
+
+\begin{theorem}[The precedence-graph test]\label{thm:b3:transactions-and-recovery:precedence}
+A schedule is conflict serialisable if and only if its \omterm{def:b3:transactions-and-recovery:schedule}{precedence graph} has no cycle. When it has none, every topological order of the graph is the order of a conflict-equivalent \omterm{def:b3:transactions-and-recovery:schedule}{serial schedule}.
+\end{theorem}
+
+\begin{proof}
+Suppose the schedule $S$ is conflict-equivalent to the \omterm{def:b3:transactions-and-recovery:schedule}{serial schedule} $S'$. An edge $T_i \to T_j$ comes from \omterm{def:b3:transactions-and-recovery:schedule}{conflicting operations} $p$ of $T_i$ and $q$ of $T_j$ with $p$ before $q$ in $S$, hence in $S'$, where every operation of $T_i$ then precedes every operation of $T_j$. So every edge goes forwards in the order of $S'$, and a cycle $T_{i_1} \to \cdots \to T_{i_1}$ would put $T_{i_1}$ before itself.
+
+Conversely, let the graph be acyclic and take a topological order of it; let $S'$ run the transactions serially in that order, each with its operations in their order in $S$. The two schedules have the same operations. Let $p$ of $T_i$ and $q$ of $T_j$ conflict, with $p$ before $q$ in $S$. Then $T_i \to T_j$ is an edge, $T_i$ comes before $T_j$ in the topological order, and $p$ comes before $q$ in $S'$. Every conflicting pair is thus ordered alike, and $S'$ is conflict-equivalent to $S$.
+\end{proof}
+
+\omcode{code/bachelor-3/23-transactions-and-recovery/listings/schedules.py}{16}{42}{The conflict test, the \omterm{def:b3:transactions-and-recovery:schedule}{precedence graph}, and a \omterm{def:b3:transactions-and-recovery:schedule}{serial} order found by repeatedly removing a transaction with no predecessor left.}\label{lst:b3:transactions-and-recovery:schedules}
+
+\omoutput{code/bachelor-3/23-transactions-and-recovery/outputs/schedules.txt}{Six schedules judged by their graphs, and the 70 interleavings of two transactions that each read and write $A$, then $B$: only 12 pass.}\label{out:b3:transactions-and-recovery:schedules}
+
+The \emph{interleaved} schedule passes: $T_2$ touches $A$ only after $T_1$ is done with it, and $B$ likewise. The \emph{lost update} fails: both read $A$ before either writes, so each write erases the other's work, and the graph shows both edges. The \emph{three} schedule fails with a cycle through all three transactions, drawn below, though no two of them alone are in a cycle.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, node distance=2.6cm, tx/.style={draw, circle, minimum size=0.9cm, fill=omDef!12}]
+  \node[tx] (t1) at (90:1.6) {$T_1$};
+  \node[tx] (t2) at (330:1.6) {$T_2$};
+  \node[tx] (t3) at (210:1.6) {$T_3$};
+  \draw[-{Stealth}, thick] (t1) to[bend left=18] node[right, align=left] {$R_1(A)$ then $W_2(A)$} (t2);
+  \draw[-{Stealth}, thick] (t2) to[bend left=18] node[below=3pt] {$R_2(B)$ then $W_3(B)$} (t3);
+  \draw[-{Stealth}, thick] (t3) to[bend left=18] node[left, align=right] {$R_3(C)$ then $W_1(C)$} (t1);
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:transactions-and-recovery:schedule}{precedence graph} of the schedule $R_1(A)\,W_2(A)\,R_2(B)\,W_3(B)\,R_3(C)\,W_1(C)$. Each edge is labelled with the conflict that creates it. The cycle means that no \omterm{def:b3:transactions-and-recovery:schedule}{serial} order has the same conflicts: $T_1$ would have to come before $T_2$, $T_2$ before $T_3$ and $T_3$ before $T_1$.}
+\end{omfigure}
+
+The last schedule, \emph{blind writes}, fails the test too, yet it is view serialisable: no transaction reads, and $T_3$ writes both items last, as in the \omterm{def:b3:transactions-and-recovery:schedule}{serial} order $T_1, T_2, T_3$. \omterm{def:b3:transactions-and-recovery:schedule}{View serialisability} accepts more schedules, this one among them; the chapter only tells it, and exercise~\ref{exo:b3:transactions-and-recovery:7} works through the example.
+
+\section{Two-phase locking}\label{sec:b3:transactions-and-recovery:2pl}
+
+A scheduler must produce only serialisable schedules, without knowing in advance what each transaction will do. Locks give it the means: a read takes a shared lock on its item, which other readers may share; a write takes an exclusive lock, which nobody else may hold; a transaction that asks for a lock in conflict with one held waits.
+
+\begin{definition}[Two-phase locking, strict two-phase locking, cascading abort, recoverable schedule]\label{def:b3:transactions-and-recovery:2pl}
+A transaction follows \emph{two-phase locking}\index{two-phase locking} when it acquires all its locks before it releases any: a growing phase, then a shrinking phase. The moment of its last acquisition is its \emph{lock point}. Under \emph{strict two-phase locking}\index{strict two-phase locking} it also keeps its exclusive locks until it commits or aborts; the scheduler of this chapter keeps all its locks until then. A \emph{cascading abort}\index{cascading abort} is the abort of a transaction forced because it read a value written by a transaction that then aborted. A schedule is a \emph{recoverable schedule}\index{recoverable schedule} when each transaction commits only after every transaction whose writes it read has committed.
+\end{definition}
+
+The rule goes back to Eswaran, Gray, Lorie and Traiger in 1976: their paper defines the transaction and the schedule and shows that consistency requires that a transaction request no new lock after releasing one. % ledger: b3:eswaran-1976, b3:eswaran-2pl
+
+\begin{theorem}[Two-phase locking gives conflict serialisability]\label{thm:b3:transactions-and-recovery:2pl}
+If every transaction follows \omterm{def:b3:transactions-and-recovery:2pl}{two-phase locking}, the schedule of the committed transactions is conflict serialisable, and the order of their lock points is a conflict-equivalent \omterm{def:b3:transactions-and-recovery:schedule}{serial} order.
+\end{theorem}
+
+\begin{proof}
+Let $T_i \to T_j$ be an edge of the \omterm{def:b3:transactions-and-recovery:schedule}{precedence graph}: an operation $p$ of $T_i$ on an item $x$ conflicts with a later operation $q$ of $T_j$ on $x$. At least one of them is a write, so the two locks on $x$ are incompatible, and $T_j$ obtained its lock only after $T_i$ released its own (a shared lock upgraded to exclusive counts as an acquisition). Call $\ell_i$ and $\ell_j$ the lock points. By \omterm{def:b3:transactions-and-recovery:2pl}{two-phase locking} $T_i$ released nothing before $\ell_i$, so $\ell_i \le$ the release of $T_i$'s lock on $x$ $<$ the acquisition of $T_j$'s lock on $x \le \ell_j$. Every edge thus goes from an earlier lock point to a strictly later one, so the graph has no cycle, and listing the transactions by lock point is a topological order. \Cref{thm:b3:transactions-and-recovery:precedence} concludes.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, x=0.55cm, y=0.45cm]
+  \draw[-{Stealth}] (0,0) -- (11,0) node[below left] {time};
+  \draw[-{Stealth}] (0,0) -- (0,5.2) node[above] {locks held};
+  \node[above] at (5.5,6.0) {two-phase locking};
+  \begin{scope}[xshift=7.15cm]
+    \draw[-{Stealth}] (0,0) -- (11,0) node[below left] {time};
+    \draw[-{Stealth}] (0,0) -- (0,5.2) node[above] {locks held};
+    \node[above] at (5.5,6.0) {strict two-phase locking};
+  \end{scope}
+  \draw[omDef, very thick] (0,0) -- (1,0) -- (1,1) -- (2.5,1) -- (2.5,2) -- (4,2) -- (4,3) -- (5,3) -- (5,4) -- (6,4) -- (6,3) -- (7.2,3) -- (7.2,2) -- (8.3,2) -- (8.3,1) -- (9.2,1) -- (9.2,0) -- (10,0);
+  \draw[dashed] (6,0) -- (6,4.6) node[above, font=\scriptsize] {lock point};
+  \node[font=\scriptsize] at (3,4.4) {growing};
+  \node[font=\scriptsize] at (8.6,3.4) {shrinking};
+  \begin{scope}[xshift=7.15cm]
+    \draw[omThm, very thick] (0,0) -- (1,0) -- (1,1) -- (2.5,1) -- (2.5,2) -- (4,2) -- (4,3) -- (5,3) -- (5,4) -- (9.2,4) -- (9.2,0) -- (10,0);
+    \draw[dashed] (9.2,0) -- (9.2,4.6) node[above, font=\scriptsize] {commit};
+  \end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Locks held by one transaction over time. Under \omterm{def:b3:transactions-and-recovery:2pl}{two-phase locking} the count only grows until the lock point, then only falls. \omterm{def:b3:transactions-and-recovery:2pl}{Strict two-phase locking} keeps every lock until the commit and drops them all at once, so no other transaction ever reads a value that might still be rolled back.}
+\end{omfigure}
+
+Releasing locks early, as on the left, lets another transaction read a write of $T_i$ before $T_i$ commits; if $T_i$ then aborts, the reader must abort too, a \omterm{def:b3:transactions-and-recovery:2pl}{cascading abort}, and if the reader has already committed the schedule is not even recoverable. \omterm{def:b3:transactions-and-recovery:2pl}{Strict two-phase locking} rules both out (exercise~\ref{exo:b3:transactions-and-recovery:9}), which is why databases use it. The scheduler below runs transactions written as programs, in an order given step by step, and prints what each lock request does.
+
+\omcode{code/bachelor-3/23-transactions-and-recovery/listings/twopl.py}{20}{52}{The lock manager's two decisions: who blocks a request, and what a step does. A commit releases everything at once: \omterm{def:b3:transactions-and-recovery:2pl}{strict two-phase locking}.}\label{lst:b3:transactions-and-recovery:twopl}
+
+Waiting creates the danger of \cref{ch:b3:concurrency}: two transactions each holding a lock the other wants.
+
+\begin{definition}[Wait-for graph, wound--wait, wait--die]\label{def:b3:transactions-and-recovery:deadlock}
+The \emph{wait-for graph}\index{wait-for graph} has one node per active transaction and an edge $T_i \to T_j$ when $T_i$ waits for a lock that $T_j$ holds; with one lock per request, the transactions are in \omterm{def:b3:concurrency:deadlock}{deadlock} exactly when the graph has a cycle. Two schemes prevent the cycles instead, by giving each transaction a timestamp at its start, the smaller the older, kept when it restarts. Under \emph{wait--die}\index{wait--die} an older transaction asking for a lock held by a younger one waits, and a younger one asking for a lock an older one holds aborts (dies). Under \emph{wound--wait}\index{wound--wait} an older transaction asking for a lock held by a younger one aborts the younger (wounds it), and a younger one asking waits.
+\end{definition}
+
+\omoutput{code/bachelor-3/23-transactions-and-recovery/outputs/twopl.txt}{Three runs. Without shared items nothing waits; when $T_2$ wants $A$, it waits for $T_1$'s commit; when each holds what the other needs, the cycle is found and the younger transaction aborted.}\label{out:b3:transactions-and-recovery:twopl}
+
+The scheduler looks for a cycle each time a transaction starts to wait, by following the edges from it, and aborts the youngest transaction on the cycle; a real system would restart it. A timeout is the other answer: it needs no graph, but it also aborts transactions that were only slow.
+
+\section{Multiversion concurrency}\label{sec:b3:transactions-and-recovery:mvcc}
+
+Under locking, a reader waits for a writer and a writer for a reader. If the database keeps the old value when it writes a new one, a reader can read the old value and nobody waits.
+
+\begin{definition}[Multiversion concurrency control, snapshot isolation, serialisable snapshot isolation]\label{def:b3:transactions-and-recovery:mvcc}
+Under \emph{multiversion concurrency control}\index{multiversion concurrency control} each item keeps several versions, each tagged with the commit timestamp of the transaction that wrote it. Under \emph{snapshot isolation}\index{snapshot isolation} a transaction reads, for each item, the newest version committed before it started, together with its own writes; two transactions are concurrent when each starts before the other commits, and of two concurrent transactions that write the same item, the second to commit aborts (first committer wins). \emph{Serialisable snapshot isolation}\index{serialisable snapshot isolation} adds a check at commit that aborts a transaction in a dangerous structure: one where it has read an item that a concurrent transaction writes, and has written an item that a concurrent transaction read.
+\end{definition}
+
+A read by $T_i$ of a version older than one a concurrent $T_j$ writes is a \emph{read--write antidependency} $T_i \to T_j$: in any equivalent \omterm{def:b3:transactions-and-recovery:schedule}{serial} order $T_i$ must come first, since it did not see $T_j$'s write. \omterm{def:b3:transactions-and-recovery:mvcc}{Snapshot isolation} was first described by Berenson and his co-authors in 1995, and was implemented by Oracle and Microsoft SQL Server. % ledger: b3:fekete-si-first, b3:berenson-1995
+
+\omcode{code/bachelor-3/23-transactions-and-recovery/listings/mvcc.py}{46}{61}{Commit under \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation}: first committer wins, then, with \code{ssi}, the dangerous-structure check, then the new versions.}\label{lst:b3:transactions-and-recovery:mvcc}
+
+\omoutput{code/bachelor-3/23-transactions-and-recovery/outputs/mvcc.txt}{Two transactions each take a copy of a book: the second commit aborts. Two doctors each go off call because they saw the other on: both commit, and nobody is on call. \omterm{def:b3:transactions-and-recovery:mvcc}{Serialisable snapshot isolation} aborts one of them.}\label{out:b3:transactions-and-recovery:mvcc}
+
+The doctors are a write skew. Each transaction reads both rows, writes a different one, and commits; no item is written by both, so first committer wins does not fire, and no transaction saw a value another one had not committed. The result is the one no \omterm{def:b3:transactions-and-recovery:schedule}{serial} order gives: in a \omterm{def:b3:transactions-and-recovery:schedule}{serial} order the second doctor would have seen the first one go off.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, x=1cm, y=1cm]
+  \draw[thick] (0,1.6) node[left] {$T_1$ (Alice)} -- (9.4,1.6);
+  \draw[thick] (0,0) node[left] {$T_2$ (Bob)} -- (9.4,0);
+  \foreach \y in {0,1.6} \fill[omDef] (0.3,\y) circle (2.5pt);
+  \node[above, font=\scriptsize] at (0.3,1.7) {snapshot};
+  \node[below, font=\scriptsize] at (0.3,-0.1) {snapshot};
+  \node[above, align=center, font=\scriptsize] at (2.2,1.7) {reads $A$, $B$:\\ both on call};
+  \node[below, align=center, font=\scriptsize] at (3.2,-0.1) {reads $A$, $B$:\\ both on call};
+  \node[above, font=\scriptsize] at (4.8,1.7) {writes $A$ = off};
+  \node[below, font=\scriptsize] at (5.8,-0.1) {writes $B$ = off};
+  \fill[omThm] (6.8,1.6) circle (2.5pt) node[above, font=\scriptsize] {commit};
+  \fill[omThm] (8.3,0) circle (2.5pt) node[below, font=\scriptsize] {commit};
+  \draw[-{Stealth}, dashed, omThm] (2.4,1.45) -- (5.7,0.15);
+  \draw[-{Stealth}, dashed, omThm] (3.2,0.15) -- (4.8,1.45);
+\end{tikzpicture}
+\par\smallskip{\small Write skew under \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation}. Each transaction reads the snapshot taken at its start, so neither sees the other's write; the items written are different, so both commit. The dashed arrows are the two read--write antidependencies, from $T_1$'s read of $B$ to $T_2$'s write of it and from $T_2$'s read of $A$ to $T_1$'s write; one each way, they form the cycle that \omterm{def:b3:transactions-and-recovery:mvcc}{serialisable snapshot isolation} looks for.}
+\end{omfigure}
+
+\omterm{def:b3:transactions-and-recovery:mvcc}{Snapshot isolation} rules out the lost update but allows write skew (exercise~\ref{exo:b3:transactions-and-recovery:12}). Fekete and his co-authors gave in 2005 a theory of when a program can run non-serialisably under \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation}, and ways to change a program so that it cannot; Cahill, Röhm and Fekete showed in 2008 that write skew is prevented by detecting and aborting dangerous triplets of concurrent transactions, and their method became the Serializable level of PostgreSQL~9.1. % ledger: b3:fekete-2005, b3:fekete-theory, b3:cahill-2008, b3:cahill-dangerous, b3:ssi-postgres
+The check in \code{mvcc.py} is the simplest form of the idea: it aborts any transaction with antidependencies both in and out, which aborts more often than needed, but never lets a cycle of antidependencies through.
+
+\section{Isolation levels in practice}\label{sec:b3:transactions-and-recovery:isolation}
+
+An isolation level names the anomalies a database rules out (Year~2 volume). The levels map onto the mechanisms of this chapter. Read uncommitted takes no read locks at all. Read committed takes a read lock only for the duration of each read, or reads a snapshot taken at each statement. Repeatable read keeps read and write locks to the end of the transaction, but does not lock ranges, so a repeated query can meet a phantom row inserted in between. % ledger: b3:repeatable-read-phantom
+Serializable needs more: a lock on every row a condition may cover, including rows that do not exist yet.
+
+\begin{definition}[Predicate lock]\label{def:b3:transactions-and-recovery:isolation}
+A \emph{predicate lock}\index{predicate lock} locks the set of rows that satisfy a condition, such as \code{member_id = 41}, rather than rows by name: an insert or update producing a row that satisfies it conflicts with the lock. Locking the key range of an index that covers the condition is a cheaper, coarser form of it.
+\end{definition}
+
+Berenson and his co-authors criticised the definitions of the SQL standard of 1992 with \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation}: it shows none of the anomalies the standard forbids, yet it is not serialisable. % ledger: b3:berenson-si
+A level defined by a list of forbidden anomalies is thus weaker than its name may suggest.
+
+SQLite runs every transaction serialisably: what one connection changes is invisible to the others until it commits. % ledger: b3:sqlite-serializable
+In its default rollback-journal mode it locks the whole file. Readers hold SHARED locks, any number at once; a writer-to-be holds the single RESERVED lock while it prepares its changes in memory; to write the file at commit it needs the EXCLUSIVE lock, waiting in PENDING for the readers to finish. % ledger: b3:sqlite-locks
+A plain \code{BEGIN} starts nothing until the first access, while \code{BEGIN IMMEDIATE} starts a write transaction at once and fails with \code{SQLITE_BUSY} if another one is active. % ledger: b3:sqlite-begin
+In WAL mode a reader instead sees a snapshot of the database as it was when its read began; readers do not block the writer, nor the writer the readers, but there is one writer at a time. % ledger: b3:sqlite-wal-snapshot
+The script below drives two connections to one file from one Python program, step by step, with a busy timeout of zero, so that a step that would wait fails at once and the run is the same every time.
+
+\omcode{code/bachelor-3/23-transactions-and-recovery/listings/sqlite_isolation.py}{30}{44}{The same steps in both journal modes: A updates, B tries to write and then reads, A commits while B reads.}\label{lst:b3:transactions-and-recovery:sqlite}
+
+\omoutput{code/bachelor-3/23-transactions-and-recovery/outputs/sqlite_isolation.txt}{In rollback-journal mode, A cannot commit while B holds its SHARED lock, and commits after B ends. In WAL mode A commits at once, and B keeps reading 3 from its snapshot until it ends.}\label{out:b3:transactions-and-recovery:sqlite}
+
+Some invariants span rows: the library allows a member at most five books out at once. Every program that lends books could check it, but the check is safer in the database, where no program can forget it.
+
+\begin{definition}[Trigger]\label{def:b3:transactions-and-recovery:trigger}
+A \emph{trigger}\index{trigger} is a statement stored in the database and run automatically before or after each insertion, update or deletion on a given table, for each row affected; it can read the row through \code{NEW} and \code{OLD} and abort the statement that fired it.
+\end{definition}
+
+\omcode{code/bachelor-3/23-transactions-and-recovery/listings/trigger.sql}{4}{9}{A \omterm{def:b3:transactions-and-recovery:trigger}{trigger} that refuses a sixth loan to the same member.}\label{lst:b3:transactions-and-recovery:trigger}
+
+\omoutput[1,18-40]{code/bachelor-3/23-transactions-and-recovery/outputs/trigger.txt}{Member 41 borrows four books, then a fifth; the sixth is refused, and the count stays at five.}\label{out:b3:transactions-and-recovery:trigger}
+
+\code{RAISE(ABORT, ...)} ends the statement with an error, and the sixth row is not inserted. % ledger: b3:sqlite-raise
+The \omterm{def:b3:transactions-and-recovery:trigger}{trigger} keeps its invariant against concurrent loans only because SQLite is serialisable; under \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation}, two loans counted from the same snapshot could both pass the check, a write skew again.
+
+\section{Write-ahead logging and recovery}\label{sec:b3:transactions-and-recovery:recovery}
+
+The \omterm{def:b3:database-storage:buffer}{buffer pool} of \cref{ch:b3:database-storage} writes pages when it needs frames, not when transactions end. A page may thus reach the disk with changes of a transaction that has not committed (\emph{steal}), and a committed transaction's pages may still be only in memory (\emph{no force}). After a crash, the disk holds a mixture, and a log must say how to repair it.
+
+\begin{definition}[Write-ahead log, undo record, redo record, log sequence number, checkpoint]\label{def:b3:transactions-and-recovery:wal}
+A \emph{write-ahead log}\index{write-ahead log} is an append-only file of records describing every change, whose records reach the disk before the pages they describe. Each record has a \emph{log sequence number}\index{log sequence number} (LSN), increasing along the log, and each page carries the LSN of the last record applied to it, its page LSN. An update record carries a \emph{redo record}\index{redo record} part, the new value, to repeat the change, and an \emph{undo record}\index{undo record} part, the old value, to cancel it; a compensation log record, or CLR, logs an undo already done. A \emph{checkpoint}\index{checkpoint} is a record of the active transactions with their last LSNs, and of the \omterm{def:b3:database-storage:buffer}{dirty pages} with, for each, the LSN of its first change not yet on disk (its recLSN), from which recovery can start reading.
+\end{definition}
+
+Two rules make the log sufficient. The WAL rule: a page goes to disk only after every log record describing it. The commit rule: a transaction is committed once its commit record is on disk, so the log is flushed up to that record before the commit returns. Recovery then follows the three passes of ARIES, the algorithm of Mohan, Haderle, Lindsay, Pirahesh and Schwarz published in 1992, designed for steal and no force, and used by IBM Db2 and Microsoft SQL Server. % ledger: b3:mohan-1992, b3:aries-principles
+
+\begin{definition}[ARIES recovery]\label{def:b3:transactions-and-recovery:aries}
+\emph{Analysis} reads the log from the last \omterm{def:b3:transactions-and-recovery:wal}{checkpoint} and rebuilds the table of transactions active at the crash, the \emph{losers}, and the table of \omterm{def:b3:database-storage:buffer}{dirty pages}. \emph{Redo} repeats history: from the smallest recLSN, it reapplies every update and CLR whose page LSN shows it is not on its page, losers' records included. \emph{Undo} rolls the losers back, newest record first, writing a CLR for each update it undoes; the CLR's \code{undo_next} points to the next record to undo, so that a CLR met later is never undone twice.
+\end{definition}
+
+The mini database of \code{minidb.py} has eight items on four pages, a \omterm{def:b3:database-storage:buffer}{buffer pool} that steals and does not force, a log flushed by the WAL rule and at commit, rollback with CLRs, and \omterm{def:b3:transactions-and-recovery:wal}{checkpoints}. Every write to its simulated disk, of a log record or of a page, is an event after which the disk is copied: a crash after that event leaves exactly that copy.
+
+\omcode{code/bachelor-3/23-transactions-and-recovery/listings/minidb.py}{132}{166}{Undo: the losers' records newest first, each update undone and logged as a CLR; a crash during recovery is injected before a CLR.}\label{lst:b3:transactions-and-recovery:undo}
+
+\omcode{code/bachelor-3/23-transactions-and-recovery/listings/crash_all.py}{10}{33}{The workload: five transactions, two stolen pages, a \omterm{def:b3:transactions-and-recovery:wal}{checkpoint}, a rollback, two commits; $T_4$ and $T_5$ never commit.}\label{lst:b3:transactions-and-recovery:workload}
+
+\omoutput{code/bachelor-3/23-transactions-and-recovery/outputs/crash_all.txt}{A crash after each of the 23 writes to the disk, recovered each time: always the writes of the committed transactions and no others. Before recovery only the two earliest disks were right. A second crash during undo, at each of 59 points, recovers too.}\label{out:b3:transactions-and-recovery:crash}
+
+\begin{theorem}[Recovery is correct]\label{thm:b3:transactions-and-recovery:recovery}
+Let transactions hold their exclusive locks to the end, as under \omterm{def:b3:transactions-and-recovery:2pl}{strict two-phase locking}, and let the WAL and commit rules hold. After a crash at any moment, analysis, redo and undo leave each item with the value of the last write to it by a transaction whose commit record is on disk, or its initial value if there is none.
+\end{theorem}
+
+\begin{proof}
+\emph{After redo, every page holds the effect of every durable update and CLR, in log order.} A page on disk holds the effect of the records with LSN at most its page LSN, all durable by the WAL rule. A durable record $r$ of page $P$ that is not on disk has $\mathit{lsn}(r)$ above $P$'s page LSN, so $P$ was dirty from $r$ on: either $P$ was in the \omterm{def:b3:transactions-and-recovery:wal}{checkpoint}'s dirty \omterm{def:b3:virtual-memory:paging}{page table} with a recLSN at most $\mathit{lsn}(r)$, or it was clean at the \omterm{def:b3:transactions-and-recovery:wal}{checkpoint}, $r$ is later, and analysis adds $P$ with a recLSN at most $\mathit{lsn}(r)$. Redo reads from the smallest recLSN, meets $r$ and applies it, since $P$'s page LSN is below $\mathit{lsn}(r)$; records already on the page are skipped by the same test. Records not on disk at the crash did not reach any page either, by the WAL rule.
+
+\emph{Losers are exactly the transactions with durable updates and no durable commit or end record.} This is what analysis computes from the \omterm{def:b3:transactions-and-recovery:wal}{checkpoint}'s table and the records after it.
+
+\emph{After undo, each item has its correct value.} Take an item $x$. Because exclusive locks are held to the end, the writes to $x$ come in blocks, one transaction at a time, each block ending in that transaction's commit or in its complete rollback by CLRs before anyone else writes $x$. After redo, $x$ holds the last durable write to it. If that write belongs to a committed transaction, or to a rollback already finished, $x$ is right: a finished rollback restored the value before its block. Otherwise the last block belongs to a loser $L$, possibly partly rolled back already. Undo follows $L$'s chain from its last record; a CLR's \code{undo_next} skips the updates already undone, and each remaining update of $x$ is undone in decreasing LSN order, ending with the value before $L$'s first write to $x$: the value the previous block left, which is right by the same argument. Undoing several losers newest record first never interleaves wrongly, since their writes touch disjoint items while they are active.
+\end{proof}
+
+\omoutput{code/bachelor-3/23-transactions-and-recovery/outputs/recovery_trace.txt}{The durable log at crash 22, after page 3 is written, the four pages on disk, and the three passes. Redo reapplies the one record not on disk, $T_2$'s committed write of $d$; undo cancels $T_4$ and $T_5$.}\label{out:b3:transactions-and-recovery:trace}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=0.78cm, y=1cm, rec/.style={draw, minimum width=0.7cm, minimum height=0.55cm, inner sep=0pt}]
+  \foreach \i/\k in {1/u1,2/u2,3/u1,4/c1,5/e1,6/u3,7/u2,8/ck,9/u4,10/u3,11/clr,12/clr,13/e3,14/c2,15/e2,16/u5,17/u4} {
+    \node[rec] (r\i) at (\i,0) {\i};
+    \node[below=1pt of r\i] {\k};
+  }
+  \node[rec, fill=omDef!25] at (8,0) {8};
+  \draw[very thick, omThm] (17.55,-0.6) -- (17.55,0.6) node[above] {crash};
+  \draw[-{Stealth}, thick] (8,0.45) -- node[above] {analysis} (17,0.45);
+  \draw[-{Stealth}, thick, omDef] (1,1.3) -- node[above] {redo from the smallest recLSN, 1: only record 7 is reapplied} (17,1.3);
+  \draw[omDef] (1,1.3) -- (1,0.3);
+  \draw[-{Stealth}, thick, omThm] (17,-0.75) to[bend left=40] (16,-0.75);
+  \draw[-{Stealth}, thick, omThm] (16,-0.75) to[bend left=12] node[below] {undo: records 17 ($T_4$), 16 ($T_5$), 9 ($T_4$)} (9,-0.75);
+\end{tikzpicture}
+\par\smallskip{\small The log of the recovery trace, record by record: $u_i$ an update by $T_i$, $c_i$ a commit, $e_i$ an end, \textit{ck} the \omterm{def:b3:transactions-and-recovery:wal}{checkpoint} (shaded), \textit{clr} the compensation records of $T_3$'s rollback. Analysis reads from the \omterm{def:b3:transactions-and-recovery:wal}{checkpoint}, redo from LSN 1, and undo walks back through the losers' updates 17, 16 and 9.}
+\end{omfigure}
+
+The trace shows why redo repeats the losers' history too. Record 9, $T_4$'s write of $g$, is on disk already, and record 16 as well; had either been missing, redo would have reapplied it, so that undo, which writes the old values $T_4$ and $T_5$ logged, starts from the state the log describes. A redo that skipped them would be fine here, but exercise~\ref{exo:b3:transactions-and-recovery:5} finds the one crash where skipping a loser's CLR leaves a wrong value.
+
+\section{Exercises}\label{sec:b3:transactions-and-recovery:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:transactions-and-recovery:1}
+Draw the \omterm{def:b3:transactions-and-recovery:schedule}{precedence graph} of each schedule and say whether it is conflict serialisable; if it is, give an equivalent \omterm{def:b3:transactions-and-recovery:schedule}{serial} order.\newline (a)~$R_1(A)\,R_2(B)\,W_1(B)\,W_2(A)$.\newline (b)~$R_1(A)\,W_1(A)\,R_2(A)\,R_1(B)\,W_1(B)\,W_2(B)$.\newline (c)~$R_2(A)\,R_1(B)\,W_2(A)\,R_3(A)\,W_1(B)\,W_3(B)\,R_2(B)$.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:transactions-and-recovery:2}
+Which of these schedules can the \omterm{def:b3:transactions-and-recovery:2pl}{strict two-phase locking} scheduler of \cref{lst:b3:transactions-and-recovery:twopl} run exactly as written, $C_i$ being $T_i$'s commit? (a)~$R_1(A)\,R_2(A)\,W_1(B)\,W_2(C)\,C_1\,C_2$. (b)~$R_1(A)\,W_2(A)\,C_1\,C_2$. (c)~$W_1(A)\,C_1\,R_2(A)\,W_2(A)\,C_2$. (d)~the \emph{interleaved} schedule of \cref{out:b3:transactions-and-recovery:schedules} followed by $C_1\,C_2$. What does (d) show about the theorem of \omterm{def:b3:transactions-and-recovery:2pl}{two-phase locking}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:transactions-and-recovery:3}
+Name the anomaly each trace shows, $x$ and $y$ being 10 at the start. (a)~$T_1$ writes $x = 20$; $T_2$ reads $x = 20$; $T_1$ rolls back. (b)~$T_1$ reads $x = 10$; $T_2$ writes $x = 20$ and commits; $T_1$ reads $x = 20$. (c)~$T_1$ counts the rows with \code{copies > 0}: 3; $T_2$ inserts such a row and commits; $T_1$ counts again: 4. (d)~$T_1$ and $T_2$ each read $x + y = 20$, which must stay at least 10, and each lowers a different item by 10; both commit.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:transactions-and-recovery:4}
+Without looking at \cref{out:b3:transactions-and-recovery:sqlite}, predict for each journal mode which steps of \cref{lst:b3:transactions-and-recovery:sqlite} fail, and what B's three reads return. Explain each failure by the locks of SQLite, and why A's commit is retried in one mode only.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:transactions-and-recovery:5}
+\code{ex5_redo.py} recovers with a redo pass that reapplies only the records of committed transactions, since the others will be undone anyway. Run it on every crash point of \cref{lst:b3:transactions-and-recovery:workload}. At which crash does it go wrong, which item is wrong, and why? Why would the shortcut be correct if pages were never stolen?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:transactions-and-recovery:6}
+Write \code{WaitDie}, a subclass of the scheduler of \cref{lst:b3:transactions-and-recovery:twopl} whose \code{on_wait} applies \omterm{def:b3:transactions-and-recovery:deadlock}{wait--die}, a transaction's number being its timestamp. Test that every wait it allows is of an older transaction for a younger one, on random programs, and count the orders of the doctors' problem in which it aborts a transaction.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:transactions-and-recovery:7}
+Show that the \emph{blind writes} schedule of \cref{out:b3:transactions-and-recovery:schedules} is view serialisable but not conflict serialisable. Then prove that every conflict-serialisable schedule is view serialisable.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:transactions-and-recovery:8}
+Two transactions each read then write the items $x_1, \ldots, x_k$ in this order. Count by hand their serialisable interleavings for $k = 1$. Prove that an interleaving is conflict serialisable exactly when, on every item, one transaction's two operations both come before the other's, and the same transaction comes first on every item. Count by program for $k \le 4$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:transactions-and-recovery:9}
+Prove that every schedule produced by \omterm{def:b3:transactions-and-recovery:2pl}{strict two-phase locking} is recoverable and has no \omterm{def:b3:transactions-and-recovery:2pl}{cascading abort}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:transactions-and-recovery:10}
+Prove that \omterm{def:b3:transactions-and-recovery:deadlock}{wait--die} never lets a \omterm{def:b3:concurrency:deadlock}{deadlock} form, and that if an aborted transaction restarts with its original timestamp, every transaction eventually commits, on the assumption that each transaction, once it holds all its locks, finishes in finite time. Does the same hold for \omterm{def:b3:transactions-and-recovery:deadlock}{wound--wait}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:transactions-and-recovery:11}
+Prove that recovery is \omterm{def:b3:file-systems:consistency}{idempotent} under crashes during recovery: if recovery itself crashes after writing some CLRs, a new recovery from the extended log gives the same result as one uninterrupted recovery. \code{crash_all.py} checks it at 59 points.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:transactions-and-recovery:12}
+Prove that \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation} never allows a lost update: two concurrent transactions that both read an item and write it cannot both commit. Show by the doctors' schedule that it allows write skew. Then prove the condition behind \omterm{def:b3:transactions-and-recovery:mvcc}{serialisable snapshot isolation}: if an execution under \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation} is not serialisable, some transaction has a read--write antidependency in and one out, both with concurrent transactions.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:transactions-and-recovery:problem}
+
+\begin{problem}[{Weekend problem --- Two doctors on call at the Brenmoor clinic}]\label{pb:b3:transactions-and-recovery:1}
+The Brenmoor clinic's rule is that at least one of its two doctors, Alice and Bob, is on call at night. The rota is a table with one row per doctor; a doctor going off call runs a transaction of four steps: read Alice's row, read Bob's row, set their own row off if both were on call, commit. One evening both doctors ask to go off at the same moment. This problem runs every interleaving of their two transactions under several protocols and counts the nights the rule is broken.
+
+\omcode{code/bachelor-3/23-transactions-and-recovery/listings/doctors.py}{18}{37}{One interleaving under \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation}; with \code{materialise}, both transactions also write one shared row.}\label{lst:b3:transactions-and-recovery:doctors}
+
+\omoutput{code/bachelor-3/23-transactions-and-recovery/outputs/doctors.txt}{Every interleaving of the two transactions under four protocols: how often nobody is left on call, and how often a transaction is aborted.}\label{out:b3:transactions-and-recovery:doctors}
+
+\medskip\noindent\textbf{Part I --- The invariant.}
+\begin{enumerate}
+  \item Write the two transactions as schedules of reads and writes, $T_1$ for Alice and $T_2$ for Bob, the write being conditional.
+  \item Show that each transaction alone keeps the rule.
+  \item Show that both \omterm{def:b3:transactions-and-recovery:schedule}{serial} orders keep it, and say what each doctor finds in each.
+  \item How many interleavings of the two transactions are there, counted as orders of their eight steps?
+  \item How many of them are \omterm{def:b3:transactions-and-recovery:schedule}{serial}?
+  \item Draw the \omterm{def:b3:transactions-and-recovery:schedule}{precedence graph} of the interleaving $R_1(A)\,R_2(A)\,R_1(B)\,R_2(B)\,W_1(A)\,W_2(B)$. Is it serialisable?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Every interleaving.}
+\begin{enumerate}[resume]
+  \item Under \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation}, in which interleavings does each doctor see both on call?
+  \item Why does first committer wins never fire here?
+  \item How many interleavings break the rule under \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation}, according to \cref{out:b3:transactions-and-recovery:doctors}? Explain the number.
+  \item Under \omterm{def:b3:transactions-and-recovery:2pl}{strict two-phase locking}, why does no interleaving break the rule?
+  \item In which interleavings does a \omterm{def:b3:concurrency:deadlock}{deadlock} occur, and how many are there?
+  \item Why do the other interleavings run without a \omterm{def:b3:concurrency:deadlock}{deadlock}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The anomaly.}
+\begin{enumerate}[resume]
+  \item Name the anomaly, and give the two read--write antidependencies of a broken night.
+  \item Why does the dirty-read, non-repeatable-read and phantom check of an isolation level not see it?
+  \item Would SQLite in WAL mode allow it, with each transaction started by a plain \code{BEGIN}? With \code{BEGIN IMMEDIATE}?
+  \item How would a \omterm{def:b3:transactions-and-recovery:trigger}{trigger} like \cref{lst:b3:transactions-and-recovery:trigger} fare against this anomaly under \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation}?
+  \item Suppose the rule were checked by a query \code{count(*) WHERE on_call} and a third doctor could be inserted. Which anomaly would a lock on the two existing rows miss?
+  \item Which lock would stop it?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The fixes.}
+\begin{enumerate}[resume]
+  \item Materialise the conflict: both transactions also write one shared row of the rota. Why does \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation} now abort 68 interleavings and break none?
+  \item \omterm{def:b3:transactions-and-recovery:mvcc}{Serialisable snapshot isolation} aborts the same 68 without the extra row. Which transaction does \code{mvcc.py} abort, and why?
+  \item Compare with \omterm{def:b3:transactions-and-recovery:2pl}{two-phase locking}: 48 aborts. Why fewer?
+  \item Under \omterm{def:b3:transactions-and-recovery:deadlock}{wait--die}, exercise~\ref{exo:b3:transactions-and-recovery:6} counts 52. Why more than 48?
+  \item Which fix would you choose for the clinic, which runs this transaction twice a night?
+  \item Sum up: out of the 70 interleavings, how many does \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation} break, how many do the fixes break, and what do they cost in aborts?
+\end{enumerate}
+\end{problem}

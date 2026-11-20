@@ -1,0 +1,270 @@
+% Provenance (never printed): see sources/outline_sources.md and sources/book1/BRIEFS.md (g7/06).
+\chapter{Project: A Quiz Game}\label{ch:g7:project-quiz-game}
+
+This chapter builds one \omterm{def:g4:programs-and-operating-system:program}{program} from start to finish, a quiz game, in five
+versions. Each version runs, each is tested, and each adds one thing to the
+one before. Here is what the finished game must do:
+
+\begin{quote}
+\itshape A quiz asks ten questions, read from \omterm{def:g7:lists:list}{lists}. The player may type an
+answer in capitals or small letters, with extra spaces around it. A right
+answer gives one point; after a wrong one the player has a second chance,
+worth half a point. The score is shown at the end. The quiz has an easy level
+and a hard level.
+\end{quote}
+
+\begin{recall}
+A \omterm{def:g7:functions:function}{function} takes \omterm{def:g7:functions:parameter}{parameters} and returns a \omterm{def:g6:variables-and-input:value}{value} (\cref{ch:g7:functions}). A
+\omterm{def:g7:lists:list}{list} keeps \omterm{def:g6:variables-and-input:value}{values} in order, with indices from 0 (\cref{ch:g7:lists}).
+\code{strip} and \code{lower} return a cleaned copy of a \omterm{def:g7:strings:string}{string}
+(\cref{ch:g7:strings}). A \code{while} \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop} repeats until its \omterm{def:g4:algorithms-repeat-and-decide:condition}{condition} is
+false (\cref{ch:g6:while-loops}). \omterm{def:g7:finding-and-fixing-bugs:bug}{Bugs} are found by reproducing, shrinking and
+changing one thing at a time (\cref{ch:g7:finding-and-fixing-bugs}).
+\end{recall}
+
+\section{What must it do?}
+
+The paragraph above is written for people. Before writing code, turn it into
+a numbered \omterm{def:g7:lists:list}{list} of things to check, each one small enough to test:
+
+\begin{enumerate}
+  \item The questions and their answers are kept in two \omterm{def:g7:lists:list}{lists} of the same
+    length.
+  \item An answer is accepted whatever its capitals and its spaces at the
+    ends.
+  \item A right first answer gives 1 point, a right second answer gives
+    0.5, a wrong second answer gives 0.
+  \item Every question is asked once, in order, and the score is printed at
+    the end.
+  \item The player chooses the easy or the hard level, and is asked again if
+    the level typed is neither.
+  \item The \omterm{def:g4:programs-and-operating-system:program}{program} ends with one line in a fixed format, which another
+    \omterm{def:g4:programs-and-operating-system:program}{program} could read.
+\end{enumerate}
+
+Then plan the \omterm{def:g7:functions:function}{functions}. Each one does one job and can be tested alone:
+\code{normalise} cleans a typed answer, \code{ask} asks one question,
+\code{play} asks them all, \code{choose_level} asks for the level, and
+\code{main} puts them together.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize\ttfamily, f/.style={draw=black!60, rounded corners, fill=ocBlue!10, minimum width=2.4cm, minimum height=0.65cm}]
+  \node[f, fill=ocYellow!30] (m) at (0,0) {main};
+  \node[f] (c) at (-3.4,-1.4) {choose\_level};
+  \node[f] (p) at (0,-1.4) {play};
+  \node[f] (r) at (3.4,-1.4) {result\_line};
+  \node[f] (a) at (0,-2.8) {ask};
+  \node[f] (n) at (-3.4,-2.8) {normalise};
+  \node[f, fill=white] (i) at (3.4,-2.8) {input};
+  \draw[-{Stealth[length=2mm]}, thick] (m) -- (c);
+  \draw[-{Stealth[length=2mm]}, thick] (m) -- (p);
+  \draw[-{Stealth[length=2mm]}, thick] (m) -- (r);
+  \draw[-{Stealth[length=2mm]}, thick] (p) -- (a);
+  \draw[-{Stealth[length=2mm]}, thick] (a) -- (n);
+  \draw[-{Stealth[length=2mm]}, thick] (c) -- (n);
+  \draw[-{Stealth[length=2mm]}, thick] (a) -- (i);
+\end{tikzpicture}
+
+{\small The plan of the finished \omterm{def:g4:programs-and-operating-system:program}{program}: an arrow goes from a \omterm{def:g7:functions:function}{function} to
+each \omterm{def:g7:functions:function}{function} it calls. \code{input} is Python's own.}
+\end{omfigure}
+
+\section{Questions in lists}
+
+The first version only holds the questions and the answers, in two \omterm{def:g7:lists:list}{lists} that
+go together: \code{answers[i]} is the answer to \code{questions[i]}. Answers
+are written in small letters, so that they can be compared with what the
+player types, once cleaned.
+
+\omcode{code/grade-7/06-project-quiz-game/listings/quiz_v1.py}{1}{19}{Version 1:
+the questions and their answers.}\label{lst:g7:project-quiz-game:v1}
+
+\Needspace*{11\baselineskip}
+\omoutput[1-5,10-11]{code/grade-7/06-project-quiz-game/outputs/quiz_v1.txt}{The
+first four pairs and the last one.}\label{out:g7:project-quiz-game:v1}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1cm, y=1cm, font=\scriptsize\ttfamily]
+  \foreach \q/\a [count=\i from 0] in {France/paris, spider/8, 7 x 8/56, largest/jupiter, bees/honey} {
+    \draw[black!60, fill=ocBlue!10] (2.1*\i,0.8) rectangle ++(2.1,0.6);
+    \node at (2.1*\i+1.05,1.1) {\q?};
+    \draw[black!60, fill=ocYellow!20] (2.1*\i,0) rectangle ++(2.1,0.6);
+    \node at (2.1*\i+1.05,0.3) {\a};
+    \node[ocRed!80!black, font=\scriptsize\sffamily] at (2.1*\i+1.05,-0.25) {\i};
+  }
+  \node[anchor=east, font=\footnotesize\sffamily] at (-0.1,1.1) {questions};
+  \node[anchor=east, font=\footnotesize\sffamily] at (-0.1,0.3) {answers};
+  \node[font=\footnotesize\sffamily] at (10.9,0.7) {\dots};
+\end{tikzpicture}
+
+{\small Two parallel \omterm{def:g7:lists:list}{lists}: the same \omterm{def:g7:lists:list}{index} picks a question and its answer
+(questions shortened here).}
+\end{omfigure}
+
+The check at line 16 catches a \omterm{def:g7:lists:list}{list} that is one \omterm{def:g7:lists:list}{item} short, before the game
+goes wrong. From now on, the \omterm{def:g7:lists:list}{lists} live in a \omterm{def:g3:files-and-folders:file}{file} of their own,
+\code{questions.py}, with a second pair of \omterm{def:g7:lists:list}{lists} for the hard level; the next
+versions import them.
+
+\section{Asking one question}
+
+The player may type \code{Paris}, \code{PARIS} or \code{" paris "}.
+\code{normalise} removes the spaces at the ends and puts the letters in small
+type, so that all of these become \code{"paris"}.
+
+\omcode{code/grade-7/06-project-quiz-game/listings/quiz_v2.py}{1}{18}{Version 2:
+asking one question.}\label{lst:g7:project-quiz-game:v2}
+
+\Needspace*{7\baselineskip}
+\omoutput{code/grade-7/06-project-quiz-game/outputs/quiz_v2.txt}{An answer in
+capitals, with spaces, is accepted.}\label{out:g7:project-quiz-game:v2}
+
+A test of the chapter calls \code{ask} without a keyboard: it replaces
+\code{input} with a \omterm{def:g7:functions:function}{function} that returns scripted answers, then checks the
+points that \code{ask} returns.
+
+\section{The whole quiz}
+
+\code{play} walks through the two \omterm{def:g7:lists:list}{lists} with one \omterm{def:g7:lists:list}{index} and adds up the
+points.
+
+\omcode{code/grade-7/06-project-quiz-game/listings/quiz_v3.py}{1}{17}{Version 3:
+the whole quiz.}\label{lst:g7:project-quiz-game:v3}
+
+\Needspace*{13\baselineskip}
+\omoutput[1-5,20-23]{code/grade-7/06-project-quiz-game/outputs/quiz_v3.txt}{A
+perfect game.}\label{out:g7:project-quiz-game:v3}
+
+\code{quiz_v3_poor.py} imports \code{play} and plays the same quiz with poorer
+answers:
+
+\Needspace*{12\baselineskip}
+\omoutput[1-5,20-22]{code/grade-7/06-project-quiz-game/outputs/quiz_v3_poor.txt}{A
+poorer game: 3 out of 10.}\label{out:g7:project-quiz-game:v3-poor}
+
+\section{Second chances and levels}
+
+A wrong first answer now gets a second try. \code{ask} returns 1, 0.5 or 0,
+so the score starts at \code{0.0} and is a decimal number. A second \omterm{def:g7:functions:function}{function}
+asks for the level until the player types one of the two.
+
+\omcode{code/grade-7/06-project-quiz-game/listings/quiz_v4.py}{1}{40}{Version 4:
+second chances and two levels.}\label{lst:g7:project-quiz-game:v4}
+
+\omoutput[1-10,24-27]{code/grade-7/06-project-quiz-game/outputs/quiz_v4.txt}{A
+hard game with a mistyped level and three second
+chances.}\label{out:g7:project-quiz-game:v4}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, b/.style={draw=black!60, rounded corners, fill=ocBlue!10, align=center, minimum height=0.7cm}, d/.style={draw=black!60, diamond, aspect=2.2, fill=ocYellow!25, inner sep=1pt, align=center}]
+  \node[b] (q) at (0,0) {ask the question};
+  \node[d] (r1) at (0,-1.4) {right?};
+  \node[b, fill=ocMint!30] (p1) at (3.6,-1.4) {1 point};
+  \node[b] (q2) at (0,-2.8) {ask again};
+  \node[d] (r2) at (0,-4.2) {right?};
+  \node[b, fill=ocMint!30] (p2) at (3.6,-4.2) {0.5 point};
+  \node[b, fill=ocRed!10] (p0) at (-3.6,-4.2) {0 points,\\ show the answer};
+  \draw[-{Stealth[length=2mm]}, thick] (q) -- (r1);
+  \draw[-{Stealth[length=2mm]}, thick] (r1) -- node[above] {yes} (p1);
+  \draw[-{Stealth[length=2mm]}, thick] (r1) -- node[left] {no} (q2);
+  \draw[-{Stealth[length=2mm]}, thick] (q2) -- (r2);
+  \draw[-{Stealth[length=2mm]}, thick] (r2) -- node[above] {yes} (p2);
+  \draw[-{Stealth[length=2mm]}, thick] (r2) -- node[above] {no} (p0);
+\end{tikzpicture}
+
+{\small One turn of the game, as \code{ask} plays it in version 4.}
+\end{omfigure}
+
+\section{Improving it}
+
+The last version adds the final line of the \omterm{def:g7:lists:list}{list} of requirements: a result
+in a fixed format, which a person can read and a \omterm{def:g4:programs-and-operating-system:program}{program} can split into its
+parts. Shuffling the order of the questions would make the game better, but
+it needs random numbers, which come in grade 9.
+
+\omcode{code/grade-7/06-project-quiz-game/listings/quiz_v5.py}{1}{23}{Version 5:
+the finished game.}\label{lst:g7:project-quiz-game:v5}
+
+\omoutput[1-7,17-26]{code/grade-7/06-project-quiz-game/outputs/quiz_v5.txt}{An easy
+game, scored 8.0 out of 10.}\label{out:g7:project-quiz-game:v5}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1cm, y=1cm, font=\footnotesize]
+  \draw[-{Stealth[length=2mm]}, thick] (0,0) -- (12.3,0);
+  \foreach \v/\t/\x in {v1/{lists, lengths}/0.8, v2/{normalise, ask}/3.2, v3/{play, two games}/5.6, v4/{half points, levels}/8.0, v5/{result line}/10.4} {
+    \fill[ocBlue] (\x,0) circle (0.09);
+    \node[above, font=\footnotesize\ttfamily] at (\x,0.15) {\v};
+    \node[below, align=center, text width=2.2cm] at (\x,-0.15) {\t};
+  }
+\end{tikzpicture}
+
+{\small The five versions, with what each one adds.}
+\end{omfigure}
+
+\section{Exercises}
+
+\begin{exercise}[$\star$]\label{exo:g7:project-quiz-game:1}
+What does \code{normalise("  Paris ")} return? And
+\code{normalise("NEW YORK")}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g7:project-quiz-game:2}
+In version 3, a player types \code{Paris}, \code{eight}, \code{56},
+\code{jupiter}, \code{" Honey "}, \code{60}, \code{hot}, \code{6},
+\code{green} and \code{63}. What score is printed?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g7:project-quiz-game:3}
+Change \code{ask} of version 4 so that typing \code{skip} moves on at once,
+with 0 points and no second chance.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g7:project-quiz-game:4}
+After an edit, the quiz says that every answer from question 5 on is wrong,
+and stops with an \code{IndexError} at question 10. Someone deleted one \omterm{def:g7:lists:list}{item}
+from a \omterm{def:g7:lists:list}{list}. Which \omterm{def:g7:lists:list}{list}, and which line of version 1 would have warned about
+it?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g7:project-quiz-game:5}
+Make version 5 print the score as a percentage as well.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g7:project-quiz-game:6}
+This \code{ask} gives 1.5 points for \code{paris} typed twice. Why? Fix it.
+
+\omcode{code/grade-7/06-project-quiz-game/exercises/ask_bug.py}{5}{11}{Too
+many points.}\label{lst:g7:project-quiz-game:ask-bug}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g7:project-quiz-game:7}
+Add a third level, \code{medium}. Which parts of the \omterm{def:g4:programs-and-operating-system:program}{program} change?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g7:project-quiz-game:8}
+How many lines does a game of version 5 show on the screen at most, when the
+player types a valid level at once? Why is there no maximum otherwise?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g7:project-quiz-game:9}
+Write a \code{play} that stops early when the player types \code{quit}, and
+returns the score so far. Use a \code{while} \omterm{def:g4:algorithms-repeat-and-decide:loop}{loop}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g7:project-quiz-game:10}
+Write a \omterm{def:g7:functions:function}{function} \code{longest_streak(points)} that takes the points of each
+question, such as \code{[1, 0.5, 1, 1, 1, 0, 1, 1, 0.5, 1]}, and returns the
+longest run of right first answers.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g7:project-quiz-game:11}
+What are the highest and the lowest possible scores in a game of ten
+questions? Can every score in between, in steps of 0.5, be reached? How many
+different scores are there?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g7:project-quiz-game:12}
+A spider has \code{8} legs, but a player who types \code{eight} is right too.
+Change the answers into a \omterm{def:g7:lists:list}{list} of \omterm{def:g7:lists:list}{lists}, with every accepted answer, and
+change \code{ask} to match.
+\end{exercise}

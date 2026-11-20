@@ -1,0 +1,438 @@
+\chapter{Intermediate Code and Code Generation}\label{ch:b3:code-generation}
+
+Chapters~\ref{ch:b3:lexical-analysis} to~\ref{ch:b3:semantic-analysis} turned the text of a Moor program into a tree whose names are resolved and whose types are checked, and the interpreter of chapter~\ref{ch:b3:semantic-analysis} ran that tree. This chapter makes the tree into a program for a machine: the RISC-V subset of the Year~2 volume, run by \code{rv}. It goes there in two steps. The tree is first flattened into a simple intermediate code with one operator per instruction and explicit jumps, then each intermediate instruction is replaced by a few machine instructions. The result is slow, and the next chapter makes it faster. Here the point is that it is right: on every sample, the compiled program prints what the interpreter prints.
+
+\section{Three-address code}\label{sec:b3:code-generation:tac}
+
+A tree is a good shape for checking a program and a poor one for running it. A machine has no nested expressions: it has registers, memory, and instructions that each do one operation and then go on to the next one or jump. Between the two sits a representation with the machine's shape and none of its details.
+
+\begin{definition}[Intermediate representation]\label{def:b3:code-generation:ir}
+An \emph{intermediate representation}\index{intermediate representation} is a form of the program, between the source and the target code, on which a compiler translates, analyses and transforms. A tree is a high-level intermediate representation; the code below is a low-level one.
+\end{definition}
+
+\begin{definition}[Three-address code, temporary]\label{def:b3:code-generation:tac}
+\emph{Three-address code}\index{three-address code} is a list of instructions of the forms $t = a \mathbin{\mathit{op}} b$, $t = \mathit{op}\,a$, $t = a$, loads and stores, labels $L\!:$, $\mathtt{goto}\ L$, $\mathtt{if}\ a \mathbin{\mathit{rel}} b\ \mathtt{goto}\ L$, calls and returns. Each names at most three places, its \emph{addresses}: two operands and a result. An operand is a constant or a \emph{temporary}\index{temporary}\index{virtual register|see{temporary}}, a named place for a value with no limit on how many there are; temporaries are also called \emph{virtual registers}. Stored as a record of an operator and three addresses, an instruction is a \emph{quadruple}\index{quadruple}.
+\end{definition}
+
+\Cref{lst:b3:code-generation:tac} is Moor's \omterm{def:b3:code-generation:tac}{three-address code} as a Rust type. A local variable or a parameter is a \omterm{def:b3:code-generation:tac}{temporary} like any other, and only globals and arrays live in memory. The operators are those of the tree, except \code{&&} and \code{||}, which become jumps.
+
+\omcode{code/bachelor-3/07-code-generation/listings/tac.rs}{9}{29}{\omterm{def:b3:code-generation:tac}{Three-address code}: values are temporaries or constants; every instruction does one thing.}\label{lst:b3:code-generation:tac}
+
+The translation of an expression walks the tree and returns where its value is (\cref{lst:b3:code-generation:expr}). A constant is its own place and costs no instruction. A local variable is already in its \omterm{def:b3:code-generation:tac}{temporary}. An operator translates its operands first, then allocates a new \omterm{def:b3:code-generation:tac}{temporary} for its own result and emits one instruction. A negative literal such as \code{-5} is folded into the constant $-5$ here, and the reason is told in exercise~\ref{exo:b3:code-generation:12}.
+
+\omcode{code/bachelor-3/07-code-generation/listings/tac.rs}{93}{128}{Expressions: operands first, then one instruction into a fresh \omterm{def:b3:code-generation:tac}{temporary}. \code{&&} and \code{||} produce their value by jumping.}\label{lst:b3:code-generation:expr}
+
+\Cref{out:b3:code-generation:tac} translates \code{expr.moor}. Its first lines are the expression $c = (a + b) \times (a - 2) / b$: each operator of the tree became one instruction, in the order of a post-order walk, and each interior node one \omterm{def:b3:code-generation:tac}{temporary} (the figure below).
+
+\omoutput{code/bachelor-3/07-code-generation/outputs/tac_demo.txt}{The \omterm{def:b3:code-generation:tac}{three-address code} of \code{expr.moor}, numbered. Temporaries that hold a variable print with its name.}\label{out:b3:code-generation:tac}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, level distance=9mm, >=Stealth,
+  every node/.style={inner sep=2pt},
+  op/.style={draw=omDef, fill=omDef!10, circle, minimum size=6mm, font=\ttfamily\small},
+  lf/.style={font=\ttfamily\small},
+  tl/.style={font=\ttfamily\scriptsize, text=omThm}]
+  \node[op] (div) {/}
+    child[sibling distance=26mm] {node[op] (mul) {*}
+      child[sibling distance=14mm] {node[op] (add) {+}
+        child[sibling distance=8mm] {node[lf] {a}}
+        child[sibling distance=8mm] {node[lf] {b}}}
+      child[sibling distance=14mm] {node[op] (sub) {-}
+        child[sibling distance=8mm] {node[lf] {a}}
+        child[sibling distance=8mm] {node[lf] {2}}}}
+    child[sibling distance=26mm] {node[lf] {b}};
+  \node[tl, right=1pt of div] {t5};
+  \node[tl, left=1pt of mul] {t4};
+  \node[tl, left=1pt of add] {t2};
+  \node[tl, right=1pt of sub] {t3};
+  \node[anchor=west, font=\ttfamily\small, align=left] at (3.2,-1.2) {%
+    \begin{tabular}{@{}llll@{}}
+    \textrm{\itshape op} & \textrm{\itshape arg 1} & \textrm{\itshape arg 2} & \textrm{\itshape result}\\
+    + & a & b & t2\\
+    - & a & 2 & t3\\
+    * & t2 & t3 & t4\\
+    / & t4 & b & t5\\
+    = & t5 & & c
+    \end{tabular}};
+\end{tikzpicture}
+\par\smallskip{\small The expression of \code{expr.moor} as a tree and as \omterm{def:b3:code-generation:tac}{quadruples}, one per interior node plus the final copy. The \omterm{def:b3:code-generation:tac}{temporary} beside each node holds its value. The leaves need no instruction: they are variables, already in temporaries, or constants.}
+\end{omfigure}
+
+The temporaries are numbered from 0 in each function, and the variables \code{a}, \code{b} and \code{c} are temporaries 0, 1 and 6. A \omterm{def:b3:code-generation:tac}{temporary} is written once by the expression that creates it and never reused, which costs memory and buys simplicity: a value, once computed, stays where it was put until the function returns. The next chapter will make the temporaries share registers.
+
+\subsection{Conditions as jumps}
+
+Moor's \code{&&} and \code{||} do not evaluate their right operand when the left one decides the result. In \code{d != 0 && n / d > 1}, the division must not happen when \code{d} is 0. A translation that computes both operands and then combines them is therefore wrong, not only slow. The translation of a condition is instead a piece of code that jumps.
+
+\begin{definition}[Jumping code, label generation]\label{def:b3:code-generation:jumping}
+The \emph{jumping code}\index{jumping code} of a condition $e$ for two labels $L_{\mathrm{t}}$ and $L_{\mathrm{f}}$ is code that evaluates as much of $e$ as needed and then jumps to $L_{\mathrm{t}}$ if $e$ is true and to $L_{\mathrm{f}}$ if it is false. The labels are made before the code that jumps to them, with fresh numbers: this is \emph{label generation}\index{label generation}. A one-pass generator that emits machine words directly cannot name a label it has not placed yet; it emits the jump with an empty target, records it, and fills the target in when the label's address is known, which is \emph{back-patching}\index{back-patching}.
+\end{definition}
+
+\Cref{lst:b3:code-generation:cond} is the whole of it. For $a \mathbin{\&\&} b$, a false $a$ jumps straight to $L_{\mathrm{f}}$ and a true $a$ goes on to the code of $b$. \code{||} is the mirror image, and \code{!} swaps the two labels without emitting anything. A comparison is one conditional branch and one jump. Any other boolean, a variable or a call, is compared with 0. A boolean that is stored rather than tested, as in \code{var ok = x > 0 && y > 0;}, is made from \omterm{def:b3:code-generation:jumping}{jumping code} by the arm of \cref{lst:b3:code-generation:expr} that writes 1 on one path and 0 on the other.
+
+\omcode{code/bachelor-3/07-code-generation/listings/tac.rs}{144}{171}{\omterm{def:b3:code-generation:jumping}{Jumping code} for conditions. The right operand of \code{&&} is reached only from the place where the left one was true.}\label{lst:b3:code-generation:cond}
+
+In \cref{out:b3:code-generation:tac}, instructions 7 to 14 are the condition \code{a < b && (c == 0 || b != 1)}. Instruction 7 tests \code{a < b} and jumps to the right operand at L4 only if it holds; instruction 10 tests \code{c == 0} and, when it fails, goes on at L5 to the test of \code{b != 1}. Each comparison is reached only on the paths where the operators before it have not yet decided the result. Exercise~\ref{exo:b3:code-generation:8} turns this into a proof. \Cref{out:b3:code-generation:shortcircuit} compiles the program, lists its branches and jumps, and runs it: of the three branches executed, two were taken (\code{a < b} and \code{b != 1}), so \code{c == 0} was false and the right operand of \code{||} was needed.
+
+\omoutput{code/bachelor-3/07-code-generation/outputs/shortcircuit.txt}{\code{expr.moor} compiled: its conditional branches and jumps, then a run that prints $c = 7$.}\label{out:b3:code-generation:shortcircuit}
+
+\section{Control-flow graphs}\label{sec:b3:code-generation:cfg}
+
+\omterm{def:b3:code-generation:tac}{Three-address code} is a list, and the jumps make it a graph. The analyses of the next chapter work on that graph, whose nodes are the straight runs of the list.
+
+\begin{definition}[Basic block, leader]\label{def:b3:code-generation:cfg}
+A \emph{basic block}\index{basic block} is a maximal sequence of consecutive instructions that control can enter only at the first and leave only at the last. A \emph{leader}\index{leader} is the first instruction of a block: the first instruction of the function, every label, and every instruction that follows a jump, a branch or a return.
+\end{definition}
+
+\begin{recall}
+The Year~1 volume drew a function's control-flow graph to measure how much of it its tests cover: one node per straight run of code, one edge per way control can pass from one to the next. For \omterm{def:b3:code-generation:tac}{three-address code}, the nodes are the \omterm{def:b3:code-generation:cfg}{basic blocks}, and there is an edge from $B$ to $C$ when control can pass from the end of $B$ to the start of $C$: by a jump or a taken branch to $C$'s label, or by falling through when $C$ follows $B$ and $B$ does not end in a jump or a return.
+\end{recall}
+
+\begin{proposition}[Blocks from leaders]\label{prop:b3:code-generation:leaders}
+Cutting the code before each \omterm{def:b3:code-generation:cfg}{leader} gives exactly its \omterm{def:b3:code-generation:cfg}{basic blocks}.
+\end{proposition}
+
+\begin{proof}
+Within a piece from one \omterm{def:b3:code-generation:cfg}{leader} to the next, no instruction after the first is a label, so none can be jumped to, and none before the last is a jump, a branch or a return, so control leaves only at the end. Control therefore enters only at the first and leaves only at the last. The piece is maximal: the instruction after it is a \omterm{def:b3:code-generation:cfg}{leader}, either a label, which may be entered from elsewhere, or the successor of a transfer, after which control may not arrive from the piece's last instruction; in both cases joining it would break the definition.
+\end{proof}
+
+\Cref{lst:b3:code-generation:cfg} computes the \omterm{def:b3:code-generation:cfg}{leaders}, cuts the code into blocks and adds the edges: a jump has one successor, a branch two (taken first), a return none, and anything else falls through to the next block.
+
+\omcode{code/bachelor-3/07-code-generation/listings/cfg.rs}{11}{46}{\omterm{def:b3:code-generation:cfg}{Leaders}, blocks and edges. A block is a range of the code; successors are block numbers.}\label{lst:b3:code-generation:cfg}
+
+\omoutput{code/bachelor-3/07-code-generation/outputs/cfg_demo.txt}{The \omterm{def:b3:code-generation:cfg}{basic blocks} of \code{fib} and their successors. ``exit'' marks a block that ends in a return.}\label{out:b3:code-generation:cfgout}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\ttfamily\scriptsize, >=Stealth, node distance=5mm,
+  b/.style={draw, fill=omDef!6, rounded corners=1pt, align=left, inner sep=3pt},
+  dead/.style={draw, dashed, fill=black!3, rounded corners=1pt, align=left, inner sep=3pt},
+  lab/.style={font=\sffamily\scriptsize\bfseries, text=omThm}]
+  \node[b] (b0) at (0, 0) {if n < 2 goto L1};
+  \node[b] (b2) at (-2.6, -1.3) {L1:\\return n};
+  \node[b] (b1) at (2.2, -1.3) {goto L2};
+  \node[dead] (b3) at (-0.2, -2.4) {goto L3};
+  \node[b] (b4) at (2.2, -2.4) {L2:};
+  \node[b, anchor=north] (b5) at (2.2, -3.2) {L3:\\t1 = n - 1\\t2 = call fib(t1)\\t3 = n - 2\\t4 = call fib(t3)\\t5 = t2 + t4\\return t5};
+  \node[font=\sffamily\scriptsize] (exit) at (-1.0, -4.4) {exit};
+  \node[dead] (b6) at (-2.9, -4.4) {return};
+  \foreach \n/\k in {b0/B0, b2/B2, b3/B3, b6/B6}
+    \node[lab, anchor=south east] at (\n.north west) {\k};
+  \foreach \n/\k in {b1/B1, b4/B4, b5/B5}
+    \node[lab, anchor=south west] at (\n.north east) {\k};
+  \draw[->] (b0) -- node[above left, font=\sffamily\scriptsize] {taken} (b2);
+  \draw[->] (b0) -- (b1);
+  \draw[->] (b1) -- (b4);
+  \draw[->] (b3) -- (b4);
+  \draw[->] (b4) -- (b5);
+  \draw[->] (b2) -- (exit);
+  \draw[->] (b5.west |- exit) -- (exit);
+  \draw[->] (b6) -- (exit);
+\end{tikzpicture}
+\par\smallskip{\small The control-flow graph of \code{fib}, from \cref{out:b3:code-generation:cfgout}. The dashed blocks B3 and B6 have no predecessor: they are the jump that follows the \code{then} branch and the return added at the end of every function, and both follow a return, so no path from the entry reaches them.}
+\end{omfigure}
+
+The graph of \code{fib} has two blocks that can never run. The translation of \code{if} always emits a jump over the \code{else} part, even when the \code{then} part ends in \code{return}, and every function gets a final \code{return} in case its body falls off the end. Removing such blocks is the simplest of the clean-ups of the next chapter; here they cost space and no time.
+
+\section{Translating control flow and calls}\label{sec:b3:code-generation:control}
+
+A statement translates into \omterm{def:b3:code-generation:tac}{three-address code} with labels made fresh for it (\cref{lst:b3:code-generation:stmt}). An \code{if} jumps to its \code{then} label or its \code{else} label by the \omterm{def:b3:code-generation:jumping}{jumping code} of its condition; both parts end at a common label. A \code{while} has a label at the top, tested on every iteration, and its body ends with a jump back to it.
+
+\omcode{code/bachelor-3/07-code-generation/listings/tac.rs}{197}{221}{\code{if}, \code{while} and \code{return}. Each statement makes its own labels, so nesting needs no bookkeeping.}\label{lst:b3:code-generation:stmt}
+
+\begin{recall}
+The Year~2 volume wrote RISC-V functions by hand under the processor's standard calling convention. The ABI names: \code{ra} holds the return address, \code{sp} the stack pointer, \code{t0}--\code{t6} are temporaries, \code{a0}--\code{a7} argument registers, \code{s0}--\code{s11} saved registers. % ledger: b2:rv-abi-names
+The eight argument registers carry the first arguments, and the first two also return the results. % ledger: b3:rv-args
+A callee must give back \code{sp} and \code{s0}--\code{s11} as it found them; \code{ra}, the \code{t} and the \code{a} registers it may overwrite. % ledger: b3:rv-preserved
+The stack grows downwards, and \code{sp} is a multiple of 16 on entry to a function. % ledger: b2:rv-sp-align
+\code{call f} saves the return address in \code{ra} and jumps. % ledger: b2:rv-call-tail
+\end{recall}
+
+A function that calls another loses its own return address, since the call overwrites \code{ra}. It must save \code{ra} somewhere the callee will not touch, and its own part of the stack is the place.
+
+\begin{definition}[Frame layout]\label{def:b3:code-generation:frame}
+The \emph{frame}\index{frame layout} of a function is the block of stack it allocates on entry, by lowering \code{sp}, and frees on return. Its \emph{layout} assigns each item that must outlive a call, such as temporaries, saved registers and outgoing arguments that do not fit in registers, a fixed offset from \code{sp}.
+\end{definition}
+
+The \omterm{def:b3:code-generation:frame}{frame} is set up by the function's prologue and freed by its epilogue, as in the Year~2 volume.
+
+The naive compiler gives every \omterm{def:b3:code-generation:tac}{temporary} a word of the \omterm{def:b3:code-generation:frame}{frame}, and a \omterm{def:b3:code-generation:tac}{temporary} lives there and nowhere else (\cref{lst:b3:code-generation:frame}). Above the temporaries is the saved \code{ra}, and the size is rounded up to 16 to keep \code{sp} aligned. Since all temporaries are in memory and the compiler uses only \code{t0}--\code{t2} and the \code{a} registers between two instructions of the intermediate code, no register needs to survive a call, and no \code{s} register is ever used or saved.
+
+\omcode{code/bachelor-3/07-code-generation/listings/frame.rs}{1}{21}{The \omterm{def:b3:code-generation:frame}{frame} of the naive compiler: four bytes per \omterm{def:b3:code-generation:tac}{temporary} from \code{sp} upwards, then \code{ra}.}\label{lst:b3:code-generation:frame}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth,
+  w/.style={draw, minimum width=34mm, minimum height=5mm, fill=omDef!6, font=\ttfamily\small},
+  off/.style={font=\ttfamily\scriptsize, anchor=east}]
+  \foreach \k/\txt in {0/{n (t0)}, 1/{t1 = n - 1}, 2/{t2 = fib(t1)}, 3/{t3 = n - 2}, 4/{t4 = fib(t3)}, 5/{t5 = t2 + t4}} {
+    \node[w] at (0, \k*0.5) {\txt};
+    \pgfmathtruncatemacro{\o}{4*\k}
+    \node[off] at (-1.9, \k*0.5) {\o(sp)};
+  }
+  \node[w, fill=black!4] at (0, 3) {\textrm{\itshape padding}};
+  \node[off] at (-1.9, 3) {24(sp)};
+  \node[w, fill=omMeth!12] at (0, 3.5) {saved ra};
+  \node[off] at (-1.9, 3.5) {28(sp)};
+  \node[font=\ttfamily\scriptsize, anchor=west] at (1.9, -0.25) {$\leftarrow$ sp after addi sp, sp, -32};
+  \node[font=\ttfamily\scriptsize, anchor=west] at (1.9, 3.75) {$\leftarrow$ sp of the caller (old sp)};
+  \draw[<->] (2.3, -0.2) -- node[right, font=\scriptsize] {32 bytes} (2.3, 3.7);
+  \node[font=\scriptsize, anchor=west, text=omThm] at (2.5, 2.7) {higher addresses $\uparrow$};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:code-generation:frame}{frame} of \code{fib}: six temporaries at offsets $4t$, then the saved \code{ra} at the top. $4 \times 6 + 4 = 28$ bytes, rounded up to 32. The offsets are those of \code{Frame::new(6)}, which the test \code{frames_of_fib_and_main} checks.}
+\end{omfigure}
+
+A call loads its arguments into \code{a0}, \code{a1}, \dots, emits \code{call}, and stores \code{a0} into the result's slot (\cref{lst:b3:code-generation:call}). The three built-in functions become system calls of \code{rv} instead: \code{print} is ``print integer'' followed by ``print character'' with a newline, and \code{read} is ``read integer''. % ledger: b2:rv-ecalls
+The prologue of a function lowers \code{sp}, saves \code{ra} and stores the incoming arguments into their parameters' slots; the epilogue, at a label every \code{return} jumps to, reloads \code{ra}, raises \code{sp} and returns (\cref{lst:b3:code-generation:function}).
+
+\omcode{code/bachelor-3/07-code-generation/listings/riscv.rs}{131}{152}{A call: arguments into \code{a0}--\code{a7}, the result out of \code{a0}. The built-ins are system calls.}\label{lst:b3:code-generation:call}
+
+\omcode{code/bachelor-3/07-code-generation/listings/riscv.rs}{155}{177}{One function: prologue, the body instruction by instruction, epilogue. \code{extra} lets a caller select some instructions itself.}\label{lst:b3:code-generation:function}
+
+\begin{inpractice}[One exit per function]
+Every \code{return} of the generated code stores its value in \code{a0} and jumps to the single epilogue. A function with ten returns then restores its \omterm{def:b3:code-generation:frame}{frame} in one place, and when the \omterm{def:b3:code-generation:frame}{frame} changes, as it will when the next chapter saves \code{s} registers, only that place changes. Copying the epilogue to each return is an optimisation, and it is safe only once the \omterm{def:b3:code-generation:frame}{frame} is final.
+\end{inpractice}
+
+\section{Selecting instructions}\label{sec:b3:code-generation:selection}
+
+\begin{definition}[Instruction selection, code generator]\label{def:b3:code-generation:selection}
+\emph{Instruction selection}\index{instruction selection} chooses the target instructions that implement each operation of the \omterm{def:b3:code-generation:ir}{intermediate representation}. A \emph{code generator}\index{code generator} is the part of a compiler that produces target code from the \omterm{def:b3:code-generation:ir}{intermediate representation}: instruction selection, the layout of \omterm{def:b3:code-generation:frame}{frames} and data, and register allocation.
+\end{definition}
+
+The simplest selection takes one intermediate instruction at a time: load the operands from their slots into \code{t0} and \code{t1}, compute into \code{t0}, store \code{t0} into the result's slot (\cref{lst:b3:code-generation:bin}). Two refinements come free. A constant operand that fits in 12 signed bits goes into the immediate field of \code{addi}, saving a \code{li}; a subtraction of a constant is an addition of its negation. And the six comparisons are built from \code{slt}, the only comparison that writes a register: $a > b$ is $b < a$, $a \le b$ is $\lnot (b < a)$, so \code{slt} with swapped operands then \code{xori} with 1; equality is ``the exclusive or is zero'', \code{seqz}. Modulo and negation are refused, and exercise~\ref{exo:b3:code-generation:6} adds them.
+
+\omcode{code/bachelor-3/07-code-generation/listings/riscv.rs}{41}{67}{Binary operators. Each comparison becomes one or two instructions around \code{slt}.}\label{lst:b3:code-generation:bin}
+
+\subsection{Tiling trees}
+
+Selecting one intermediate instruction at a time misses instructions that do more than one operation. RISC-V's \code{lw 4(t2)} adds 4 to an address and loads, and \code{slli} by 2 multiplies by 4. To use them, a selector looks at the tree of an expression rather than at its \omterm{def:b3:code-generation:tac}{three-address code}.
+
+\begin{definition}[Tile, tiling]\label{def:b3:code-generation:tiling}
+A \emph{tile}\index{tile} is a tree pattern with a target instruction and a cost: the pattern \code{(mem (+ r c))} with $c$ a 12-bit constant is \code{lw c(r)} at cost 1. A \emph{tiling}\index{tiling} of an expression tree covers each of its nodes by exactly one tile, the tiles fitting together at their leaves, which are the results of other tiles. Its cost is the sum of the costs of its tiles, and an \emph{optimal tiling} has the least cost.
+\end{definition}
+
+\begin{theorem}[Optimal tiling by dynamic programming]\label{thm:b3:code-generation:tiling}
+Let $\mathrm{best}(n)$ be the least cost of a \omterm{def:b3:code-generation:tiling}{tiling} of the subtree rooted at $n$. Then
+\[ \mathrm{best}(n) = \min_{\text{tile } T \text{ matching at } n} \Big( \mathrm{cost}(T) + \sum_{m \in \mathrm{leaves}(T, n)} \mathrm{best}(m) \Big), \]
+where $\mathrm{leaves}(T, n)$ are the subtrees left uncovered by $T$ placed at $n$. Computed from the leaves up, it takes time proportional to the number of nodes times the number of \omterm{def:b3:code-generation:tiling}{tiles}, for a fixed set of \omterm{def:b3:code-generation:tiling}{tiles} of bounded size.
+\end{theorem}
+
+\begin{proof}
+Every \omterm{def:b3:code-generation:tiling}{tiling} of the subtree at $n$ has exactly one \omterm{def:b3:code-generation:tiling}{tile} $T$ covering $n$, and the rest of it is a \omterm{def:b3:code-generation:tiling}{tiling} of each subtree in $\mathrm{leaves}(T, n)$; these subtrees are disjoint, so their \omterm{def:b3:code-generation:tiling}{tilings} are independent. The cost is $\mathrm{cost}(T)$ plus their costs, so it is at least the bracket for $T$, with equality when each subtree is tiled optimally. Taking the minimum over $T$ gives the least cost, by induction on the height of $n$: the subtrees in $\mathrm{leaves}(T, n)$ are strictly smaller, so their $\mathrm{best}$ is \omterm{def:b3:code-generation:correctness}{correct} by hypothesis. Visiting children before parents, each node tries each \omterm{def:b3:code-generation:tiling}{tile} once, and a \omterm{def:b3:code-generation:tiling}{tile} of bounded size is matched and its leaves summed in constant time.
+\end{proof}
+
+The proof relies on one property of the problem: the best way to compute a subtree does not depend on what uses its result. This is optimal substructure, the condition the Year~1 volume gave for dynamic programming, and it holds because a \omterm{def:b3:code-generation:tiling}{tile}'s result is always a register. \Cref{lst:b3:code-generation:tiles} lists the \omterm{def:b3:code-generation:tiling}{tiles} of a tiny selector: \code{li}, \code{la} (two words, \code{auipc} and \code{addi}), \code{add} and \code{addi}, \code{mul} and \code{slli} for a power of two, and \code{lw} with or without an offset. \Cref{out:b3:code-generation:tiling} applies it to the tree of \code{sq[i + 1] * 4 + 7}, the address of \code{sq[i + 1]} being written as $\&\mathtt{sq} + 4i + 4$.
+
+\omcode{code/bachelor-3/07-code-generation/listings/tiling.rs}{36}{59}{The \omterm{def:b3:code-generation:tiling}{tiles} that match at a node: each with its instruction, its cost and the subtrees it leaves to other \omterm{def:b3:code-generation:tiling}{tiles}.}\label{lst:b3:code-generation:tiles}
+
+\omcode{code/bachelor-3/07-code-generation/listings/tiling.rs}{61}{78}{The bottom-up computation of the theorem, children before parents.}\label{lst:b3:code-generation:best}
+
+\omoutput{code/bachelor-3/07-code-generation/outputs/tiling.txt}{Every subtree, the \omterm{def:b3:code-generation:tiling}{tile} that \omterm{def:b3:code-generation:tiling}{tiles} it best, and its best cost, children first. One \omterm{def:b3:code-generation:tiling}{tile} per node would cost 12 instructions; the optimal \omterm{def:b3:code-generation:tiling}{tiling} costs 7.}\label{out:b3:code-generation:tiling}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\ttfamily\small, x=9mm, y=8mm,
+  n/.style={circle, draw, fill=omDef!8, minimum size=6mm, inner sep=0pt},
+  lf/.style={inner sep=1.5pt},
+  tin/.style={line width=2.2pt, draw=omThm!70},
+  tout/.style={densely dashed, draw=black!45},
+  tn/.style={font=\sffamily\scriptsize\bfseries, text=omThm, anchor=west}]
+  \node[n] (r) at (0, 0) {+};
+  \node[n] (m1) at (-1.6, -1) {*};
+  \node[lf] (c7) at (1.4, -1) {7};
+  \node[n] (ld) at (-2.8, -2) {\scriptsize mem};
+  \node[lf] (c4c) at (-0.6, -2) {4};
+  \node[n] (a2) at (-2.8, -3) {+};
+  \node[n] (a3) at (-4.0, -4) {+};
+  \node[lf] (c4b) at (-1.6, -4) {4};
+  \node[lf] (sq) at (-5.2, -5) {\&sq};
+  \node[n] (m2) at (-2.8, -5) {*};
+  \node[lf] (i) at (-3.5, -6) {i};
+  \node[lf] (c4a) at (-2.1, -6) {4};
+  \draw[tin] (r) -- (c7);   \draw[tin] (m1) -- (c4c);
+  \draw[tin] (ld) -- (a2);  \draw[tin] (a2) -- (c4b);
+  \draw[tin] (m2) -- (c4a);
+  \draw[tout] (r) -- (m1);  \draw[tout] (m1) -- (ld);  \draw[tout] (a2) -- (a3);
+  \draw[tout] (a3) -- (sq); \draw[tout] (a3) -- (m2);  \draw[tout] (m2) -- (i);
+  \node[tn] at (0.45, 0.1) {addi 7};
+  \node[tn] at (-1.15, -0.85) {slli 2};
+  \node[tn] at (-2.25, -1.85) {lw 4(r)};
+  \node[tn] at (-5.0, -3.7) {add};
+  \node[tn] at (-2.35, -4.85) {slli 2};
+  \node[tn] at (-5.6, -5.5) {la sq};
+\end{tikzpicture}
+\par\smallskip{\small The optimal \omterm{def:b3:code-generation:tiling}{tiling} of \cref{out:b3:code-generation:tiling}: six \omterm{def:b3:code-generation:tiling}{tiles}, seven instructions (\code{la} is two). Thick edges join the nodes of one \omterm{def:b3:code-generation:tiling}{tile}, whose instruction is written beside its root; a dashed edge passes a result from one \omterm{def:b3:code-generation:tiling}{tile} to another. The register \code{i} needs no \omterm{def:b3:code-generation:tiling}{tile}. The \omterm{def:b3:code-generation:tiling}{tile} \code{lw 4(r)} covers three nodes, the load, the addition and the constant 4; covering them one by one would cost a \code{li}, an \code{add} and a \code{lw}.}
+\end{omfigure}
+
+A selector built on the theorem needs trees, so it \omterm{def:b3:code-generation:tiling}{tiles} the tree of each statement, or trees rebuilt from the \omterm{def:b3:code-generation:tac}{three-address code} of a \omterm{def:b3:code-generation:cfg}{basic block}. Our compiler does not: it selects from \omterm{def:b3:code-generation:tac}{three-address code} one instruction at a time, which is the \omterm{def:b3:code-generation:tiling}{tiling} with the smallest \omterm{def:b3:code-generation:tiling}{tiles}, and it leaves every \omterm{def:b3:code-generation:tac}{temporary} in memory.
+
+\begin{definition}[Naive allocator]\label{def:b3:code-generation:naive}
+The \emph{naive allocator}\index{naive allocator} keeps every \omterm{def:b3:code-generation:tac}{temporary} in its stack slot, loads its operands into fixed scratch registers before each instruction and stores the result after it.
+\end{definition}
+
+It is the worst allocation that works, and it has a use: it makes every intermediate instruction independent of the others, so each can be translated and checked alone. Its cost is visible in \cref{lst:b3:code-generation:fibs}: the value of \code{n - 1} is stored to \code{4(sp)} and loaded back from there into \code{a0} on the next line.
+
+\section{The whole compiler}\label{sec:b3:code-generation:moorc}
+
+The compiler \code{moorc} chains the parts: the \omterm{def:b3:lexical-analysis:phases}{front end} of chapters~\ref{ch:b3:lexical-analysis} to~\ref{ch:b3:semantic-analysis}, the translation to \omterm{def:b3:code-generation:tac}{three-address code}, and the \omterm{def:b3:code-generation:selection}{code generator}, which writes the globals as \code{.word}, the arrays as \code{.space}, then the functions (\cref{lst:b3:code-generation:moorc}). An array element \code{sq[i]} is at the address \code{la sq} plus $4i$.
+
+\omcode{code/bachelor-3/07-code-generation/listings/moorc.rs}{25}{37}{The driver: a type error stops it; otherwise the assembly goes to standard output.}\label{lst:b3:code-generation:moorc}
+
+\omoutput{code/bachelor-3/07-code-generation/outputs/compile_fib.txt}{Building \code{moorc}, compiling \code{fib.moor} and running the result. \code{rv} echoes the number it reads, then the program prints $F(10) = 55$.}\label{out:b3:code-generation:compilefib}
+
+\omcode{code/bachelor-3/07-code-generation/listings/fib.S}{3}{40}{The code of \code{fib} as \code{moorc} writes it (\code{main} follows). Every value goes through the stack.}\label{lst:b3:code-generation:fibs}
+
+\begin{remark}
+The instruction \code{j .Lfib_3} just after \code{j .Lfib_ret} is block B3 of the control-flow graph of \code{fib}: it cannot run, and it is translated anyway. The final \code{li a0, 0} and \code{j .Lfib_ret} are block B6. They cost four bytes each and no time.
+\end{remark}
+
+\subsection{Correctness}
+
+A compiler is \omterm{def:b3:code-generation:correctness}{correct} if it does not change what programs do. ``What a program does'' was defined in chapter~\ref{ch:b3:semantic-analysis}, by an interpreter: its output and its exit code.
+
+\begin{definition}[Compiler correctness]\label{def:b3:code-generation:correctness}
+A compiler $C$ from a source language with semantics $\mathcal{S}$ to a target language with semantics $\mathcal{T}$ is \emph{correct}\index{compiler correctness} if for every source program $P$ it accepts and every input $x$ such that $\mathcal{S}(P, x)$ is a normal termination with output $o$ and exit code $k$, $\mathcal{T}(C(P), x)$ is a normal termination with the same $o$ and $k$. The square below then \emph{commutes}: both paths from $(P, x)$ end at the same behaviour.
+\begin{center}
+\begin{tikzpicture}[font=\small, >=Stealth, node distance=8mm and 30mm]
+  \node (p) {$P$, $x$};
+  \node[right=of p] (c) {$C(P)$, $x$};
+  \node[below=of p] (b) {$(o, k)$};
+  \node[below=of c] (b2) {$(o, k)$};
+  \draw[->] (p) -- node[above] {compile} (c);
+  \draw[->] (p) -- node[left] {interpret, $\mathcal{S}$} (b);
+  \draw[->] (c) -- node[right] {run on \code{rv}, $\mathcal{T}$} (b2);
+  \draw[double, double distance=1.5pt] (b) -- node[below] {equal} (b2);
+\end{tikzpicture}
+\end{center}
+\end{definition}
+
+The definition says nothing of programs that fail at run time. The interpreter stops on an array index out of bounds, and \code{moorc} emits no bounds check, so the compiled program reads or writes past the array. The definition is honest about it: the theorem holds only where the source semantics has a result. A deep recursion that the interpreter's fuel allows may also overflow \code{rv}'s stack, and the definition does not cover it either.
+
+The core of the argument is the translation of expressions. Write $\rho$ for the values of the variables and $\sigma$ for the contents of the temporaries.
+
+\begin{theorem}[Expressions are translated correctly]\label{thm:b3:code-generation:expr}
+Let $e$ be an expression without calls, \code{&&} or \code{||}, and let the code emitted by \code{expr(e)} start in a state where each variable's \omterm{def:b3:code-generation:tac}{temporary} holds its value under $\rho$. Then it ends with its result, a constant or a \omterm{def:b3:code-generation:tac}{temporary}, holding $[\![e]\!]\rho$, the value the interpreter computes, and with every \omterm{def:b3:code-generation:tac}{temporary} allocated before it unchanged.
+\end{theorem}
+
+\begin{proof}
+By induction on $e$. A constant emits nothing and its result is the constant. A variable emits nothing and its result is its \omterm{def:b3:code-generation:tac}{temporary}, which holds $\rho(x)$ by hypothesis; a global is loaded into a fresh \omterm{def:b3:code-generation:tac}{temporary}, which holds its value. For $e_1 \mathbin{\mathit{op}} e_2$: by induction the code of $e_1$ leaves $[\![e_1]\!]\rho$ in its result $v_1$ and changes no older \omterm{def:b3:code-generation:tac}{temporary}; the code of $e_2$ then leaves $[\![e_2]\!]\rho$ in $v_2$ and changes no \omterm{def:b3:code-generation:tac}{temporary} older than itself, $v_1$ included, because every \omterm{def:b3:code-generation:tac}{temporary} it writes is fresh. The last instruction writes $v_1 \mathbin{\mathit{op}} v_2$ into a fresh \omterm{def:b3:code-generation:tac}{temporary}, and the interpreter computes the same operation, on 32-bit words with the same division rules. Unary operators are the same with one operand.
+\end{proof}
+
+Exercise~\ref{exo:b3:code-generation:8} adds the \omterm{def:b3:code-generation:jumping}{jumping code}, and the statements follow by the same kind of induction, one case per form, with a while loop needing an induction on the number of iterations. The second half of the argument is local: each intermediate instruction's selected code does what the instruction says, on the slots. That is a finite list of cases, such as $a \le b$ being \code{slt t0, t1, t0} then \code{xori t0, t0, 1}, each checked once.
+
+Proving a whole compiler \omterm{def:b3:code-generation:correctness}{correct} is possible, and has been done for a compiler of a real language (the history box below). % ledger: b3:leroy-2009
+This book tests the square instead. One test compiles every sample of this chapter and the Moor samples of chapter~\ref{ch:b3:semantic-analysis}, runs each on \code{rv} and on the interpreter, and compares outputs and exit codes; \code{fib.moor} is checked for ten inputs. Exercise~\ref{exo:b3:code-generation:12} adds random programs.
+
+\subsection{What a real compiler makes of it}
+
+\Cref{out:b3:code-generation:gcc} gives gcc the same function, written in C, for the laptop's processor, an x86-64, with optimisation level 1. The instruction set is different, and this book does not teach it; three things can still be read off.
+
+\omoutput{code/bachelor-3/07-code-generation/outputs/gcc_s.txt}{\code{fib} in C, compiled by gcc with \code{-O1}. Directives are filtered out; what remains is labels and instructions.}\label{out:b3:code-generation:gcc}
+
+\begin{dated}{2026}
+gcc 11.4, the version on the author's laptop, as its first line says. The flags remove the tables used for stack unwinding and the marker instructions of control-flow protection, which would otherwise make the listing longer.
+\end{dated}
+
+First, no value goes to memory without a reason. \code{n} arrives in the register \code{edi} and is kept in \code{ebx} across the first call; the first result is kept in \code{ebp} across the second. Second, it pushes the two registers it keeps values in, \code{rbx} and \code{rbp}, on entry and pops them on exit, so that its caller finds them unchanged, as RISC-V's convention asks of the \code{s} registers. Third, the case $n < 2$ returns at once, at \code{.L5}, without building a \omterm{def:b3:code-generation:frame}{frame}. A call with $n \ge 2$ executes 17 instructions here, against 28 for \code{moorc}'s code, and a call with $n < 2$ executes 4, against 11. The next chapter's register allocator is most of the difference.
+
+\begin{history}[Optimal code]
+Ravi Sethi and Jeffrey Ullman published in 1970 how to generate optimal code for arithmetic expressions, with the fewest registers. % ledger: b3:sethi-ullman-1970
+In 1989 Alfred Aho, Mahadevan Ganapathi and Steven Tjiang described code generation by tree matching and dynamic programming, the method of the theorem above. % ledger: b3:aho-ganapathi-tjiang-1989
+Xavier Leroy described in 2009 the formal verification of a realistic compiler: a proof, checked by a machine, that the square commutes. % ledger: b3:leroy-2009
+\end{history}
+
+\section{Exercises}\label{sec:b3:code-generation:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:code-generation:1}
+Write the \omterm{def:b3:code-generation:tac}{three-address code} of \code{x = a * b + c;}, where \code{a}, \code{b}, \code{c} and \code{x} are locals. How many temporaries does it create besides the variables?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:code-generation:2}
+List the \omterm{def:b3:code-generation:cfg}{leaders} of the \omterm{def:b3:code-generation:tac}{three-address code} of \code{var i = 0; while i < 3 { if i == 1 { print(i); } i = i + 1; }}, writing the instruction each one is.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:code-generation:3}
+Predict what \code{rv} prints for \code{sum_array.moor} compiled by \code{moorc}, and the exit code of the program.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:code-generation:4}
+What is the \omterm{def:b3:code-generation:frame}{frame} size of a function with 7 temporaries? With 8? Where is \code{ra} in each?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:code-generation:5}
+Delete the two lines of \cref{lst:b3:code-generation:fibs} that save and restore \code{ra}. With input 1 the program still prints 1. With input 2 \code{rv} stops on \code{sw a0, 16(sp)} with ``store access fault at 0x80000010''. Explain both behaviours, and the address.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:code-generation:6}
+\code{moorc} refuses \texttt{\%} and unary minus. Write the instructions for them as the hook \code{exercises/ex6_rem_neg.rs}, passed as \code{extra} to \cref{lst:b3:code-generation:function}, and test it against the interpreter on \texttt{17 \% 5}, \texttt{-17 \% -5}, \texttt{17 \% 0} and \code{-(a - 20)}. What must be true of the processor's remainder for the test to pass?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:code-generation:7}
+How many instructions does \code{moorc} emit for \code{a[i] = a[i] + 1;}, with \code{a} a global array and \code{i} a local? How many 32-bit words? How many words would an optimal \omterm{def:b3:code-generation:tiling}{tiling} need, with the \omterm{def:b3:code-generation:tiling}{tiles} of \cref{lst:b3:code-generation:tiles}, a store \omterm{def:b3:code-generation:tiling}{tile} \code{sw 0(r)} at cost 1 and \code{i} in a register?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:code-generation:8}
+Prove that the \omterm{def:b3:code-generation:jumping}{jumping code} of \cref{lst:b3:code-generation:cond} for a condition $e$ and labels $L_{\mathrm{t}}$, $L_{\mathrm{f}}$ reaches $L_{\mathrm{t}}$ if $e$ is true and $L_{\mathrm{f}}$ otherwise, and that the code of the right operand of $a \mathbin{\&\&} b$ runs only when $a$ is true.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:code-generation:9}
+Predict the \omterm{def:b3:code-generation:cfg}{basic blocks} and the edges of the control-flow graph of \texttt{fn f(n:\ int) -> int \{ while n > 0 \{ if n == 3 \{ return 1; \} n = n - 1; \} return 0; \}}. Which blocks have no predecessor?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:code-generation:10}
+\emph{\omterm{def:b3:lexical-analysis:munch}{Maximal munch}} \omterm{def:b3:code-generation:tiling}{tiles} a tree from the root down, choosing at each node the matching \omterm{def:b3:code-generation:tiling}{tile} that covers the most nodes. (a) With the \omterm{def:b3:code-generation:tiling}{tiles} \code{add} and \code{mul} at cost 1 and a multiply-add \omterm{def:b3:code-generation:tiling}{tile} for \code{(+ (* x y) z)} at cost 3, find a tree on which \omterm{def:b3:lexical-analysis:munch}{maximal munch} is not optimal. (b) Show that \omterm{def:b3:lexical-analysis:munch}{maximal munch} can fail even when every \omterm{def:b3:code-generation:tiling}{tile} costs 1, covers one node or two (a node and one of its children), and every node has a one-node \omterm{def:b3:code-generation:tiling}{tile}, and that the program of \cref{thm:b3:code-generation:tiling} does not.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:code-generation:11}
+Without storing intermediate results, an expression tree can be evaluated with few registers if the operand that needs more is evaluated first. Define $\mathrm{need}(\text{leaf}) = 1$ and, for an operator with children needing $x$ and $y$, $\mathrm{need} = \max(x, y)$ if $x \ne y$ and $x + 1$ if $x = y$. Prove that $\mathrm{need}(e)$ registers suffice and are necessary, and compare with the registers used when the left operand always goes first, on a left comb and a right comb of three operators. \code{exercises/ex11_registers.rs} computes both.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:code-generation:12}
+Write a test oracle: a generator of random Moor programs (three variables, assignments, \code{if}, bounded \code{while}, \code{&&}, \code{||}, \code{!}) and a test that compiles each one, runs it on \code{rv} and on the interpreter, and compares. \code{exercises/ex12_oracle.rs} is one. Run it on 60 programs. What did it find in the first version of \cref{lst:b3:code-generation:expr}, which had no arm for negative literals?
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:code-generation:problem}
+
+\begin{problem}[{Weekend problem --- Fibonacci on the RISC-V subset}]\label{pb:b3:code-generation:1}
+\code{fib.moor} computes $F(n)$, with $F(0) = 0$, $F(1) = 1$ and $F(k) = F(k-1) + F(k-2)$, by the naive recursion. \code{pb_fib.py} runs its compiled code on \code{rv} for $n = 0, \dots, 20$ and records, for each run, the calls of \code{fib} and \code{rv}'s counts of instructions, loads and stores.
+
+\omoutput{code/bachelor-3/07-code-generation/outputs/pb_fib.txt}{For each $n$: $F(n+1)$, the calls of \code{fib} (each \code{jal ra}), and the counters of \code{rv}.}\label{out:b3:code-generation:pbfib}
+
+\medskip\noindent\textbf{Part I --- The code.}
+\begin{enumerate}
+\item Write the \omterm{def:b3:code-generation:tac}{three-address code} of \code{fib} from \cref{out:b3:code-generation:cfgout}. Why are there five temporaries besides \code{n}?
+\item Which blocks of the control-flow graph can run, and in what order, for $n = 1$? For $n = 5$?
+\item Translate \code{if n < 2 { return n; }} by hand into \omterm{def:b3:code-generation:jumping}{jumping code}, and compare with instructions 0 to 3.
+\item Draw the \omterm{def:b3:code-generation:frame}{frame} of \code{main}: how many temporaries, which offsets, what size?
+\item Why does \code{fib} save \code{ra} but no \code{s} register?
+\item In \cref{lst:b3:code-generation:fibs}, find the lines of the prologue, the epilogue and the two calls.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- One call.}
+\begin{enumerate}[resume]
+\item Count the instructions executed by one call of \code{fib} with $n < 2$, from its first instruction to its \code{ret}.
+\item Count those of a call with $n \ge 2$, not counting what the two inner calls execute.
+\item Count the instructions executed by \code{main}, not counting the call of \code{fib} it makes.
+\item Count the loads and the stores of each of the three, the same way.
+\item How many conditional branches does each call execute, and when is it taken?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- How many calls.}
+\begin{enumerate}[resume]
+\item Write a recurrence for $c(n)$, the calls of \code{fib} made to compute \code{fib(n)}, that one included.
+\item Prove that $c(n) = 2F(n+1) - 1$.
+\item Prove that the calls with $n < 2$, the leaves of the call tree, number $F(n+1)$.
+\item Deduce the number of calls with $n \ge 2$.
+\item Check the three formulas against the \code{calls} column and against the branch counts of \cref{out:b3:code-generation:compilefib}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The count.}
+\begin{enumerate}[resume]
+\item From Parts II and III, give the instructions executed for input $n$ as $a F(n+1) + b$. Find $a$ and $b$.
+\item Check the formula against the \code{instructions} column for $n = 0$, 10 and 20.
+\item Do the same for the loads and the stores.
+\item What fraction of the instructions of a large run are loads or stores? What does this say of the \omterm{def:b3:code-generation:naive}{naive allocator}?
+\item $F(n+1)$ grows by a factor tending to $\varphi = (1 + \sqrt 5)/2$ per step of $n$. Estimate the instructions executed for $n = 40$, without running it.
+\item Using \cref{out:b3:code-generation:gcc}, give the corresponding formula for gcc's code, counting instructions the same way and ignoring \code{main}.
+\item An allocator that kept \code{n} and the first result in the saved registers \code{s0} and \code{s1}, and stored nothing else, would remove which instructions of a call, and add which? Estimate its $a$, then again with the test $n < 2$ moved before the prologue, as gcc does.
+\item Rewrite \code{fib} with a loop in Moor. How does its count grow with $n$?
+\item Sum up: the exact count of the naive code, what it is made of, and which of its terms the next chapter can reduce.
+\end{enumerate}
+\end{problem}

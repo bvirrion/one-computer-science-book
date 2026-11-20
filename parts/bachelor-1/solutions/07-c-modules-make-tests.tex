@@ -1,0 +1,172 @@
+% Solutions of 07-c-modules-make-tests.
+\section*{Chapter \ref{ch:b1:c-modules-make-tests} --- Modular Programs, Makefiles and Tests}
+
+\begin{solution}{exo:b1:c-modules-make-tests:1}
+\code{check.h} is a \omterm{def:b1:c-modules-make-tests:makefile}{prerequisite} of \code{ratio_test.o} only: \code{make} compiles \code{ratio_test.c} and links
+\code{ratio_test}, two commands. After editing \code{ratio.c}: compile it, then link both executables, three commands.
+\end{solution}
+
+\begin{solution}{exo:b1:c-modules-make-tests:2}
+No: neither test makes \code{age < 18 || student} true without \code{age < 6}, so \code{price = 150} never runs. Adding
+$(30, 1)$ (or any age from 6 to 17) runs it. The three tests then take both arcs of each decision: \code{age < 6} is
+true for 4 and false for 70; the second condition is true for $(30, 1)$ and false for $(70, 0)$; \code{age >= 65} is
+true for 70 and false for 4. \omterm{def:b1:c-modules-make-tests:coverage}{Branch coverage} is reached, counting each \code{if} as one decision.
+\end{solution}
+
+\begin{solution}{exo:b1:c-modules-make-tests:3}
+The first call computes $100 \times 87 / 400 = 21$ in integer division, and \code{printf} sends \code{21} and a
+percent sign to standard output; the second fails the \omterm{def:b1:c-modules-make-tests:assertion}{assertion}, which prints its message on standard error and stops
+the program with exit status 134. As the output is a pipe here, the line \texttt{21\%} sat in the buffer of
+\code{stdout} and was lost when \code{abort} stopped the program: only the message appears. With \code{-DNDEBUG},
+\code{percent(22, 0)} divides by zero, which is \omterm{def:b1:c-types-and-control:ub}{undefined behaviour} (on this machine, the program is stopped by a
+signal).
+\omoutput{code/bachelor-1/07-c-modules-make-tests/outputs/exo_assert.txt}{The run.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-modules-make-tests:4}
+\code{exo_guard.c} includes \code{point.h}, then \code{segment.h}, which includes it again: \code{struct point} is
+defined twice in the same file, an error. Put \texttt{\#ifndef POINT\_H}, \texttt{\#define POINT\_H} before the definition
+and \texttt{\#endif} after it: the second inclusion then finds \code{POINT_H} defined and skips the text.
+\end{solution}
+
+\begin{solution}{exo:b1:c-modules-make-tests:5}
+\code{limits_main.o} depends on \code{config.h}, which it includes, but the rule does not say so: \code{make} sees an
+\omterm{def:b1:compilation-pipeline:compiler}{object file} newer than \code{limits_main.c} and does nothing. The rule must be \code{limits_main.o: limits_main.c
+config.h}, or the dependencies written by the \omterm{def:b1:compilation-pipeline:compiler}{compiler} (\cref{exo:b1:c-modules-make-tests:11}).
+\end{solution}
+
+\begin{solution}{exo:b1:c-modules-make-tests:6}
+The second test compares \code{c} with \code{a} instead of \code{m}: for \code{max3(1, 9, 5)}, \code{m} becomes 9, then
+\code{5 > 1} replaces it by 5. The checks only say that the result is at least some argument, which a wrong result
+can satisfy: \code{5 >= 5} passes. A test must compare with the exact expected value: \code{CHECK(max3(1, 9, 5) == 9)}
+fails, as it should.
+\omoutput{code/bachelor-1/07-c-modules-make-tests/outputs/exo_max3.txt}{Green, and wrong.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-modules-make-tests:7}
+\omcode{code/bachelor-1/07-c-modules-make-tests/exercises/stack.c}{5}{44}{A stack behind an \omterm{def:b1:c-modules-make-tests:opaque}{opaque type}}
+The test \code{tests/stack_test.c} pops an empty stack, pushes 100 values (past the first capacities 4, 8, \dots),
+pops them in reverse order, and frees a \omterm{def:b1:pointers-and-arrays:null}{null pointer}.
+\end{solution}
+
+\begin{solution}{exo:b1:c-modules-make-tests:8}
+\code{(0, 1)}: the first decision true. \code{(3, 1)}: first false, \code{days_late > 30} false, cap false.
+\code{(31, 2)}: both conditions of \code{&&} true, and the cap true (510 becomes 500). \code{(31, 7)}: the left
+condition true, the right one false. These four take every arc, each atomic condition counted. The boundary:
+\code{(30, 1)} gives 300 without surcharge, and \code{(31, 2)} is on the other side. The test is
+\code{tests/late_fee_test.c}.
+\end{solution}
+
+\begin{solution}{exo:b1:c-modules-make-tests:9}
+Every combination: $2^k$ tests. The $k + 1$ tests: all conditions true (outcome true), and for each $i$ the test where
+only $c_i$ is false (outcome false). Each of the last $k$ differs from the first in $c_i$ alone, and the outcome
+changes, so $c_i$ is shown to matter on its own. The test \code{tests/test_conditions.py} checks this for $k \leq 7$.
+\end{solution}
+
+\begin{solution}{exo:b1:c-modules-make-tests:10}
+\code{make} rebuilds a \omterm{def:b1:c-modules-make-tests:makefile}{target} when a \omterm{def:b1:c-modules-make-tests:makefile}{prerequisite} is newer, and a \omterm{def:b1:c-modules-make-tests:makefile}{target} it rebuilds becomes newer than the \omterm{def:b1:c-modules-make-tests:makefile}{targets} that
+depend on it: the rebuilding spreads along the arcs, from the edited file to every \omterm{def:b1:c-modules-make-tests:makefile}{target} reachable from it, and to no
+other. \code{date.h}: \code{date.o}, \code{loans.o}, \code{loans_main.o}, \code{checker}; \code{date.c}: \code{date.o},
+\code{checker}; \code{csv.h}: \code{csv.o}, \code{loans.o}, \code{checker}; \code{csv.c}: \code{csv.o}, \code{checker};
+\code{loans.h}: \code{loans.o}, \code{loans_main.o}, \code{checker}; \code{loans.c} and \code{loans_main.c}: their \omterm{def:b1:compilation-pipeline:compiler}{object
+file} and \code{checker}. The test \code{tests/test_conditions.py} computes these sets.
+\end{solution}
+
+\begin{solution}{exo:b1:c-modules-make-tests:11}
+\omcode{code/bachelor-1/07-c-modules-make-tests/listings/mmd.Makefile}{2}{17}{Dependencies written by the \omterm{def:b1:compilation-pipeline:compiler}{compiler}}
+\omoutput[6-14]{code/bachelor-1/07-c-modules-make-tests/outputs/exo_mmd.txt}{The fragment written for \code{loans.o}, and
+the rebuild after touching \code{csv.h}.}
+The \code{-include} line reads the \code{.d} files, and ignores them before the first build. The empty rules added by
+\code{-MP} keep \code{make} from failing if a header is later deleted.
+\end{solution}
+
+\begin{solution}{exo:b1:c-modules-make-tests:12}
+Take any statement. It lies on a \omterm{def:b1:c-modules-make-tests:cfg}{feasible path}; let $D$ be the last decision before it on that path, if any. If there
+is none, every test executes it. Otherwise the statement lies on the arc of $D$ that the path takes, before the next
+decision, and \omterm{def:b1:c-modules-make-tests:coverage}{branch coverage} means some test takes that arc, and so executes the statement. Converse: the function
+\code{int f(int x) { int y = 0; if (x > 0) y = 1; return y; }} reaches \omterm{def:b1:c-modules-make-tests:coverage}{statement coverage} with the single test
+$x = 1$, which never takes the false arc of the \code{if}.
+\end{solution}
+
+\begin{solution}{pb:b1:c-modules-make-tests:1}
+\textbf{1.} \code{date.o} on \code{date.c}, \code{date.h}; \code{csv.o} on \code{csv.c}, \code{csv.h}; \code{loans.o}
+on \code{loans.c}, \code{loans.h}, \code{date.h}, \code{csv.h}; \code{loans_main.o} on \code{loans_main.c},
+\code{loans.h}, \code{date.h}; \code{checker} on the four \omterm{def:b1:compilation-pipeline:compiler}{object files}.
+
+\textbf{2.} \code{struct loan} has fields of type \code{struct date}, whose size the \omterm{def:b1:compilation-pipeline:compiler}{compiler} must know. The \omterm{def:b1:c-modules-make-tests:interface}{interface}
+of \code{loans} never mentions \code{csv}: splitting is a detail of its \omterm{def:b1:c-modules-make-tests:interface}{implementation}, so \code{csv.h} is included in
+\code{loans.c} only, and users of \code{loans.h} do not depend on it.
+
+\textbf{3.} It is a detail (another \omterm{def:b1:c-modules-make-tests:interface}{implementation} might count from another day), and keeping it private leaves the
+module free to change it; its name cannot clash with a function of the same name elsewhere.
+
+\textbf{4.} Opaque, a date would live on the heap, be created and freed by calls, and be read through functions: more
+code, more allocations, and \code{struct loan} could hold only \omterm{def:b1:pointers-and-arrays:pointer}{pointers}. The gain: the representation could change (a
+day count instead of three fields) without recompiling users. For three small integers, the cost wins.
+
+\textbf{5.} \code{date} and \code{csv}: neither mentions loans.
+
+\textbf{6.} ``Empty fields included'': a line ending with a comma yields a last field that is an empty string, so
+\code{loan_parse} gets six fields and reads ``not returned'' from the empty sixth one.
+
+\textbf{7.} Four \omterm{def:b1:compilation-pipeline:compiler}{compilations} (\code{-c}), then the link of \code{checker}.
+
+\textbf{8.} \code{date.h} is included by \code{date.c}, \code{loans.c} (through \code{loans.h} as well) and
+\code{loans_main.c} (through \code{loans.h}): 3. \code{csv.h}: \code{csv.o} and \code{loans.o}, 2. \code{loans.h}:
+\code{loans.o} and \code{loans_main.o}, 2. Each \code{.c} file: its own \omterm{def:b1:compilation-pipeline:compiler}{object file}, 1.
+
+\textbf{9.} $7 \times 4 = 28$ \omterm{def:b1:compilation-pipeline:compiler}{compilations} against $3 + 1 + 2 + 1 + 2 + 1 + 1 = 11$.
+
+\textbf{10.} No: \code{loans_main.c} includes \code{loans.h}, which includes \code{date.h}, so a change to \code{date.h}
+can change the meaning of \code{loans_main.c}. The \omterm{def:b1:c-modules-make-tests:makefile}{prerequisites} are the headers included directly or indirectly.
+
+\textbf{11.} An edit to \code{date.h} that changes \code{struct date} (a field added, say) would leave \code{loans.o}
+compiled with the old layout while \code{date.o} uses the new one: the two would read the same bytes as different
+fields, and the program would compute wrong delays without any error.
+
+\textbf{12.} Nothing: the counts concern the \omterm{def:b1:c-modules-make-tests:makefile}{target} \code{checker}. With \code{date_test} in the default \omterm{def:b1:c-modules-make-tests:makefile}{target}, an edit
+to \code{date.h} or \code{date.c} would add one \omterm{def:b1:compilation-pipeline:compiler}{compilation} (\code{date_test.o} for the first) and one link.
+
+\textbf{13.} Years not divisible by 4 (2025); divisible by 4 but not by 100 (2024); divisible by 100 but not by 400
+(1900, 2100); divisible by 400 (2000, 2400).
+
+\textbf{14.} \code{2025-02-29} and \code{2024-02-29} (the last day of February, each side of the leap rule);
+\code{2025-13-01} and \code{2025-00-10} (the months 1 and 12); \code{2025-04-31} and \code{2025-04-00} (the days 1 and 30
+of a 30-day month); \code{1969-12-31} (the start of the domain); \code{2025-12-31} to \code{2026-01-01} (a year's end).
+
+\textbf{15.} From 1970 to 1999: 30 years, of which 1972, 1976, \dots, 1996 are leap years, 7 of them;
+$30 \times 365 + 7 = 10\,957$.
+
+\textbf{16.} The two arcs of the \omterm{def:b1:c-modules-make-tests:assertion}{assertion} in \code{days_in_month} that lead to its failure (\code{month >= 1} false,
+\code{month <= 12} false). Every caller passes a valid month: \code{date_parse} checks it first, and the loop of
+\code{days_since_1970} runs from 1 to 11. A failing \omterm{def:b1:c-modules-make-tests:assertion}{assertion} would mean a bug in the module.
+
+\textbf{17.} None of them: the suite tests the date module only. The figures are produced by the whole program on the
+real file, and only a test of \code{loans} and \code{loans_main} (or a comparison with a count made another way) would
+check them.
+
+\textbf{18.} \code{loan_days_late} might use \code{out} instead of \code{due}, or \code{loans_main.c} might skip the
+last line of the file: the dates would be right and the total wrong. \omterm{def:b1:c-modules-make-tests:unit-test}{Unit tests} of one module say nothing of the
+modules around it.
+
+\textbf{19.} \code{is_leap} returns \texttt{year \% 4 == 0}, which makes 1900 and 2100 leap years. The check of line 17
+calls \code{is_leap(2100)} directly; the check of line 34 counts 367 days from 2099-02-28 to 2100-03-01, because the
+first version gives February 2100 a 29th day.
+
+\textbf{20.} No: between 2025 and 2026 the two rules agree, every year from 1901 to 2099 being leap exactly when
+divisible by 4. The bug was found because the tests were chosen from the classes of the specification, not from the
+data: the class ``divisible by 100 but not by 400'' had a test.
+
+\textbf{21.} A month 13 can come from outside the program (a typing error in the file): \code{date_parse} must expect
+it and return an error. Once a date is parsed, a month 13 can only come from a bug: \code{days_in_month} asserts.
+
+\textbf{22.} A check: the number comes from the file, written by people and other programs. The checker reports the line
+and stops with an error status.
+
+\textbf{23.} \code{date_parse} rejects 2025-02-29, so \code{main} prints its usage line on standard error and returns 2.
+
+\textbf{24.} \emph{The rebuild saving.} With the four modules and the dependencies of
+\cref{lst:b1:c-modules-make-tests:library-mk}, one edit to each of the seven \omterm{def:b1:compilation-pipeline:source-file}{source files} costs $3 + 1 + 2 + 1 + 2 + 1 +
+1 = 11$ \omterm{def:b1:compilation-pipeline:compiler}{compiler} runs instead of $7 \times 4 = 28$ for full rebuilds: an edit to a file costs as many \omterm{def:b1:compilation-pipeline:compiler}{compilations} as
+there are \omterm{def:b1:compilation-pipeline:compiler}{object files} reachable from it in the dependency graph, and \code{make} counted exactly those.
+\end{solution}

@@ -1,0 +1,353 @@
+% Provenance (never printed): NSI terminale "Architectures materielles, systemes d'exploitation et reseaux:
+% protocoles de routage (identifier, suivant le protocole de routage utilise, la route empruntee par un paquet);
+% RIP (distance vector, hop count) et OSPF (link state, cost from bandwidth)". See sources/book2/BRIEFS.md.
+\chapter{Routing}\label{ch:g12:routing}
+
+A digger cuts a cable between two routers of a network. The packets that used it do not vanish: within seconds or
+minutes, the routers on either side notice the silence, tell their neighbours, and the packets take another way.
+Nobody configured that other way by hand. The routers found it themselves, by talking to each other.
+
+This chapter shows the two ways routers do it. In the first, each router knows only distances, and learns them from
+its neighbours; in the second, each router learns the whole map and computes its own routes with \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's
+algorithm}. Both are simulated on one invented network of seven routers, before and after a link fails, and the first
+shows a strange failure of its own: \omterm{def:g12:routing:convergence}{counting to infinity}.
+
+\begin{recall}
+A router passes each packet to a \emph{\omterm{def:g11:network-protocols:routing-table}{next hop}} found in its \omterm{def:g11:network-protocols:routing-table}{routing table}; the whole route is the chain of these
+local choices (chapter \ref{ch:g11:network-protocols}). A \omterm{def:g10:graphs-first-look:directed}{weighted graph} has a number on each edge
+(chapter \ref{ch:g10:graphs-first-look}). \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} finds the shortest paths from one vertex when the
+weights are not negative (chapter \ref{ch:g12:graph-algorithms}).
+\end{recall}
+
+\section{A network as a weighted graph}\label{sec:g12:routing:graph}
+
+The routers of a network are the vertices of a \omterm{def:g10:graphs-first-look:graph}{graph}, and the links between them its edges. Each link has a
+\emph{rate}, the number of bits it carries per second. To choose routes, each link also gets a number, its cost.
+
+\begin{definition}[Hop count, route cost]\label{def:g12:routing:metric}
+The \emph{hop count}\index{hop count} of a route is its number of links. When each link has a cost, the \emph{route
+cost}\index{route cost} is the sum of the costs of its links. A routing method chooses, for each destination, a route
+whose hop count, or whose cost, is smallest.
+\end{definition}
+
+The \omterm{def:g12:routing:metric}{hop count} treats every link alike. A cost can prefer fast links: this chapter gives each link the cost
+$10\,000$ divided by its rate in megabits per second, so a link of $10\,000$ Mbit/s costs $1$, one of $1000$ costs
+$10$, one of $10$ costs $1000$. The protocol that uses such costs leaves each link's cost to the network's
+administrator; dividing a reference rate by the link's rate is one way to set them.
+% ledger: g12:ospf-2328
+
+\omcode{code/grade-12/11-routing/listings/network.py}{1}{33}{The network of the chapter, and the two ways of costing
+its links.}\label{lst:g12:routing:network}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, r/.style={circle, draw, thick, fill=omDef!12, minimum size=8mm},
+    l/.style={thick}, lab/.style={fill=white, inner sep=1.5pt, align=center, font=\scriptsize}]
+  \node[r] (A) at (0,0) {A};
+  \node[r] (B) at (3,1.5) {B};
+  \node[r] (C) at (3,-1.5) {C};
+  \node[r] (D) at (6.5,1.5) {D};
+  \node[r] (E) at (6.5,-1.5) {E};
+  \node[r] (F) at (10,1.5) {F};
+  \node[r] (G) at (10,-1.5) {G};
+  \foreach \u/\v/\rate/\cost/\w in {A/B/1000/10/very thick, A/C/100/100/thick, B/C/1000/10/very thick,
+      B/D/100/100/thick, C/E/10/1000/thin, D/E/1000/10/very thick, D/F/1000/10/very thick,
+      E/G/100/100/thick, F/G/1000/10/very thick}
+    \draw[\w] (\u) -- node[lab] {\rate\\[-1pt] cost \cost} (\v);
+\end{tikzpicture}
+
+{\small The invented network: seven routers, nine links, each labelled with its rate in Mbit/s and its cost. Thicker
+lines are faster links. By \omterm{def:g12:routing:metric}{hop count}, the best route from A to E goes through C, over the slowest link of all.}
+\end{omfigure}
+
+\omcode{code/grade-12/11-routing/listings/ospf_costs.py}{1}{14}{The cost of each link, and the route from A to E by
+each measure.}\label{lst:g12:routing:costs}
+
+\omoutput{code/grade-12/11-routing/outputs/ospf_costs.txt}{Counting hops sends the traffic over a 10 Mbit/s link;
+costs from rates send it one link further, but ten times faster at its
+slowest.}\label{out:g12:routing:costs}
+
+\begin{definition}[Routing protocol, distance-vector routing, link-state routing]\label{def:g12:routing:routing-protocol}
+A \emph{routing protocol}\index{routing protocol} is a set of rules by which routers exchange messages so that each
+can fill its own \omterm{def:g11:network-protocols:routing-table}{routing table}. In \emph{distance-vector routing}\index{distance-vector routing}, each router sends
+its neighbours its table of distances, and computes its own from theirs. In \emph{link-state
+routing}\index{link-state routing}, each router sends every other router the list of its own links and their costs;
+each router then knows the whole \omterm{def:g10:graphs-first-look:graph}{graph}, and computes its routes from it.
+\end{definition}
+
+\section{Distance vectors}\label{sec:g12:routing:dv}
+
+A router at first knows only itself. Each \emph{round}, every router receives its neighbours' tables. If neighbour
+$n$, reached at cost $c$, says it reaches destination $d$ at distance $x$, then the router can reach $d$ at $c + x$
+through $n$. For each destination it keeps the smallest of these sums, and $n$ becomes the \omterm{def:g11:network-protocols:routing-table}{next hop}. This is the
+update of the Bellman--Ford algorithm, run by every router at once on its own data.
+
+\omcode{code/grade-12/11-routing/listings/dv_rounds.py}{1}{37}{Distance vectors, round after round, from tables that
+know nothing.}\label{lst:g12:routing:dv}
+
+\omoutput{code/grade-12/11-routing/outputs/dv_rounds.txt}{A's distances, round by round. News travels one link per
+round; a first answer, such as $1100$ for E, can be bettered later.}\label{out:g12:routing:dv}
+
+After round $k$, a router knows the shortest route to each destination among the routes of at most $k$ links
+(exercise \ref{exo:g12:routing:12}). The routes here have at most four links, so four rounds suffice; a fifth changes
+nothing, and the tables are stable.
+
+\begin{definition}[Convergence, counting to infinity]\label{def:g12:routing:convergence}
+A \omterm{def:g12:routing:routing-protocol}{routing protocol} has \emph{converged}\index{convergence} when no table changes any more and every route is a
+shortest one. \emph{Counting to infinity}\index{counting to infinity} is a slow convergence of \omterm{def:g12:routing:routing-protocol}{distance-vector
+routing} after a failure: routers learn from each other distances that pass through themselves, and raise them a
+little each round until they reach the value that means ``unreachable''.
+\end{definition}
+
+\section{Bad news travels slowly}\label{sec:g12:routing:infinity}
+
+Take three routers on a line, A -- B -- C, counting hops. The stable tables say that B reaches C in $1$ hop and A in
+$2$, through B. Then the link B -- C fails. B no longer hears from C; but A still says ``I reach C in $2$''. B cannot
+know that A's route goes through B itself, so it believes it: $3$, through A. A then hears $3$ from B, its \omterm{def:g11:network-protocols:routing-table}{next hop},
+and must update to $4$. The two count up together.
+
+To stop the count, the hop-count protocol sets a ceiling: a distance of $16$ means unreachable, and routes may have at
+most $15$ hops.
+% ledger: g12:rip-2453-metric
+
+\omcode{code/grade-12/11-routing/listings/count_to_infinity.py}{1}{39}{The line A -- B -- C, before and after the link
+B -- C fails.}\label{lst:g12:routing:infinity}
+
+\omoutput{code/grade-12/11-routing/outputs/count_to_infinity.txt}{Each round, one of the two raises its distance by
+two, using the other's old value.}\label{out:g12:routing:infinity}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, r/.style={circle, draw, thick, fill=omDef!12, minimum size=7mm}]
+  \node[r] (A) at (0,0) {A}; \node[r] (B) at (2,0) {B}; \node[r] (C) at (4,0) {C};
+  \draw[thick] (A) -- (B);
+  \draw[thick, dashed, omThm] (B) -- node[omThm] {$\times$} (C);
+  \draw[->, omMeth, thick] (A) to[bend left=35] node[above, font=\scriptsize] {``C at 2''} (B);
+  \draw[->, omThm, thick] (B) to[bend left=35] node[below, font=\scriptsize] {``C at 3''} (A);
+  \node[anchor=west] at (5.2,0) {
+    \begin{tabular}{l*{9}{c}}
+      round & 0 & 1 & 2 & 3 & 4 & \dots & 13 & 14 & 15 \\ \hline
+      A & 2 & 2 & 4 & 4 & 6 & \dots & 14 & 16 & 16 \\
+      B & 1 & 3 & 3 & 5 & 5 & \dots & 15 & 15 & 16
+    \end{tabular}};
+\end{tikzpicture}
+
+{\small \omterm{def:g12:routing:convergence}{Counting to infinity}. After the failure each router takes the other's distance, plus one, as its own; the
+values climb by two every two rounds until both reach $16$, unreachable, at round $15$.}
+\end{omfigure}
+
+The cure for this case is to stop A from telling B a route that goes through B. With \emph{split horizon}, a router
+leaves out of the table it sends to a neighbour the routes whose \omterm{def:g11:network-protocols:routing-table}{next hop} is that neighbour. A variant, \emph{poisoned
+reverse}, sends those routes with the distance $16$ instead.
+% ledger: g12:rip-2453-split
+
+\omcode{code/grade-12/11-routing/listings/split_horizon.py}{1}{3}{The same failure, with split
+horizon.}\label{lst:g12:routing:split}
+
+\omoutput{code/grade-12/11-routing/outputs/split_horizon.txt}{B learns nothing about C any more, and marks it
+unreachable at once; A follows one round later.}\label{out:g12:routing:split}
+
+Split horizon prevents a loop of two routers. A loop of three or more can still count to infinity; the ceiling of
+$16$ is what finally ends it.
+
+\section{Link state}\label{sec:g12:routing:link-state}
+
+In \omterm{def:g12:routing:routing-protocol}{link-state routing}, each router sends its own list of links, with their costs, to its neighbours. A router that
+receives a list it has not seen yet keeps a copy and passes it on to all its neighbours except the one it came from;
+a list it has already seen is dropped. This is \emph{flooding}: every list reaches every router. Each router then
+holds the same map, and runs \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} from itself; the first router on each shortest path is the \omterm{def:g11:network-protocols:routing-table}{next
+hop}.
+% ledger: g12:ospf-2328
+
+\omcode{code/grade-12/11-routing/listings/link_state.py}{1}{20}{Flooding the link lists: each router passes on
+the lists it has not seen yet.}\label{lst:g12:routing:flood}
+
+\omcode{code/grade-12/11-routing/listings/link_state.py}{23}{44}{Dijkstra from each router, keeping the first router
+of each path.}\label{lst:g12:routing:link-state}
+
+\omoutput{code/grade-12/11-routing/outputs/link_state.txt}{The same distances as the distance vectors found, computed
+by each router on its own.}\label{out:g12:routing:link-state}
+
+Flooding one list costs one message on each link in each direction, except the links by which a router first heard
+the list: here $2 \times 9 - 6 = 12$ messages per list, $84$ for the seven. That is more traffic than one round of
+distance vectors, but it is sent only when a link changes.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, r/.style={circle, draw, thick, fill=omDef!12, minimum size=8mm},
+    lab/.style={fill=white, inner sep=1pt, font=\scriptsize}]
+  \node[r, fill=omMeth!25] (A) at (0,0) {A};
+  \node[r] (B) at (3,1.5) {B};
+  \node[r] (C) at (3,-1.5) {C};
+  \node[r] (D) at (6.5,1.5) {D};
+  \node[r] (E) at (6.5,-1.5) {E};
+  \node[r] (F) at (10,1.5) {F};
+  \node[r] (G) at (10,-1.5) {G};
+  \foreach \u/\v/\c in {A/C/100, C/E/1000, E/G/100}
+    \draw[black!35, dashed] (\u) -- node[lab, text=black!50] {\c} (\v);
+  \foreach \u/\v/\c in {A/B/10, B/C/10, B/D/100, D/E/10, D/F/10, F/G/10}
+    \draw[->, ultra thick, omMeth] (\u) -- node[lab, text=black] {\c} (\v);
+  \foreach \v/\d in {B/10, D/110, F/120} \node[above=4mm, font=\scriptsize] at (\v) {\d};
+  \foreach \v/\d in {C/20, E/120, G/130} \node[below=4mm, font=\scriptsize] at (\v) {\d};
+\end{tikzpicture}
+
+{\small A's shortest-path tree, with the cost of each link and A's distance to each router. Every route from A leaves
+through B, which is why B is the \omterm{def:g11:network-protocols:routing-table}{next hop} for every destination in A's table. The dashed links are used by no
+shortest route from A.}
+\end{omfigure}
+
+\begin{omfigure}
+\small
+\begin{tabular}{lrc@{\hspace{3em}}lrc}
+  \multicolumn{3}{c}{\textbf{table of A}} & \multicolumn{3}{c}{\textbf{table of E}} \\
+  destination & cost & \omterm{def:g11:network-protocols:routing-table}{next hop} & destination & cost & \omterm{def:g11:network-protocols:routing-table}{next hop} \\ \hline
+  B & 10 & B & A & 120 & D \\
+  C & 20 & B & B & 110 & D \\
+  D & 110 & B & C & 120 & D \\
+  E & 120 & B & D & 10 & D \\
+  F & 120 & B & F & 20 & D \\
+  G & 130 & B & G & 30 & D
+\end{tabular}
+
+\medskip
+{\small Two \omterm{def:g11:network-protocols:routing-table}{routing tables} side by side, from the output above. A packet from A to G goes to B; B's table sends it on
+to D, D's to F, F's to G. E sends even its packets for C through D, avoiding its own slow link to C.}
+\end{omfigure}
+
+\section{A link fails}\label{sec:g12:routing:failure}
+
+The program below cuts the link D -- F, then lets both methods find new routes. The distance vectors start from
+their stable tables of before; the link-state routers flood the change and run Dijkstra again.
+
+\omcode{code/grade-12/11-routing/listings/failure.py}{1}{17}{The link D -- F fails.}\label{lst:g12:routing:failure}
+
+\omoutput{code/grade-12/11-routing/outputs/failure.txt}{Both methods agree in the end, on a route of cost
+$220$ through E. The distance vectors need $13$ rounds, climbing $20$ at a time.}\label{out:g12:routing:failure}
+
+The slow climb is \omterm{def:g12:routing:convergence}{counting to infinity} again, stopped this time by a real route. Right after the cut, D hears E say
+``F at $20$'', a route through D itself, and takes it: $30$, through E. E then hears $30$ from D, its \omterm{def:g11:network-protocols:routing-table}{next hop}, and
+goes to $40$. For nine rounds D and E each name the other as the \omterm{def:g11:network-protocols:routing-table}{next hop} towards F, and a packet for F would bounce
+between them. Only when E's figure passes $110$, the cost of its true route through G, does E switch to it; the news
+then needs a few more rounds to reach A.
+
+The link-state routers do not count. Each one learns that the link is gone, removes it from its map, and computes the
+new tree in one go. The price is that every router stores the whole map and runs \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm}, where a
+distance-vector router stores one line per destination and does additions. The hop-count protocol, with its ceiling
+of $15$ hops, was meant only for small networks.
+% ledger: g12:rip-2453-diameter
+
+\section{Exercises}\label{sec:g12:routing:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g12:routing:1}
+Starting from tables that know only their own router, give D's table after one round of distance vectors on the
+network of the chapter, with costs from rates.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:routing:2}
+Find the route from A to G that has the fewest hops.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:routing:3}
+Find the route from A to G of smallest cost, and its cost.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:routing:4}
+Using E's table, and then the tables of the routers on the way, give the route of a packet from E to A.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:routing:5}
+Write \code{dv_update(table, neighbour, neighbour_table, cost)}, which returns a router's table after it has heard
+one neighbour. Tables map each destination to a pair (distance, \omterm{def:g11:network-protocols:routing-table}{next hop}).
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:routing:6}
+In \code{dv_round}, the comparison \code{<} is changed to \code{>}. What happens on the network of the chapter?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:routing:7}
+How many rounds does a line of $n$ routers need, starting from tables that know nothing, before its tables stop
+changing?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:routing:8}
+Write \code{cost_from_rate(rate, ref)}. What should it return for a link faster than the reference, and why?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:routing:9}
+The link B -- D fails instead of D -- F. What is the new route from A to G, and its cost?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:routing:10}
+A cable can fail in one direction only: D still receives from E, but E no longer receives from D. D keeps listing the
+link D -- E; E removes it. A link-state router builds its map from every list it receives, keeping a link when either
+end lists it. What goes wrong, and what is the fix?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:routing:11}
+How many messages does flooding all the link lists send on a ring of $n$ routers?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:routing:12}
+Prove that after $k$ rounds of \code{dv_round}, starting from tables that know only their own router, each router's
+distance to each destination is the smallest cost of a route of at most $k$ links, and that destinations with no
+such route are absent.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:routing:13}
+In the count of the chapter, A starts at $2$ and B at $1$. Show that both reach the ceiling $M$ after $M - 1$ rounds.
+How many rounds would a ceiling of $64$ take? If each round took the $30$ seconds between two periodic updates of the
+hop-count protocol, how long would the count of the chapter last?
+% ledger: g12:rip-2453-update
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:routing:14}
+Change \code{dv_round} to use poisoned reverse, and count the rounds after the failure on the line of three routers,
+and on a line of four, R1 -- R2 -- R3 -- R4, when R3 -- R4 fails.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:routing:15}
+Explain why the ceiling of $16$ limits the networks that the hop-count protocol can serve to routes of at most $15$
+hops, and why its designers did not choose a much larger ceiling.
+\end{exercise}
+
+\section{Problem: Counting to Infinity}\label{sec:g12:routing:problem}
+
+\begin{problem}[{Weekend problem --- how long does bad news take?}]\label{pb:g12:routing:1}
+This problem follows the line A -- B -- C of section \ref{sec:g12:routing:infinity}, with \omterm{def:g12:routing:metric}{hop counts}, through a
+failure, with and without split horizon, then with link state. The outputs
+\ref{out:g12:routing:infinity} and \ref{out:g12:routing:split} give the rounds.
+
+\medskip\noindent\textbf{Part I --- The line.}
+\begin{enumerate}
+  \item Write the table of each router (destination, distance, \omterm{def:g11:network-protocols:routing-table}{next hop}) once the protocol has \omterm{def:g12:routing:convergence}{converged}.
+  \item How many rounds does it take to converge from tables that know nothing?
+  \item Why does A need B to know anything about C?
+  \item In round $1$ after the failure, B hears ``C at $2$'' from A. What does that $2$ really describe?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Without split horizon.}
+\begin{enumerate}[resume]
+  \item Explain the first round after the failure: why does B go to $3$, while A stays at $2$?
+  \item Explain the second round: why does A go to $4$, although $4$ is larger than its old $2$?
+  \item During the count, where does a packet from A to C go?
+  \item Why do the values climb by two every two rounds?
+  \item At which round do both reach $16$? Check it against the output.
+  \item With updates every $30$ seconds, how long does the count last?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- With split horizon.}
+\begin{enumerate}[resume]
+  \item Which line of its table does A leave out when it writes to B? Why?
+  \item Why does B mark C unreachable in round $1$?
+  \item Why does A need a second round?
+  \item Add a router D linked to both A and B, giving a triangle A -- B -- D with C hanging from B. Describe how B
+    can still learn a false route to C through D after the failure.
+  \item Does poisoned reverse change the answer of the line? Of the triangle?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- With link state.}
+\begin{enumerate}[resume]
+  \item After the failure, which routers send a new list, and what does it say?
+  \item How many messages does the flooding of those lists take on the line?
+  \item Why can a link-state router not count to infinity?
+  \item What does a link-state router pay for that, in memory and in work?
+  \item State the result: how many rounds does each method need before A and B know that C is unreachable?
+\end{enumerate}
+\end{problem}

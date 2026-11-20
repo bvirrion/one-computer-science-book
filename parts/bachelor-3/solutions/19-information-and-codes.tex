@@ -1,0 +1,111 @@
+\section*{Chapter \ref{ch:b3:information-and-codes} --- Information, Entropy and Error-Correcting Codes}
+
+\begin{solution}{exo:b3:information-and-codes:1}
+Fair die: $\log_2 6 \approx 2.585$ bits. Loaded die: $\frac12 \log_2 2 + 5 \times \frac{1}{10} \log_2 10 = 0.5 + 0.5 \log_2 10 \approx 2.161$ bits. The fair die has more: by \cref{thm:b3:information-and-codes:gibbs} the uniform distribution is the only one reaching $\log_2 6$.
+\end{solution}
+
+\begin{solution}{exo:b3:information-and-codes:2}
+$\{0, 10, 11\}$: sum $1/2 + 1/4 + 1/4 = 1$, prefix-free. $\{1, 01, 001, 000\}$: sum 1, prefix-free. $\{0, 10, 01\}$: sum 1, not prefix-free, since 0 begins 01; it is not even \omterm{def:b3:information-and-codes:prefix}{uniquely decodable}, as 010 reads 0,10 or 01,0. $\{00, 01, 100, 101, 11\}$: sum $1/4 + 1/4 + 1/8 + 1/8 + 1/4 = 1$, prefix-free.
+\end{solution}
+
+\begin{solution}{exo:b3:information-and-codes:3}
+\texttt{1011010} and \texttt{1001110}: 2. \texttt{1011010} and \texttt{0011011}: 2. \texttt{1001110} and \texttt{0011011}: 4. The \omterm{def:b3:information-and-codes:distance}{minimum distance} is 2, so by \cref{thm:b3:information-and-codes:distance} the code detects one error and corrects none.
+\end{solution}
+
+\begin{solution}{exo:b3:information-and-codes:4}
+The 1s are at positions 1, 2, 3 and 5; the \omterm{def:b3:information-and-codes:linear}{syndrome} is their exclusive or, $1 \oplus 2 \oplus 3 \oplus 5 = 5$. Flipping bit 5 gives \texttt{1110000}, the codeword of \texttt{1000}, the first row of $G$.
+\end{solution}
+
+\begin{solution}{exo:b3:information-and-codes:5}
+Reading the rows in the opposite order reverses the three bits of the \omterm{def:b3:information-and-codes:linear}{syndrome}. The positions 2 (010), 5 (101) and 7 (111) read the same both ways and are corrected. An error at 1 is read as 4 and one at 4 as 1: the wrong parity bit is flipped, but the data comes out right. An error at 3 (011) is read as 6 (110), and one at 6 as 3: a second data bit is flipped, and two data bits come out wrong (\code{test_exercise_5}). The fix shifts bit $i$ of the \omterm{def:b3:information-and-codes:linear}{syndrome} by $i$, as in \cref{lst:b3:information-and-codes:hamming}.
+\end{solution}
+
+\begin{solution}{exo:b3:information-and-codes:6}
+\code{exercises/ex6_hamming15.py}: data at the eleven positions that are not powers of two; parity bit $2^i$ is the sum of the data bits whose position has bit $i$ set. The \omterm{def:b3:information-and-codes:linear}{syndrome} is the exclusive or of the positions of the 1s: zero for a codeword, and the position of a single error otherwise (\code{test_exercise_6_all_single_errors}).
+\end{solution}
+
+\begin{solution}{exo:b3:information-and-codes:7}
+Facts used: in a prefix code no codeword is a prefix of another; $2^{-\ell}$ is the fraction of bit strings of a fixed length $L \ge \ell$ that begin with a given word of length $\ell$.
+
+Let $L$ be the longest length. A codeword of length $\ell_i$ begins $2^{L - \ell_i}$ strings of length $L$, and these sets are disjoint for a prefix code, since a common string would make one codeword a prefix of the other. So $\sum_i 2^{L - \ell_i} \le 2^L$. Conversely, for lengths in increasing order with Kraft sum at most 1, give the $i$-th word the first $\ell_i$ bits of the binary expansion of $\sum_{j < i} 2^{-\ell_j}$, which is below 1. Two words $j < i$: the interval of numbers beginning with word $j$ has width $2^{-\ell_j}$, and word $i$'s value lies at or beyond its end, so word $j$ is not a prefix of word $i$. This is \code{code_from_lengths}.
+\end{solution}
+
+\begin{solution}{exo:b3:information-and-codes:8}
+Facts used: \omterm{def:b3:information-and-codes:distance}{Hamming distance} satisfies the triangle inequality, since changing $a$ into $c$ through $b$ changes at most $d(a, b) + d(b, c)$ positions.
+
+Detection: a pattern of $1 \le e \le d - 1$ errors turns codeword $c$ into $r$ with $0 < d(c, r) < d$, so $r$ is not a codeword, and the receiver sees the error. Correction: let $t = \lfloor (d - 1)/2 \rfloor$, so $2t < d$. If $d(c, r) \le t$ and $c'$ is another codeword, $d(c', r) \ge d(c, c') - d(c, r) \ge d - t > t$, so $c$ is the unique nearest codeword.
+\end{solution}
+
+\begin{solution}{exo:b3:information-and-codes:9}
+The majority is wrong when 2 or 3 copies flip: $3p^2(1 - p) + p^3$. At $p = 0.05$: $0.007125 + 0.000125 = 0.00725$; at $p = 0.2$: $0.096 + 0.008 = 0.104$; both the exact column of \cref{out:b3:information-and-codes:bsc}. At $p = 0.01$ a bit fails with probability $0.000298$, a 4-bit block with $1 - (1 - 0.000298)^4 \approx 0.119\%$, at rate $1/3$: fewer errors than Hamming's 0.203\% but at rate 0.33 instead of 0.57.
+\end{solution}
+
+\begin{solution}{exo:b3:information-and-codes:10}
+Facts used: Gibbs' inequality; Kraft's theorem in both directions.
+
+Lower bound: let $\ell(x)$ be the lengths of any prefix code and $S = \sum_x 2^{-\ell(x)} \le 1$. With $q(x) = 2^{-\ell(x)}/S$, Gibbs gives $H \le \sum_x p(x) \log_2 (1/q(x)) = \sum_x p(x) \ell(x) + \log_2 S \le L$. Upper bound: $\ell(x) = \lceil \log_2 (1/p(x)) \rceil$ gives $2^{-\ell(x)} \le p(x)$, a Kraft sum at most 1, so a prefix code exists, of length $\sum_x p(x) \ell(x) < \sum_x p(x) (\log_2 (1/p(x)) + 1) = H + 1$; the optimum $L^*$ is no longer. For blocks of $k$ independent symbols the entropy is $kH$, so $kH \le L_k^* < kH + 1$, and per symbol $L_k^*/k < H + 1/k$.
+\end{solution}
+
+\begin{solution}{exo:b3:information-and-codes:11}
+Facts used: the \omterm{def:b3:information-and-codes:distance}{minimum distance} of a \omterm{def:b3:information-and-codes:linear}{linear code} is the least weight of a nonzero codeword; $Hc = 0$ is a sum of the columns at the 1s of $c$.
+
+A codeword of weight 1 would make a column zero, and one of weight 2 would make two columns equal; neither happens, since the columns are the distinct nonzero vectors. Columns 1, 2 and 3 add to zero ($1 \oplus 2 = 3$), so a word of weight 3 is a codeword: the distance is exactly 3, and the code corrects $t = 1$. It has $n = 2^r - 1$ and $k = n - r$, since $H$ has rank $r$ (it contains the $r$ unit columns). Sphere packing: $2^k (1 + n) = 2^{n - r} 2^r = 2^n$, equality, so the code is perfect.
+\end{solution}
+
+\begin{solution}{exo:b3:information-and-codes:12}
+Facts used: $g(0) = 1$, so $g$ is coprime with $x^i$.
+
+A burst of length $r + 1$ is $x^i b(x)$ with $\deg b = r$ and $b(0) = 1$. As in the theorem, it escapes only if $g$ divides $b$; both have degree $r$, so $b = g$, and the burst is $x^i g(x)$. Among the bursts of length $r + 1$ at one position, the $r - 1$ inner bits are free: $2^{r - 1}$ patterns, one of them $g$. The fraction is $2^{-(r-1)} = 2^{-7} \approx 0.0078$ for $r = 8$, as printed: 24 of 3,072, one per position.
+\end{solution}
+
+\begin{solution}{pb:b3:information-and-codes:1}
+\textbf{1.} 5 bits per symbol, since $2^4 = 16 < 23 \le 32$: 7,185 bits.
+
+\textbf{2.} No lossless code for this source, modelled as independent letters, averages fewer than 3.99 bits per letter (\cref{thm:b3:information-and-codes:source-coding}).
+
+\textbf{3.} The rarest, \texttt{w}: 7.03 bits.
+
+\textbf{4.} $4.0292 \times 1{,}437 \approx 5{,}790$ bits on average.
+
+\textbf{5.} Blocks of independent letters have entropy $3H$, and no code beats the entropy.
+
+\textbf{6.} Lower: the letters of real words depend on each other, and knowing one letter makes the next more predictable. The independent model ignores that, so it overestimates.
+
+\textbf{7.} $1 - h(0.01) = 0.9192$ bits per use.
+
+\textbf{8.} $5{,}800 \times 0.01 = 58$.
+
+\textbf{9.} $0.99^{5{,}800} \approx 5 \times 10^{-26}$: in practice never.
+
+\textbf{10.} After a flipped bit, the decoder may read a codeword of the wrong length and lose its place, so every symbol after it can be wrong until it falls back in step; a fixed-length code loses one symbol.
+
+\textbf{11.} About $5{,}800 / 0.9192 \approx 6{,}310$.
+
+\textbf{12.} 17,400 channel bits, rate $1/3$, and a bit error of $0.000298$: about 1.7 wrong bits expected.
+
+\textbf{13.} 1,450 blocks, 10,150 channel bits.
+
+\textbf{14.} $1 - 0.99^7 - 7 \times 0.01 \times 0.99^6 \approx 0.203\%$.
+
+\textbf{15.} $1{,}450 \times 0.00203 \approx 2.9$.
+
+\textbf{16.} $3.94\%$, about 57 wrong blocks: the code divides the wrong blocks by about 19.
+
+\textbf{17.} The \omterm{def:b3:information-and-codes:linear}{syndrome} is the exclusive or of two positions, a third nonzero position; the decoder flips that bit and outputs a wrong block with three errors.
+
+\textbf{18.} Two errors and one error at the third position give the same \omterm{def:b3:information-and-codes:linear}{syndrome}; a distance-3 code cannot both correct one error and detect two (that needs distance 4).
+
+\textbf{19.} That the formula is right: 0.2077\% measured against 0.2031\% computed, within the sampling error of a million blocks.
+
+\textbf{20.} $4/7 \approx 0.571$, against a capacity of 0.919: the code spends far more than the theorem requires.
+
+\textbf{21.} Rate $11/15 \approx 0.733$, better; its block error is $1 - 0.99^{15} - 15 \times 0.01 \times 0.99^{14} \approx 0.96\%$ per 11 bits, about 5 wrong blocks of 528 instead of 3 of 1,450.
+
+\textbf{22.} It detects the titles still wrong after decoding, so they can be sent again; it cannot correct them.
+
+\textbf{23.} Hamming $(7, 4)$ corrects one error per block; a burst of 5 spreads over one or two blocks with several errors each, decoded wrongly. A CRC of degree 8 detects every burst of 5 (\cref{thm:b3:information-and-codes:burst}).
+
+\textbf{24.} With depth $D$, consecutive channel bits belong to $D$ different blocks, so a burst of at most $D$ bits puts at most one error in each block, and each block corrects it.
+
+\textbf{25.} About 5,800 bits of Huffman code become 10,150 channel bits; about 58 bit flips occur on the line, and about 3 blocks of 4 bits arrive wrong; a CRC per title flags them for resending.
+\end{solution}

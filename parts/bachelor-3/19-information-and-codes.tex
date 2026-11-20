@@ -1,0 +1,286 @@
+\chapter{Information, Entropy and Error-Correcting Codes}\label{ch:b3:information-and-codes}
+
+How many bits does a message really need, and how many more must be added so that it survives a noisy line? Both questions have exact answers, given by Claude Shannon in 1948. % ledger: b3:shannon-1948
+The first is the entropy of the source: no code can do better on average, and Huffman's code comes within one bit of it. The second is the capacity of the channel: below it, codes can make errors as rare as wanted. This chapter measures both on Brenmoor's library catalogue, then builds the codes engineers use: the \omterm{def:b3:information-and-codes:hamming}{Hamming code}, which corrects any single flipped bit with three check bits for four of data, and the \omterm{def:b3:information-and-codes:cyclic}{cyclic codes} behind every CRC, read again as division of polynomials. Every claim about error rates is checked twice, by computing it and by simulating a seeded channel.
+
+\begin{recall}
+The entropy of a finite distribution $p_1, \ldots, p_n$ is $\sum_i p_i \log_2 (1/p_i)$ (Year~2 volume). A prefix code gives each symbol a binary codeword, no codeword a prefix of another, so a stream decodes without separators; Huffman's algorithm builds one of least average length (Year~1 volume). A cyclic redundancy check appends to a frame the remainder of a division, so that the receiver detects most corruptions (Year~2 volume). Matrices, their products and the field with two elements, where $1 + 1 = 0$, are those of the mathematics book.
+\end{recall}
+
+\section{Entropy}\label{sec:b3:information-and-codes:entropy}
+
+\begin{definition}[Self-information, entropy of a source]\label{def:b3:information-and-codes:entropy}
+A \emph{source} emits symbols of an alphabet independently, each $x$ with probability $p(x)$. The \emph{self-information}\index{self-information} of an outcome of probability $p$ is $\log_2 (1/p)$ bits. The \emph{entropy of a source}\index{entropy of a source} is the expected self-information of a symbol, $H = \sum_x p(x) \log_2 (1/p(x))$ bits per symbol. The \emph{block entropy} $H_k$ is the entropy of blocks of $k$ symbols taken as one symbol; for a source of independent symbols, $H_k = kH$.
+\end{definition}
+
+A rare outcome carries much information, a certain one none, and the information of two independent outcomes adds, since $\log_2 (1/(pq)) = \log_2 (1/p) + \log_2 (1/q)$. The source of this chapter is the titles of the 80 books in Brenmoor's library catalogue, in lower case with letters and spaces only.
+
+\omcode{code/bachelor-3/19-information-and-codes/listings/entropy.py}{9}{17}{Entropy, and the frequencies of blocks of symbols.}\label{lst:b3:information-and-codes:entropy}
+
+\omoutput{code/bachelor-3/19-information-and-codes/outputs/entropy.txt}{The catalogue's letters: the space is the commonest symbol, \texttt{w} the rarest; 3.99 bits per symbol, against 4.52 for a uniform source on 23 symbols.}\label{out:b3:information-and-codes:entropy}
+
+\begin{theorem}[Gibbs' inequality; entropy is at most $\log_2 n$]\label{thm:b3:information-and-codes:gibbs}
+For distributions $p$ and $q$ on the same $n$ symbols, $\sum_x p(x) \log_2 (1/q(x)) \ge \sum_x p(x) \log_2 (1/p(x))$, with equality only when $p = q$. In particular $H \le \log_2 n$, with equality only for the uniform source.
+\end{theorem}
+
+\begin{proof}
+Using $\ln t \le t - 1$, with equality only at $t = 1$, the difference is $\sum_x p(x) \log_2 (q(x)/p(x)) \le \frac{1}{\ln 2} \sum_x p(x) \bigl(q(x)/p(x) - 1\bigr) = \frac{1}{\ln 2} \bigl(\sum_x q(x) - 1\bigr) \le 0$, sums over the $x$ with $p(x) > 0$. Take $q$ uniform: $\sum_x p(x) \log_2 n = \log_2 n \ge H$.
+\end{proof}
+
+For two symbols with probabilities $p$ and $1 - p$ the entropy is the binary entropy function $h(p) = p \log_2 (1/p) + (1 - p) \log_2 (1/(1 - p))$: zero at $p = 0$ and $p = 1$, and one bit at $p = 1/2$.
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[omrecord, width=0.62\linewidth, height=5cm, xmin=0, xmax=1, ymin=0, ymax=1.05, xlabel={$p$}, ylabel={bits}, legend pos=outer north east, legend cell align=left, legend style={font=\small}]
+    \addplot[omDef, thick, domain=0.0005:0.9995, samples=200] {-x*log2(x) - (1-x)*log2(1-x)};
+    \addlegendentry{$h(p)$}
+    \addplot[omThm, thick, dashed, domain=0.0005:0.9995, samples=200] {1 + x*log2(x) + (1-x)*log2(1-x)};
+    \addlegendentry{$1 - h(p)$}
+  \end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The binary entropy function and the capacity $1 - h(p)$ of the \omterm{def:b3:information-and-codes:channel}{binary symmetric channel} of \cref{sec:b3:information-and-codes:channels}.}
+\end{omfigure}
+
+Joint and conditional entropy, the uncertainty of a pair of variables and of one when the other is known, extend these definitions; they are not needed here.
+
+\section{The source-coding theorem}\label{sec:b3:information-and-codes:source-coding}
+
+\begin{definition}[Kraft inequality, uniquely decodable code]\label{def:b3:information-and-codes:prefix}
+A code is \emph{uniquely decodable}\index{uniquely decodable code} when no two different strings of symbols encode to the same bits; prefix codes are. Codeword lengths $\ell_1, \ldots, \ell_n$ satisfy the \emph{Kraft inequality}\index{Kraft inequality} when $\sum_i 2^{-\ell_i} \le 1$.
+\end{definition}
+
+\begin{theorem}[Kraft]\label{thm:b3:information-and-codes:kraft}
+The lengths of a prefix code satisfy the \omterm{def:b3:information-and-codes:prefix}{Kraft inequality}, and for any lengths that satisfy it there is a prefix code with those lengths.
+\end{theorem}
+
+A codeword of length $\ell$ claims the fraction $2^{-\ell}$ of all infinite bit strings, those that begin with it, and in a prefix code the claims are disjoint (\cref{exo:b3:information-and-codes:7} is the full proof). Kraft published the inequality for prefix codes in 1949; Brockway McMillan proved in 1956 that it holds for every \omterm{def:b3:information-and-codes:prefix}{uniquely decodable code}. % ledger: b3:kraft-mcmillan
+% ledger: b3:mcmillan-1956
+The construction gives the shortest lengths the smallest binary numbers, a \emph{canonical} code.
+
+\omcode{code/bachelor-3/19-information-and-codes/listings/kraft.py}{6}{23}{The Kraft sum, a prefix test, and the canonical code for given lengths.}\label{lst:b3:information-and-codes:kraft}
+
+\omoutput{code/bachelor-3/19-information-and-codes/outputs/kraft.txt}{A Kraft sum of 1 is not enough to be a prefix code; it is enough for some prefix code with those lengths to exist.}\label{out:b3:information-and-codes:kraft}
+
+\begin{theorem}[Source-coding theorem]\label{thm:b3:information-and-codes:source-coding}\index{source-coding theorem}
+For a source of entropy $H$, the least expected length $L^*$ of a prefix code for its symbols satisfies $H \le L^* < H + 1$. Coding blocks of $k$ symbols at once gives an expected length per symbol below $H + 1/k$.
+\end{theorem}
+
+The lower bound is Gibbs' inequality with $q(x) = 2^{-\ell(x)}$; the upper bound takes $\ell(x) = \lceil \log_2 (1/p(x)) \rceil$, which satisfies Kraft (\cref{exo:b3:information-and-codes:10}). Huffman's code is optimal, so its length is $L^*$. David Huffman published his construction in 1952. % ledger: b3:huffman-1952
+Below, the catalogue's letters are treated as a source of independent letters with the catalogue's frequencies, and Huffman codes are built for single letters, pairs and triples.
+
+\omcode{code/bachelor-3/19-information-and-codes/listings/huffman_vs_h.py}{12}{25}{The lengths of a Huffman code: each merge adds one bit to every symbol beneath it.}\label{lst:b3:information-and-codes:huffman}
+
+\omoutput{code/bachelor-3/19-information-and-codes/outputs/huffman_vs_h.txt}{Huffman against the entropy: within 0.04 bits per letter for single letters, and closer with blocks, as the theorem says; the bound $1/k$ is far from reached.}\label{out:b3:information-and-codes:huffman}
+
+So no lossless code for this source averages fewer than 3.99 bits per letter, and a simple one averages 4.03. The 23-symbol uniform code would need 5 bits, or $\log_2 23 \approx 4.52$ with blocks.
+
+\section{Channels}\label{sec:b3:information-and-codes:channels}
+
+\begin{definition}[Binary symmetric channel, channel capacity, repetition code]\label{def:b3:information-and-codes:channel}
+The \emph{binary symmetric channel}\index{binary symmetric channel} with crossover probability $p$ transmits bits, flipping each independently with probability $p$. Its \emph{channel capacity}\index{channel capacity} is $C = 1 - h(p)$ bits per use. A code of \emph{rate} $k/n$ sends $k$ bits of message in $n$ uses of the channel. The \emph{repetition code}\index{repetition code} of length $n$ sends each bit $n$ times, rate $1/n$, and decodes by majority.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth]
+  \node (a0) at (0, 2.0) {0}; \node (a1) at (0, 0) {1};
+  \node (b0) at (4.4, 2.0) {0}; \node (b1) at (4.4, 0) {1};
+  \draw[->, thick] (a0) -- node[above] {$1 - p$} (b0);
+  \draw[->, thick] (a1) -- node[below] {$1 - p$} (b1);
+  \draw[->, omThm] (a0) -- node[pos=0.22, right=2pt] {$p$} (b1);
+  \draw[->, omThm] (a1) -- node[pos=0.22, right=2pt] {$p$} (b0);
+  \node[anchor=east] at (-0.3, 1.0) {sent};
+  \node[anchor=west] at (4.7, 1.0) {received};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:information-and-codes:channel}{binary symmetric channel}: each bit arrives intact with probability $1 - p$ and flipped with probability $p$.}
+\end{omfigure}
+
+\begin{theorem}[Noisy-channel coding theorem]\label{thm:b3:information-and-codes:noisy-channel}\index{noisy-channel coding theorem}
+For every rate $R < C$ and every $\varepsilon > 0$ there are codes of rate at least $R$ whose probability of decoding a block wrongly is below $\varepsilon$; above capacity, no such codes exist.
+\end{theorem}
+
+Shannon stated it in 1948; the proof, by choosing a code at random, is not given here. % ledger: b3:noisy-channel
+It says that noise costs rate, not reliability. The \omterm{def:b3:information-and-codes:channel}{repetition code} shows what a naive code pays.
+
+\omcode{code/bachelor-3/19-information-and-codes/listings/bsc.py}{8}{15}{The channel, and the exact error of majority decoding.}\label{lst:b3:information-and-codes:bsc}
+
+\omoutput{code/bachelor-3/19-information-and-codes/outputs/bsc.txt}{\omterm{def:b3:information-and-codes:channel}{Repetition codes} over a seeded channel, 100,000 bits each: the measured rates agree with the exact ones.}\label{out:b3:information-and-codes:bsc}
+
+\omoutput{code/bachelor-3/19-information-and-codes/outputs/capacity.txt}{Capacity of the \omterm{def:b3:information-and-codes:channel}{binary symmetric channel}.}\label{out:b3:information-and-codes:capacity}
+
+At $p = 0.1$ the capacity is 0.53 bits per use, so codes of rate $1/2$ with errors as rare as wanted exist; the \omterm{def:b3:information-and-codes:channel}{repetition code} of rate $1/5$ still errs on almost one bit in a hundred. Making a \omterm{def:b3:information-and-codes:channel}{repetition code} reliable sends its rate to zero. Better codes spread each message bit over several check bits.
+
+\section{Hamming distance and linear codes}\label{sec:b3:information-and-codes:linear}
+
+\begin{definition}[Hamming distance, minimum distance, error-correcting code]\label{def:b3:information-and-codes:distance}
+The \emph{Hamming distance}\index{Hamming distance} between two words of the same length is the number of positions where they differ. The \emph{minimum distance}\index{minimum distance} of a code is the least distance between two of its codewords. A code is an \emph{error-correcting code}\index{error-correcting code} for $t$ errors when nearest-codeword decoding recovers the sent word whenever at most $t$ bits are flipped.
+\end{definition}
+
+\begin{theorem}[Detection and correction]\label{thm:b3:information-and-codes:distance}
+A code of \omterm{def:b3:information-and-codes:distance}{minimum distance} $d$ detects every pattern of at most $d - 1$ errors and corrects every pattern of at most $\lfloor (d - 1)/2 \rfloor$.
+\end{theorem}
+
+The distance is a metric, so the balls of radius $\lfloor (d - 1)/2 \rfloor$ around the codewords are disjoint, and fewer than $d$ flips cannot turn a codeword into another (\cref{exo:b3:information-and-codes:8}).
+
+\begin{definition}[Linear code, generator matrix, parity-check matrix, syndrome]\label{def:b3:information-and-codes:linear}
+A \emph{linear code}\index{linear code} of length $n$ and dimension $k$ is a subspace of $\mathbb{F}_2^n$ of dimension $k$, $\mathbb{F}_2$ being the field with two elements: the sum of two codewords, bit by bit modulo 2, is a codeword. A \emph{generator matrix}\index{generator matrix} is a $k \times n$ matrix $G$ whose rows are a basis: the message $m$ encodes to $mG$. A \emph{parity-check matrix}\index{parity-check matrix} is an $(n - k) \times n$ matrix $H$ with $Hc = 0$ exactly for the codewords $c$. The \emph{syndrome}\index{syndrome} of a received word $r$ is $Hr$.
+\end{definition}
+
+If $r = c + e$, the \omterm{def:b3:information-and-codes:linear}{syndrome} is $H(c + e) = He$: it depends on the error only, not on the message. And the \omterm{def:b3:information-and-codes:distance}{minimum distance} of a \omterm{def:b3:information-and-codes:linear}{linear code} is the least weight of a nonzero codeword, since $c - c'$ is a codeword of weight equal to their distance.
+
+\begin{definition}[Hamming code, perfect code, sphere-packing bound]\label{def:b3:information-and-codes:hamming}
+The \emph{Hamming code}\index{Hamming code} with $r$ check bits has length $n = 2^r - 1$ and a \omterm{def:b3:information-and-codes:linear}{parity-check matrix} whose columns are the $n$ nonzero vectors of $\mathbb{F}_2^r$, column $j$ being $j$ written in binary. The \emph{sphere-packing bound}\index{sphere-packing bound}: a code of $M$ words of length $n$ correcting $t$ errors has $M \sum_{i=0}^{t} \binom{n}{i} \le 2^n$. A code meeting it with equality is a \emph{perfect code}\index{perfect code}.
+\end{definition}
+
+The bound holds because the balls of radius $t$ around the codewords are disjoint and each holds $\sum_{i \le t} \binom{n}{i}$ words of $\mathbb{F}_2^n$. For $r = 3$ the \omterm{def:b3:information-and-codes:hamming}{Hamming code} is the $(7, 4)$ code: a single error at position $j$ has \omterm{def:b3:information-and-codes:linear}{syndrome} column $j$, which is $j$ in binary, so the receiver flips bit $j$ back. No two columns are equal and none is zero, so no codeword has weight 1 or 2, and the \omterm{def:b3:information-and-codes:distance}{minimum distance} is 3. A \omterm{def:b3:information-and-codes:linear}{generator matrix}, its rows being the codewords of the four unit messages, is
+\[
+G = \begin{pmatrix} 1&1&1&0&0&0&0\\ 1&0&0&1&1&0&0\\ 0&1&0&1&0&1&0\\ 1&1&0&1&0&0&1 \end{pmatrix}.
+\]
+With 16 codewords and balls of $1 + 7 = 8$ words, $16 \times 8 = 128 = 2^7$: the $(7, 4)$ code is perfect, and every word of 7 bits is within distance 1 of exactly one codeword (\cref{exo:b3:information-and-codes:11}). Richard Hamming published these codes in 1950, after relay computers at Bell Labs kept stopping on errors their punched input could detect but not correct. % ledger: b3:hamming-1950
+% ledger: b3:hamming-history
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small]
+  \draw[omDef, thick, fill=omDef!8, fill opacity=0.6] (0, 0.9) circle (1.5);
+  \draw[omThm, thick, fill=omThm!8, fill opacity=0.6] (1.8, 0.9) circle (1.5);
+  \draw[black!60, thick, fill=black!5, fill opacity=0.6] (0.9, -0.65) circle (1.5);
+  \node at (0.9, 0.4) {$d_7$};
+  \node at (0.9, 1.5) {$d_3$};
+  \node at (0.05, -0.2) {$d_5$};
+  \node at (1.75, -0.2) {$d_6$};
+  \node at (-0.7, 1.4) {$p_1$};
+  \node at (2.5, 1.4) {$p_2$};
+  \node at (0.9, -1.55) {$p_4$};
+  \node[anchor=west, align=left] at (4.0, 0.4) {circle $p_1$: positions 1, 3, 5, 7\\circle $p_2$: positions 2, 3, 6, 7\\circle $p_4$: positions 4, 5, 6, 7\\each circle holds an even number of 1s};
+\end{tikzpicture}
+\par\smallskip{\small The $(7, 4)$ \omterm{def:b3:information-and-codes:hamming}{Hamming code} as three circles. A single flipped bit makes exactly the circles that contain it odd, and the set of odd circles names its position: that set is the \omterm{def:b3:information-and-codes:linear}{syndrome}.}
+\end{omfigure}
+
+\omcode{code/bachelor-3/19-information-and-codes/listings/hamming74.py}{7}{30}{Hamming $(7, 4)$: encode, compute the \omterm{def:b3:information-and-codes:linear}{syndrome}, correct.}\label{lst:b3:information-and-codes:hamming}
+
+\omoutput{code/bachelor-3/19-information-and-codes/outputs/hamming74.txt}{One flipped bit at position 5 is found and corrected; the \omterm{def:b3:information-and-codes:distance}{minimum distance} is 3; and a million 4-bit blocks over the channel with $p = 0.01$.}\label{out:b3:information-and-codes:hamming}
+
+At $p = 0.01$ an uncoded block of four bits is wrong with probability $1 - 0.99^4 \approx 3.94\%$. The \omterm{def:b3:information-and-codes:hamming}{Hamming code} fails only when two or more of its seven bits flip, with probability $1 - 0.99^7 - 7 \times 0.01 \times 0.99^6 \approx 0.203\%$, at rate $4/7$; the simulation agrees.
+
+\section{Cyclic codes}\label{sec:b3:information-and-codes:cyclic}
+
+\begin{definition}[Cyclic code, Reed--Solomon code]\label{def:b3:information-and-codes:cyclic}
+Read a word $c_0 c_1 \cdots c_{n-1}$ as the polynomial $c_0 + c_1 x + \cdots + c_{n-1} x^{n-1}$ with coefficients in $\mathbb{F}_2$. A \emph{cyclic code}\index{cyclic code} is a \omterm{def:b3:information-and-codes:linear}{linear code} closed under rotating its words by one place; its codewords are the multiples of a \emph{generator polynomial} $g$ that divides $x^n - 1$. A \emph{Reed--Solomon code}\index{Reed--Solomon code} is a cyclic code over a larger finite field, whose symbols are bytes rather than bits.
+\end{definition}
+
+The CRC of the Year~2 volume is division by a generator: a message $m$ of degree below $k$ is sent as $m(x) x^r + (m(x) x^r \bmod g(x))$, a multiple of $g$, and the receiver checks that the remainder of what it receives is zero. Over $\mathbb{F}_2$ subtraction is exclusive or, so long division is a loop of shifts and XORs. A \emph{burst} of length $b$ is an error pattern whose first and last flipped bits are $b - 1$ positions apart.
+
+\omcode{code/bachelor-3/19-information-and-codes/listings/crc_poly.py}{7}{18}{Remainder and encoding over $\mathbb{F}_2$, with the generator $x^8 + x^2 + x + 1$.}\label{lst:b3:information-and-codes:crc}
+
+\begin{theorem}[Burst detection]\label{thm:b3:information-and-codes:burst}
+If the generator $g$ has degree $r$ and a nonzero constant term, every burst of length at most $r$ is detected.
+\end{theorem}
+
+\begin{proof}
+A burst of length $b \le r$ starting at position $i$ is $e(x) = x^i b(x)$ with $b(0) = 1$ and $\deg b = b - 1 < r$. It goes undetected only if $g$ divides $x^i b(x)$. Since $g(0) = 1$, $g$ has no factor in common with $x^i$, so $g$ would divide $b$, a nonzero polynomial of smaller degree: impossible.
+\end{proof}
+
+The program checks the theorem by brute force on a 32-bit codeword, then counts what longer bursts escape: a burst of length $r + 1 = 9$ is missed only when it equals $g$ shifted, one pattern in $2^7$, and longer bursts one in $2^8$.
+
+\omoutput{code/bachelor-3/19-information-and-codes/outputs/crc_poly.txt}{Every burst of up to 8 bits is caught; longer bursts escape at the rates $2^{-7}$ and $2^{-8}$.}\label{out:b3:information-and-codes:crc}
+
+\omterm{def:b3:information-and-codes:cyclic}{Cyclic codes} are well suited to bursts, the runs of corrupted bits that scratches and electrical noise produce. % ledger: b3:cyclic-burst
+\omterm{def:b3:information-and-codes:cyclic}{Reed--Solomon codes}, by Irving Reed and Gustave Solomon in 1960, use the finite fields of the mathematics book's Year~3 to correct whole corrupted bytes. % ledger: b3:reed-solomon-1960
+They are in compact discs, the first mass-produced consumer use in 1982, in DVDs and Blu-ray discs, and in QR codes and other two-dimensional bar codes, which they let a scanner read even with part of the code damaged. % ledger: b3:rs-uses
+They are told here, not built.
+
+\section{Exercises}\label{sec:b3:information-and-codes:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:information-and-codes:1}
+Compute the entropy of a fair six-sided die, and of a die that shows 6 with probability $1/2$ and each other face with probability $1/10$. Which is larger, and why must it be?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:information-and-codes:2}
+For each code, give its Kraft sum and say whether it is prefix-free: $\{0, 10, 11\}$; $\{1, 01, 001, 000\}$; $\{0, 10, 01\}$; $\{00, 01, 100, 101, 11\}$.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:information-and-codes:3}
+Give the \omterm{def:b3:information-and-codes:distance}{Hamming distances} between \texttt{1011010}, \texttt{1001110} and \texttt{0011011}. How many errors could a code containing these three words correct?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:information-and-codes:4}
+\code{hamming74.py} receives \texttt{1110100}. Predict the \omterm{def:b3:information-and-codes:linear}{syndrome}, the corrected codeword and the decoded data.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:information-and-codes:5}
+\code{exercises/ex5_syndrome.py} decodes Hamming $(7, 4)$ with the rows of the \omterm{def:b3:information-and-codes:linear}{parity-check matrix} taken in the opposite order. Which single errors does it still correct, which does it not, and why? Fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:information-and-codes:6}
+Write \code{encode15} and \code{decode15} for the Hamming $(15, 11)$ code, parity bits at positions 1, 2, 4 and 8. They are tested on every single error of random words.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:information-and-codes:7}
+Prove \cref{thm:b3:information-and-codes:kraft}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:information-and-codes:8}
+Prove \cref{thm:b3:information-and-codes:distance}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:information-and-codes:9}
+Compute the probability that the \omterm{def:b3:information-and-codes:channel}{repetition code} of length 3 decodes a bit wrongly at $p = 0.05$ and $p = 0.2$, and check against \cref{out:b3:information-and-codes:bsc}. What is the probability that a 4-bit block sent with it arrives wrong at $p = 0.01$, and at what rate, compared with Hamming $(7, 4)$?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:information-and-codes:10}
+Prove the source-coding theorem: $H \le L^* < H + 1$, and the bound $H + 1/k$ for blocks of $k$ symbols.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:information-and-codes:11}
+Prove that every \omterm{def:b3:information-and-codes:hamming}{Hamming code}, with $r \ge 2$ check bits, has \omterm{def:b3:information-and-codes:distance}{minimum distance} 3 and is perfect.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:information-and-codes:12}
+Prove that a burst of length $r + 1$ escapes the generator $g$ of degree $r$, with $g(0) = 1$, only when it is a shift of $g$, and deduce the fraction $2^{-(r-1)}$ of \cref{out:b3:information-and-codes:crc}.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:information-and-codes:problem}
+
+\begin{problem}[{Weekend problem --- Sending the library catalogue over a noisy line}]\label{pb:b3:information-and-codes:1}
+The library sends its catalogue of titles to the town hall over an old line that flips each bit with probability $p = 0.01$. This problem compresses the catalogue, adds a \omterm{def:b3:information-and-codes:hamming}{Hamming code}, and computes and simulates what arrives.
+
+\medskip\noindent\textbf{Part I --- The source.}
+\begin{enumerate}
+  \item The catalogue has 1,437 symbols over 23 letters. How many bits does a fixed-length code need?
+  \item What does an entropy of 3.99 bits per symbol mean for every lossless code?
+  \item Which symbol carries the most information, and how much?
+  \item How many bits does the Huffman code of single letters take for the whole catalogue, on average per letter as in \cref{out:b3:information-and-codes:huffman}?
+  \item Why can coding triples of letters not beat 3.99 bits per letter on this source?
+  \item The real titles repeat whole words. Would a model of pairs of letters have lower or higher entropy per letter than the independent model? Why?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The line.}
+\begin{enumerate}[resume]
+  \item What is the capacity of the line?
+  \item The compressed catalogue is about 5,800 bits. How many bit errors are expected with no code?
+  \item What is the probability that it arrives with no error at all?
+  \item Why is a single error in a Huffman-coded stream worse than in a fixed-length one?
+  \item How many channel uses at least does the noisy-channel theorem allow for 5,800 bits sent reliably?
+  \item What would a \omterm{def:b3:information-and-codes:channel}{repetition code} of length 3 cost, and what bit error would it leave?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Hamming (7,4).}
+\begin{enumerate}[resume]
+  \item How many 4-bit blocks and channel bits does the coded catalogue use?
+  \item Compute the probability that a block decodes wrongly.
+  \item How many wrong blocks are expected in the catalogue?
+  \item Compare with the uncoded block error of $1 - 0.99^4$.
+  \item What happens when two bits of one block flip?
+  \item Why can the code not even tell that two bits flipped?
+  \item What do \cref{out:b3:information-and-codes:hamming}'s measured rates add?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The bill.}
+\begin{enumerate}[resume]
+  \item Give the rate of the coded transmission and compare it with the capacity.
+  \item Would the $(15, 11)$ \omterm{def:b3:information-and-codes:hamming}{Hamming code} do better or worse on this line? Compute its block error.
+  \item How would a CRC added to each title help, and what can it not do?
+  \item A burst of 5 bits hits the line. What does Hamming $(7, 4)$ do, and what does a CRC of degree 8 do?
+  \item How could interleaving, sending the first bits of many blocks, then the second bits, turn a burst into single errors?
+  \item Sum up: the bits sent, the expected errors, and what the town hall receives.
+\end{enumerate}
+\end{problem}

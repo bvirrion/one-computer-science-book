@@ -1,0 +1,410 @@
+% Book 3, Year 1, chapter 19 -- sorting.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 19.
+% ledger: b1:libstdcxx-introsort, b1:cpython-listsort, b1:cpp-sort-complexity
+\chapter{Sorting}\label{ch:b1:sorting}
+
+Before electronic computers, a population census was sorted by machines that read punched cards. A card carried one
+person's answers as holes in columns; the sorting machine read one column and dropped each card into one of ten pockets,
+by the digit punched there. To sort by a three-digit code, the operator ran the deck through the machine three times,
+\emph{starting with the last digit}, stacking the pockets in order after each pass. It looks backwards, and it works:
+this chapter proves why. It also builds the \omterm{def:b1:sorting:comparison-sort}{comparison sorts} used today, \omterm{def:b1:sorting:quicksort}{quicksort} and \omterm{def:b1:sorting:merge-sort}{merge sort}, counts their
+comparisons exactly or on average, and proves that no sort that only compares keys can do much better.
+
+\begin{recall}
+Lomuto's partition rearranges a slice around a \omterm{def:b1:sorting:quicksort}{pivot}, with a proved invariant
+(\cref{prop:b1:program-correctness:partition}).
+Recurrences such as $T(n) = 2T(n/2) + n$ and the harmonic numbers $H_n = 1 + \frac12 + \dots + \frac1n \approx \ln n$
+were met in \cref{ch:b1:asymptotic-analysis}. \omterm{met:b1:heaps:heapsort}{Heapsort} sorts \omterm{def:b1:sorting:comparison-sort}{in place} in $\Theta(n \log n)$ (\cref{met:b1:heaps:heapsort}).
+Insertion sort inserts each element into the sorted prefix before it.
+\end{recall}
+
+\section{What a sort promises}\label{sec:b1:sorting:promises}
+
+\begin{definition}[Comparison sort, in-place sort]\label{def:b1:sorting:comparison-sort}
+A \emph{comparison sort}\index{comparison sort} learns about the keys only by comparing two of them. A sort is
+\emph{in place}\index{in-place sort} when it uses $O(1)$ memory beyond the \omterm{def:b1:pointers-and-arrays:array}{array}, or $O(\log n)$ for a recursion stack.
+\end{definition}
+
+\begin{definition}[Stable sort]\label{def:b1:sorting:stable}
+A sort is \emph{stable}\index{stable sort} when elements with equal keys keep, in the output, the order they had in the
+input.
+\end{definition}
+
+Stability matters for records sorted by one field after another: sorting books by title, then stably by genre, gives
+each genre's books in alphabetical order.
+
+\begin{definition}[Inversion]\label{def:b1:sorting:inversion}
+An \emph{inversion}\index{inversion (of a sequence)} of a sequence $a$ is a pair of positions $i < j$ with $a_i > a_j$.
+\end{definition}
+
+A sorted sequence has no \omterm{def:b1:sorting:inversion}{inversion}; a reversed one has all $n(n - 1)/2$. Each exchange of two neighbours removes exactly
+one \omterm{def:b1:sorting:inversion}{inversion}, which is why insertion sort, which only exchanges neighbours, costs as many exchanges as the input has
+\omterm{def:b1:sorting:inversion}{inversions} (\cref{exo:b1:sorting:8}).
+
+\omimg{book3/ai/b1-sorting-returned-books.jpg}{0.45\linewidth}{Returned books go back one at a time into shelves
+that are already in order: insertion sort, which is fast when only a few items are out of place.}
+
+\section{Quicksort}\label{sec:b1:sorting:quicksort}
+
+\begin{definition}[Quicksort, pivot, three-way partition]\label{def:b1:sorting:quicksort}
+\emph{Quicksort}\index{quicksort} chooses an element, the \emph{pivot}\index{pivot}, partitions the \omterm{def:b1:pointers-and-arrays:array}{array} into the
+elements smaller than the pivot, the pivot, and the others, and sorts the two parts recursively. A \emph{three-way
+partition}\index{three-way partition (of an array)} separates the elements smaller than, equal to and larger than the
+pivot.
+\end{definition}
+
+\omcode{code/bachelor-1/19-sorting/listings/sorts.c}{16}{29}{Lomuto's partition and the basic
+\omterm{def:b1:sorting:quicksort}{quicksort}}\label{lst:b1:sorting:quicksort}
+
+\begin{proposition}[Quicksort is correct]\label{prop:b1:sorting:qs-correct}
+\code{qs_basic(a, lo, hi)} sorts $a[lo..hi)$ and terminates.
+\end{proposition}
+
+\begin{proof}
+By strong induction on $m = hi - lo$. A slice of fewer than 2 elements is sorted. Otherwise the partition returns $k$
+with $a[lo..k)$ smaller than $a[k]$ and $a(k..hi)$ at least $a[k]$ (\cref{prop:b1:program-correctness:partition}). Both parts have
+fewer than $m$ elements, so the recursive calls sort them, and they only permute each part: the whole slice is then
+sorted.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[a/.style={draw, rounded corners=2pt, font=\small\ttfamily, inner sep=3pt},
+  p/.style={a, fill=omThm!25}, level distance=11mm, level 1/.style={sibling distance=50mm},
+  level 2/.style={sibling distance=22mm}, edge from parent/.style={draw, ->, >={Stealth[length=1.6mm]}}]
+\node[a] {7 2 9 4 1 8 \textbf{5}}
+  child {node[a] {2 4 \textbf{1}} child {node[a] {(empty)}} child {node[a] {4 \textbf{2}}}}
+  child {node[a] {9 8 \textbf{7}} child {node[a] {(empty)}} child {node[a] {8 \textbf{9}}}};
+\node[p, font=\small\ttfamily] at (0,-1.1) {5};
+\node[font=\scriptsize, align=left, anchor=west] at (4.2,0) {pivot in bold: the last element;\\ 6 comparisons};
+\node[font=\scriptsize, anchor=west] at (5.2,-1.1) {2 comparisons each};
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b1:sorting:quicksort}{Quicksort} of $[7, 2, 9, 4, 1, 8, 5]$: the first partition puts 5 (shaded) in its final place, with
+2, 4, 1 on its left and 9, 8, 7 on its right; the parts are sorted in the same way. In all $6 + 2 + 1 + 2 + 1 = 12$
+comparisons.}
+\end{omfigure}
+
+The partition of $m$ elements makes $m - 1$ comparisons. When the \omterm{def:b1:sorting:quicksort}{pivot} is always the largest element, as on a sorted
+\omterm{def:b1:pointers-and-arrays:array}{array} with the last element as \omterm{def:b1:sorting:quicksort}{pivot}, one part is empty, and the total is $(n - 1) + (n - 2) + \dots + 1 = n(n - 1)/2$:
+$\Theta(n^2)$. When the \omterm{def:b1:sorting:quicksort}{pivot} always splits evenly, the recurrence $C(n) = 2C(n/2) + n - 1$ gives $\Theta(n \log n)$.
+What happens on average?
+
+\begin{theorem}[Average comparisons of quicksort]\label{thm:b1:sorting:qs-average}
+Over the $n!$ orders of $n$ distinct keys, all equally likely, \omterm{def:b1:sorting:quicksort}{quicksort} makes on average $C(n) = 2(n + 1)H_n - 4n$
+comparisons, about $2n \ln n \approx 1.39\, n \log_2 n$.
+\end{theorem}
+
+\begin{proof}[Proof of the recurrence]
+The \omterm{def:b1:sorting:quicksort}{pivot} is the last element; in exactly $(n - 1)!$ of the $n!$ orders it has rank $k + 1$, for each $k = 0, \dots, n -
+1$, leaving $k$ smaller and $n - 1 - k$ larger elements. Lomuto's partition keeps the relative order of the smaller
+elements, and of the larger ones up to a fixed rearrangement, so over these $(n - 1)!$ orders each part comes in all its
+orders equally often. Hence $C(0) = C(1) = 0$ and
+\[ C(n) = n - 1 + \frac1n \sum_{k=0}^{n-1} \bigl(C(k) + C(n - 1 - k)\bigr) = n - 1 + \frac2n \sum_{k=0}^{n-1} C(k). \]
+\Cref{exo:b1:sorting:10} solves it.
+\end{proof}
+
+\omoutput{code/bachelor-1/19-sorting/outputs/qs_average.txt}{The exact average over all orders, by enumeration, against
+the formula, in exact fractions.}\label{out:b1:sorting:qs-average}
+
+The enumeration only checks the claim for $n \leq 8$, and only for this program; the proof covers every $n$. The
+fair-order assumption is the weak point: input is often sorted, or nearly. Three changes make \omterm{def:b1:sorting:quicksort}{quicksort} robust. The
+\omterm{def:b1:sorting:quicksort}{pivot} is the median of the first, middle and last elements, which is good on sorted input. The recursion goes into the
+smaller part and a loop handles the larger one, so the stack holds at most $\log_2 n$ frames, since each frame's part is
+at most half the previous one. Parts of 16 elements or fewer are left to insertion sort, which is faster on small
+\omterm{def:b1:pointers-and-arrays:array}{arrays}.
+
+\omcode{code/bachelor-1/19-sorting/listings/sorts.c}{33}{44}{\omterm{def:b1:sorting:quicksort}{Quicksort} with median of three, a short stack and insertion
+sort}\label{lst:b1:sorting:quicksort-good}
+
+Equal keys remain a trap: with all keys equal, Lomuto's partition puts every element on one side
+(\cref{exo:b1:sorting:5}). The \omterm{def:b1:sorting:quicksort}{three-way partition} puts them in the middle, which is left out of the recursion.
+
+\omcode{code/bachelor-1/19-sorting/listings/sorts.c}{48}{57}{Three-way \omterm{def:b1:sorting:quicksort}{quicksort}}\label{lst:b1:sorting:quicksort3}
+
+\section{Merge sort}\label{sec:b1:sorting:merge}
+
+\begin{definition}[Merge, merge sort]\label{def:b1:sorting:merge-sort}
+To \emph{merge}\index{merge (of sorted sequences)} two sorted sequences is to build the sorted sequence of their
+elements by repeatedly taking the smaller of their two first elements. \emph{Merge sort}\index{merge sort} sorts the two
+halves of an \omterm{def:b1:pointers-and-arrays:array}{array} recursively and merges them.
+\end{definition}
+
+\omcodes{code/bachelor-1/19-sorting/listings/sorts.c}{61-67,84-91}{The \omterm{def:b1:sorting:merge-sort}{merge}, and bottom-up \omterm{def:b1:sorting:merge-sort}{merge sort}}\label{lst:b1:sorting:merge}
+
+A \omterm{def:b1:sorting:merge-sort}{merge} of $m$ elements makes at most $m - 1$ comparisons. The top-down version splits recursively; the bottom-up
+version \omterm{def:b1:sorting:merge-sort}{merges} runs of width 1, then 2, 4, and so on, with no recursion. Both make at most $W(n) = W(\lfloor n/2 \rfloor)
++ W(\lceil n/2 \rceil) + n - 1$ comparisons, which is $n \log_2 n - n + 1$ for $n = 2^k$ (induction: $2(2^{k-1}(k - 1) -
+2^{k-1} + 1) + 2^k - 1 = k2^k - 2^k + 1$). On a tie the \omterm{def:b1:sorting:merge-sort}{merge} takes the element of the left run first, which makes
+\omterm{def:b1:sorting:merge-sort}{merge sort} \omterm{def:b1:sorting:stable}{stable}. Its price is an extra \omterm{def:b1:pointers-and-arrays:array}{array} of $n$ elements.
+
+\omoutput{code/bachelor-1/19-sorting/outputs/stable.txt}{The library's books sorted by title, then by genre: the poetry
+shelf.}\label{out:b1:sorting:stable}
+
+\section{The lower bound}\label{sec:b1:sorting:lower-bound}
+
+\begin{definition}[Comparison tree]\label{def:b1:sorting:comparison-tree}
+The \emph{comparison tree}\index{comparison tree} of a \omterm{def:b1:sorting:comparison-sort}{comparison sort} for inputs of size $n$ is the \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} whose
+\omterm{def:b1:induction-and-termination:rooted-tree}{internal nodes} are the comparisons the sort makes, with one \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} for each outcome, and whose leaves are the outputs.
+An input follows one path from the root to a \omterm{def:b1:induction-and-termination:rooted-tree}{leaf}; the length of the path is the number of comparisons.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[q/.style={draw, rounded corners=2pt, font=\small, inner sep=2pt, fill=omCode!8},
+  l/.style={font=\small, inner sep=2pt}, level distance=11mm, level 1/.style={sibling distance=56mm},
+  level 2/.style={sibling distance=28mm}, level 3/.style={sibling distance=16mm},
+  e/.style={font=\scriptsize, midway, fill=white, inner sep=1pt}]
+\node[q] {$b < a$?}
+  child {node[q] {$c < a$?}
+    child {node[q] {$c < b$?} child {node[l] {$c\,b\,a$} edge from parent node[e] {yes}}
+      child {node[l] {$b\,c\,a$} edge from parent node[e] {no}} edge from parent node[e] {yes}}
+    child {node[l] {$b\,a\,c$} edge from parent node[e] {no}} edge from parent node[e] {yes}}
+  child {node[q] {$c < b$?}
+    child {node[q] {$c < a$?} child {node[l] {$c\,a\,b$} edge from parent node[e] {yes}}
+      child {node[l] {$a\,c\,b$} edge from parent node[e] {no}} edge from parent node[e] {yes}}
+    child {node[l] {$a\,b\,c$} edge from parent node[e] {no}} edge from parent node[e] {no}};
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b1:sorting:comparison-tree}{comparison tree} of insertion sort on three keys $a, b, c$: six leaves, one for each order, and
+height 3. A sorted input takes the rightmost path, two comparisons.}
+\end{omfigure}
+
+\begin{theorem}[Lower bound for comparison sorts]\label{thm:b1:sorting:lower-bound}
+Every \omterm{def:b1:sorting:comparison-sort}{comparison sort} makes at least $\lceil \log_2 n! \rceil$ comparisons on some input of $n$ distinct keys, and
+$\log_2 n! \geq \frac n2 \log_2 \frac n2$: the worst case is in $\Omega(n \log n)$.
+\end{theorem}
+
+\begin{proof}
+The $n!$ orders of $n$ distinct keys need $n!$ different outputs, so the \omterm{def:b1:sorting:comparison-tree}{comparison tree} has at least $n!$ leaves. A
+\omterm{def:b1:induction-and-termination:binary-tree}{binary tree} of height $h$ has at most $2^h$ leaves, so $2^h \geq n!$ and $h \geq \lceil \log_2 n! \rceil$. Finally, $n!$
+has at least $n/2$ factors at least $n/2$, so $n! \geq (n/2)^{n/2}$.
+\end{proof}
+
+\omoutput{code/bachelor-1/19-sorting/outputs/lower_bound.txt}{The bound $\lceil \log_2 n! \rceil$ against the worst cases
+of three sorts.}\label{out:b1:sorting:lower-bound}
+
+\omterm{def:b1:sorting:merge-sort}{Merge sort} stays within about 10\,\% of the bound; \omterm{def:b1:sorting:merge-sort}{merge} insertion, the method of the problem, meets it exactly up to $n =
+11$, then is off by one. The same argument bounds the average: a \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} with $N$ leaves has an average \omterm{def:b1:induction-and-termination:rooted-tree}{leaf} depth at
+least $\log_2 N$, so even on average a \omterm{def:b1:sorting:comparison-sort}{comparison sort} makes at least $\log_2 n!$ comparisons. \omterm{def:b1:sorting:quicksort}{Quicksort}'s $1.39\, n
+\log_2 n$ is, for large $n$, 39\,\% above it.
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=11cm, height=6.2cm, xmin=0, xmax=66, ymin=0, ymax=600, xlabel={number of keys $n$},
+  ylabel={comparisons}, legend pos=north west, legend style={font=\small}, tick label style={font=\small}]
+\addplot[thick, omThm, dashed] table[x=n, y=qssorted] {code/bachelor-1/19-sorting/figures/comparisons.dat};
+\addlegendentry{quicksort, sorted input}
+\addplot[thick, omThm, mark=*, mark size=1pt] table[x=n, y=qsrandom]
+  {code/bachelor-1/19-sorting/figures/comparisons.dat}; \addlegendentry{quicksort, random}
+\addplot[thick, omDef, mark=square*, mark size=1pt] table[x=n, y=merge]
+  {code/bachelor-1/19-sorting/figures/comparisons.dat}; \addlegendentry{merge sort, random}
+\addplot[thick, omCode, mark=triangle*, mark size=1.2pt] table[x=n, y=heap]
+  {code/bachelor-1/19-sorting/figures/comparisons.dat}; \addlegendentry{heapsort, random}
+\addplot[thick, black, densely dotted] table[x=n, y=bound] {code/bachelor-1/19-sorting/figures/comparisons.dat};
+\addlegendentry{$\lceil \log_2 n! \rceil$}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Comparisons from \cref{out:b1:sorting:counts}, averaged over 200 random orders. \omterm{def:b1:sorting:quicksort}{Quicksort} on sorted
+input leaves the chart at $n = 36$ (630 comparisons). \omterm{def:b1:sorting:merge-sort}{Merge sort} hugs the bound; heapsort makes about twice as many.}
+\end{omfigure}
+
+\omoutput{code/bachelor-1/19-sorting/outputs/counts.txt}{Comparisons of the sorts of \cref{lst:b1:sorting:quicksort,lst:b1:sorting:quicksort-good,lst:b1:sorting:merge}
+and of heapsort; \code{qs+} is \cref{lst:b1:sorting:quicksort-good}.}\label{out:b1:sorting:counts}
+
+\section{Sorting without comparisons}\label{sec:b1:sorting:radix}
+
+The lower bound holds only for algorithms that compare keys. Keys that are small integers, or strings of digits, can be
+sorted by looking at their digits.
+
+\begin{definition}[Counting sort, radix sort]\label{def:b1:sorting:radix}
+\emph{Counting sort}\index{counting sort} sorts $n$ keys in $\{0, \dots, k - 1\}$ by counting the keys of each value,
+computing from the counts where each value's block starts, and copying each key to the next free cell of its block, in
+input order. \emph{Radix sort}\index{radix sort}, least significant digit first, sorts keys of $d$ digits by $d$
+passes of a \omterm{def:b1:sorting:stable}{stable sort} on one digit, from the last digit to the first.
+\end{definition}
+
+\omcode{code/bachelor-1/19-sorting/listings/radix.c}{6}{12}{\omterm{def:b1:sorting:radix}{Counting sort} on one decimal digit}\label{lst:b1:sorting:counting}
+
+\omterm{def:b1:sorting:radix}{Counting sort} costs $\Theta(n + k)$ and is \omterm{def:b1:sorting:stable}{stable}, since keys are copied in input order into their block. \omterm{def:b1:sorting:radix}{Radix sort}
+costs $\Theta(d(n + k))$: linear in $n$ for keys of a fixed number of digits.
+
+\omoutput{code/bachelor-1/19-sorting/outputs/radix_demo.txt}{\omterm{def:b1:sorting:radix}{Radix sort} of seven 3-digit keys, one pass per
+digit.}\label{out:b1:sorting:radix-demo}
+
+\begin{omfigure}
+\begin{tikzpicture}[k/.style={font=\small\ttfamily, inner sep=1.5pt}, >={Stealth[length=1.4mm]}]
+\foreach \col/\keys/\hl in {0/{329,457,657,839,436,720,355}/-1, 1/{720,355,436,457,657,329,839}/2,
+  2/{720,329,436,839,355,457,657}/1, 3/{329,355,436,457,657,720,839}/0} {
+  \foreach \kk [count=\r from 0] in \keys {
+    \node[k] (n\col-\r) at (\col*2.6, -\r*0.5) {\kk};}}
+\foreach \col/\t in {0/input, 1/by units, 2/by tens, 3/by hundreds} {\node[font=\scriptsize] at (\col*2.6,0.55) {\t};}
+\foreach \a/\b in {1/4, 3/5} {\draw[->, omThm, thick] (n1-\a.east) -- (n2-\b.west);}
+\node[font=\scriptsize, text=omThm, align=left, anchor=north] at (3.9,-3.4) {355 and 457 both have a 5 in the tens:\\
+they keep the order of the previous pass};
+\end{tikzpicture}
+\par\smallskip{\small The passes of \cref{out:b1:sorting:radix-demo}. The arrows follow 457 and 355 into the pass on the
+tens: equal digits, so the \omterm{def:b1:sorting:stable}{stable} pass leaves them in the order the units gave them.}
+\end{omfigure}
+
+\begin{proposition}[Radix sort is correct]\label{prop:b1:sorting:radix}
+After the pass on digit $j$ (counting from 1 at the units), the keys are sorted by their last $j$ digits.
+\end{proposition}
+
+The proof, by induction on $j$, rests on the stability of each pass (\cref{exo:b1:sorting:12}); with an unstable pass,
+it fails (\cref{exo:b1:sorting:6}). The punched-card machines used exactly this method, one column per pass. The
+returns of the town's loans, as eight-digit numbers \code{yyyymmdd}, sort in eight passes:
+
+\omoutput{code/bachelor-1/19-sorting/outputs/radix_loans.txt}{\omterm{def:b1:sorting:radix}{Radix sort} of the loans' return
+dates.}\label{out:b1:sorting:radix-loans}
+
+\begin{history}[Card sorters]
+% ledger: b1:card-sorter
+The machines of this chapter's opening were built for decades. IBM's type 82 sorter of 1949 read one column of each
+card with a metal brush and dropped the card into one of 13 pockets, one for each of the 12 rows a hole could be
+punched in and one for blank or rejected cards, at 650 cards a minute. A deck was sorted on a key of several columns
+one column at a time, least significant first, the operator collecting the pockets in order between passes: a \omterm{def:b1:sorting:radix}{radix
+sort}, run by hand.
+\end{history}
+
+\omimg{book3/ibm-82-card-sorter.jpg}{0.55\linewidth}{An IBM 82 card sorter at the Computer History Museum. The row of
+pockets along the front received the cards, one pocket per row of the card. Photograph:
+leighklotz, CC BY 2.0.}
+
+\section{How library sorts are built}\label{sec:b1:sorting:library}
+
+\begin{definition}[Introsort]\label{def:b1:sorting:introsort}
+\emph{Introsort}\index{introsort} is a \omterm{def:b1:sorting:quicksort}{quicksort} that counts its recursion depth and switches to heapsort on a part once
+the depth passes a limit proportional to $\log n$; small parts are left to insertion sort.
+\end{definition}
+
+\omterm{def:b1:sorting:introsort}{Introsort} keeps \omterm{def:b1:sorting:quicksort}{quicksort}'s speed on ordinary input and heapsort's $O(n \log n)$ guarantee on inputs that defeat the
+\omterm{def:b1:sorting:quicksort}{pivot} choice. The C++ standard requires of \code{std::sort} $O(n \log n)$ comparisons in the worst case, and allows it to
+be unstable; \code{std::stable_sort} is the \omterm{def:b1:sorting:stable}{stable} one.
+
+\begin{dated}{2026}
+The GNU C++ library implements \code{std::sort} as an \omterm{def:b1:sorting:introsort}{introsort}: a depth limit of $2\lfloor \log_2 n \rfloor$, a
+heap-based sort when it runs out, parts of up to 16 elements left for a final insertion sort. CPython sorts lists with
+\emph{timsort}, a \omterm{def:b1:sorting:stable}{stable}, adaptive \omterm{def:b1:sorting:merge-sort}{merge sort} that finds the runs already sorted in the input and \omterm{def:b1:sorting:merge-sort}{merges} them; its \omterm{def:b1:sorting:merge-sort}{merge}
+order now follows the \emph{powersort} strategy. Both are read from the libraries' source code; such details change
+between versions.
+\end{dated}
+
+\omoutput{code/bachelor-1/19-sorting/outputs/timing.txt}{Sorting a million random integers, measured on the author's
+laptop.}\label{out:b1:sorting:timing}
+
+The C library's \code{qsort} calls a comparison function through a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} for every comparison, which the sorts of this
+chapter avoid; \omterm{def:b1:sorting:radix}{radix sort}, with nine passes over the data and no comparison, is the fastest here. Measured times depend
+on the machine and the \omterm{def:b1:compilation-pipeline:compiler}{compiler}, and say nothing about the worst case.
+
+\section{Exercises}\label{sec:b1:sorting:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:sorting:1}
+Apply Lomuto's partition, with the last element as \omterm{def:b1:sorting:quicksort}{pivot}, to $[3, 8, 2, 5, 1, 4, 7, 6]$. Give the \omterm{def:b1:pointers-and-arrays:array}{array} and the
+\omterm{def:b1:sorting:quicksort}{pivot}'s index.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:sorting:2}
+\omterm{def:b1:sorting:merge-sort}{Merge} $[1, 4, 7, 9]$ and $[2, 3, 8, 10, 11]$, and count the comparisons.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:sorting:3}
+\omterm{def:b1:sorting:radix}{Counting sort} is applied to $[3, 1, 4, 1, 5, 2, 0, 3]$ with $k = 6$. Give the count \omterm{def:b1:pointers-and-arrays:array}{array}, the block starts and the
+output.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:sorting:4}
+The records $(2, \mathrm{a}), (1, \mathrm{b}), (2, \mathrm{c}), (1, \mathrm{d})$ are sorted by their number. Which
+outputs are those of a \omterm{def:b1:sorting:stable}{stable sort}? Is selection sort, which exchanges the minimum of the rest with the current element,
+\omterm{def:b1:sorting:stable}{stable}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:sorting:5}
+Explain the counts of the basic \omterm{def:b1:sorting:quicksort}{quicksort} on $n$ equal keys, and why the three-way version makes $2n$ comparisons.
+\omoutput[2-4]{code/bachelor-1/19-sorting/outputs/exo_equal.txt}{Equal keys.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:sorting:6}
+This \omterm{def:b1:sorting:radix}{counting sort} fills each digit's block from its end. Show that it sorts by one digit correctly, explain the output
+of a \omterm{def:b1:sorting:radix}{radix sort} built on it, and repair it.
+\omcode{code/bachelor-1/19-sorting/listings/exo_radix_bug.c}{5}{10}{Filling the blocks backwards}
+\omoutput[2-2]{code/bachelor-1/19-sorting/outputs/exo_radix_bug.txt}{\omterm{def:b1:sorting:radix}{Radix sort} of the keys of
+\cref{out:b1:sorting:radix-demo}.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:sorting:7}
+Sort the town's loans by member, and by date within each member, with a \omterm{def:b1:sorting:stable}{stable sort} applied twice. In which order must
+the two sorts be applied? Test the result against a sort on the pair.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:sorting:8}
+Prove that insertion sort makes exactly as many exchanges as its input has \omterm{def:b1:sorting:inversion}{inversions}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:sorting:9}
+Compute $\lceil \log_2 12! \rceil$. What does it say about sorting 12 keys? Compare with \omterm{def:b1:sorting:merge-sort}{merge sort} and \omterm{def:b1:sorting:merge-sort}{merge} insertion
+in \cref{out:b1:sorting:lower-bound}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:sorting:10}
+Solve the recurrence of \cref{thm:b1:sorting:qs-average}: multiply by $n$, subtract the equation for $n - 1$, divide by
+$n(n + 1)$, and sum.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:sorting:11}
+Count the \omterm{def:b1:sorting:inversion}{inversions} of an \omterm{def:b1:pointers-and-arrays:array}{array} in $O(n \log n)$ by modifying \omterm{def:b1:sorting:merge-sort}{merge sort}, and test against the quadratic count.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:sorting:12}
+Prove \cref{prop:b1:sorting:radix} by induction on $j$.
+\end{exercise}
+
+\section{Problem: Five keys in seven comparisons}\label{sec:b1:sorting:problem}
+
+\begin{problem}[{Weekend problem --- Five keys in seven comparisons}]\label{pb:b1:sorting:1}
+How few comparisons can sort five keys? A program sorts all 120 orders of five keys with insertion sort, \omterm{def:b1:sorting:merge-sort}{merge sort} and
+\emph{\omterm{def:b1:sorting:merge-sort}{merge} insertion}, counting the comparisons with a key type that counts them.
+\omcode{code/bachelor-1/19-sorting/listings/sort5.py}{33}{43}{\omterm{def:b1:sorting:merge-sort}{Merge} insertion for five keys}
+\omoutput{code/bachelor-1/19-sorting/outputs/sort5.txt}{All 120 orders, for three methods.}\label{out:b1:sorting:sort5}
+
+\medskip\noindent\textbf{Part I --- The lower bound.}
+\begin{enumerate}
+\item Compute $\lceil \log_2 120 \rceil$, and conclude that no \omterm{def:b1:sorting:comparison-sort}{comparison sort} sorts every order of five keys in six
+comparisons.
+\item Why is the bound about the worst case, and what does the average bound $\log_2 120$ say?
+\item How many leaves at least has the \omterm{def:b1:sorting:comparison-tree}{comparison tree} of a sort of five keys, and how many leaves at most has a tree of
+height 7?
+\item Show that a \omterm{def:b1:sorting:comparison-tree}{comparison tree} of height 7 with 120 leaves has at most 8 leaves at depth 6 or less. (Extend each
+\omterm{def:b1:induction-and-termination:rooted-tree}{leaf} at depth $d$ to the $2^{7 - d}$ positions below it at depth 7.) How many does \omterm{def:b1:sorting:merge-sort}{merge} insertion have?
+\item After the first three comparisons of \omterm{def:b1:sorting:merge-sort}{merge} insertion, how many of the 120 orders are still possible? Why can at
+most $2^4$ remain after three comparisons of any method that always finishes in seven?
+\item For $n = 4$, compute the bound, and find a method meeting it.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Two familiar methods.}
+\begin{enumerate}[resume]
+\item Which input makes insertion sort take 10 comparisons on five keys, and which 4?
+\item Explain insertion sort's average, 7.72, from the \omterm{def:b1:sorting:inversion}{inversions}.
+\item Compute \omterm{def:b1:sorting:merge-sort}{merge sort}'s worst case on five keys from the recurrence $W(n)$.
+\item Find an order of five keys on which \omterm{def:b1:sorting:merge-sort}{merge sort} makes 8 comparisons.
+\item Why does \omterm{def:b1:sorting:merge-sort}{merge sort} never take fewer than 5 comparisons on five keys?
+\item Which of the two methods is closer to the bound?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Merge insertion.}
+\begin{enumerate}[resume]
+\item After the first three comparisons, what is known about $a, b, c, d$?
+\item Why does inserting $e$ into the chain $a < b < d$ cost at most 2 comparisons?
+\item Why does $c$ need to be compared only with the elements below $d$, and why are there at most three of them?
+\item Count the comparisons of the method in the worst case.
+\item Trace the method on the order $(4, 1, 3, 0, 2)$ of the keys $0, \dots, 4$ assigned to $a, \dots, e$.
+\item Why does inserting $e$ before $c$ give a better worst case than inserting $c$ first?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Checking every order.}
+\begin{enumerate}[resume]
+\item What does the program check on each of the 120 orders?
+\item Why is checking all 120 orders a proof for five distinct keys, and why are distinct keys enough?
+\item How many orders take only 6 comparisons? Is that compatible with the lower bound?
+\item The general method sorts $n$ keys in $\sum_{k=1}^{n} \lceil \log_2 \frac{3k}{4} \rceil$ comparisons. Check this
+for $n = 5$ and compare with the bound for $n = 12$.
+\item Why is an exhaustive check impossible for $n = 20$?
+\item State the named result: \emph{five keys can be sorted in seven comparisons, and no method does it in six}.
+\end{enumerate}
+\end{problem}

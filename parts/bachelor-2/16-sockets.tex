@@ -1,0 +1,433 @@
+% Book 4, Year 2, chapter 16 -- Sockets.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 16.
+\chapter{Sockets}\label{ch:b2:sockets}
+
+Two programs on one laptop, no cable between them, and still a conversation:
+
+\omoutput{code/bachelor-2/16-sockets/outputs/echo_pair.txt}{A server and a client, two processes, one
+connection.}\label{out:b2:sockets:hook}
+
+The client sent 13 bytes; the server received them, saw that they came from the address \code{127.0.0.1}, and sent
+them back. The bytes went down through the operating system's network code and came back up, exactly as they would
+between two machines on two continents, except that they never left this one. The tool is the \emph{\omterm{def:b2:sockets:socket}{socket}}, a \omterm{def:b2:files-pipes-signals:descriptor}{file
+descriptor} for a conversation over the network. This chapter writes clients and servers with \omterm{def:b2:sockets:socket}{sockets}, shows the two
+traps every network program meets (a stream has no message boundaries; a number has a byte order), serves many
+clients at once in three ways, and measures them.
+
+\begin{recall}
+Book 2: a web browser is a client that sends requests to a server, which answers; a machine on a network has an
+address, and a \emph{\omterm{def:b2:sockets:port}{port number}} names one program on it, so that one machine can run several servers. Book 3, ch.~6:
+the byte order of a machine says in which order the bytes of a number lie in memory. \cref{ch:b2:files-pipes-signals}:
+descriptors, \code{read} and \code{write}, and end of file on a \omterm{def:b2:files-pipes-signals:pipe}{pipe}. \cref{ch:b2:threads-and-synchronisation}:
+\omterm{def:b2:threads-and-synchronisation:thread}{threads}, \omterm{def:b2:threads-and-synchronisation:lock}{locks}, and the cost of a \omterm{def:b2:threads-and-synchronisation:thread}{thread}.
+\end{recall}
+
+\section{The socket interface}\label{sec:b2:sockets:interface}
+
+\begin{definition}[Socket, socket address]\label{def:b2:sockets:socket}
+A \emph{socket}\index{socket} is an endpoint of communication, created by \code{socket(domain, type, 0)}, which returns
+a \omterm{def:b2:files-pipes-signals:descriptor}{file descriptor}. A \emph{socket address}\index{socket address} names an endpoint: for the Internet domain
+(\code{AF_INET}), an IP address and a \omterm{def:b2:sockets:port}{port number}, held in a \code{struct sockaddr_in}.
+\end{definition}
+
+\begin{definition}[Port number]\label{def:b2:sockets:port}
+A \emph{port number}\index{port number} is a 16-bit number that tells the endpoints of one machine apart: the system
+delivers each arriving segment or datagram to the \omterm{def:b2:sockets:socket}{socket} bound to its destination address and port.
+\end{definition}
+
+\begin{definition}[Stream socket, datagram socket]\label{def:b2:sockets:kinds}
+A \emph{stream socket}\index{stream socket} (\code{SOCK_STREAM}, the TCP protocol) carries a reliable, ordered sequence
+of bytes between two connected endpoints; a \emph{datagram socket}\index{datagram socket} (\code{SOCK_DGRAM}, the UDP
+protocol) carries separate messages, each addressed on its own.
+\end{definition}
+
+% ledger: b2:loopback-block
+\begin{definition}[Loopback address]\label{def:b2:sockets:loopback}
+A \emph{loopback address}\index{loopback address} is an address of the block \code{127.0.0.0/8}, usually
+\code{127.0.0.1}: a packet sent to it never leaves the machine.
+\end{definition}
+
+Every program of this chapter uses it, so nothing it does is visible from outside. The
+transport chapter (\cref{ch:b2:transport-layer}) explains what TCP and UDP do underneath; here we use them.
+
+A server and a client make different calls, in a fixed order:
+
+\begin{method}[A TCP server and client]\label{met:b2:sockets:server-skeleton}
+Server: \code{socket}; \code{bind} it to its address and port; \code{listen}, which turns it into a \omterm{def:b2:sockets:listening}{listening
+socket}; then repeatedly \code{accept}, which waits for a client and returns a \emph{new} \omterm{def:b2:sockets:socket}{socket} for that connection;
+\code{recv} and \code{send} on that \omterm{def:b2:sockets:socket}{socket}; \code{close} it. Client: \code{socket}; \code{connect} to the server's
+address and port (the system picks the client's own port); \code{send} and \code{recv}; \code{close}. Every call
+returns $-1$ on failure, which a real program checks.
+\end{method}
+
+\begin{definition}[Listening socket, connected socket]\label{def:b2:sockets:listening}
+A \emph{listening socket}\index{listening socket} is a \omterm{def:b2:sockets:kinds}{stream socket} on which \code{listen} was called: it carries no
+data, only connection requests, and \code{accept} turns each request into a \emph{connected socket}\index{connected
+socket}, one per client, which carries that connection's bytes.
+\end{definition}
+
+\omcode{code/bachelor-2/16-sockets/listings/echo_pair.c}{42}{65}{The server's \omterm{def:b2:sockets:socket}{socket}: an address, then
+\code{listen}; the client runs in a \omterm{def:b2:processes-and-system-calls:tree}{child process}}
+
+\omcode{code/bachelor-2/16-sockets/listings/echo_pair.c}{14}{40}{The client connects and sends; the server accepts,
+receives and echoes}\label{lst:b2:sockets:echo}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, c/.style={draw, rounded corners=2pt, fill=omDef!10, minimum width=1.7cm,
+  minimum height=5mm, inner sep=2pt}, s/.style={draw, rounded corners=2pt, fill=omThm!12, minimum width=1.7cm,
+  minimum height=5mm, inner sep=2pt}, w/.style={-{Stealth[length=1.8mm]}}]
+\node[font=\small\bfseries] at (0,0.6) {server}; \node[font=\small\bfseries] at (7.0,0.6) {client};
+\node[s] (s1) at (0,0) {\code{socket}}; \node[s] (s2) at (0,-0.7) {\code{bind}};
+\node[s] (s3) at (0,-1.4) {\code{listen}}; \node[s] (s4) at (0,-2.1) {\code{accept}};
+\node[s] (s5) at (0,-3.5) {\code{recv}}; \node[s] (s6) at (0,-4.2) {\code{send}}; \node[s] (s7) at (0,-4.9)
+{\code{close}};
+\node[c] (c1) at (7.0,-1.4) {\code{socket}}; \node[c] (c2) at (7.0,-2.1) {\code{connect}};
+\node[c] (c3) at (7.0,-2.8) {\code{send}}; \node[c] (c4) at (7.0,-4.2) {\code{recv}}; \node[c] (c5) at (7.0,-4.9)
+{\code{close}};
+\foreach \a/\b in {s1/s2,s2/s3,s3/s4,s4/s5,s5/s6,s6/s7,c1/c2,c2/c3,c3/c4,c4/c5} \draw[w] (\a) -- (\b);
+\draw[w, omThm, thick] (c2.west) -- node[above, sloped] {connection set up} (s4.east);
+\draw[w, omThm, thick] (c3.west) -- node[above, sloped] {13 bytes} (s5.east);
+\draw[w, omThm, thick] (s6.east) -- node[above] {13 bytes back} (c4.west);
+\node[anchor=east, align=right] at (-1.0,-2.1) {\code{accept} waits for a client,\\ then returns a\\ new socket};
+\end{tikzpicture}
+\par\smallskip{\small The calls of \cref{lst:b2:sockets:echo} in time, top to bottom. \code{accept} returns when a
+client's \code{connect} arrives; the data then flows on the new \omterm{def:b2:sockets:socket}{socket}, while the listening one can wait for the
+next client.}
+\end{omfigure}
+
+The client is forked after \code{listen}, so its \code{connect} cannot arrive before the server is ready. The server
+prints and \omterm{def:b2:files-pipes-signals:buffering}{flushes} before it answers, and the client prints only after the answer arrives, which fixes the order of
+the two lines in \cref{out:b2:sockets:hook}.
+
+\section{Streams have no message boundaries}\label{sec:b2:sockets:streams}
+
+The client sent 13 bytes in one \code{send}, and the server received 13 bytes in one \code{recv}. That was luck. A
+\omterm{def:b2:sockets:kinds}{stream socket} carries bytes, not messages: the receiver gets the bytes in order, but a \code{recv} may return any
+number of them, from one to all that have arrived.
+
+\omoutput{code/bachelor-2/16-sockets/outputs/partial_recv.txt}{One \code{send} of 1 MiB, received by several
+\code{recv} calls.}
+
+\omoutput{code/bachelor-2/16-sockets/outputs/boundaries.txt}{Three sends over each kind of \omterm{def:b2:sockets:socket}{socket}: the stream merges
+them, datagrams keep them apart.}\label{out:b2:sockets:boundaries}
+
+Over TCP, the three sends ``ab'', ``cd'' and ``efgh'' arrive as eight bytes that one \code{recv} returns together; it
+could as well have returned them in five pieces. Over UDP, each \code{sendto} is one datagram, and each
+\code{recvfrom} returns exactly one. A datagram can be lost, though, and one longer than the buffer is cut
+(\cref{exo:b2:sockets:5}); TCP loses nothing and keeps the order, but leaves the boundaries to the program.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, b/.style={draw, minimum height=5mm, inner sep=2pt, fill=omDef!12},
+  w/.style={-{Stealth[length=1.8mm]}}]
+\node[anchor=east] at (-0.2,0.6) {sent}; \node[anchor=east] at (-0.2,-0.3) {TCP receives};
+\node[anchor=east] at (-0.2,-1.2) {UDP receives};
+\node[b] at (0.4,0.6) {\code{ab}}; \node[b] at (1.4,0.6) {\code{cd}}; \node[b] at (2.6,0.6) {\code{efgh}};
+\node[b, fill=omThm!12, minimum width=2.6cm] at (1.5,-0.3) {\code{abcdefgh}};
+\node[font=\scriptsize, anchor=west] at (3.1,-0.3) {one \code{recv}; or \code{abc} + \code{defgh}; or eight of one
+byte \dots};
+\node[b, fill=omThm!12] at (0.4,-1.2) {\code{ab}}; \node[b, fill=omThm!12] at (1.4,-1.2) {\code{cd}};
+\node[b, fill=omThm!12] at (2.6,-1.2) {\code{efgh}};
+\node[font=\scriptsize, anchor=west] at (3.1,-1.2) {three \code{recvfrom}, one datagram each (or a datagram lost)};
+\end{tikzpicture}
+\par\smallskip{\small A stream against datagrams. A stream keeps the bytes and their order, not the cuts between
+sends; datagrams keep the cuts, not the guarantee.}
+\end{omfigure}
+
+So a program that needs $n$ bytes must loop:
+
+\omcode{code/bachelor-2/16-sockets/listings/net.c}{56}{68}{Receiving exactly $n$ bytes, or what is left before the
+end of the stream}\label{lst:b2:sockets:recv-all}
+
+\begin{proposition}[Receiving everything]\label{prop:b2:sockets:recv-all}
+If no call fails, \code{recv_all(fd, buf, n)} returns $n$ with the next $n$ bytes of the stream in \code{buf}, or,
+if the stream ends first, returns the number $k < n$ of bytes that remained, with those $k$ bytes in \code{buf}.
+\end{proposition}
+
+\begin{proof}
+The loop keeps the invariant: \code{buf[0..got)} holds the next \code{got} bytes of the stream, in order, and
+$\text{got} \le n$. It holds at the start ($\text{got} = 0$). A \code{recv} that returns $k > 0$ copies the next $k$
+bytes, at most $n - \text{got}$ of them, to \code{buf + got}, and \code{got} grows by $k$: the invariant still holds.
+Each turn either increases \code{got} or ends the loop, so the loop ends: either $\text{got} = n$, or \code{recv}
+returned 0, which on a stream means that the other side has closed and no byte remains.
+\end{proof}
+
+\code{send} has the same weakness in the other direction: it may accept fewer bytes than given, and
+\code{send_all} loops in the same way.
+
+\section{Byte order and framing}\label{sec:b2:sockets:framing}
+
+% ledger: b2:network-byte-order
+Numbers on the network have a byte order too.
+
+\begin{definition}[Network byte order]\label{def:b2:sockets:network-order}
+\emph{Network byte order}\index{network byte order} is big-endian: the Internet protocols send every number of a
+header with its most significant byte first.
+\end{definition}
+
+This laptop is little-endian, so every number that goes into a protocol
+header or a message must be converted: \code{htons} and \code{htonl} (host to network, short and long) and
+\code{ntohs}, \code{ntohl} back.
+
+\omoutput{code/bachelor-2/16-sockets/outputs/byteorder.txt}{The same numbers in memory and in network
+order.}\label{out:b2:sockets:bytes}
+
+A \omterm{def:b2:sockets:port}{port number} goes into \code{sin_port} in network order. Forgetting \code{htons} does not fail: the server listens
+on the port whose bytes are those of 44164 reversed, and the client, which asks for 44164, finds nobody:
+
+\omoutput{code/bachelor-2/16-sockets/outputs/wrong_port.txt}{A forgotten \code{htons}
+(\cref{exo:b2:sockets:2}).}
+
+Since the stream does not keep message boundaries, a protocol must mark them itself. There are two ways. A
+\emph{delimiter} ends each message, as the newline ends a line in many text protocols; the message must then never
+contain the delimiter, or must escape it. A \emph{length prefix} puts the length first; the message may then contain
+anything.
+
+\begin{definition}[Length-prefixed framing]\label{def:b2:sockets:framing}
+In \emph{length-prefixed framing}\index{length-prefixed framing}, a message of $n$ bytes is sent as 4 bytes holding
+$n$ in \omterm{def:b2:sockets:network-order}{network byte order}, followed by the $n$ bytes. Decoding a buffer reads 4 bytes as a length $n$, then takes the
+next $n$ bytes as the message, and starts again after it.
+\end{definition}
+
+\omcode{code/bachelor-2/16-sockets/listings/net.c}{70}{89}{Framing and unframing: a whole message, or nothing
+yet}\label{lst:b2:sockets:frame}
+
+\begin{omfigure}
+\begin{bytefield}[bitwidth=2.6em]{9}
+\bitheader{0-8} \\
+\bitbox{1}{\scriptsize 00} & \bitbox{1}{\scriptsize 00} & \bitbox{1}{\scriptsize 00} & \bitbox{1}{\scriptsize 05}
+& \bitbox{1}{\scriptsize\code{w}} & \bitbox{1}{\scriptsize\code{h}} & \bitbox{1}{\scriptsize\code{o}}
+& \bitbox{1}{\scriptsize\textvisiblespace} & \bitbox{1}{\scriptsize\code{1}}
+\end{bytefield}
+\par\smallskip{\small The request \code{who 1} framed, byte by byte (offsets above): the length 5 in four big-endian
+bytes, then the five bytes of the message. The receiver reads the four bytes, then exactly five more; whatever follows is the next message.}
+\end{omfigure}
+
+\begin{proposition}[Unique decoding]\label{prop:b2:sockets:prefix-free}
+Let $w$ be the concatenation of the framings of messages $m_1, \dots, m_k$. Decoding $w$ from its first byte yields
+exactly $m_1, \dots, m_k$, in that order, and uses all of $w$.
+\end{proposition}
+
+The proof, by induction on $k$, is \cref{exo:b2:sockets:8}. A delimiter gives the same guarantee only if no message
+contains it.
+
+\section{A directory service}\label{sec:b2:sockets:directory}
+
+The town keeps its people and streets in two tables. A small service answers two requests over TCP, each framed as
+above: \code{who 7} gives a person's name, year of birth and street; \code{street Mill Lane} counts the people who
+live there. Every connection carries one request and one answer. The client is a short Python program, whose
+\code{struct.pack("!I", n)} writes $n$ in four big-endian bytes (the \code{!} is network order):
+
+\omcode{code/bachelor-2/16-sockets/listings/directory_client.py}{7}{22}{A client in Python: the same framing, the same
+loop}
+
+\omoutput{code/bachelor-2/16-sockets/outputs/directory_demo.txt}{The server in C, its client in
+Python.}\label{out:b2:sockets:directory}
+
+The server's \code{&} runs it in the background; it serves four connections and ends, and \code{wait} waits for it. A
+C server and a Python client agree because the protocol fixes every byte: the length's size and order, the text's
+encoding. Neither side's language matters.
+
+\section{Many clients at once}\label{sec:b2:sockets:concurrency}
+
+A server that handles one client from \code{accept} to \code{close} makes every other client wait, even when the
+first is slow to send. The calls it makes wait.
+
+\begin{definition}[Blocking call, non-blocking descriptor]\label{def:b2:sockets:blocking}
+A \emph{blocking call}\index{blocking call} waits until it can complete: \code{accept} until a client connects,
+\code{recv} until a byte has arrived. On a descriptor made \emph{non-blocking}\index{non-blocking descriptor} (flag
+\code{O_NONBLOCK}), the same calls return at once with the error \code{EAGAIN} instead of waiting.
+\end{definition}
+
+There are three classic ways to serve several clients at once.
+
+\omcode{code/bachelor-2/16-sockets/listings/servers.c}{27}{42}{A \omterm{def:b2:processes-and-system-calls:process}{process} per connection: the child serves, the
+parent accepts again}
+
+The child inherits the \omterm{def:b2:sockets:listening}{connected socket} and the parent closes its copy (the connection ends only when both have, as
+for a \omterm{def:b2:files-pipes-signals:pipe}{pipe}). The children are reaped as they end. A \omterm{def:b2:threads-and-synchronisation:thread}{thread} per connection is lighter, since a \omterm{def:b2:threads-and-synchronisation:thread}{thread} shares the
+\omterm{def:b2:processes-and-system-calls:process}{process}'s memory and is cheaper to start:
+
+\omcode{code/bachelor-2/16-sockets/listings/servers.c}{53}{64}{A \omterm{def:b2:threads-and-synchronisation:thread}{thread} per connection, detached}
+
+\begin{definition}[Event loop]\label{def:b2:sockets:event-loop}
+An \emph{event loop}\index{event loop} serves many connections from one \omterm{def:b2:threads-and-synchronisation:thread}{thread}: it asks the system, with
+\code{poll(fds, n, timeout)}, which of a set of descriptors are ready (a \code{recv} or an \code{accept} on them would
+not wait), handles each ready one briefly, and asks again. A connection's state between two events, such as a request
+received in part, is kept in a structure of the program.
+\end{definition}
+
+\omcode{code/bachelor-2/16-sockets/listings/servers.c}{69}{104}{An \omterm{def:b2:sockets:event-loop}{event loop}: one \omterm{def:b2:threads-and-synchronisation:thread}{thread}, one \code{poll}, every
+connection's state in \code{st}}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, d/.style={draw, minimum width=1.3cm, minimum height=5mm, inner sep=1pt},
+  w/.style={-{Stealth[length=1.8mm]}}]
+\node[draw, rounded corners=3pt, fill=omThm!12, minimum width=2.2cm, minimum height=9mm, align=center] (p) at (0,0)
+{\code{poll}\\ waits};
+\node[d, fill=omDef!25] (l) at (4,1.2) {listening};
+\node[d, fill=omDef!25] (a) at (4,0.4) {client A};
+\node[d] (b) at (4,-0.4) {client B};
+\node[d, fill=omDef!25] (c) at (4,-1.2) {client C};
+\foreach \x in {l,a,b,c} \draw[w, gray] (p.east) -- (\x.west);
+\node[anchor=west, align=left] at (5.0,1.2) {ready: \code{accept}, add the new socket};
+\node[anchor=west, align=left] at (5.0,0.4) {ready: \code{recv}; a whole request? answer, close};
+\node[anchor=west, align=left] at (5.0,-0.4) {not ready: skipped};
+\node[anchor=west, align=left] at (5.0,-1.2) {ready: \code{recv}; part of a request: keep it};
+\draw[w] (4,-1.6) -- ++(0,-0.35) -| node[pos=0.25, below] {then \code{poll} again} (p.south);
+\end{tikzpicture}
+\par\smallskip{\small An \omterm{def:b2:sockets:event-loop}{event loop}. One call reports every ready descriptor; each is served without waiting, and
+the loop returns to \code{poll}. Nothing blocks, so one \omterm{def:b2:threads-and-synchronisation:thread}{thread} keeps every connection moving.}
+\end{omfigure}
+
+Which is fastest? \code{loadtest.c} starts each server in a \omterm{def:b2:processes-and-system-calls:tree}{child process} and sends it 4000 connections from 8
+client \omterm{def:b2:threads-and-synchronisation:thread}{threads}, each connection with one request:
+
+\omoutput{code/bachelor-2/16-sockets/outputs/load.txt}{One run on the author's laptop: 4000 connections per
+design.}\label{out:b2:sockets:load}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=0.68\linewidth, height=4.8cm, ybar, bar width=18pt, ymin=0,
+    symbolic x coords={process,thread,poll}, xtick=data, enlarge x limits=0.3,
+    xticklabels={process per connection, thread per connection, event loop},
+    xticklabel style={font=\scriptsize}, ylabel={requests per second},
+    nodes near coords, nodes near coords style={font=\scriptsize}, scaled y ticks=false,
+    yticklabel style={/pgf/number format/1000 sep={\,}}]
+  \addplot[fill=omDef!40, draw=omDef] table[x=design, y=rate]
+    {code/bachelor-2/16-sockets/figures/designs.dat};
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The rates of \cref{out:b2:sockets:load}. Each connection costs a \code{fork}, a \omterm{def:b2:threads-and-synchronisation:thread}{thread}, or
+nothing extra; with one short request per connection, that cost is most of the work.}
+\end{omfigure}
+
+The order follows what each design pays per connection: a \omterm{def:b2:processes-and-system-calls:process}{process} (the copy of the page tables, the exit, the
+reaping), a \omterm{def:b2:threads-and-synchronisation:thread}{thread} (a stack and a scheduling entry), or an entry in an array. With long connections that carry many
+requests, the gap narrows; with thousands of idle connections, an \omterm{def:b2:sockets:event-loop}{event loop} needs no \omterm{def:b2:threads-and-synchronisation:thread}{thread} for each, which is why
+busy servers are built on it (\cref{exo:b2:sockets:11}). Its weakness is that one slow handler stops every client: a
+handler must never wait.
+
+\begin{inpractice}[Ports and restarts]
+A server restarted at once often fails with ``Address already in use'': its old connections linger for a while in the
+\code{TIME_WAIT} state, to absorb late packets. The option \code{SO_REUSEADDR}, set before \code{bind}, allows the
+bind anyway, and every server of this chapter sets it (\cref{exo:b2:sockets:12}). Ports below 1024 are reserved to
+privileged programs; servers under test use high ports. % ledger: b2:ephemeral-range
+\begin{dated}{2026}
+On Linux, a client's own port is chosen from 32\,768 to 60\,999 by default; the load test's 12\,000 short
+connections \omterm{def:b2:rust-ownership:borrow}{borrow} a good share of them for a minute.
+\end{dated}
+\end{inpractice}
+
+\section{Exercises}\label{sec:b2:sockets:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:sockets:1}
+A server sends ``ab'', then ``cd'', then closes. The client reads with a buffer of 3 bytes and prints each piece in
+brackets. List every output it may print.
+\omcode{code/bachelor-2/16-sockets/listings/exo_abcd.c}{9}{22}{Both sides}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:sockets:2}
+In \code{wrong_port.c}, compute the port the server really listens on, from the bytes of 44164, and explain why
+\code{bind} succeeded.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:sockets:3}
+Write \code{recv_all(fd, buf, n)} as specified by \cref{prop:b2:sockets:recv-all}, and \code{send_all}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:sockets:4}
+Write in hexadecimal the bytes on the wire for the framed request \code{street Mill Lane}. How many bytes does a
+\code{recv_msg} read, in how many calls to \code{recv_all}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:sockets:5}
+What does this program print, and why? What happens to the other 90 bytes?
+\omcode{code/bachelor-2/16-sockets/listings/exo_truncate.c}{19}{26}{A datagram of 100 bytes, a buffer of 10}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:sockets:6}
+This echo server spins after its client leaves. Explain the output and fix the loop.
+\omcode{code/bachelor-2/16-sockets/listings/exo_loop.c}{25}{30}{The server's loop}
+\omoutput{code/bachelor-2/16-sockets/outputs/exo_loop.txt}{The loop, stopped by its guard.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:sockets:7}
+Write a line reader, \code{lr_line(r, out, cap)}, that returns the next line of a stream without its newline, using a
+buffer of its own so that it calls \code{recv} with large sizes and never reads past what it needs to keep.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:sockets:8}
+Prove \cref{prop:b2:sockets:prefix-free} by induction on $k$. Show by an example that with a delimiter, and a message
+that contains the delimiter, decoding is not unique.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:sockets:9}
+Write a server with a \omterm{def:b2:threads-and-synchronisation:thread}{thread} per client, in which each line a client sends is answered with the number of lines
+received from all clients so far.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:sockets:10}
+Write a chat server with \code{poll}: each line a client sends is sent to every other connected client.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:sockets:11}
+Model the time per connection of each design as a fixed cost $f$ plus the cost $r$ of a request, the same for all.
+From \cref{out:b2:sockets:load}, estimate $f$ for a \omterm{def:b2:processes-and-system-calls:process}{process} and for a \omterm{def:b2:threads-and-synchronisation:thread}{thread}, taking $f = 0$ for the \omterm{def:b2:sockets:event-loop}{event loop}. How
+many requests per connection would make the \omterm{def:b2:processes-and-system-calls:process}{process} design reach 90~\% of the \omterm{def:b2:sockets:event-loop}{event loop}'s rate?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:sockets:12}
+Explain the output of this experiment, in which a server closes a connection first, ends, and then a new server binds
+the same port without and with \code{SO_REUSEADDR}.
+\omoutput{code/bachelor-2/16-sockets/outputs/reuse.txt}{Two binds, right after a server
+closed.}
+\end{exercise}
+
+\section{Problem: The town directory service}\label{sec:b2:sockets:problem}
+
+\begin{problem}[{Weekend problem --- The town directory service}]\label{pb:b2:sockets:1}
+The problem follows the directory service of \cref{out:b2:sockets:directory} from its protocol to its load test.
+
+\medskip\noindent\textbf{Part I --- The protocol.}\par\nopagebreak
+\begin{enumerate}
+\item Write the bytes of the framed request \code{who 1}, as the server receives them.
+\item What is the largest message a 4-byte length can describe? Why does \code{recv_msg} take a capacity?
+\item A client sends \code{who 1} and \code{who 2} on one connection, back to back. Can the server's first
+\code{recv} return parts of both? Why does framing make it harmless?
+\item The answer to \code{who 1} is 39 bytes long. Write its first four bytes.
+\item The Python client writes \code{struct.pack("!I", n)}. What would \code{"<I"} send instead, and what would the C
+server then read as the length of \code{who 1}?
+\item Why is the reply for an unknown request a message, rather than a closed connection?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The server.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item List the \omterm{def:b2:processes-and-system-calls:syscall}{system calls} of \code{tcp_listen}, in order, and say what each one does.
+\item What does \code{accept} return, and why is it a new descriptor rather than the listening one?
+\item In \code{handle}, what happens if a client connects and sends nothing, with each design?
+\item Use \cref{prop:b2:sockets:recv-all} to show that \code{recv_msg} returns a whole message or $-1$.
+\item \code{send_all} passes \code{MSG_NOSIGNAL}. What would happen to the server without it, when a client closes
+before its answer is sent (\cref{ch:b2:files-pipes-signals})?
+\item Why does the demo server serve exactly four connections and stop?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Concurrency, three ways.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item In \code{serve_fork}, why must the parent close \code{c}? What would happen to the clients otherwise?
+\item In \code{serve_threads}, why is the descriptor passed by value, cast to a pointer, and not as \code{&c}?
+\item The \omterm{def:b2:threads-and-synchronisation:thread}{threads} share \code{directory_answer}'s tables. Why is no \omterm{def:b2:threads-and-synchronisation:lock}{lock} needed?
+\item In \code{serve_poll}, what happens when a request arrives in two pieces?
+\item Why does \code{serve_poll} walk its array from the end when it removes entries?
+\item Which design survives a handler that crashes with a segmentation fault, and which do not?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The load test.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item How many connections does each design receive, and from how many \omterm{def:b2:threads-and-synchronisation:thread}{threads}?
+\item Why does the load test run each server in a \omterm{def:b2:processes-and-system-calls:tree}{child process} rather than a \omterm{def:b2:threads-and-synchronisation:thread}{thread} of its own?
+\item Why is the measured time taken on the clients' side?
+\item Order the designs by \cref{out:b2:sockets:load} and give the ratio of the fastest to the slowest.
+\item Why might the order change if each connection carried a thousand requests?
+\item State the result: requests per second on loopback for the three server designs, on the laptop.
+\end{enumerate}
+\end{problem}

@@ -1,0 +1,105 @@
+\section*{Chapter \ref{ch:b3:program-optimisation} --- Program Analysis and Optimisation}
+
+\begin{solution}{exo:b3:program-optimisation:1}
+After \code{s = 0}: $\{n, s\}$; after \code{sq = t3}: $\{n, s, i, sq\}$; after \code{t6 = i + 1}: $\{n, s, t6\}$, since \code{i} is overwritten by the next instruction before any read. At the entry only \code{n} is \omterm{def:b3:program-optimisation:liveness}{live}: \code{s} and \code{i} are written by the first two instructions before anything reads them (\code{exercise_1_live_variables_of_the_loop}).
+\end{solution}
+
+\begin{solution}{exo:b3:program-optimisation:2}
+With the blocks of that exercise's solution: B0 (the loop's test, also the entry) $\{0\}$; B1 $\{0, 1\}$; B2 $\{0, 2\}$; B3 $\{0, 2, 3\}$; B4 $\{0, 2, 4\}$; B6 $\{0, 2, 3, 6\}$; B7 $\{0, 2, 3, 6, 7\}$; B8 $\{0, 1, 8\}$. B5 and B9 are unreachable and have none. The immediate \omterm{def:b3:program-optimisation:dominator}{dominators} are B0 for B1 and B2, B2 for B3 and B4, B3 for B6, B6 for B7 and B1 for B8: the \omterm{def:b3:program-optimisation:dominator}{dominator} tree is the chain B0, B2, B3, B6, B7, with B4 hanging from B2, and B1, with B8 below it, from B0 (\code{exercise_2_dominators}).
+\end{solution}
+
+\begin{solution}{exo:b3:program-optimisation:3}
+\code{x} is defined in the entry B0, in the \code{then} part B2 and in the loop body B7; \code{y} in B0 and in the \code{else} part B3. The frontier of each branch of the \code{if} is the block where they join, B4; the frontier of the loop body B7 is the loop's header B5; and the frontier of B4 is empty, since B4 \omterm{def:b3:program-optimisation:dominator}{dominates} everything after it. So $\mathrm{DF}^{+}(\{\mathrm{B0}, \mathrm{B2}, \mathrm{B7}\}) = \{\mathrm{B4}, \mathrm{B5}\}$ and $\mathrm{DF}^{+}(\{\mathrm{B0}, \mathrm{B3}\}) = \{\mathrm{B4}\}$: \code{x} gets $\phi$-functions at B4 and B5, \code{y} only at B4, since the loop does not assign it:
+\[ x_2 = \phi(\mathrm{B3}{:}\,x_0, \mathrm{B2}{:}\,x_1),\quad y_2 = \phi(\mathrm{B3}{:}\,y_1, \mathrm{B2}{:}\,y_0),\quad x_3 = \phi(\mathrm{B4}{:}\,x_2, \mathrm{B7}{:}\,x_4) \]
+(\code{exercise_3_phi_placement}).
+\end{solution}
+
+\begin{solution}{exo:b3:program-optimisation:4}
+Round 1 propagates $a = 6$, folds $b = 42$ and $c = 2$, decides the branch ($2 > 1$), removes the \code{else} block and the copies that became dead. Round 2 removes the jumps and labels' instructions made pointless and the last dead temporaries, and round 3 changes nothing. What is left is \texttt{L1:}, \texttt{call print(42)}, \texttt{L3:}, \texttt{return 12}: three rounds (\code{exercise_4_folded_tac}).
+\end{solution}
+
+\begin{solution}{exo:b3:program-optimisation:5}
+Forward, the fact at a block's start is the join of the facts at the \emph{ends of its predecessors}, and the entry gets the boundary, the empty set. The transfer, still the backward rule, then adds what the block reads to what flowed in. The result is ``the temporaries read on some path from the entry to here'', a fact about the past: at the entry nothing has been read, so nothing is ``\omterm{def:b3:program-optimisation:liveness}{live}'', and after the final \code{return} everything read in the loop has been read, so \code{n}, \code{s} and \code{i} are (\code{exercise_5_liveness_the_wrong_way}). An allocator fed with these sets would see no interference at the entry and could give \code{n}'s register to \code{s}, overwriting the loop bound; the program would then loop a wrong number of times. \omterm{def:b3:program-optimisation:liveness}{Liveness} depends on the future of a point, so its facts must flow from the successors.
+\end{solution}
+
+\begin{solution}{exo:b3:program-optimisation:6}
+\code{exercises/ex6_dead_store.rs} scans forward from each store within its block. A call stops the search because the callee may read the global, and then the first store's value is needed; a load of the same global stops it for the same reason. On the test program it removes \code{g = 1} only: \code{h = 2} is followed by the call to \code{print} before \code{h} is stored again, and \code{g = 3} and \code{g = 4} are read before the next store. The program still prints 3 and exits with $5 + 4 = 9$ (\code{exercise_6_dead_stores}).
+\end{solution}
+
+\begin{solution}{exo:b3:program-optimisation:7}
+Every value computed is at least the previous value of the same block: by induction, the facts flowing in only grow, and the transfer is monotone. So the output of a block changes at most $h$ times. Each change puts at most $\mathrm{out}(b)$ blocks in the queue, its successors (or predecessors, backwards), and each visit is caused by the initial queue or by one such insertion. The visits number at most $n + \sum_b h \cdot \mathrm{out}(b) = n + h \cdot e$. For \omterm{def:b3:program-optimisation:liveness}{liveness} on \code{sumsq} the bound is $6 + 6 \times 6 = 42$ with $h = 6$ temporaries; the actual count is 12.
+\end{solution}
+
+\begin{solution}{exo:b3:program-optimisation:8}
+A \omterm{def:b3:program-optimisation:spill}{spill} is needed. \code{n}, \code{s}, \code{i} and \code{t3} are pairwise adjacent: all four are \omterm{def:b3:program-optimisation:liveness}{live} just after \code{t3 = i * i}, as the edges listed show. Four vertices pairwise adjacent need four colours. With three registers the allocator \omterm{def:b3:program-optimisation:spill}{spills} \code{n}, whose cost per neighbour is $10/5 = 2$, the smallest, and colours the rest (\code{exercise_8_three_registers_are_not_enough}).
+\end{solution}
+
+\begin{solution}{exo:b3:program-optimisation:9}
+$d(d + 3)/2$: 2, 5, 9, 14, 20 for $d = 1, \dots, 5$ (\code{exercise_9_phis_of_nested_loops}). \code{s} is assigned in the innermost body, whose iterated frontier contains every header: $d$ $\phi$-functions. The counter of the loop at depth $j$ is assigned before its loop, in the body of the loop at depth $j - 1$, and at the end of its own body; the iterated frontier of these blocks is its own header and the headers of the $j - 1$ loops around it: $j$ $\phi$-functions, $d(d+1)/2$ in all. Only $2d$ are useful: \code{s} is \omterm{def:b3:program-optimisation:liveness}{live} at every header, and each counter at its own header; at the headers of the outer loops the counter is dead, since it is reset before being read. Placing $\phi$-functions only where the variable is \omterm{def:b3:program-optimisation:liveness}{live} gives the \emph{pruned} SSA form, with $2d$.
+\end{solution}
+
+\begin{solution}{exo:b3:program-optimisation:10}
+Let $x_1 = \{a \mapsto 2, b \mapsto 3\}$ and $x_2 = \{a \mapsto 3, b \mapsto 2\}$ be the facts at the end of the two branches, and $f$ the transfer of \code{x = a + b}. Then $f(x_1) \sqcup f(x_2)$ maps $x$ to $5 \sqcup 5 = 5$, but $f(x_1 \sqcup x_2) = f(\{a \mapsto \top, b \mapsto \top\})$ maps $x$ to $\top$ (\code{exercise_10_not_distributive}).
+
+For the theorem, let $\mathrm{MOP}(b)$ be the join over all paths $p$ from the entry to $b$ of $f_p(\mathit{boundary})$, $f_p$ being the composition of the transfers along $p$; the lattice has finite height, so this join is a finite one. First, $\mathrm{MOP} \sqsubseteq$ the \omterm{def:b3:program-optimisation:lfp}{least fixed point} $X$ in any \omterm{def:b3:program-optimisation:framework}{monotone framework}: by induction on the length of $p$, $f_p(\mathit{boundary}) \sqsubseteq X(b)$, since each step applies a monotone transfer and $X$ satisfies the equations. Second, if every $f_B$ distributes over joins, MOP satisfies the equations: the join over the predecessors $P$ of $f_P(\mathrm{MOP}(P))$ is the join over $P$ of the join over the paths to $P$ of $f_P(f_p(\mathit{boundary}))$, which is the join over all paths to $b$. So MOP is a \omterm{def:b3:program-optimisation:lfp}{fixed point}, and the \omterm{def:b3:program-optimisation:lfp}{least fixed point} is below it. The two are equal. For \omterm{def:b3:program-optimisation:constprop}{constant propagation} the \omterm{def:b3:program-optimisation:lfp}{least fixed point} can be strictly above MOP, as the example shows: the analysis loses facts that hold on every path, because it joins before applying the transfer.
+\end{solution}
+
+\begin{solution}{exo:b3:program-optimisation:11}
+A vertex is \emph{simplicial} if its neighbours form a clique. Claim: a chordal graph that is not complete has two non-adjacent simplicial vertices, and a complete one has every vertex simplicial. By induction on the number of vertices: if $G$ is not complete, take non-adjacent $a, b$ and a minimal set $S$ separating them. $S$ is a clique: for $u, v \in S$, both have neighbours in the component $A$ of $a$ and in the component $B$ of $b$ of $G - S$ (otherwise $S$ would not be minimal), so there are shortest paths $u \dots v$ through $A$ and through $B$; together they form a cycle of length at least 4 whose only possible chord is $uv$, since $A$ and $B$ are not joined. By induction, $G[A \cup S]$ has a simplicial vertex in $A$ (two non-adjacent ones if it is not complete, and they cannot both be in the clique $S$; if it is complete, any vertex of $A$), and its neighbours in $G$ are all in $A \cup S$, so it is simplicial in $G$; the same in $B$.
+
+A simplicial vertex in a graph whose largest clique has $\omega$ vertices has at most $\omega - 1$ neighbours. Removing a vertex leaves a chordal graph, an induced subgraph. So if $k \ge \omega$, simplify always finds a vertex of degree less than $k$, never \omterm{def:b3:program-optimisation:spill}{spills}, and colours the graph with $\omega$ colours, which a clique of $\omega$ vertices needs anyway. For an SSA program the vertices of a clique are temporaries \omterm{def:b3:program-optimisation:liveness}{live} together at one point (the \omterm{def:b3:program-optimisation:reaching}{definition} of the one defined last, which the others' \omterm{def:b3:program-optimisation:reaching}{definitions} dominate), so $\omega$ is the largest number of temporaries \omterm{def:b3:program-optimisation:liveness}{live} at one point, and that many registers are necessary and sufficient.
+\end{solution}
+
+\begin{solution}{exo:b3:program-optimisation:12}
+\code{exercises/ex12_licm.rs} finds the loops by their back edges, as in the text, and moves one candidate at a time until none is left. Moving the operation before the loop executes it even when the loop body would not run; this is safe because the operation has no effect but its result, and in Moor no arithmetic traps: division by zero gives $-1$, as on the processor. In a language where division by zero stops the program, only an operation that \omterm{def:b3:program-optimisation:dominator}{dominates} the loop's exits, or whose divisor is known to be non-zero, could be moved. On the test, \code{t6 = t0 * t2} moves before \code{L1:}; with $a = 6$ and $b = 7$ both versions print $\sum_{i < 100} (42 + i) = 9150$, and the moved one executes 396 fewer instructions, 4 per iteration (two loads, the multiplication, a store) minus the 4 executed once before the loop (\code{exercise_12_loop_invariant_code_motion}).
+\end{solution}
+
+\begin{solution}{pb:b3:program-optimisation:1}
+\textbf{1.} \code{n}, \code{i}, \code{total}, \code{count}, \code{worst}, \code{day_rate}, \code{week_rate} and \code{cap}: each is read in the loop before being written, or after it. \code{days} and \code{fine} are written at the top of the body before any read.
+
+\textbf{2.} \omterm{def:b3:program-optimisation:constprop}{Constant propagation}: the three are 10, 25 and 500 on every path, so their uses became constants (\code{7 * day_rate} folded to 70), and dead-code elimination removed their now unread copies.
+
+\textbf{3.} \code{fine} is read after the test: added to \code{total} and compared with \code{worst}. \code{days} (\code{t11}) is read only to compute \code{fine}; after the last such read no path reads it again.
+
+\textbf{4.} Seven, for instance just after \code{fine = 0}: \code{t0}, \code{i}, \code{total}, \code{count}, \code{worst}, \code{t11} and \code{fine}.
+
+\textbf{5.} It is defined by \code{read} and read at once by the store into \code{late[i]}; between the two, only \code{t0} and \code{i} are \omterm{def:b3:program-optimisation:liveness}{live}.
+
+\textbf{6.} Each use or \omterm{def:b3:program-optimisation:reaching}{definition} of \code{i} weighted by $10^{\text{depth}}$: in each loop, the test, the index, the increment and the copy back, four times 10; two loops, 80; plus the two \code{i = 0} outside any loop, 1 each: 82.
+
+\textbf{7.} The seven of question 4: each pair is an edge in \cref{out:b3:program-optimisation:pbgraph}. Seven registers are needed to avoid spilling.
+
+\textbf{8.} \code{fine} has colour 1; its neighbours \code{t0}, \code{i}, \code{total}, \code{count}, \code{worst}, \code{t11}, \code{t19} and \code{t20} have colours 5, 6, 4, 3, 2, 0, 0 and 0: none has 1.
+
+\textbf{9.} No two of them interfere: each \omterm{def:b3:program-optimisation:liveness}{lives} from its \omterm{def:b3:program-optimisation:reaching}{definition} to its few uses, and none of the others is defined in between (the graph has no edge among them). Their neighbours are among the six long-lived temporaries \code{t0}, \code{i}, \code{total}, \code{count}, \code{worst} and \code{fine}, which select colours 5, 6, 4, 3, 2 and 1, so colour 0 is free for all ten.
+
+\textbf{10.} Seven: \code{s1} to \code{s7}, all saved in the prologue and restored in the epilogue. \code{ra} is not saved, since the function calls nothing: the built-ins are system calls.
+
+\textbf{11.} \code{total} and \code{count} are both \omterm{def:b3:program-optimisation:liveness}{live} throughout the loop: an edge. \code{t14} and \code{t16} are in different branches of the \code{if}; neither is \omterm{def:b3:program-optimisation:liveness}{live} where the other is defined.
+
+\textbf{12.} In the order of the temporaries' numbers, the first vertex of degree less than 7 is \code{t3} (degree 2), then \code{t4} (degree 1), then \code{t11}, whose degree is 6.
+
+\textbf{13.} \code{t0}. When simplify gets stuck, the remaining vertices all have six neighbours or more; \code{t0} costs 21 for fifteen neighbours, the least cost per neighbour, since it is read only in the two loop tests: $21/15 = 1.4$, against $22/12$ for \code{total} and 82/13 for \code{i}.
+
+\textbf{14.} One load per evaluation of each loop's test, 379 each: 758 more, minus the restore of the seventh \code{s} register, no longer used: $385 + 758 - 1 = 1142$. In the hot loop, $378 + 379 = 757$ loads and stores. The \omterm{def:b3:program-optimisation:spill}{spill}'s store replaces that register's save: the stores stay at 385.
+
+\textbf{15.} \code{total} is \omterm{def:b3:program-optimisation:spill}{spilled} next (\code{color_demo} with $k = 5$ confirms it): one load and one store per iteration, 378 each, which is the step from 1142 to 1520 loads and 385 to 763 stores; its store at \code{total = 0} and its load for \code{print} replace the save and the restore of the register no longer used. With four registers \code{worst} follows, with three nothing new but a different colouring (\code{t0}, \code{total}, \code{count} and \code{worst} are \omterm{def:b3:program-optimisation:spill}{spilled}).
+
+\textbf{16.} The largest clique has seven vertices and simplify finds a colouring with seven colours; with $k \ge 7$ it never gets stuck and select uses the lowest colours, so the allocation, and the code, are the same. With six, a \omterm{def:b3:program-optimisation:spill}{spill} is unavoidable.
+
+\textbf{17.} The one register still holds \code{fine} and the short-lived temporaries that do not interfere with it, so part of the arithmetic of the loop stays in a register. A \omterm{def:b3:program-optimisation:spill}{spilled} temporary costs a load per use and a store per \omterm{def:b3:program-optimisation:reaching}{definition}, as at \code{-O1}, but the operands in the register cost nothing, and the \omterm{def:b3:code-generation:selection}{code generator} of \code{-O2} also uses \code{zero} for the constant 0, immediate forms, and computes a result straight into its location.
+
+\textbf{18.} Instructions: 11,815 for 7 to 12 registers, then 12,484, 12,861, 13,238, 13,411, 15,182 and 17,452 for 6 down to 1. The largest step is from 2 registers to 1 (2,270), which \omterm{def:b3:program-optimisation:spill}{spills} the loop counter \code{i}, then from 3 to 2 (1,771), which \omterm{def:b3:program-optimisation:spill}{spills} \code{days} (\code{t11}) and two short-lived temporaries.
+
+\textbf{19.} In the hot loop, loads and stores go from 9,125 to 7,974, 12.6\,\% fewer, and instructions from 15,296 to 14,272, 6.7\,\% fewer: the constants and some copies are gone, but every temporary still goes through memory.
+
+\textbf{20.} From 7,974 loads and stores to 378, 95.3\,\% fewer; from 14,272 instructions to 7,233, 49.3\,\% fewer. Over the whole run, 11,767 to 770 (93.5\,\%) and 21,496 to 11,815 (45.0\,\%): the first loop's \code{read} calls and stores are work the allocator cannot remove.
+
+\textbf{21.} 378 loads of \code{late[i]} in the hot loop and 7 restores; 378 stores into \code{late[i]} in the first loop and 7 saves.
+
+\textbf{22.} $14{,}272/378 \approx 37.8$ at \code{-O1} and $7{,}233/378 \approx 19.1$ at \code{-O2}, the loop's test counting 379 times in both.
+
+\textbf{23.} The hot loop executes 935 \code{mv} instructions: the copies back into \code{i} and \code{total} on every iteration (378 each), into \code{count} and \code{fine} for late loans, and \code{worst = fine} five times. All but the last connect temporaries that do not interfere, so coalescing would remove about 930 of 7,233 instructions, 13\,\%. \code{worst = fine} must stay: both are \omterm{def:b3:program-optimisation:liveness}{live} afterwards.
+
+\textbf{24.} On the billing loop, graph-colouring allocation removes 95.3\,\% of the loads and stores and 49.3\,\% of all instructions executed (93.5\,\% and 45.0\,\% over the whole run). What is left is the essential memory traffic, one load of \code{late[i]} per loan, the arithmetic, the branches, and the copies that coalescing would remove. Seven registers suffice because at most seven temporaries are \omterm{def:b3:program-optimisation:liveness}{live} at once; below that, each \omterm{def:b3:program-optimisation:spill}{spilled} temporary costs about one access per use in the loop.
+\end{solution}

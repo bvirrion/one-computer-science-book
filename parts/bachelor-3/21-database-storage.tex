@@ -1,0 +1,310 @@
+\chapter{Database Storage and Indexes}\label{ch:b3:database-storage}
+
+A table of the town's loans is, to the programmer who queries it, a set of rows. To the disk it is a file of pages, and the price of every query is the number of pages it reads and writes. This chapter builds that file from the bottom: the \omterm{def:b3:database-storage:page}{slotted page} that holds records, the \omterm{def:b3:database-storage:buffer}{buffer pool} that keeps hot pages in memory, and three kinds of index on top of them, the \omterm{def:b3:database-storage:bptree}{B+ tree}, the hash index and the \omterm{def:b3:database-storage:lsm}{log-structured merge tree}. Every structure counts its page reads, so that each claim about cost is a number printed by a program. The chapter ends with SQLite, whose file is read byte by byte and whose query planner is watched choosing an index on the town's loans.
+
+\begin{recall}
+A balanced search tree keeps $n$ keys in sorted order with height $O(\log n)$; a hash table finds a key in expected constant time (Year~1 volume). A Bloom filter answers ``maybe present'' or ``certainly absent'' with a few bits per key and a tunable false-positive rate (Year~2 volume). A relational table is a set of rows queried with SQL, and an index on a column makes lookups on that column fast (Year~1 and Year~2 volumes). The \omterm{def:b3:virtual-memory:replacement}{clock algorithm} approximates least-recently-used replacement with one reference bit per frame (\cref{def:b3:virtual-memory:replacement}). \omterm{def:b3:file-systems:flash}{Write amplification} is the ratio of bytes physically written to bytes the program asked to write (\cref{def:b3:file-systems:flash}).
+\end{recall}
+
+\section{Pages, records and the buffer pool}\label{sec:b3:database-storage:pages}
+
+\begin{definition}[Database page, slotted page, record identifier]\label{def:b3:database-storage:page}
+A \emph{database page}\index{database page} is the unit in which a database file is read and written: a fixed number of bytes, here 4,096, at a known position in the file. A \emph{slotted page}\index{slotted page} stores variable-length records in a page: a header, then a \emph{slot array} growing from the front, one entry (offset, length) per record, then free space, then the records themselves, growing from the back of the page. A \emph{record identifier}\index{record identifier} is the pair (page number, slot number); it names a record for as long as it lives, wherever the record moves inside its page.
+\end{definition}
+
+The slot array is the indirection that makes \omterm{def:b3:database-storage:page}{record identifiers} stable: an index can point to (17, 3) and the page is free to slide its records around to merge free space, since only the slot's offset changes. \code{pagefile.py} is the file of the chapter, kept in memory but counting every page read and write; \code{slotted.py} lays out one page with a 4-byte header (the number of slots, the start of the records) and 4-byte slots.
+
+\omcode{code/bachelor-3/21-database-storage/listings/pagefile.py}{4}{22}{A file of pages that counts its reads and writes.}\label{lst:b3:database-storage:pagefile}
+
+\omcode{code/bachelor-3/21-database-storage/listings/slotted.py}{29}{47}{A \omterm{def:b3:database-storage:page}{slotted page}: insert reuses an empty slot or grows the array; delete empties the slot.}\label{lst:b3:database-storage:slotted}
+
+\omoutput{code/bachelor-3/21-database-storage/outputs/slotted_demo.txt}{Five of the town's people in one page. The insertion reuses slot 1; compaction moves records but keeps every slot number, so record 4 is found again.}\label{out:b3:database-storage:slotted}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, cell/.style={draw, minimum height=0.8cm, inner sep=1pt}]
+  \node[cell, fill=omDef!25, minimum width=0.9cm, anchor=west] (h) at (0, 0) {hdr};
+  \foreach \i/\x in {0/0.9, 1/1.6, 2/2.3, 3/3.0, 4/3.7} {
+    \node[cell, fill=omDef!10, minimum width=0.7cm, anchor=west] (s\i) at (\x, 0) {\i};
+  }
+  \node[cell, minimum width=3.2cm, anchor=west] at (4.4, 0) {free space};
+  \foreach \i/\x/\w in {4/7.6/1.0, 3/8.6/1.0, 2/9.6/0.8, 1/10.4/1.06, 0/11.46/1.14} {
+    \node[cell, fill=omThm!15, minimum width=\w cm, anchor=west] (r\i) at (\x, 0) {r\i};
+  }
+  \foreach \i in {0, ..., 4} { \draw[->, omDef] (s\i.north) to[bend left=28] (r\i.north); }
+  \node[font=\scriptsize, anchor=north] at (0, -0.45) {0};
+  \node[font=\scriptsize, anchor=north] at (0.9, -0.45) {4};
+  \node[font=\scriptsize, anchor=north] at (4.4, -0.45) {24};
+  \node[font=\scriptsize, anchor=north] at (7.6, -0.45) {4021};
+  \node[font=\scriptsize, anchor=north] at (12.6, -0.45) {4096};
+  \draw[->] (4.6, -1.15) -- node[below, font=\scriptsize] {slots grow} (5.8, -1.15);
+  \draw[->] (7.4, -1.15) -- node[below, font=\scriptsize] {records grow} (6.2, -1.15);
+\end{tikzpicture}
+\par\smallskip{\small The first page of \cref{out:b3:database-storage:slotted}, not to scale: a 4-byte header, five 4-byte slots ending at byte 24, 3,997 free bytes, and the records from byte 4,021 to the end, record 0 last.}
+\end{omfigure}
+
+A database cannot keep its file in memory, and cannot afford to read a page from disk at each access either. It keeps a fixed number of page-sized \emph{frames} in memory and caches pages in them.
+
+\begin{definition}[Buffer pool, pin count, dirty page]\label{def:b3:database-storage:buffer}
+A \emph{buffer pool}\index{buffer pool} is a fixed set of frames in memory, each holding one page of the database file, with a table from page numbers to frames. A frame's \emph{pin count}\index{pin count} is the number of users currently holding its page; a pinned frame is never chosen for replacement. A \emph{dirty page}\index{dirty page} is a page changed in its frame and not yet written back; it is written to the file before its frame is reused.
+\end{definition}
+
+The \omterm{def:b3:database-storage:buffer}{buffer pool} is the operating system's page cache moved into the database, which then decides itself when a page goes to disk: a write-ahead log, told in \cref{ch:b3:transactions-and-recovery}, needs exactly that control. Victims are chosen by the \omterm{def:b3:virtual-memory:replacement}{clock algorithm}, skipping pinned frames.
+
+\omcode{code/bachelor-3/21-database-storage/listings/bufferpool.py}{18}{51}{Fetch, unpin and the clock: a miss writes back a dirty victim before reading the page.}\label{lst:b3:database-storage:bufferpool}
+
+\omoutput{code/bachelor-3/21-database-storage/outputs/buffer_demo.txt}{Hit rate against pool size on 50,000 accesses to 1,000 pages, 80\,\% of them to a hot fifth. One access in ten changes its page.}\label{out:b3:database-storage:buffer}
+
+With 200 frames the pool is as large as the hot set, yet hits only 61\,\% of the time: the cold accesses keep evicting hot pages. Twice the hot set gives 86\,\%, and a pool as large as the file misses only on the first touch of each page, 1,000 reads in all. Page writes fall with the pool too, since a page changed ten times in its frame is written once.
+
+SQLite, the database inside Python's \code{sqlite3} module, documents its file format exactly, and the file can be read with nothing more than \code{struct}. The first 100 bytes of page 1 are the file header, every integer big-endian: the string \texttt{SQLite format 3} and a zero byte, the page size at offset 16, the size of the database in pages at offset 28, the text encoding at offset 56. % ledger: b3:sqlite-header
+Its pages are slotted too: after a page header of 8 or 12 bytes comes a \emph{cell pointer array}, then unallocated space, then the cells, the records, at the end of the page. % ledger: b3:sqlite-btree-page
+The default page size has been 4,096 bytes since version 3.12.0 of 2016; it was almost always 1,024 before. % ledger: b3:sqlite-page-size
+
+\omcode{code/bachelor-3/21-database-storage/listings/sqlite_header.py}{21}{32}{The header fields decoded at the offsets of the format's documentation.}\label{lst:b3:database-storage:sqlite-header}
+
+\omoutput{code/bachelor-3/21-database-storage/outputs/sqlite_header.txt}{A table of 2,000 short rows takes nine pages of 4,096 bytes; the header's page count agrees with the file's size.}\label{out:b3:database-storage:sqlite-header}
+
+\section{B+ trees}\label{sec:b3:database-storage:bptree}
+
+A search tree on disk should be short and wide: every node visited is a page read, so a node should fill a page and have as many children as a page can name. Rudolf Bayer and Edward McCreight published such trees in 1972 for the indexes of large files; Douglas Comer's survey of 1979 calls them ubiquitous and describes the variant that keeps every record in the leaves, the \omterm{def:b3:database-storage:bptree}{B+ tree}. % ledger: b3:bayer-mccreight-1972, b3:comer-1979
+
+\begin{definition}[B+ tree, order, fill factor, node split, bulk loading]\label{def:b3:database-storage:bptree}
+A \emph{B+ tree}\index{B+ tree} of \emph{order}\index{order (of a B+ tree)} $m \ge 3$ is a search tree whose nodes are pages. An internal node holds $k$ sorted keys and $k + 1$ children, at most $m$ children; the subtree left of key $K$ holds keys less than $K$, the subtree right of it keys at least $K$. The leaves hold the (key, value) pairs, at most $m - 1$ of them, all at the same depth and chained left to right. Every node except the root has at least $\lceil m/2 \rceil$ children (internal) or $\lceil (m - 1)/2 \rceil$ pairs (leaf). The \emph{fill factor}\index{fill factor} is the fraction of a node's capacity in use. A \emph{node split}\index{node split} divides an overfull node into two and adds a separating key to the parent. \emph{Bulk loading}\index{bulk loading} builds a tree from sorted pairs bottom up, filling leaves in order and then each level above, without a split.
+\end{definition}
+
+Search follows one path from the root: at each internal node, the child after the last key at most the searched key.
+
+\omcode{code/bachelor-3/21-database-storage/listings/bptree.py}{27}{36}{Search: one page read per level.}\label{lst:b3:database-storage:search}
+
+Insertion puts the pair in its leaf. A leaf that overflows splits in two and \emph{copies} its right half's first key up into the parent, since that key must stay in a leaf with its value; an internal node that overflows splits around its middle key and \emph{moves} that key up, keeping it in neither half. A split may climb to the root, and a root that splits gives the tree a new root, one level higher: a \omterm{def:b3:database-storage:bptree}{B+ tree} grows at the top, which is why all its leaves stay at the same depth.
+
+\omcode{code/bachelor-3/21-database-storage/listings/bptree.py}{51}{78}{Insertion: recurse to the leaf, and pass a split back up.}\label{lst:b3:database-storage:insert}
+
+\omcode{code/bachelor-3/21-database-storage/listings/bptree.py}{80}{96}{The two splits: a leaf key is copied up, an internal key is moved up.}\label{lst:b3:database-storage:split}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, nd/.style={draw, fill=omDef!10, minimum height=0.6cm, inner sep=3pt}, lf/.style={draw, fill=omThm!12, minimum height=0.6cm, inner sep=3pt}]
+  \node[nd] (r) at (5.4, 3.0) {35};
+  \node[nd] (a) at (2.6, 1.6) {15 \quad 25};
+  \node[nd] (b) at (9.0, 1.6) {45};
+  \node[lf] (l0) at (0, 0) {5 \quad 10};
+  \node[lf] (l1) at (2.6, 0) {15 \quad 20};
+  \node[lf] (l2) at (5.2, 0) {25 \quad 30};
+  \node[lf] (l3) at (7.8, 0) {35 \quad 40};
+  \node[lf] (l4) at (10.2, 0) {45 \quad 50};
+  \draw (r) -- (a); \draw (r) -- (b);
+  \draw (a) -- (l0); \draw (a) -- (l1); \draw (a) -- (l2);
+  \draw (b) -- (l3); \draw (b) -- (l4);
+  \draw[->, omDef] (l0) -- (l1); \draw[->, omDef] (l1) -- (l2);
+  \draw[->, omDef] (l2) -- (l3); \draw[->, omDef] (l3) -- (l4);
+\end{tikzpicture}
+\par\smallskip{\small The order-4 tree of \cref{out:b3:database-storage:bptree} after inserting 5, 15, 25, 35, 45, 20, 30, 10, 40, 50. Every key of an internal node is also in a leaf, the first of the leaf to its right; the leaf chain carries range scans.}
+\end{omfigure}
+
+\begin{theorem}[Height of a B+ tree]\label{thm:b3:database-storage:height}
+A \omterm{def:b3:database-storage:bptree}{B+ tree} of \omterm{def:b3:database-storage:bptree}{order} $m$ with $n \ge 1$ keys and $h \ge 2$ levels satisfies $n \ge 2 \lceil m/2 \rceil^{h-2} \lceil (m-1)/2 \rceil$, so
+\[ h \le 2 + \log_{\lceil m/2 \rceil} \frac{n}{2 \lceil (m-1)/2 \rceil}, \qquad\text{which for even } m \text{ is } h \le 1 + \log_{m/2} \frac{n}{2}. \]
+A search reads $h$ pages, $O(\log_m n)$, and an insertion reads $h$ and writes at most $2h + 1$.
+\end{theorem}
+
+\begin{proof}
+The root, being internal when $h \ge 2$, has at least 2 children. Each internal node on the $h - 2$ levels below it has at least $\lceil m/2 \rceil$ children, so there are at least $2 \lceil m/2 \rceil^{h-2}$ leaves, each with at least $\lceil (m-1)/2 \rceil$ keys. Taking logarithms gives the bound on $h$. For even $m$, $\lceil (m-1)/2 \rceil = m/2$ and $\log_{m/2}(n/m) = \log_{m/2}(n/2) - 1$. An insertion reads the $h$ nodes of its path; each split writes the node, its new sibling and, at the top, a new root.
+\end{proof}
+
+\omoutput{code/bachelor-3/21-database-storage/outputs/bptree_demo.txt}{100,000 keys in pages of 4,096 bytes: three levels either way. Random insertion leaves the leaves about three-quarters full, so a range scan reads more leaves than after \omterm{def:b3:database-storage:bptree}{bulk loading}. Below, the order-4 tree of the figure, page by page.}\label{out:b3:database-storage:bptree}
+
+The \omterm{def:b3:database-storage:bptree}{order} comes from the page format: with a 16-byte node header, 8-byte keys and 8-byte page numbers, an internal node names $(4096 - 16)/16 = 255$ children. A tree of 100,000 keys therefore has a root, a level of at most 255 nodes and the leaves: every lookup costs 3 page reads, as counted. A range scan descends once and then follows the leaf chain, one page per leaf: 10,000 keys in 52 reads after random insertion, 42 after \omterm{def:b3:database-storage:bptree}{bulk loading}, whose leaves are full.
+
+\omcode{code/bachelor-3/21-database-storage/listings/bptree.py}{105}{134}{\omterm{def:b3:database-storage:bptree}{Bulk loading}: leaves of near-equal size, then each level above, one page write per node.}\label{lst:b3:database-storage:bulk}
+
+Deletion is insertion run backwards: a node left below its minimum borrows an entry from a sibling that can spare one, or else merges with a sibling, which removes a key from the parent and may make the parent too small in turn; a root left with a single child is replaced by it, and the tree shrinks at the top. \Cref{exo:b3:database-storage:6} writes it.
+
+\section{Hash indexes}\label{sec:b3:database-storage:hashing}
+
+A \omterm{def:b3:database-storage:bptree}{B+ tree} answers ranges; when only equality is ever asked, a hash index finds a key in about one page read whatever the size of the file.
+
+\begin{definition}[Static hashing, extendible hashing, linear hashing]\label{def:b3:database-storage:hashing}
+\emph{Static hashing}\index{static hashing} sends key $k$ to bucket $h(k) \bmod N$ for a fixed number $N$ of bucket pages; a full bucket chains overflow pages. \emph{Extendible hashing}\index{extendible hashing} keeps a \emph{directory} of $2^d$ pointers indexed by the last $d$ bits of $h(k)$, the \emph{global depth}; each bucket has a \emph{local depth} $d' \le d$, the number of bits its keys share, and is named by $2^{d-d'}$ directory entries. A full bucket splits on bit $d'$; if $d' = d$, the directory doubles first. \emph{Linear hashing}\index{linear hashing} has no directory: buckets split one at a time, in a fixed round-robin order, whenever the load passes a threshold, and a bucket already split in the current round is addressed with one more bit.
+\end{definition}
+
+\omterm{def:b3:database-storage:hashing}{Extendible hashing} was published by Ronald Fagin, Jurg Nievergelt, Nicholas Pippenger and Raymond Strong in 1979, \omterm{def:b3:database-storage:hashing}{linear hashing} by Witold Litwin in 1980. % ledger: b3:fagin-1979, b3:litwin-1980
+Neither rehashes the whole file when it grows: a split moves the keys of one bucket only. \omterm{def:b3:database-storage:hashing}{Extendible hashing} pays with a directory, which doubles; \omterm{def:b3:database-storage:hashing}{linear hashing} pays with overflow pages on the buckets whose turn to split has not yet come.
+
+\omcode{code/bachelor-3/21-database-storage/listings/extendible.py}{18}{36}{\omterm{def:b3:database-storage:hashing}{Extendible hashing}: double the directory if needed, then split one bucket on its next bit.}\label{lst:b3:database-storage:extendible}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, dir/.style={draw, minimum width=0.9cm, minimum height=0.5cm, inner sep=1pt}, bk/.style={draw, fill=omThm!12, minimum width=1.9cm, minimum height=0.5cm, inner sep=2pt}]
+  \node at (0.45, 1.6) {$d = 1$};
+  \node[dir] (a0) at (0.45, 0.7) {0}; \node[dir] (a1) at (0.45, 0.2) {1};
+  \node[bk] (ba) at (3.0, 0.9) {4, 16}; \node[font=\scriptsize, anchor=west] at (4.0, 0.9) {$d' = 1$};
+  \node[bk] (bb) at (3.0, 0.0) {1, 9}; \node[font=\scriptsize, anchor=west] at (4.0, 0.0) {$d' = 1$};
+  \draw[->] (a0.east) -- (ba.west); \draw[->] (a1.east) -- (bb.west);
+  \draw[->, thick, omDef] (5.0, 0.45) -- node[above, font=\scriptsize] {insert 3} (6.3, 0.45);
+  \node at (7.15, 1.6) {$d = 2$};
+  \node[dir] (c0) at (7.15, 1.0) {00}; \node[dir] (c1) at (7.15, 0.5) {01};
+  \node[dir] (c2) at (7.15, 0.0) {10}; \node[dir] (c3) at (7.15, -0.5) {11};
+  \node[bk] (d0) at (9.9, 1.0) {4, 16}; \node[font=\scriptsize, anchor=west] at (10.9, 1.0) {$d' = 1$};
+  \node[bk] (d1) at (9.9, 0.1) {1, 9}; \node[font=\scriptsize, anchor=west] at (10.9, 0.1) {$d' = 2$};
+  \node[bk] (d3) at (9.9, -0.8) {3}; \node[font=\scriptsize, anchor=west] at (10.9, -0.8) {$d' = 2$};
+  \draw[->] (c0.east) -- (d0.west); \draw[->] (c2.east) -- (d0.west);
+  \draw[->] (c1.east) -- (d1.west); \draw[->] (c3.east) -- (d3.west);
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b3:database-storage:hashing}{Extendible hashing} with buckets of two keys and $h(k) = k$. Inserting 3 (binary 11) into the full bucket of the keys ending in 1 needs a second bit: the directory doubles, the bucket splits into 01 and 11, and bucket 0, still of local depth 1, is now named by two entries.}
+\end{omfigure}
+
+\omoutput{code/bachelor-3/21-database-storage/outputs/extendible.txt}{The same keys with eight insertions, each bucket printed once under the bits its keys share. The keys 1, 9 and 25 agree on their last three bits, so inserting 25 doubles the directory three times; a good hash, below, keeps the directory as small as the buckets need.}\label{out:b3:database-storage:extendible}
+
+With $h(k) = k$, keys that agree on many low bits pile into one bucket and blow the directory up, eight entries for one split; the eight insertions end with 16 directory entries for 8 buckets. With a multiplicative hash, 100,000 keys in buckets of 64 need 2,048 directory entries and 2,048 buckets: one page read per lookup when the directory is in memory. \Cref{exo:b3:database-storage:11} builds \omterm{def:b3:database-storage:hashing}{linear hashing}.
+
+A hash index cannot answer \texttt{WHERE out\_date > '2025-06-01'}: neighbouring keys land in unrelated buckets. That is why the \omterm{def:b3:database-storage:bptree}{B+ tree} is the default index of almost every database, and a hash index the special case.
+
+\section{Log-structured merge trees}\label{sec:b3:database-storage:lsm}
+
+A \omterm{def:b3:database-storage:bptree}{B+ tree} updates pages in place: each insertion reads a path and writes at least a leaf, a random write. When writes dominate, it is cheaper to write only in large \omterm{def:b3:database-storage:lsm}{sorted runs}, the idea of the \omterm{def:b3:file-systems:lfs}{log-structured file system} of \cref{ch:b3:file-systems} applied to an index.
+
+\begin{definition}[Log-structured merge tree, memtable, sorted run, read amplification]\label{def:b3:database-storage:lsm}
+A \emph{log-structured merge tree}\index{log-structured merge tree} keeps recent writes in a \emph{memtable}\index{memtable}, a sorted structure in memory. A full memtable is written to disk as a \emph{sorted run}\index{sorted run}, an immutable file of pairs in key order. Runs are organised in levels $0, 1, 2, \ldots$ of growing capacity, each a size ratio $T$ larger than the one above; compaction (Year~2 volume), here, merges the runs of a level into the next, the newest value of a key winning, and rewrites the result. A lookup searches the memtable, then the levels from the newest; the \emph{read amplification}\index{read amplification} is the number of runs, or pages, a lookup reads.
+\end{definition}
+
+Patrick O'Neil, Edward Cheng, Dieter Gawlick and Elizabeth O'Neil published the structure in 1996. % ledger: b3:oneil-1996
+Its price is paid twice. An entry is rewritten at every compaction that touches its level: that is \omterm{def:b3:file-systems:flash}{write amplification}, here counted in entries. And a lookup may have to look in every level: \omterm{def:b3:database-storage:lsm}{read amplification}. A Bloom filter per run cuts the second, since a run that certainly lacks the key is not read.
+
+\omcode{code/bachelor-3/21-database-storage/listings/lsm.py}{39}{70}{A levelled LSM tree: level $i$ holds at most $C T^{i+1}$ entries and is merged down when it overflows.}\label{lst:b3:database-storage:lsm}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, run/.style={draw, fill=omThm!12, minimum height=0.55cm, inner sep=2pt, anchor=west}]
+  \node[draw, fill=omDef!15, minimum width=2.0cm, minimum height=0.55cm, anchor=west] (m) at (0, 3.0) {memtable};
+  \node[anchor=west, font=\scriptsize] at (2.2, 3.0) {$C$ entries};
+  \draw[dashed] (-0.5, 2.45) -- (11.2, 2.45);
+  \node[anchor=south east, font=\scriptsize] at (11.2, 2.45) {memory};
+  \node[anchor=north east, font=\scriptsize] at (11.2, 2.45) {disk};
+  \node[run, minimum width=2.0cm] (l0) at (0, 1.8) {level 0};
+  \node[run, minimum width=4.5cm] (l1) at (0, 0.9) {level 1};
+  \node[run, minimum width=10.0cm] (l2) at (0, 0.0) {level 2};
+  \node[anchor=west, font=\scriptsize] at (2.2, 1.8) {at most $C T$};
+  \node[anchor=west, font=\scriptsize] at (4.7, 0.9) {at most $C T^2$};
+  \draw[->, omDef, thick] (-0.2, 3.0) to[bend right=40] node[left, pos=0.25, font=\scriptsize] {flush} (-0.2, 1.8);
+  \draw[->, omDef, thick] (-0.2, 1.8) to[bend right=40] node[left, font=\scriptsize] {merge} (-0.2, 0.9);
+  \draw[->, omDef, thick] (-0.2, 0.9) to[bend right=40] node[left, font=\scriptsize] {merge} (-0.2, 0.0);
+\end{tikzpicture}
+\par\smallskip{\small A levelled LSM tree: each level is one \omterm{def:b3:database-storage:lsm}{sorted run}, $T$ times larger than the level above; a lookup reads at most one run per level, fewer with Bloom filters.}
+\end{omfigure}
+
+\omoutput{code/bachelor-3/21-database-storage/outputs/lsm_demo.txt}{200,000 random writes. Every entry is written about ten times on its way down; a lookup reads one run when the key is present, and almost never one when it is absent.}\label{out:b3:database-storage:lsm}
+
+Each level holds a single run, rewritten whenever the level above \omterm{def:b3:program-optimisation:spill}{spills} into it, so an entry is written once by the flush and then, at each level, about $T/2$ times more on average; \cref{exo:b3:database-storage:9} turns this into a bound. The smaller ratio rewrites less per level but needs more levels: the two balance here at 9.0 and 11.5. Absent keys cost 0.014 and 0.024 runs read per lookup, the false-positive rates of filters with 10 bits per key summed over the levels. Each insertion into the \omterm{def:b3:database-storage:bptree}{B+ tree} of the previous section writes at least one whole page, 4,096 bytes for one 16-byte entry: an LSM tree that writes each entry ten times in big sequential runs writes far fewer pages, and \cref{exo:b3:database-storage:12} counts both.
+
+\section{Choosing an index}\label{sec:b3:database-storage:choosing}
+
+\begin{definition}[Clustered index, secondary index, covering index]\label{def:b3:database-storage:index}
+An index (Year~2 volume) is \emph{clustered}\index{clustered index} when the table's rows themselves are stored in the order of its key, in its leaves or in pages sorted the same way; a table has at most one. A \emph{secondary index}\index{secondary index} holds, for each key, the identifiers of the rows, which are stored elsewhere in another order; following them costs about one page read per row. An index is \emph{covering}\index{covering index} for a query when it holds every column the query needs, so the table is not read at all.
+\end{definition}
+
+SQLite stores each ordinary table as a B-tree keyed by a 64-bit integer, the rowid, with the rows in the leaves: the table is \omterm{def:b3:database-storage:index}{clustered} on its rowid, which an \code{INTEGER PRIMARY KEY} column names. Each index is another B-tree, holding keys and no other data. % ledger: b3:sqlite-btrees
+Its \code{EXPLAIN QUERY PLAN} says how a query will be run: \texttt{SCAN} reads the whole table, \texttt{SEARCH} only part of it, and \texttt{USING COVERING INDEX} means the table is never touched. The format is meant for people and may change between releases. % ledger: b3:sqlite-eqp
+
+\omoutput{code/bachelor-3/21-database-storage/outputs/plan.txt}{One query on the town's 400 loans, run against three states of the schema. The last query, on a column with no index, scans.}\label{out:b3:database-storage:plan}
+
+Without an index, finding member 41's loans reads the whole table. With an index on \code{member_id}, SQLite searches the index and follows each row identifier into the table. With an index on (\code{member_id}, \code{out_date}), the date is in the index itself and the table is not read. The index on a pair answers questions on its first column alone, but not on its second: a search on \code{out_date} scans, as a telephone directory sorted by surname and first name does not help to find every Ada.
+
+Every index has a price: it is written at each insertion, a page or more, and takes space. An index pays when the column is searched often and selects few rows; a query that returns most of a table is cheaper as a scan, since a scan reads each page once while a \omterm{def:b3:database-storage:index}{secondary index} may read the same page once per row.
+
+\section{Exercises}\label{sec:b3:database-storage:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:database-storage:1}
+In the \omterm{def:b3:database-storage:page}{slotted page} of \cref{lst:b3:database-storage:slotted}, how much free space remains after 30 records of 40 bytes each? After deleting 10 of them, how much is free before and after \code{compact}? How many more 40-byte records fit?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:database-storage:2}
+Give the greatest and the least height of a \omterm{def:b3:database-storage:bptree}{B+ tree} of \omterm{def:b3:database-storage:bptree}{order} 100 holding $10^7$ keys, every node full in the first case, every non-root node at its minimum in the second.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:database-storage:3}
+A \omterm{def:b3:database-storage:buffer}{buffer pool} of 3 frames, empty, runs \code{bufferpool.py}'s clock on the page accesses 1, 2, 3, 1, 4, 1, 5, 2, each page unpinned after its access. Say for each access whether it hits or misses, and which page is evicted.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:database-storage:4}
+\code{exercises/ex4_plans.sql} creates the index \code{loans_member} on the town's loans and asks for the plans of \texttt{SELECT count(*) FROM loans WHERE member\_id = 41}, \texttt{SELECT member\_id FROM loans WHERE member\_id > 100}, \texttt{SELECT book\_id FROM loans WHERE book\_id = 59} and \texttt{SELECT * FROM loans WHERE loan\_id = 7}. Predict each plan line, then run it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:database-storage:5}
+\code{exercises/ex5_split.py} splits leaves the way internal nodes are split, moving the middle key up. Insert 1 to 10 into its tree of \omterm{def:b3:database-storage:bptree}{order} 4: which keys can no longer be found, and why exactly those? Fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:database-storage:6}
+Write \code{delete(tree, key)} for \code{bptree.py}: a node left below its minimum borrows from a sibling that can spare an entry, or else merges with one; a root with a single child is replaced by it. It is tested against a dictionary, with every invariant of \cref{def:b3:database-storage:bptree} checked after each operation, for \omterm{def:b3:database-storage:bptree}{orders} 3 to 7.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:database-storage:7}
+Prove that a \omterm{def:b3:database-storage:bptree}{B+ tree} of \omterm{def:b3:database-storage:bptree}{order} $m$ with $n$ keys has at least $1 + \lceil \log_m (n/(m-1)) \rceil$ levels. With the bound of \cref{thm:b3:database-storage:height}, how many heights are possible for $n = 10^6$ and $m = 255$?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:database-storage:8}
+Count the page reads of a range scan returning $k$ keys from a tree of height $h$ whose leaves hold $\ell$ keys each. Explain the 42 reads of \cref{out:b3:database-storage:bptree}, and what the 52 after random insertion say about the leaves in that range.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:database-storage:9}
+For \code{lsm.py} with \omterm{def:b3:database-storage:lsm}{memtable} size $C$ and ratio $T$, show that level 0 writes $(T+2)/2$ entries per entry it receives and each lower level about $(T+1)/2$. Deduce that the \omterm{def:b3:file-systems:flash}{write amplification} of a tree with $L$ levels is at most about $L(T+2)/2$, and compare with \cref{out:b3:database-storage:lsm}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:database-storage:10}
+Prove that \code{bulk_load} builds a valid \omterm{def:b3:database-storage:bptree}{B+ tree}, with every non-root node at its minimum or above, in at most $2n/\lfloor m/2 \rfloor + 2$ page writes for $n$ keys, $O(n/m)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:database-storage:11}
+Implement \omterm{def:b3:database-storage:hashing}{linear hashing} as a class \code{LinearHash} with \code{put} and \code{get}, $N$ initial buckets, a capacity per primary page, and a split of the next bucket in round-robin order whenever the load passes a threshold. It is tested against a dictionary. Why is the bucket that splits usually not the one that overflowed, and what does it cost?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:database-storage:12}
+Run 100,000 operations on the \omterm{def:b3:database-storage:bptree}{B+ tree} of \omterm{def:b3:database-storage:bptree}{order} 255 and on the LSM tree with $C = 1000$ and $T = 10$, once with 90\,\% reads and once with 10\,\% reads, counting page reads and writes (for the LSM tree, one page read per run searched and one page written per 254 entries). Which wins, by how much, and what does the count leave out?
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:database-storage:problem}
+
+\begin{problem}[{Weekend problem --- How tall is the town archive's index?}]\label{pb:b3:database-storage:1}
+The town archive wants one index over every document it will ever hold, keyed by an 8-byte number, in pages of 4,096 bytes. This problem computes how tall a \omterm{def:b3:database-storage:bptree}{B+ tree} it needs, measures one, and asks what caching the top levels buys.
+
+\omcode{code/bachelor-3/21-database-storage/listings/archive.py}{9}{20}{The \omterm{def:b3:database-storage:bptree}{order} from the page format, and the height for $n$ keys at a given fill.}\label{lst:b3:database-storage:archive}
+
+\omoutput{code/bachelor-3/21-database-storage/outputs/archive.txt}{Heights from the formula, the measured million-key trees, and the cost of a lookup with the top levels in the \omterm{def:b3:database-storage:buffer}{buffer pool}.}\label{out:b3:database-storage:archive}
+
+\medskip\noindent\textbf{Part I --- Fan-out.}
+\begin{enumerate}
+  \item An internal node has a 16-byte header, keys of 8 bytes and child page numbers of 8 bytes. How many children fit in a page?
+  \item Check that 255 children fit and 256 do not, counting keys and pointers exactly.
+  \item A leaf stores (key, value) pairs of 16 bytes, its header and an 8-byte pointer to the next leaf. How many pairs fit?
+  \item What would the fan-out be with 4-byte keys and 4-byte page numbers?
+  \item Why does a wider node make the tree shorter but not a binary search inside it slower in page reads?
+  \item SQLite's page header is 8 or 12 bytes. Why can a real database not quite reach the fan-out of question~1?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Heights.}
+\begin{enumerate}[resume]
+  \item Compute the number of leaves and of nodes at each level for $10^9$ full leaves and nodes, and the height.
+  \item Do the same for $10^6$ keys.
+  \item For $10^{12}$ keys, find the height without computing every level.
+  \item At 69\,\% fill, why does a billion keys take one more level?
+  \item What is the largest number of keys a tree of height 4 can hold?
+  \item Apply \cref{thm:b3:database-storage:height} to bound the height of $10^9$ keys in the worst case. Compare with the half-full line of \cref{out:b3:database-storage:archive}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Measured.}
+\begin{enumerate}[resume]
+  \item Explain the 3,955 pages of the bulk-loaded million-key tree.
+  \item The tree built by random insertion has 5,705 pages and leaves 69\,\% full. Where do the empty quarters come from?
+  \item Why do both trees cost 3 reads per lookup in spite of their different sizes?
+  \item How many pages does the random tree waste, and how much space is that?
+  \item Inserting the keys in increasing order into \code{BPlusTree} gives leaves only half full. Why, with this split?
+  \item How could a database avoid that half-full tree when keys arrive in \omterm{def:b3:database-storage:bptree}{order}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Caching.}
+\begin{enumerate}[resume]
+  \item Explain the four cache lines of \cref{out:b3:database-storage:archive}.
+  \item For a billion keys in full nodes, how much memory keeps the top two levels, and the top three?
+  \item What does a lookup cost in each case?
+  \item Suppose a disk serves one random page read in 5\,ms. How many lookups per second can it serve with nothing cached, with two levels cached and with three?
+  \item Why is caching the top levels almost free while caching the leaves is not?
+  \item Sum up: how tall is the archive's index for a billion documents, and what does a lookup cost?
+\end{enumerate}
+\end{problem}

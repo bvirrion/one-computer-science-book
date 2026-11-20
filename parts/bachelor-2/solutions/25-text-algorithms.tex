@@ -1,0 +1,217 @@
+% Solutions of chapter 25 -- Text algorithms and compression.
+\section*{Chapter \ref{ch:b2:text-algorithms} --- Text Algorithms and Compression}
+
+\begin{solution}{exo:b2:text-algorithms:1}
+For the prefixes \texttt{a}, \texttt{aa}, \texttt{aab}, \texttt{aaba}, \texttt{aabaa}, \texttt{aabaaa}, \texttt{aabaaab}
+the longest \omterm{def:b2:text-algorithms:border}{borders} are the \omterm{def:b2:finite-automata:word}{empty word}, \texttt{a}, the \omterm{def:b2:finite-automata:word}{empty word}, \texttt{a}, \texttt{aa}, \texttt{aa} and
+\texttt{aab}. For $q = 6$, the \omterm{def:b2:text-algorithms:border}{border} \texttt{aa} of \texttt{aabaa} cannot be extended (\texttt{aab} is not a \omterm{def:b2:finite-automata:factor}{suffix} of
+\texttt{aabaaa}), but the shorter \omterm{def:b2:text-algorithms:border}{border} \texttt{a} can: \texttt{aa}.
+
+\omoutput{code/bachelor-2/25-text-algorithms/outputs/exo_failure.txt}{The \omterm{def:b2:text-algorithms:border}{failure function} of \texttt{aabaaab}.}
+\end{solution}
+
+\begin{solution}{exo:b2:text-algorithms:2}
+\omoutput{code/bachelor-2/25-text-algorithms/outputs/exo_kmp_bug.txt}{The shorter version against the expected
+\omterm{def:b2:text-algorithms:matching}{occurrences}.}
+
+After $q \gets \pi(q)$ the pattern has moved, and the letter $c$ that caused the mismatch must be compared with
+$P[\pi(q)]$; \code{kmp_short} skips it. It misses an \omterm{def:b2:text-algorithms:matching}{occurrence} whenever that letter is the start of the continued match:
+on \texttt{aaab}, after \texttt{aa} the third \texttt{a} fails against \texttt{b}, $q$ becomes $1$, and that \texttt{a}
+should have made it $2$. When $\pi(q) = 0$ and $c \neq P[0]$, as in the first and last tests, nothing is lost. The
+correction is the inner \code{while} loop of \cref{lst:b2:text-algorithms:kmp}, which compares $c$ again until it
+matches or $q = 0$.
+\end{solution}
+
+\begin{solution}{exo:b2:text-algorithms:3}
+If $s$ and $s + d$ are both \omterm{def:b2:text-algorithms:matching}{occurrences} with $0 < d < m$, then $P[d..m-1] = T[s+d..s+m-1] = P[0..m-d-1]$: the pattern
+has a \omterm{def:b2:text-algorithms:border}{border} of length $m - d$. So $m - d \leq \pi(m)$, that is $d \geq m - \pi(m)$, and the shifts between are not
+\omterm{def:b2:text-algorithms:matching}{occurrences}.
+
+\omcode{code/bachelor-2/25-text-algorithms/listings/exo_bm_all.py}{7}{23}{Boyer--Moore, with the period of the pattern
+as the shift after an \omterm{def:b2:text-algorithms:matching}{occurrence}}
+
+\omoutput{code/bachelor-2/25-text-algorithms/outputs/exo_bm_all.txt}{Comparisons before and after the change, with the
+same \omterm{def:b2:text-algorithms:matching}{occurrences}.}
+
+The gain is small: \texttt{aba} has period $2$, $a^5$ period $1$ (no gain), and the archive's \omterm{def:b2:text-algorithms:matching}{occurrences} are rare. The
+good-suffix rule of Boyer and Moore generalises this shift to every partial match.
+\end{solution}
+
+\begin{solution}{exo:b2:text-algorithms:4}
+Naive search: on $a^n$ with $a^{m-1}b$, every shift compares $m$ letters, $m(n - m + 1)$ in all; with $ba^{m-1}$, every
+shift fails at once, $n - m + 1$. Boyer--Moore compares from the right, so the roles swap. With $a^{m-1}b$, the
+\texttt{b} fails against \texttt{a} at $j = m - 1$, with $\lambda(a) = m - 2$: one comparison and a shift of $1$,
+$n - m + 1$ in all. With $ba^{m-1}$, the $m - 1$ letters \texttt{a} match and the \texttt{b} fails at $j = 0$, with
+$\lambda(a) = m - 1$: the shift is $\max(1, -(m-1)) = 1$, so $m(n - m + 1)$ comparisons, the worst case.
+\end{solution}
+
+\begin{solution}{exo:b2:text-algorithms:5}
+The encoder emits \texttt{s}, \texttt{h}, \texttt{e}, the space, \texttt{s}, \texttt{e}, \texttt{l}, \texttt{l},
+\texttt{s}, then 259 for \texttt{\textvisiblespace s}, \texttt{e}, \texttt{a}, 259 again, 257 for \texttt{he}, 262 for
+\texttt{ll} and \texttt{s}; each code adds the word followed by the next byte.
+
+\omoutput{code/bachelor-2/25-text-algorithms/outputs/exo_lzw.txt}{The codes (spaces written \texttt{\_}) and the entries
+added.}
+\end{solution}
+
+\begin{solution}{exo:b2:text-algorithms:6}
+\omoutput{code/bachelor-2/25-text-algorithms/outputs/exo_lzw_bug.txt}{The decoder that looks every code up.}
+
+It fails on \texttt{abababa}: the last code, 258, is the entry the encoder created when it emitted the code before it,
+and the decoder, one entry behind, does not have it yet. By the proof of \cref{thm:b2:text-algorithms:lzw}, it fails
+exactly on the inputs where the encoder emits a code at the step right after creating it, that is where $w_{k+1} = w_k\,
+w_k[0]$: the input contains $x v x v x$ with $x$ a byte, $xv$ the dictionary word $w_k$ read at that point, and $xvx$ a
+new entry.
+\end{solution}
+
+\begin{solution}{exo:b2:text-algorithms:7}
+The walk of \code{words} with a stop as soon as $k$ words are found; the smallest letter is on top of the stack, so the
+words come out in alphabetical order.
+
+\omcode{code/bachelor-2/25-text-algorithms/listings/exo_autocomplete.py}{6}{17}{The first $k$ completions, and the
+nodes visited}
+
+\omoutput{code/bachelor-2/25-text-algorithms/outputs/exo_autocomplete.txt}{Completions of four prefixes among the 80
+book titles; the walk visits a fraction of the subtrie.}
+\end{solution}
+
+\begin{solution}{exo:b2:text-algorithms:8}
+Here $\pi(q) = q - 1$ for $q \leq m - 1$, since $a^{q-1}$ is the longest \omterm{def:b2:text-algorithms:border}{border} of $a^q$. The first $m - 1$ letters each
+match with one comparison: $q = m - 1$. For each letter at $i = m - 1, \dots, n - 2$, the \texttt{b} of the pattern fails
+against \texttt{a}, $q$ becomes $m - 2$, the shift $i - (m - 2) \leq n - m$ still fits, and $P[m - 2] = a$ matches: two
+comparisons, and $q = m - 1$ again. At $i = n - 1$ the \texttt{b} fails once, and the next shift, $n - m + 1$, no longer
+fits. In all $(m - 1) + 2(n - m) + 1 = 2n - m$. The C program confirms it for $m = 100$: $399{,}900$ comparisons for
+$n = 200{,}000$.
+\end{solution}
+
+\begin{solution}{exo:b2:text-algorithms:9}
+\omcode{code/bachelor-2/25-text-algorithms/listings/exo_rk_multi.py}{7}{28}{Rabin--Karp for several patterns: one \omterm{def:b2:text-algorithms:rolling}{rolling
+hash}, a dictionary from hash values to patterns}
+
+\omoutput{code/bachelor-2/25-text-algorithms/outputs/exo_rk_multi.txt}{Six words of six letters, each count checked
+against \code{str.count}.}
+
+The cost is $\BigO(n)$ for the hashes plus the checks of the windows whose hash is one of the patterns', whatever the
+number of patterns, against one pass per pattern for KMP.
+\end{solution}
+
+\begin{solution}{exo:b2:text-algorithms:10}
+The difference $x - y$ is a non-zero integer with $|x - y| < 256^m = 2^{8m}$. If it had $8m$ distinct prime divisors,
+their product, at least $2^{8m}$, would divide it, which is impossible: it has fewer than $8m$. A window $x \neq P$ is a
+\omterm{def:b2:text-algorithms:rolling}{spurious hit} for the modulus $q$ when $x \equiv P \pmod q$, that is when $q$ divides $x - P$. With $q$ uniform among the
+$K$ smallest primes, this has probability below $8m/K$. Summing over the $n - m + 1$ shifts, the expected number of
+\omterm{def:b2:text-algorithms:rolling}{spurious hits} is below $8m(n - m + 1)/K$; with $K$ of the order of $mn$, it is a constant, and the expected cost is
+$\BigO(n + m)$ plus the \omterm{def:b2:text-algorithms:matching}{occurrences}' checks. The bound holds for every text, chosen before $q$: the randomness is in
+the algorithm, not in the input.
+\end{solution}
+
+\begin{solution}{exo:b2:text-algorithms:11}
+This is the algorithm of Aho and Corasick. The \omterm{def:b2:text-algorithms:trie}{trie} is built first; the failure links are then set breadth first, so that
+the link of a node's parent, which points to a shorter word, is already known, and followed as KMP follows $\pi$. A node
+also reports the patterns that end at its failure link.
+
+\omcode{code/bachelor-2/25-text-algorithms/listings/exo_aho.py}{7}{40}{A \omterm{def:b2:text-algorithms:trie}{trie} of patterns with failure links, and a
+search that reads the text once}
+
+\omoutput{code/bachelor-2/25-text-algorithms/outputs/exo_aho.txt}{In \texttt{ushers}: \texttt{she}, \texttt{he} and
+\texttt{hers}; on the archive, seven words in one pass.}
+
+% ledger: b2:aho-corasick-1975
+Alfred Aho and Margaret Corasick published the method in 1975, for searching bibliographies for many keywords at once.
+\end{solution}
+
+\begin{solution}{exo:b2:text-algorithms:12}
+By induction, the $k$-th code is that of $a^k$ and adds $a^{k+1}$, as long as at least $k + 1$ letters remain: before
+it, the dictionary holds $a, a^2, \dots, a^k$ and no longer power of $a$, and the input left starts with $a^{k+1}$, so
+the longest dictionary word is $a^k$, followed by an \texttt{a}. After $c$ such codes, $1 + 2 + \dots + c = c(c+1)/2$
+letters are coded. The last code takes the $r \leq c + 1$ letters left, which form a dictionary word. The number of codes
+is therefore the least $c$ with $c(c+1)/2 \geq n$, and solving $c^2 + c - 2n \geq 0$ gives $c \geq (\sqrt{8n+1} -
+1)/2$, so $c = \lceil (\sqrt{8n+1}-1)/2 \rceil$.
+
+\omoutput{code/bachelor-2/25-text-algorithms/outputs/exo_lzw_an.txt}{The number of codes for $n = 1, \dots, 21$, and the
+formula checked up to 3000.}
+\end{solution}
+
+\begin{solution}{pb:b2:text-algorithms:1}
+\textbf{1.} Every line starts with the first eight letters of the pattern, so the naive search compares about nine
+letters at each of the 1,503 line starts, instead of one; a pattern whose first letter is rare fails at once almost
+everywhere.
+
+\textbf{2.} At most shifts the first letter differs, one comparison; the shifts where a prefix matches add a few more.
+The cost is $n$ plus the total length of the partial matches, small on ordinary text.
+
+\textbf{3.} About $87{,}299 / 6{,}865 \approx 13$ letters per comparison, and nearly every shift makes one comparison,
+so the average jump is about 13. The longest jumps, $21$, come from letters absent from the pattern: digits, most
+capitals, punctuation.
+
+\textbf{4.} A date such as \texttt{2025-12-12}: its last letters are digits and the bad character is almost always a
+digit, which occurs near the end of the pattern, so the jumps are of one to three letters.
+
+\textbf{5.} It reads each window from its right end and jumps ahead, so it needs the $m$ letters of a window before
+deciding anything, and it reads text letters out of order. KMP reads each letter once, in order, and knows after each
+one whether an \omterm{def:b2:text-algorithms:matching}{occurrence} ends there.
+
+\textbf{6.} KMP, or the automaton: its whole state is $q$, saved at the end of the day. The other two must keep the last
+$m - 1$ letters of yesterday.
+
+\textbf{7.} $\pi$ is $0$ everywhere except $\pi(5) = 1$ and $\pi(14) = 1$: the only \omterm{def:b2:text-algorithms:border}{borders} are \texttt{r}, for
+\texttt{retur} and \texttt{returned Under}.
+
+\textbf{8.} After a mismatch KMP falls back to $q = 0$ or $1$ and compares the same letter again, which is what the naive
+search does at the next shift when the match was short; both make about one comparison per letter plus the partial
+matches.
+
+\textbf{9.} $2n - m = 2 \times 87{,}299 - 18 = 174{,}580$. The observed $91{,}581$ is about $n$: the bound counts a
+second comparison for every letter, which only a pattern with long \omterm{def:b2:text-algorithms:border}{borders} on a matching text forces.
+
+\textbf{10.} Naive: $100 \times (10^6 - 99) = 99{,}990{,}100$; KMP: $2 \times 10^6 - 100 = 1{,}999{,}900$, as printed.
+
+\textbf{11.} For a fixed pattern, $m(n - m + 1)$ is linear in $n$ with slope $m$. It is not linear in the size of the
+input $n + m$: for $m = n/2$ it is about $n^2/4$.
+
+\textbf{12.} States $0$ to $3$: $\delta(0, a) = 1$, $\delta(1, a) = 2$, $\delta(2, a) = 2$, $\delta(2, b) = 3$,
+$\delta(3, a) = 1$, and every other transition leads to $0$.
+
+\textbf{13.} Each node below the root stands for one distinct prefix of a name; a letter is saved each time a name
+reaches a prefix that an earlier name had already created, such as the \texttt{W}, \texttt{e}, \texttt{n},
+\texttt{\textvisiblespace} shared by the two names starting with \texttt{Wen}. The $152 = 751 - 599$ saved letters are
+the letters of shared prefixes, counted once for each extra name sharing them.
+
+\textbf{14.} Six nodes, the root and one per letter, whatever the number of names; each step is one lookup in a small
+table of children.
+
+\textbf{15.} A sorted list finds the first name with the prefix by halving, $\BigO(|u| \log N)$ letter comparisons for
+$N$ names, then reads the $r$ answers in order. The \omterm{def:b2:text-algorithms:trie}{trie} needs $|u|$ steps and the walk of the subtrie. Both are fast for
+60 names; the \omterm{def:b2:text-algorithms:trie}{trie} does not depend on $N$.
+
+\textbf{16.} Each node other than the root has two children or more or ends a name, and there are 60 names, so at most
+$59$ branching nodes besides the 60 ends: at most $2 \times 60 = 120$ nodes with the root.
+
+\textbf{17.} Keep the node reached by the prefix typed so far, and move down one edge when a letter is added, or back up
+when one is deleted.
+
+\textbf{18.} A \omterm{def:b2:text-algorithms:trie}{trie} of the names written as ``last first'' as well doubles the letters inserted, at most $2 \times 751 +
+1$ nodes, and lets a prefix of either name be completed; two separate \omterm{def:b2:text-algorithms:trie}{tries} are the same size.
+
+\textbf{19.} The codes of \texttt{a}, \texttt{aa}, \texttt{aaa}, \texttt{aaaa}, that is $97, 256, 257, 258$; the entries
+$256 = \texttt{aa}$, $257 = \texttt{aaa}$, $258 = \texttt{aaaa}$, and nothing after the last code, which ends the
+input.
+
+\textbf{20.} As in \cref{exo:b2:text-algorithms:12}. For $n = 55 = 10 \cdot 11/2$, $c = 10$; for $5050 = 100 \cdot
+101/2$, $c = 100$; one more letter needs one more code, $101$.
+
+\textbf{21.} The dictionary learns the archive's phrases as it reads: at the start it holds pairs of bytes; after
+thousands of lines it holds \texttt{borrowed\textvisiblespace}, names, titles and the frame of the weather lines, and
+each code covers more bytes.
+
+\textbf{22.} $11{,}383 \times 2 = 22{,}766$ bytes, against $18{,}095$ with codes of 9 to 14 bits; the largest code,
+$256 + 11{,}382$, needs 14 bits.
+
+\textbf{23.} A Huffman code of bytes depends only on the bytes' frequencies, which are about the same in any long part
+of the archive: the ratio is $8$ divided by the average code length, about 4.9 bits here, and it cannot use the
+repeated words.
+
+\textbf{24.} LZW on $a^n$: exactly $\lceil (\sqrt{8n+1}-1)/2 \rceil$ codes; on the archive, $11{,}383$ codes for
+$87{,}299$ bytes, $7.7$ bytes per code and a ratio of $4.82$ with growing code widths, against $1.63$ for Huffman and
+$8.63$ for zlib.
+\end{solution}

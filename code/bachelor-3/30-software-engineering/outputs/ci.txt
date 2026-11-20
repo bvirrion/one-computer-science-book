@@ -1,0 +1,19 @@
+$ git init -q -b main
+$ printf '#!/bin/sh\nruff check -q . && python gate.py towndate.py date_tests 100\n' > .git/hooks/pre-commit
+$ chmod +x .git/hooks/pre-commit
+$ git add . && git commit -q -m "Town date library with its tests" && echo committed
+gate: 0 failed: -; statements 16/16, branches 17/18
+committed
+$ sed -i 's/year % 100 != 0 or year % 400 == 0/True/' towndate.py
+$ git commit -q -am "Simplify is_leap" || echo "commit refused"
+gate: 1 failed: test_new_against_datetime; statements 16/16, branches 15/16
+gate: refused
+commit refused
+$ sed -i 's/(True)/(year % 100 != 0 or year % 400 == 0)/' towndate.py
+$ printf 'def test_new_1700():\n    assert not is_leap(1700)\n' >> date_tests.py
+$ git commit -q -am "Test the year 1700" && echo committed
+gate: 0 failed: -; statements 16/16, branches 17/18
+committed
+$ git log --oneline
+7fe6539 Test the year 1700
+274a8c2 Town date library with its tests

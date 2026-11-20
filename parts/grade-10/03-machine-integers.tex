@@ -1,0 +1,431 @@
+% Provenance (never printed): NSI premiere, "Representation des donnees: types et valeurs de base" (writing an
+% integer in base b; binary representation of a relative integer, two's complement; size in bits of a sum or a
+% product). Bitwise operations and the 2038 problem are additions. See sources/book2/BRIEFS.md.
+\chapter{Integers in the Machine}\label{ch:g10:machine-integers}
+
+Noor's grandfather kept an old step counter clipped to his belt. One summer he walked across a whole region, and
+each evening he wrote down the number it showed. On the eighth day the number was smaller than on the seventh,
+although he had walked all day. The counter was not broken. It had six digits on its little screen and, inside, a
+memory of a fixed number of bits; after the largest number it could hold, it went back to zero, like a car's
+odometer.
+
+Every number a processor works on lives in a fixed number of bits. This chapter shows how whole numbers, positive
+and negative, are written in $8$, $16$, $32$ or $64$ bits, what happens when a result does not fit, and how a
+program can work on the bits of a number one by one.
+
+\begin{recall}
+A whole number is written in base $2$ with the digits $0$ and $1$, each position worth twice the one on its right;
+in base $16$ with the digits $0$ to $9$ and $A$ to $F$; Python's \code{bin}, \code{hex} and \code{int(s, 2)}
+convert between bases, and two binary numbers are added column by column with a carry (Book 1, grade 8). A bit
+is one binary digit and a byte is eight bits (Book 1, grade 5). $2^{10} = 1024$, and $2^{a} \times 2^{b} =
+2^{a+b}$ (mathematics book, grade 8).
+\end{recall}
+
+\section{Unsigned integers on \texorpdfstring{$n$}{n} bits}\label{sec:g10:machine-integers:unsigned}
+
+Base $2$ is one base among many. In any base $b \ge 2$, a whole number is written with digits from $0$ to $b - 1$,
+and the digit at position $i$ (counting from $0$ on the right) is worth $b^i$ times its value. The digits are found
+from the right by repeated division: the remainder of $n$ divided by $b$ is the last digit, and the quotient holds
+the others.
+
+\omcode{code/grade-10/03-machine-integers/listings/to_base.py}{1}{17}{Writing a number in any base from $2$ to
+$36$.}\label{lst:g10:machine-integers:to-base}
+
+\omoutput{code/grade-10/03-machine-integers/outputs/to_base.txt}{The same number in five bases. \code{int} reads a
+string of digits back in a given base.}\label{out:g10:machine-integers:to-base}
+
+A processor does not write numbers with as many digits as needed: its registers and memory cells have a fixed
+size.
+
+\begin{definition}[Unsigned integer, \texorpdfstring{$n$}{n}-bit integer]\label{def:g10:machine-integers:unsigned}
+An \emph{$n$-bit integer}\index{n-bit integer@$n$-bit integer} is a whole number stored in exactly $n$ bits,
+$b_{n-1} \dots b_1 b_0$. Read as an \emph{unsigned integer}\index{unsigned integer}, its value is
+$b_{n-1} 2^{n-1} + \dots + b_1 2 + b_0$. The usual sizes are $8$ bits (one byte), $16$, $32$ and $64$ bits.
+\end{definition}
+
+\begin{proposition}[Range of \texorpdfstring{$n$}{n} bits]\label{prop:g10:machine-integers:range}
+The \omterm{def:g10:machine-integers:unsigned}{unsigned integers} on $n$ bits are exactly the whole numbers from $0$ to $2^n - 1$. A whole number $x \ge 1$ needs
+$k$ bits, where $k$ is the number with $2^{k-1} \le x < 2^k$.
+\end{proposition}
+
+\begin{proof}
+There are $2$ choices for each of the $n$ bits, so $2^n$ patterns, and different patterns have different values
+(base $2$ writing is unique). The smallest value is $0$ (all bits $0$). The largest has all bits $1$: adding $1$ to
+$11\dots1$ carries through every column and gives $100\dots0$, which is $2^n$; so $11\dots1$ is $2^n - 1$. Hence the
+$2^n$ values are $0, 1, \dots, 2^n - 1$. A number with $2^{k-1} \le x < 2^k$ fits in $k$ bits but not in $k - 1$,
+whose largest value is $2^{k-1} - 1$.
+\end{proof}
+
+So one byte holds $0$ to $255$, $16$ bits hold $0$ to $65{,}535$, and $32$ bits $0$ to $4{,}294{,}967{,}295$.
+% ledger: g10:py-bit-length
+Python's method \code{n.bit_length()} gives the number of bits that $n$ needs.
+
+\omcode{code/grade-10/03-machine-integers/listings/bits_needed.py}{1}{7}{How many bits a number, a sum and a product
+need.}\label{lst:g10:machine-integers:bits-needed}
+
+\omoutput{code/grade-10/03-machine-integers/outputs/bits_needed.txt}{Each power of two needs one more bit than the
+number just below it.}\label{out:g10:machine-integers:bits-needed}
+
+\begin{proposition}[Bits of a sum and of a product]\label{prop:g10:machine-integers:sum-product}
+If $a$ fits in $p$ bits and $b$ in $q$ bits, with $p \ge q$, then $a + b$ fits in $p + 1$ bits and $a \times b$ fits in
+$p + q$ bits.
+\end{proposition}
+
+\begin{proof}
+$a \le 2^p - 1$ and $b \le 2^q - 1 \le 2^p - 1$, so $a + b \le 2^{p+1} - 2 < 2^{p+1}$. And
+$a \times b \le (2^p - 1)(2^q - 1) < 2^p \times 2^q = 2^{p+q}$.
+\end{proof}
+
+The run above shows that both bounds can be reached: the largest numbers on $20$ and $13$ bits have a sum of $21$
+bits and a product of $33$.
+
+When a result needs more bits than the machine has, the extra bits are simply lost.
+
+\begin{definition}[Overflow]\label{def:g10:machine-integers:overflow}
+An \emph{overflow}\index{overflow} happens when the result of an operation does not fit in the number of bits that
+hold it. An $n$-bit unsigned adder then keeps the $n$ lowest bits of the true result, that is, the remainder of the
+true result divided by $2^n$: the value \emph{wraps around}.
+\end{definition}
+
+Python's \texttt{\%} gives that remainder, so a few lines simulate the step counter, here with $16$ bits.
+
+\omcode{code/grade-10/03-machine-integers/listings/wrap.py}{1}{13}{A 16-bit counter, and one addition on $8$ and on
+$16$ bits.}\label{lst:g10:machine-integers:wrap}
+
+\omoutput{code/grade-10/03-machine-integers/outputs/wrap.txt}{After $65{,}535$ comes $0$: a whole walk's worth of
+steps has vanished.}\label{out:g10:machine-integers:wrap}
+
+The toy machine of the next year (grade 11) has registers of one byte. The same addition, $250 + 10$, run on it:
+
+\omcode{code/grade-10/03-machine-integers/listings/toy_wrap.toy}{2}{4}{Three instructions for the toy
+machine.}\label{lst:g10:machine-integers:toy-wrap}
+
+\omoutput{code/grade-10/03-machine-integers/outputs/toy_wrap.txt}{Register \code{R0} holds $4$, and the flag
+\code{C} (carry) is $1$: the machine kept the lost bit in a flag.}\label{out:g10:machine-integers:toy-wrap}
+
+The processor does not stop at an \omterm{def:g10:machine-integers:overflow}{overflow}; it records it in its carry flag, and a program that does not look at
+the flag never knows.
+
+\section{Signed integers: two's complement}\label{sec:g10:machine-integers:signed}
+
+Negative numbers need a sign, but a memory cell holds only bits. The usual method gives the leftmost bit a negative
+weight.
+
+\begin{definition}[Two's complement]\label{def:g10:machine-integers:twos-complement}
+In \emph{two's complement}\index{two's complement} on $n$ bits, the pattern $b_{n-1} b_{n-2} \dots b_0$ stands for
+the signed value
+\[
+  -b_{n-1} 2^{n-1} + b_{n-2} 2^{n-2} + \dots + b_1 2 + b_0 .
+\]
+The leftmost bit is the \emph{sign bit}: it is $1$ exactly for the negative values.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small]
+  \foreach \w [count=\i] in {$-128$,$64$,$32$,$16$,$8$,$4$,$2$,$1$} {
+    \node[cell small, minimum width=11mm] (b\i) at (1.1*\i,0) {1};
+    \node[font=\footnotesize, above=1mm of b\i] {\w};
+  }
+  \fill[omProp!25] (b1.south west) rectangle (b1.north east);
+  \node[cell small, minimum width=11mm] at (b1) {1};
+  \node[anchor=west, font=\footnotesize, align=left] at (9.6,0)
+    {$-128 + 64 + 32 + 16 + 8 + 4 + 2 + 1$\\$= -1$};
+  \node[anchor=east, font=\footnotesize] at (0.45,0.48) {weights};
+\end{tikzpicture}
+
+{\small The weights of the bits of one byte in \omterm{def:g10:machine-integers:twos-complement}{two's complement}. Only the leftmost weight is negative; the byte
+of eight $1$ bits stands for $-1$.}
+\end{omfigure}
+
+The first half of the patterns, those starting with $0$, keep their unsigned value; the second half stands for
+negative numbers. The listing prints the sixteen patterns of $4$ bits.
+
+\omcode{code/grade-10/03-machine-integers/listings/twos.py}{1}{18}{Encoding and decoding $n$-bit \omterm{def:g10:machine-integers:twos-complement}{two's
+complement}.}\label{lst:g10:machine-integers:twos}
+
+\omoutput{code/grade-10/03-machine-integers/outputs/twos.txt}{On $4$ bits, from $-8$ to $7$. The unsigned and the
+signed reading differ by $16$ in the second half.}\label{out:g10:machine-integers:twos}
+
+\begin{proposition}[Range and negation]\label{prop:g10:machine-integers:negation}
+The signed integers on $n$ bits are the whole numbers from $-2^{n-1}$ to $2^{n-1} - 1$. The pattern of $x$ and its
+unsigned reading $u$ satisfy $u = x$ if $x \ge 0$ and $u = x + 2^n$ if $x < 0$. To negate a number, flip every bit and
+add $1$ (keeping $n$ bits).
+\end{proposition}
+
+\begin{proof}
+If the sign bit is $0$, the value is that of the other $n - 1$ bits, from $0$ to $2^{n-1} - 1$. If it is $1$, the
+value is $-2^{n-1}$ plus a number from $0$ to $2^{n-1} - 1$, so from $-2^{n-1}$ to $-1$; and it is the unsigned
+value, which counts the leftmost bit as $+2^{n-1}$, minus $2 \times 2^{n-1} = 2^n$. For the negation, write $\bar x$
+for the pattern with every bit of $x$ flipped. In each column exactly one of $x$ and $\bar x$ has a $1$, so the
+unsigned readings add up to $11\dots1 = 2^n - 1$. Hence $\bar x + 1 = 2^n - x$, which on $n$ bits is the pattern of
+$-x$.
+\end{proof}
+
+\begin{example}[\texorpdfstring{$-5$}{-5} on 8 bits]\label{ex:g10:machine-integers:minus-five}
+$5$ is \code{00000101}; flipping every bit gives \code{11111010}; adding $1$ gives \code{11111011}. Check:
+$-128 + 64 + 32 + 16 + 8 + 2 + 1 = -5$.
+\end{example}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize]
+  \draw[thick, black!40] (0,0) circle (2.2);
+  \foreach \u in {0,...,15} {
+    \pgfmathsetmacro{\ang}{90 - 22.5*\u}
+    \pgfmathtruncatemacro{\s}{\u < 8 ? \u : \u - 16}
+    \node[circle, fill=white, draw, inner sep=1pt, minimum size=5mm] at (\ang:2.2) {\s};
+    \node[font=\scriptsize\ttfamily, text=black!60] at (\ang:3.0) {\u};
+  }
+  \draw[very thick, omProp, -{Stealth}] (90-22.5*7+8:1.55) arc (90-22.5*7+8:90-22.5*8-8:1.55);
+  \node[omProp, align=center] at (0,-0.9) {overflow:\\$7 + 1$ gives $-8$};
+  \draw[very thick, omDef, -{Stealth}] (90-22.5*15+8:1.55) arc (90-22.5*15+8:90-22.5*16-8:1.55);
+  \node[omDef, align=center] at (0,1.0) {no overflow:\\$-1 + 1$ gives $0$};
+  \node[text=black!60, align=left, anchor=west] at (3.3,0.6) {grey: the unsigned\\reading of the pattern};
+\end{tikzpicture}
+
+{\small The sixteen patterns of $4$ bits on a wheel, with their signed values. Adding $1$ moves one step clockwise.
+The signed \omterm{def:g10:machine-integers:overflow}{overflow} is the step from $7$ to $-8$; the unsigned one is the step from $15$ (that is, $-1$) to $0$.}
+\end{omfigure}
+
+The great advantage of \omterm{def:g10:machine-integers:twos-complement}{two's complement} is that the addition does not change. Since a negative $x$ is stored as
+$x + 2^n$, and the adder works modulo $2^n$, the unsigned adder of the previous section adds signed numbers
+correctly as long as the true result is in the range. One circuit serves both; grade 11 builds it from gates.
+
+When the true signed result is out of range, the result wraps around the wheel and the sign comes out wrong:
+$100 + 50$ on $8$ bits gives the pattern of $150$, which reads as $-106$. This can be spotted without the true
+result.
+
+\begin{proposition}[Detecting a signed overflow]\label{prop:g10:machine-integers:signed-overflow}
+The sum of two signed $n$-bit integers \omterm{def:g10:machine-integers:overflow}{overflows} exactly when the two operands have the same sign and the result's
+sign bit is different.
+\end{proposition}
+
+The proof is \cref{exo:g10:machine-integers:14}.
+
+\section{Working on the bits}\label{sec:g10:machine-integers:bitwise}
+
+\begin{definition}[Bitwise operation]\label{def:g10:machine-integers:bitwise}
+A \emph{bitwise operation}\index{bitwise operation} works on each bit position separately. In Python,
+\code{a & b} has a $1$ where both \code{a} and \code{b} have a $1$ (\textsc{and}); \code{a | b} where at least one
+has a $1$ (\textsc{or}); \code{a ^ b} where exactly one has a $1$ (exclusive or, \textsc{xor}); and \code{~a} flips
+every bit (\textsc{not}; for Python's integers, \code{~a} equals \code{-a - 1}).
+\end{definition}
+
+\begin{definition}[Shift]\label{def:g10:machine-integers:shift}
+A \emph{shift}\index{shift (bit shift)} moves every bit of a number by $k$ positions: \code{a << k} to the left,
+adding $k$ zeros on the right, and \code{a >> k} to the right, dropping the $k$ rightmost bits. For a whole number
+$a \ge 0$, \code{a << k} is $a \times 2^k$ and \code{a >> k} is the quotient \code{a // 2**k}.
+\end{definition}
+
+The most common use of these operations is to pick out, switch on or switch off one bit, using a second number that
+has $1$ bits only at the places of interest.
+
+\begin{definition}[Mask]\label{def:g10:machine-integers:mask}
+A \emph{mask}\index{mask (bit mask)} is a number used with a \omterm{def:g10:machine-integers:bitwise}{bitwise operation} to select some bits of another number:
+\code{x & m} keeps the bits of \code{x} where \code{m} has a $1$ and clears the others; \code{x | m} sets them to
+$1$; \code{x ^ m} flips them. The mask \code{1 << i} has a single $1$, at position $i$.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small\ttfamily]
+  \def\row#1#2#3#4{\node[anchor=east, font=\footnotesize\rmfamily] at (-0.2,#1) {#2};
+    \foreach \c [count=\i] in {#3} \node[cell small, #4] at (0.6*\i,#1) {\c};}
+  \row{0}{value \code{x}}{1,0,1,0,0,1,1,0}{}
+  \row{-0.7}{mask \code{~(1 << 5)}}{1,1,0,1,1,1,1,1}{fill=omDef!10}
+  \row{-1.4}{\code{x & mask}}{1,0,0,0,0,1,1,0}{fill=omProp!12}
+  \draw[omProp, thick] (0.6*3-0.3,0.35) rectangle (0.6*3+0.3,-1.75);
+  \node[anchor=west, font=\footnotesize\rmfamily, align=left] at (5.3,-0.7) {bit 5 cleared,\\the others unchanged};
+\end{tikzpicture}
+
+{\small Clearing bit $5$ of \code{x} (bits are numbered from $0$ on the right). The \omterm{def:g10:machine-integers:mask}{mask} has a $0$ at position $5$ and
+$1$ elsewhere; \textsc{and} copies every bit of \code{x} except that one.}
+\end{omfigure}
+
+\omcode{code/grade-10/03-machine-integers/listings/masks.py}{1}{13}{\omterm{def:g10:machine-integers:mask}{Masks} on a byte of flags, and the three bytes
+of a colour.}\label{lst:g10:machine-integers:masks}
+
+\omoutput{code/grade-10/03-machine-integers/outputs/masks.txt}{\code{format(x, "08b")} writes \code{x} in binary on
+eight digits. The colour splits into three bytes, and the three bytes give the colour
+back.}\label{out:g10:machine-integers:masks}
+
+A colour on a screen is often stored as $24$ bits, one byte for each of red, green and blue (Book 1 showed the
+\texttt{\#F4A261} notation of web pages). A \omterm{def:g10:machine-integers:shift}{shift} moves the wanted byte to the right end, and the \omterm{def:g10:machine-integers:mask}{mask} \code{0xFF},
+eight $1$ bits, keeps that byte alone.
+
+\begin{omfigure}
+\medskip
+\begin{bytefield}[bitwidth=1.45em]{24}
+  \bitheader[endianness=big]{0,7,8,15,16,23} \\
+  \bitbox{8}{red: \code{0xF4} = 244} & \bitbox{8}{green: \code{0xA2} = 162} & \bitbox{8}{blue: \code{0x61} = 97}
+\end{bytefield}
+
+{\small The colour \code{0xF4A261} as three bytes. Red is \code{(c >> 16) & 0xFF}, green \code{(c >> 8) & 0xFF},
+blue \code{c & 0xFF}.}
+\end{omfigure}
+
+\begin{method}[Testing, setting and clearing bit \texorpdfstring{$i$}{i}]\label{met:g10:machine-integers:bit-ops}
+\begin{enumerate}
+  \item Test: \code{(x >> i) & 1} is $1$ when bit $i$ of \code{x} is $1$.
+  \item Set to $1$: \code{x | (1 << i)}.
+  \item Clear to $0$: \code{x & ~(1 << i)}.
+  \item Flip: \code{x ^ (1 << i)}.
+\end{enumerate}
+\end{method}
+
+\section{Integers that never overflow}\label{sec:g10:machine-integers:python-int}
+
+% ledger: g10:py-int-unlimited
+Python hides all of this: its integers have unlimited precision. When a result does not fit in a machine word,
+Python uses as many words as needed, at the price of slower arithmetic on very large numbers.
+
+\omcode{code/grade-10/03-machine-integers/listings/big_int.py}{1}{6}{Large integers in
+Python.}\label{lst:g10:machine-integers:big-int}
+
+\omoutput{code/grade-10/03-machine-integers/outputs/big_int.txt}{$2^{100}$ needs $101$ bits; the last line goes past
+the largest signed $64$-bit integer without any trouble.}\label{out:g10:machine-integers:big-int}
+
+\begin{inpractice}[Fixed widths in other languages]
+% ledger: g10:c-int32
+Most other languages, among them C, C++, Rust and Java, use the processor's fixed widths. The C type
+\code{int32_t}, for instance, is a signed integer of exactly $32$ bits; adding $1$ to the largest one is an error
+that the program may not notice. When code in
+those languages computes with large values (money in cents, times in microseconds, file sizes), the first question
+is always: how many bits does the largest value need? The university books meet these types.
+\end{inpractice}
+
+\begin{history}[The year 2038]
+% ledger: g10:posix-epoch, g10:posix-86400
+Many systems count time as a number of seconds since an instant called the \emph{Epoch}, fixed by the POSIX
+standard at 1~January 1970, 00:00:00 UTC, every day counting exactly $86{,}400$ seconds. A count of seconds kept in a
+signed $32$-bit integer runs out in 2038, and the weekend problem computes the exact second. Software written to
+count in $64$ bits does not have the problem; old devices and old file formats that store $32$ bits do, which is why
+the date is known as the year 2038 problem.
+\end{history}
+
+\section{Exercises}\label{sec:g10:machine-integers:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g10:machine-integers:1}
+What do \code{bin(13)}, \code{hex(255)}, \code{int("1010", 2)}, \code{int("ff", 16)} and \code{bin(2**8)} return?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:machine-integers:2}
+A sensor sends its readings as $12$-bit \omterm{def:g10:machine-integers:unsigned}{unsigned integers}. What are the smallest and the largest values? How many
+different values can it send?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:machine-integers:3}
+Write $-5$, $-1$, $-128$ and $127$ in \omterm{def:g10:machine-integers:twos-complement}{two's complement} on $8$ bits. Which of $128$ and $-129$ can be written, and why?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:machine-integers:4}
+What do \code{1 << 10}, \code{100 >> 2}, \code{7 >> 3}, \code{5 << 1} and \code{0b1011 >> 1} give? Say each time which
+multiplication or division by a power of two it computes.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:machine-integers:5}
+Without looking at the chapter's listing, write \code{to_base(n, b)} with its \omterm{def:g10:specifications-and-tests:docstring}{docstring} and test it by converting
+back with \code{int}. What does it return for $n = 0$, and why must that case be treated apart?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:machine-integers:6}
+Without computing the product, give the largest number of bits that the product of a $20$-bit number and a $13$-bit
+number can need, and the smallest. Give an example for each.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:machine-integers:7}
+A program reads 8-bit two's-complement values from a file as strings of eight characters \code{0} and \code{1}, and
+decodes them with \code{int(bits, 2)}. A temperature of $-5$ degrees appears as $251$. Explain the bug and write a
+correct \code{decode(bits)}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:machine-integers:8}
+Write \code{test_bit(x, i)}, \code{set_bit(x, i)} and \code{clear_bit(x, i)}, and test that clearing a bit after
+setting it gives the same result as clearing it directly.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:machine-integers:9}
+On $8$ bits, compute $100 + 50$: the pattern of the result, its unsigned value and its signed value. Which of the two
+readings \omterm{def:g10:machine-integers:overflow}{overflows}? Do the same for $-100 + (-50)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:machine-integers:10}
+Follow the values of \code{a} and \code{b} through \code{a = a ^ b}, \code{b = a ^ b}, \code{a = a ^ b}, starting with
+\code{a = 12} and \code{b = 10}, in binary. What do the three lines do? Use the facts \code{x ^ x == 0} and
+\code{x ^ 0 == x} to explain why.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:machine-integers:11}
+To read the green byte of a colour, a student writes \code{(c >> 16) & 0xFF}; another writes \code{c >> 8}. For
+\code{c = 0xF4A261}, what does each get? Correct both.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:machine-integers:12}
+Prove that for every signed $n$-bit integer $x$ other than $-2^{n-1}$, flipping the bits of $x$ and adding $1$ gives the
+pattern of $-x$, and say what happens for $-2^{n-1}$ (try it on $4$ bits).
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:machine-integers:13}
+The \emph{population count} of $x \ge 0$ is the number of $1$ bits of $x$. Write a function that looks at the bits one
+by one with \code{x & 1} and \code{x >> 1}, and a second one that repeats \code{x = x & (x - 1)} until $x$ is $0$.
+Explain why \code{x & (x - 1)} clears the rightmost $1$ bit, and compare the numbers of loop turns of the two functions
+for $x = 2^{40}$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:machine-integers:14}
+Prove the proposition on detecting a signed \omterm{def:g10:machine-integers:overflow}{overflow}: if $x$ and $y$ have different signs, $x + y$ is always in range;
+if both are $\ge 0$ and the true sum is too large, the stored result has its sign bit set; if both are negative and the
+true sum is too small, it has its sign bit clear.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:machine-integers:15}
+Write \code{add_n_bits(a, b, n)}, which adds two $n$-bit patterns and returns the $n$-bit result, the carry (the
+unsigned sum needed $n + 1$ bits) and the signed \omterm{def:g10:machine-integers:overflow}{overflow} flag. Test it against Python's own arithmetic for every
+pair of $8$-bit values you can afford, and give the result for \code{(100, 50, 8)}.
+\end{exercise}
+
+\section{Problem: The 2038 Rollover}\label{sec:g10:machine-integers:problem}
+
+\begin{problem}[{Weekend problem --- the last second of a 32-bit clock}]\label{pb:g10:machine-integers:1}
+A door-entry system records the time of each badge as the number of seconds since 1~January 1970, 00:00:00 UTC (see
+the history box of this chapter), in a signed $32$-bit integer. The program \code{exercises/rollover.py} and
+Python's \code{datetime} module help with the dates, but every count below can be done by hand first.
+
+\medskip\noindent\textbf{Part I --- Counting seconds.}
+\begin{enumerate}
+  \item How many seconds are there in a day, and in a year of $365$ days?
+  \item How many days are there from 1~January 1970 to 1~January 2000? (There are $7$ leap years among
+    1970--1999; name them.)
+  \item Deduce the number of seconds since the Epoch at 1~January 2000, 00:00:00 UTC.
+  \item Check it with Python: \code{datetime(2000, 1, 1, tzinfo=UTC).timestamp()}, after
+    \code{from datetime import UTC, datetime}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The largest value.}
+\begin{enumerate}[resume]
+  \item What is the largest signed $32$-bit integer? Give it as a power of two minus one and in decimal.
+  \item Write its pattern in hexadecimal.
+  \item About how many years of $365.25$ days does it represent?
+  \item Add that to 1970: in which year does the counter run out?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The exact instant.}
+\begin{enumerate}[resume]
+  \item Run \code{exercises/rollover.py}. At which date and time does the largest value fall?
+  \item How many whole days after the Epoch is that, and how many seconds remain after those days?
+  \item Convert the remaining seconds into hours, minutes and seconds, and check the time printed by the program.
+  \item What is the next second, written as a count, and why can the register not hold it?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- After the wrap.}
+\begin{enumerate}[resume]
+  \item Adding $1$ to the largest value in a signed $32$-bit register gives which pattern, and which signed value?
+  \item Using the wheel of this chapter, explain the jump on a $4$-bit clock that counts from $0$.
+  \item Which date does the program print for the wrapped value?
+  \item By how many seconds does the clock jump backwards? Express it as a power of two.
+  \item How long before 1970 is the wrapped date, in days? Check with the answer to question 10.
+  \item If the count were stored as an \emph{unsigned} $32$-bit integer instead, when would it run out? (The program
+    prints it.) What would the system then be unable to record?
+  \item With $64$ signed bits, how long would the count last? (The program prints it.)
+  \item State the result: the last instant a signed $32$-bit count of seconds can hold, and the date it shows one
+    second later.
+\end{enumerate}
+\end{problem}

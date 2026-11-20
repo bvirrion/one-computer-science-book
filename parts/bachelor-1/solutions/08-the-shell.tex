@@ -1,0 +1,159 @@
+% Solutions of 08-the-shell.
+\section*{Chapter \ref{ch:b1:the-shell} --- The Shell}
+
+\begin{solution}{exo:b1:the-shell:1}
+\omoutput[2-9]{code/bachelor-1/08-the-shell/outputs/exo_status.txt}{The four lines.}
+\code{grep -q} finds Hilltop: 0. \code{grep -c} prints its count, 0, and exits with 1 because it found no line. In the
+third line \code{ls} succeeds, so \code{false} runs and gives 1. In the fourth, \code{false} fails, so \code{true} runs: 0.
+\end{solution}
+
+\begin{solution}{exo:b1:the-shell:2}
+\omoutput[2-9]{code/bachelor-1/08-the-shell/outputs/exo_glob.txt}{The expansions.}
+\code{?} is exactly one character, so \code{r10.csv} is not matched by \code{r?.csv}. \code{.r4.csv} starts with a dot and
+is matched by no pattern here. The names are sorted in the order of the locale; this run uses the plain \omterm{def:b1:c-strings-structs-files:byte-order}{byte order}, in
+which capital letters come first.
+\end{solution}
+
+\begin{solution}{exo:b1:the-shell:3}
+\omoutput[2-10]{code/bachelor-1/08-the-shell/outputs/exo_pipe.txt}{The three \omterm{def:b1:the-shell:pipeline}{pipelines}.}
+Without \code{sort}, \code{uniq -c} collapses only adjacent duplicates, and no two adjacent lines of \code{visits.txt} are
+equal: 6 lines. \code{tr a-z A-Z} capitalises every letter, which makes \code{harbour} and the others comparable.
+\end{solution}
+
+\begin{solution}{exo:b1:the-shell:4}
+\omoutput[2-9]{code/bachelor-1/08-the-shell/outputs/exo_chmod.txt}{The four modes.}
+640 is \code{rw-} (6) for the owner, \texttt{r-{}-{}} (4) for the group, nothing for others. \code{u+x,o+r} adds two bits to
+640, which makes 744.
+\end{solution}
+
+\begin{solution}{exo:b1:the-shell:5}
+\code{$(ls *.csv)} is unquoted: its output, the two lines \code{members 2024.csv} and \code{members.csv}, is split at
+every space and newline into the words \code{members}, \code{2024.csv} and \code{members.csv}, and \code{wc} is run on
+each. Let the \omterm{def:b1:the-shell:shell}{shell} expand the \omterm{def:b1:the-shell:expansion}{glob}, which makes each name one word, and quote the variable:
+\code{for f in *.csv; do wc -l "$f"; done}.
+\end{solution}
+
+\begin{solution}{exo:b1:the-shell:6}
+\omoutput{code/bachelor-1/08-the-shell/outputs/exo_order.txt}{The two orders.}
+\omterm{def:b1:the-shell:redirection}{Redirections} are performed from left to right. In the first line, standard output goes to \code{out1.txt}, then
+\code{2>&1} sends standard error to the same place. In the second, \code{2>&1} sends standard error where standard
+output goes at that moment, the terminal; only then does standard output move to \code{out2.txt}, which stays empty.
+\end{solution}
+
+\begin{solution}{exo:b1:the-shell:7}
+\omcode{code/bachelor-1/08-the-shell/exercises/topk.sh}{1}{16}{The most frequent values of a column}
+The test \code{tests/test_pipeline.py} runs it on the stations of the weather file and compares with a count made in
+Python.
+\end{solution}
+
+\begin{solution}{exo:b1:the-shell:8}
+\omoutput{code/bachelor-1/08-the-shell/outputs/exo_hottest.txt}{The hottest day of each station.}
+\code{grep -v} drops the lines with an empty temperature or the error code. The first \code{sort} orders the lines by
+the third field, as general numbers, in decreasing order. The second sorts by station only, \code{-s} keeping the
+previous order among equal stations, and \code{-u} keeps the first line of each station: its hottest day. The test
+checks it against Python.
+\end{solution}
+
+\begin{solution}{exo:b1:the-shell:9}
+A mode is nine independent bits. The owner's read bit must be 1, and the group's and the others' write bits must be 0:
+three bits fixed, six free, $2^6 = 64$ modes. The test \code{tests/test_pipeline.py} counts them.
+\end{solution}
+
+\begin{solution}{exo:b1:the-shell:10}
+\omcode{code/bachelor-1/08-the-shell/exercises/dupes.sh}{1}{20}{Groups of identical files}
+\code{read -r} with \code{IFS=} keeps a name with spaces whole, and every expansion is quoted. Two different contents can
+have the same 32-bit checksum, so equal checksums only make equality very likely; \code{cmp} on each pair would prove
+it. On a large tree, compute the checksums only for the files whose size occurs twice, since files of different sizes
+cannot be equal. The test makes three equal files (one with a space in its name), two of equal size and different
+content, and checks the single group printed.
+\end{solution}
+
+\begin{solution}{exo:b1:the-shell:11}
+After \code{echo}: one name. After \code{ln a b}: two names for one file. \code{ln -s a c} creates a new, separate file
+holding the path \code{a}: still two names for the first one. After \code{rm a}: one name, \code{b}. \code{cat b} prints
+\code{data}; \code{cat c} looks for \code{a} and fails. After \code{echo new > a}, \code{a} is a new file with one name,
+unrelated to \code{b}: \code{cat b} still prints \code{data}, and \code{cat c} now prints \code{new}, since it follows
+whatever the path names. The test \code{tests/test_pipeline.py} checks the counts.
+\end{solution}
+
+\begin{solution}{exo:b1:the-shell:12}
+\omoutput[2-9]{code/bachelor-1/08-the-shell/outputs/exo_words.txt}{The four lines.}
+Line 1: \code{$f} expands and is split into \code{a} and \code{b}; \code{"$f"} expands without splitting; \code{'$f'} does
+not expand: 4 arguments. Line 2: unquoted, \code{*} undergoes \omterm{def:b1:the-shell:expansion}{pathname expansion} and becomes \code{x.txt}; quoted, it
+stays \code{*}: 2. Line 3: in the word \code{"$f"$f}, the quoted part stays whole and the unquoted part is split, which
+gives \code{a ba} and \code{b}; \code{""} is one empty argument; an unquoted expansion of an unset variable gives no word
+at all: 3. Line 4: the backslash protects the space, and adjacent quoted pieces form one word: 2.
+\end{solution}
+
+\begin{solution}{pb:b1:the-shell:1}
+\textbf{1.} 640 requests, 278 of them searches.
+
+\textbf{2.} With the space as separator, field 1 is the date, 2 the time, 3 the member, 4 the action; \code{-f5} gives
+the book.
+
+\textbf{3.} $22 / 640 \approx 3.4\,\%$.
+
+\textbf{4.} Four lines are easy to read in any order; \code{uniq -c} counts runs of adjacent equal lines, and the log is
+in time order, so without \code{sort} each action would appear many times with small counts.
+
+\textbf{5.} \code{grep -c "member=24 " access.log}, with the space so that member 241 would not match, or
+\code{grep -cw member=24}.
+
+\textbf{6.} 104. \code{^} anchors at the start, \code{.{11}} skips the 10 characters of the date and the space, and
+\code{1[23]:} is an hour 12 or 13 followed by its colon.
+
+\textbf{7.} \code{s/.*reason=//} replaces everything up to \code{reason=} by nothing, leaving the reason; on a line
+without \code{reason=}, nothing matches and the whole line would pass unchanged, so the error lines are selected first.
+
+\textbf{8.} $8 + 7 + 7 = 22$, the number of failed requests.
+
+\textbf{9.} An anonymous line holds \code{member=-}, and \code{[0-9]+} requires at least one digit after the \code{=}.
+
+\textbf{10.} 114 anonymous and $640 - 114 = 526$ by members.
+
+\textbf{11.} \code{grep -E "action=borrow .*status=error"}, and \code{grep -E "^.{11}(18:[3-5]|19:)"}.
+
+\textbf{12.} The f-string writes the hour with \code{{h:02d}}, always two digits, after a 10-character date and a
+space.
+
+\textbf{13.} The number of arguments (exactly two), and that the hour is two digits; on either failure it prints a
+message on standard error and exits with 2.
+
+\textbf{14.} \code{07} is a valid hour at which nothing happened, a negative answer: 1. \code{7am} is a misuse of the
+script: 2. A caller can then tell ``no result'' from ``wrong call''.
+
+\textbf{15.} \code{grep -c} exits with 1 when it counts zero lines; under \code{set -e}, that status inside
+\code{$( )} assigned to a variable would stop the script before it could print its own message. \code{|| true} turns it
+into a success.
+
+\textbf{16.} In single quotes \code{$hour} would not be expanded, and \code{grep} would look for the characters
+\code{$hour}.
+
+\textbf{17.} For example: \code{grep "^.{11}$hour:" "$log" > "$tmp"}, then \code{lines=$(wc -l < "$tmp")} and the member
+\omterm{def:b1:the-shell:pipeline}{pipeline} on \code{"$tmp"}, with \code{tmp=$(mktemp)} and a \code{trap} that removes it.
+
+\textbf{18.} 0 for the busiest hour (the normal case), 1 for \code{07} (the negative answer), 2 for \code{7} (a bad hour)
+and for a missing argument (the usage): one test per exit path of the script.
+
+\textbf{19.} \code{cut} keeps the two digits of the hour; \code{sort} groups equal hours; \code{uniq -c} counts each group;
+\code{sort -rn} orders the counts from largest; \code{head -3} keeps three.
+
+\textbf{20.} \code{sort -rn} breaks a tie by comparing whole lines in reverse, so the later hour would come first;
+\code{max} with the key \code{(count, hour)} also picks the later hour. They agree.
+
+\textbf{21.} \code{uniq} removes only adjacent duplicates; the member ids appear in time order, not grouped. \code{sort -u}
+sorts and removes all duplicates.
+
+\textbf{22.} About $5/12 \times 0.4 \approx 17\,\%$ of the lines are anonymous, so about 530 lines draw a member among 42:
+the chance that a given visitor is never drawn is $(41/42)^{530}$, about $3 \times 10^{-6}$. It reaches $1/42$, so that
+one missing visitor is expected, when $(41/42)^m = 1/42$, $m = \ln 42 / \ln(42/41) \approx 155$ member lines, that is
+about 190 lines in all.
+
+\textbf{23.} That two independent computations of the same two quantities give the same result on this input: an error
+in either would have to be matched by the same error in the other. It does not prove either program right on every log.
+
+\textbf{24.} \emph{The \omterm{def:b1:the-shell:pipeline}{pipeline} theorem of the log.} On the day's 640 requests, the \omterm{def:b1:the-shell:pipeline}{pipeline}
+\code{cut -c12-13 | sort | uniq -c | sort -rn | head -1} finds the busiest hour, 11~o'clock with 92 requests, and
+\code{grep -oE "member=[0-9]+" | sort -u | wc -l} finds 42 distinct members; the Python program, which shares no code with them, prints the same three
+numbers, and the chapter's test checks the agreement each time the code is run.
+\end{solution}

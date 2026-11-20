@@ -1,0 +1,184 @@
+% Solutions of Book 4, chapter 23 (context-free grammars and pushdown automata).
+\section*{Chapter \ref{ch:b2:context-free-languages} --- Context-Free Grammars and Pushdown Automata}
+
+\begin{solution}{exo:b2:context-free-languages:1}
+\omoutput{code/bachelor-2/23-context-free-languages/outputs/exo_leftmost.txt}{The \omterm{def:b2:context-free-languages:parse-tree}{leftmost derivation} of $(a) * a$.}
+The tree: $E$ has one child $T$; that $T$ has the children $T$, $*$, $F$; the left $T$ goes down through $F$ to $(E)$,
+whose $E$ goes down through $T$ and $F$ to $a$; the right $F$ is $a$. Its nine inner nodes are the eight steps plus the
+\omterm{def:b2:context-free-languages:grammar}{start symbol} $E$.
+\end{solution}
+
+\begin{solution}{exo:b2:context-free-languages:2}
+\omoutput{code/bachelor-2/23-context-free-languages/outputs/exo_brackets.txt}{The words of length at most 4, and a
+check up to length 10.}
+$S \Rightarrow (S)S \Rightarrow ()S \Rightarrow ())S(S \Rightarrow ())(S \Rightarrow ())($. The grammar generates the
+words with as many $($ as $)$. Each production adds one of each, so every \omterm{def:b2:context-free-languages:derivation}{generated} word has equal numbers. Conversely,
+let $w$ be nonempty with equal numbers, say starting with $($, and let $(u)$ be its shortest nonempty prefix with equal
+numbers: the difference between the numbers of $($ and $)$ stays positive inside it, so it ends with $)$, and $u$ and
+the rest $v$ both have equal numbers; by induction on the length they are \omterm{def:b2:context-free-languages:derivation}{generated}, and $S \to (S)S$ gives $w$. A
+word starting with $)$ is handled by $S \to )S(S$ in the same way.
+\end{solution}
+
+\begin{solution}{exo:b2:context-free-languages:3}
+\omoutput{code/bachelor-2/23-context-free-languages/outputs/exo_palindromes.txt}{The grammar against every word.}
+$P \to aPa \mid bPb \mid a \mid b \mid \varepsilon$: a palindrome of length at least 2 starts and ends with the same
+letter around a shorter palindrome, and those of length 0 and 1 are the last three \omterm{def:b2:context-free-languages:grammar}{productions}. There are $2^{\lceil
+n/2 \rceil}$ palindromes of length $n$, and $1 + 2 + 2 + 4 + 4 + \cdots + 64 + 64 = 253$ up to length 12.
+\end{solution}
+
+\begin{solution}{exo:b2:context-free-languages:4}
+Five trees, one per way to bracket the three additions: $((a + a) + a) + a$, $(a + (a + a)) + a$, $(a + a) + (a + a)$,
+$a + ((a + a) + a)$ and $a + (a + (a + a))$; this is $C_3 = 5$. The grammar with levels gives one, the first, since $E
+\to E + T$ puts the last addition at the root (\cref{out:b2:context-free-languages:ambiguity}).
+\end{solution}
+
+\begin{solution}{exo:b2:context-free-languages:5}
+\omoutput{code/bachelor-2/23-context-free-languages/outputs/exo_cyk.txt}{The two tables.}
+For $aabb$: the letters give $A, A, B, B$; the middle $ab$ is $S$ by $S \to AB$; $abb$ is $C$ by $C \to SB$; the whole
+word is $S$ by $S \to AC$. For $abab$ the two $ab$ are $S$, but nothing derives $aba$, $bab$ or the whole word. $S \to
+AB$ gives $ab$ and $S \to AC \to aSb$ wraps a word of the language in $a \cdots b$: the language is $\{a^nb^n : n \ge
+1\}$.
+\end{solution}
+
+\begin{solution}{exo:b2:context-free-languages:6}
+\omoutput{code/bachelor-2/23-context-free-languages/outputs/exo_unit_cycle.txt}{The naive recursion, and the method.}
+Following $A \to B$ then $B \to A$ leads back to $A$, and the recursion never ends (here it is stopped at depth 12;
+otherwise the stack overflows). The method searches the graph of the unit \omterm{def:b2:context-free-languages:grammar}{productions} and visits each \omterm{def:b2:context-free-languages:grammar}{nonterminal} at
+most once, so from $S$ it reaches $\{S, A, B\}$ and gives $S$ the \omterm{def:b2:context-free-languages:grammar}{productions} $ab$, $a$ and $b$; $A$ and $B$ are then no
+longer reachable from $S$ and are dropped.
+\end{solution}
+
+\begin{solution}{exo:b2:context-free-languages:7}
+\omcode{code/bachelor-2/23-context-free-languages/exercises/descent.rs}{9}{35}{One function per \omterm{def:b2:context-free-languages:grammar}{nonterminal}}
+\omoutput{code/bachelor-2/23-context-free-languages/outputs/exo_descent.txt}{The recogniser against the grammar.}
+The two \omterm{def:b2:context-free-languages:grammar}{productions} of $S$ start with different letters, $c$ or the $a$ of $T$, so one letter decides; $T$ has one
+production. Each function returns whether it read one word of its \omterm{def:b2:context-free-languages:grammar}{nonterminal}, moving the position past it, and the
+whole word is accepted when $S$ succeeds and nothing is left. Every word of the language has a length $3k + 1$.
+\end{solution}
+
+\begin{solution}{exo:b2:context-free-languages:8}
+Every \omterm{def:b2:context-free-languages:derivation}{generated} word is balanced, by induction on the \omterm{def:b2:context-free-languages:derivation}{derivation}: $\varepsilon$ is, and if $u$ and $v$ are, so is
+$(u)v$: its numbers are equal, a prefix inside $(u$ has one more $($ than a prefix of $u$, and a prefix $(u)v'$ has as
+many of each as $v'$. Conversely, by strong induction on the length: let $w$ be balanced and nonempty. Its first letter
+is $($, since the prefix of length 1 cannot have more $)$. Let $(u)$ be the shortest nonempty prefix with as many $)$
+as $($; inside it the difference stays positive, so $u$ is balanced, and the rest $v$ is balanced too (its prefixes
+add to a balanced prefix). Both are shorter than $w$, so $S \Rightarrow^* u$ and $S \Rightarrow^* v$, and $S
+\Rightarrow (S)S \Rightarrow^* (u)v = w$.
+\end{solution}
+
+\begin{solution}{exo:b2:context-free-languages:9}
+\omcode{code/bachelor-2/23-context-free-languages/listings/exo_pda_equal.rs}{9}{16}{Six moves on the surplus, and an
+accepting move}
+\omoutput{code/bachelor-2/23-context-free-languages/outputs/exo_pda_equal.txt}{The automaton on every word up to length
+10.}
+The stack holds the surplus: $k$ symbols $A$ above the bottom if $k$ more $a$ than $b$ have been read, $k$ symbols $B$
+if $k$ more $b$. An $a$ pushes an $A$ unless a $B$ is on top, which it pops; symmetrically for $b$. By induction on
+the input read, the stack is always that surplus, so the bottom is on top exactly when the numbers are equal, and the
+last move accepts then. This automaton never guesses: it has one move in each configuration.
+\end{solution}
+
+\begin{solution}{exo:b2:context-free-languages:10}
+Let $L = \{ww\}$ and $R = a^+b^+a^+b^+$. If $L$ were \omterm{def:b2:context-free-languages:derivation}{context-free}, so would be $L \cap R = \{a^ib^ja^ib^j : i, j \ge
+1\}$ (\cref{exo:b2:context-free-languages:12}). Take $p$ from \cref{thm:b2:context-free-languages:pumping} and $z =
+a^pb^pa^pb^p$. Since $|vwx| \le p$, $vwx$ lies inside one block or across two adjacent ones. If $v$ or $x$ contains two
+different letters, $uv^2wx^2y$ is not in $R$. Otherwise pumping with $i = 2$ makes one or two adjacent blocks longer
+and leaves the others unchanged: the first and third blocks, or the second and fourth, no longer have the same length.
+Either way $uv^2wx^2y \notin L \cap R$, a contradiction.
+\end{solution}
+
+\begin{solution}{exo:b2:context-free-languages:11}
+\omcode{code/bachelor-2/23-context-free-languages/exercises/bigcount.rs}{80}{108}{CYK with counts}
+\omoutput{code/bachelor-2/23-context-free-languages/outputs/exo_bigcount.txt}{Sums of 10 to 100 operands.}
+A number is a vector of 32-bit digits; a product of two digits plus a digit and a carry stays below $2^{64}$, so each
+step is exact in 64 bits. Each cell maps a \omterm{def:b2:context-free-languages:grammar}{nonterminal} to its number of trees: one per production $A \to a$ at the
+bottom, and for each split and each $A \to BC$ the product of the counts of $B$ and $C$, added to $A$'s count. In
+\omterm{def:b2:context-free-languages:cnf}{Chomsky normal form} a tree is exactly a choice of production and split at each node, so the sum counts each tree once;
+here the conversion of $E \to E + E \mid a$ (into $E \to E\,X_0$, $X_0 \to \text{\code{'+'}}\,E$) keeps the trees in
+bijection. The Catalan numbers are computed by $C_k = C_{k-1} \cdot 2(2k - 1)/(k + 1)$, a division that is always
+exact. $C_{99}$ has 57 digits.
+\end{solution}
+
+\begin{solution}{exo:b2:context-free-languages:12}
+Let $P$ be a PDA with states $Q$ and \omterm{def:b2:finite-automata:dfa}{accepting states} $F$, and $D$ a complete DFA with states $R$, start $r_0$,
+transitions $\delta$ and \omterm{def:b2:finite-automata:dfa}{accepting states} $F'$. The product PDA has states $Q \times R$, start $(q_0, r_0)$, the same
+stack, \omterm{def:b2:finite-automata:dfa}{accepting states} $F \times F'$, and the moves $((q, r), a, Z) \to ((q', \delta(r, a)), \gamma)$ for each move
+$(q, a, Z) \to (q', \gamma)$ of $P$ reading a letter, and $((q, r), \varepsilon, Z) \to ((q', r), \gamma)$ for each
+spontaneous move. By induction on the number of moves, the product goes from $((q_0, r_0), w, Z_0)$ to $((q, r), y,
+\gamma)$ exactly when $P$ goes from $(q_0, w, Z_0)$ to $(q, y, \gamma)$ and $r = \delta^*(r_0, x)$ with $w = xy$. So
+it accepts $w$ exactly when $P$ accepts it and $D$ does. A product of two PDAs would need two stacks, which is why
+the intersection of two \omterm{def:b2:context-free-languages:derivation}{context-free languages} can fail to be \omterm{def:b2:context-free-languages:derivation}{context-free}.
+\end{solution}
+
+\begin{solution}{pb:b2:context-free-languages:1}
+\textbf{1.} $D \Rightarrow D\,D \Rightarrow [D]\,D \Rightarrow [w]\,D \Rightarrow [w]w$.
+
+\textbf{2.} The nonempty sequences of items, an item being a word $w$, a nonempty notice in bold between two $*$, or
+a nonempty notice as a link between brackets.
+
+\textbf{3.} Intersected with the \omterm{def:b2:regular-languages:regular}{regular language} $[^*w\,]^*$, the notices give $\{[^nw\,]^n\}$; for $i \ne j$ the
+words $[^i$ and $[^j$ have different residuals ($w\,]^i$ is in one only), so this is not regular, and since \omterm{def:b2:regular-languages:regular}{regular
+languages} are closed under intersection, neither are the notices.
+
+\textbf{4.} $D \to wD \mid w$.
+
+\textbf{5.} Both have the root $D \to D\,D$: one with $ww$ under the left child, $(ww)w$, the other with $ww$ under the
+right child, $w(ww)$.
+
+\textbf{6.} One bold item \code{*(w *w* w)*}, whose inner sequence of three items is grouped in two ways; and the
+sequence \code{*w*}, \code{w}, \code{*w*}, grouped in two ways.
+
+\textbf{7.} $D \to D\,D$, which is associative but says nothing of the grouping. With $D \to ID \mid I$, a sequence is a
+first item followed by the rest, in one way only.
+
+\textbf{8.} The list of three items \code{*w*}, \code{w}, \code{*w*}; and one item \code{*D*} whose $D$ is the list \code{w},
+\code{*w*}, \code{w}.
+
+\textbf{9.} With the same symbol for opening and closing, a $*$ can be read either way, which question 8 shows. With
+\code{<} and \code{>} a reader always knows which it is, as with brackets.
+
+\textbf{10.} That no notice of length at most 8 has two trees, nothing more. A proof for every length: in $I$, the
+first letter chooses the production; in $D \to ID \mid I$, the item ends where its closing symbol matches its opening
+one (or after one $w$), so the split is forced, and an induction on the length gives one tree.
+
+\textbf{11.} Yes: both generate the nonempty sequences of items with bold between $*$; only the trees differ.
+
+\textbf{12.} \code{D} $\Rightarrow$ \code{I D} $\Rightarrow$ \code{<D> D} $\Rightarrow$ \code{<I> D} $\Rightarrow$ \code{<w> D} $\Rightarrow$ \code{<w> I} $\Rightarrow$ \code{<w>[D]} $\Rightarrow$ \code{<w>[I]} $\Rightarrow$ \code{<w>[w]}.
+
+\textbf{13.} TERM (the four symbols in the right sides of length 3), BIN (cutting \code{<D>} and \code{[D]} into
+\code{'<'}~$X_0$, $X_0 \to D$~\code{'>'} and the same with $X_1$) and UNIT ($D \to I$). No \omterm{def:b2:context-free-languages:grammar}{nonterminal} derives
+$\varepsilon$, so START and DEL change nothing.
+
+\textbf{14.} Because of the unit production $D \to I$: every item is also a notice.
+
+\textbf{15.} Each letter's cell holds the \omterm{def:b2:context-free-languages:grammar}{nonterminals} with a production to it: \code{'<'} for \code{<}, $D$ and $I$ for
+$w$ (by $I \to w$, and $D \to w$ from UNIT), \code{'['}, \code{']'} and \code{'>'} for the three others.
+
+\textbf{16.} It covers $[w]$: $X_1$ derives $w]$ by $X_1 \to D$~\code{']'} (the cell of length 2 at $w$), and
+\code{'['}~$X_1$ is a right side of both $I$ and $D$.
+
+\textbf{17.} The top cell, of length 7, is empty, so $D$ is not in it. The factor \code{[w>} is the trouble: no production
+puts a \code{>} right after a link's content, so no cell over a factor containing it holds $D$, $I$, $X_0$ or $X_1$ ending
+there correctly.
+
+\textbf{18.} $(7^3 - 7)/6 = 56$ and $(6^3 - 6)/6 = 35$.
+
+\textbf{19.} As in \cref{thm:b2:context-free-languages:cyk}: $\sum_{\ell=2}^{n} (n - \ell + 1)(\ell - 1) = \sum_{j=1}^{n-1}
+(n - j)j = (n^3 - n)/6$.
+
+\textbf{20.} The two columns agree on all five lines; for $n = 21$, $(9\,261 - 21)/6 = 1\,540$.
+
+\textbf{21.} About 7 to 8 times: the work is cubic, and $2^3 = 8$; for the smallest notices the time is too short to
+measure well.
+
+\textbf{22.} Seven: $D \to ID$, $D \to$ \code{'<'}~$X_0$, $D \to$ \code{'['}~$X_1$, $I \to$ \code{'<'}~$X_0$, $I \to$
+\code{'['}~$X_1$, $X_0 \to D$~\code{'>'}, $X_1 \to D$~\code{']'}; each split point tests all seven, so the time is
+about $7 \times (n^3 - n)/6$ tests.
+
+\textbf{23.} Scaling the last line by $(20\,000/336)^3 \approx 211\,000$: about $0.078 \times 211\,000 \approx
+16\,000$ seconds, some four and a half hours. Checking a long notice needs a linear-time method for a restricted kind
+of grammar, which is what the parsers of compilers use.
+
+\textbf{24.} \emph{CYK's cubic count}: on a grammar in \omterm{def:b2:context-free-languages:cnf}{Chomsky normal form}, CYK examines $(n^3 - n)/6$ split points
+for a word of length $n$, each against every production $A \to BC$, so its time grows as $n^3$; the program counted
+exactly that number for notices of 21 to 336 letters, and its time grew about eightfold at each doubling.
+\end{solution}

@@ -1,0 +1,408 @@
+% Provenance (never printed): SNT "Les donnees structurees et leur traitement" (descriptors, values, CSV, selection,
+% sorting, merging tables, consistency) and NSI premiere "Traitement de donnees en tables" (indexation, search,
+% sorting on a column, merging on a common descriptor). See sources/book2/BRIEFS.md.
+\chapter{Processing Data Tables}\label{ch:g10:data-tables}
+
+The town of Brenmoor has two weather stations, one on the hill and one by the river, and each records the
+temperature, the rain and the wind once a day. Ilias wants the year's mean temperature at the river for a school
+report. His first try gives $11.43$~°C. Then he notices a January day at $-99$~°C, a summer day recorded twice, and
+blank cells. Which number is true?
+
+This chapter treats a file of records as a table and does to it what every data program does: select, sort, group,
+\omterm{def:g10:data-tables:join}{join} with another table, and find the records that cannot be right. Each operation is a few lines of Python; the
+care goes into knowing what each line does to the data.
+
+\begin{recall}
+A dictionary maps keys to values; a record can be stored as a dictionary, and a table as a list of records. A table
+saved as a text file with separators can be loaded as such a list (Book 1, grade 8, which also sorted lists and
+counted comparisons). The mathematics book defines the mean, the median and the spread of a list of values
+(grade 10).
+\end{recall}
+
+\section{A table of records}\label{sec:g10:data-tables:records}
+
+\begin{definition}[Header, descriptor, domain]\label{def:g10:data-tables:header}
+A data table is a list of records that all have the same fields. The name of a field is a
+\emph{descriptor}\index{descriptor}; the first line of a table file, which lists the descriptors, is its
+\emph{header}\index{header (of a table)}. The \emph{domain}\index{domain of a column} of a column is the set of values
+it may take: dates of 2025, the two station names, temperatures in degrees.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=24mm, y=-6mm, font=\footnotesize\ttfamily]
+  \fill[omDef!12] (0,0) rectangle (5,1);
+  \fill[omProp!14] (0,2) rectangle (5,3);
+  \fill[omMeth!14] (2,0) rectangle (3,4);
+  \foreach \c in {0,...,5} \draw[black!50] (\c,0) -- (\c,4);
+  \foreach \r in {0,...,4} \draw[black!50] (0,\r) -- (5,\r);
+  \foreach \h [count=\c from 0] in {date,station,temp\_c,rain\_mm,wind\_kmh}
+    \node at (\c+0.5,0.5) {\h};
+  \foreach \r/\a/\b/\t/\u/\v in {1/2025-01-01/Hilltop/3.9/0.0/15.3, 2/2025-01-01/Riverside/4.3/0.0/10.4,
+      3/2025-01-02/Hilltop/3.9/0.0/12.4} {
+    \node at (0.5,\r+0.5) {\a}; \node at (1.5,\r+0.5) {\b}; \node at (2.5,\r+0.5) {\t};
+    \node at (3.5,\r+0.5) {\u}; \node at (4.5,\r+0.5) {\v};
+  }
+  \draw[very thick, omThm] (4,1) rectangle (5,2);
+  \begin{scope}[font=\footnotesize\rmfamily]
+    \node[anchor=east, text=omDef] at (-0.05,0.5) {header};
+    \node[anchor=east, text=omProp] at (-0.05,2.5) {a record (row)};
+    \node[anchor=north, text=omMeth] at (2.5,4.1) {a column};
+    \node[anchor=west, text=omThm] at (5.05,1.5) {a cell};
+  \end{scope}
+\end{tikzpicture}
+
+{\small The first lines of the weather table: a \omterm{def:g10:data-tables:header}{header} of five \omterm{def:g10:data-tables:header}{descriptors}, then one record per station and per
+day.}
+\end{omfigure}
+
+% ledger: g10:csv-4180
+The town's tables are \emph{CSV} files (comma-separated values, described in 2005): one record per line, the fields
+separated by commas, the \omterm{def:g10:data-tables:header}{header} first. A field that itself holds a comma is put between double quotes. Python's
+\code{csv} module knows these rules; \code{csv.DictReader} reads each line as a dictionary whose keys are the
+\omterm{def:g10:data-tables:header}{descriptors}. Every value it gives is a string, so the program converts them.
+
+\omcode{code/grade-10/07-data-tables/listings/load_weather.py}{1}{30}{Loading a CSV table with converted
+values.}\label{lst:g10:data-tables:load-weather}
+
+\omoutput{code/grade-10/07-data-tables/outputs/load_weather.txt}{$731$ records, but a year has $365$ days: Riverside
+has one record too many.}\label{out:g10:data-tables:load-weather}
+
+The other listings of the chapter import \code{read_table} from this file. An empty cell becomes \code{None}, a
+value that Python reserves for ``nothing''; keeping it apart from $0$ matters, since a day without a measured
+temperature is not a day at $0$~°C.
+
+\section{Selecting, projecting and sorting}\label{sec:g10:data-tables:select}
+
+\begin{definition}[Selection, projection]\label{def:g10:data-tables:selection}
+A \emph{selection}\index{selection} keeps the records of a table that satisfy a condition. A
+\emph{projection}\index{projection} keeps some columns of every record.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=7mm, y=-4mm]
+  \foreach \r in {1,4,5} \fill[omProp!30] (0,\r) rectangle (5,\r+1);
+  \foreach \r in {0,...,6} \foreach \c in {0,...,4} \draw[black!40] (\c,\r) rectangle (\c+1,\r+1);
+  \node[font=\footnotesize, below] at (2.5,7.2) {selection: some rows};
+  \begin{scope}[xshift=55mm]
+    \foreach \c in {0,3} \fill[omMeth!30] (\c,0) rectangle (\c+1,7);
+    \foreach \r in {0,...,6} \foreach \c in {0,...,4} \draw[black!40] (\c,\r) rectangle (\c+1,\r+1);
+    \node[font=\footnotesize, below] at (2.5,7.2) {projection: some columns};
+  \end{scope}
+\end{tikzpicture}
+
+{\small \omterm{def:g10:data-tables:selection}{Selection} keeps whole rows that pass a test; \omterm{def:g10:data-tables:selection}{projection} keeps whole columns. Both give a new table.}
+\end{omfigure}
+
+\omcode{code/grade-10/07-data-tables/listings/select_project.py}{1}{9}{The rainiest days on the hill: a \omterm{def:g10:data-tables:selection}{selection},
+then a \omterm{def:g10:data-tables:selection}{projection}.}\label{lst:g10:data-tables:select-project}
+
+\omoutput{code/grade-10/07-data-tables/outputs/select_project.txt}{Four days of $15$~mm of rain or more at
+Hilltop.}\label{out:g10:data-tables:select-project}
+
+Sorting a table needs a rule saying which record comes first.
+
+\begin{definition}[Sort key, stable sort]\label{def:g10:data-tables:sort-key}
+A \emph{sort key}\index{sort key} is a function that gives each record the value it is sorted by. A sort is
+\emph{stable}\index{stable sort} when records with equal keys keep the order they had before sorting.
+\end{definition}
+
+Python's \code{sorted(table, key=f)} sorts by \code{f(record)}, and it is \omterm{def:g10:data-tables:sort-key}{stable}. A key may be a tuple: tuples
+compare their first items, then, on a tie, their second items, and so on. A minus sign in front of a number sorts it
+from largest to smallest.
+
+\omcode{code/grade-10/07-data-tables/listings/sort_key.py}{1}{11}{Sorting on one key, then on two
+keys.}\label{lst:g10:data-tables:sort-key}
+
+\omoutput{code/grade-10/07-data-tables/outputs/sort_key.txt}{The four windiest days; then the first four records of
+10 to 19 June, sorted by station and, within a station, by rain from most to least.}\label{out:g10:data-tables:sort-key}
+
+\begin{remark}
+Since \code{sorted} is \omterm{def:g10:data-tables:sort-key}{stable}, the same order can be built in two passes: first by rain, then by station. The second
+pass keeps the rain order among the records of each station. \Cref{exo:g10:data-tables:13} proves it.
+\end{remark}
+
+\section{Grouping and aggregating}\label{sec:g10:data-tables:groups}
+
+\begin{definition}[Grouping, aggregate]\label{def:g10:data-tables:aggregate}
+\emph{Grouping}\index{grouping} splits the records of a table into groups that share the value of one or more
+columns. An \emph{aggregate}\index{aggregate} is one value computed from a whole group: a count, a sum, a mean, a
+median, a largest value.
+\end{definition}
+
+The usual way in Python is a dictionary from the group's key to the list of its values, filled in one pass.
+
+\omcode{code/grade-10/07-data-tables/listings/group_mean.py}{1}{14}{Monthly mean temperature per
+station.}\label{lst:g10:data-tables:group-mean}
+
+\omoutput{code/grade-10/07-data-tables/outputs/group_mean.txt}{Five of the twelve months. Riverside is warmer than
+Hilltop, except in January and December.}\label{out:g10:data-tables:group-mean}
+
+The river station is lower and warmer all summer, yet colder than the hill in January and December by about two
+degrees. Before believing it, look at what went into those two means: each holds one of the $-99$ values. One
+reading of $-99$ among $31$ lowers a monthly mean by about $(99 + 3)/31 \approx 3.3$ degrees.
+
+\section{Joining tables}\label{sec:g10:data-tables:join}
+
+The library keeps its loans in one table and its books in another; a loan names its book only by
+\code{book_id}. To print the titles of the books still out, both tables are needed.
+
+\begin{definition}[Join]\label{def:g10:data-tables:join}
+The \emph{join}\index{join} of two tables on a shared column is the table of the pairs of records, one from each
+table, that have the same value in that column, each pair merged into one record.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=17mm, y=-6mm, font=\footnotesize]
+  \node[font=\footnotesize\bfseries] at (1,-0.6) {loans};
+  \fill[omDef!12] (0,0) rectangle (2,1);
+  \node at (0.5,0.5) {\texttt{loan\_id}}; \node at (1.5,0.5) {\texttt{book\_id}};
+  \foreach \r/\l/\b in {1/3/28, 2/11/28, 3/27/12} {
+    \node at (0.5,\r+0.5) {\l}; \node (L\r) at (1.5,\r+0.5) {\b};
+  }
+  \foreach \c in {0,1,2} \draw[black!40] (\c,0) -- (\c,4);
+  \foreach \r in {0,...,4} \draw[black!40] (0,\r) -- (2,\r);
+  \begin{scope}[xshift=60mm]
+    \node[font=\footnotesize\bfseries] at (1.25,-0.6) {books};
+    \fill[omDef!12] (0,0) rectangle (2.5,1);
+    \node at (0.5,0.5) {\texttt{book\_id}}; \node at (1.75,0.5) {\texttt{title}};
+    \foreach \r/\b/\t in {1/12/{Under the Forest}, 2/28/{Under the Bridge}, 3/40/{The Lost Code}} {
+      \node (B\r) at (0.5,\r+0.5) {\b}; \node at (1.75,\r+0.5) {\t};
+    }
+    \foreach \c in {0,1,2.5} \draw[black!40] (\c,0) -- (\c,4);
+    \foreach \r in {0,...,4} \draw[black!40] (0,\r) -- (2.5,\r);
+  \end{scope}
+  \draw[omProp, thick] (2,1.5) -- ([xshift=60mm]0,2.5);
+  \draw[omProp, thick] (2,2.5) -- ([xshift=60mm]0,2.5);
+  \draw[omProp, thick] (2,3.5) -- ([xshift=60mm]0,1.5);
+\end{tikzpicture}
+
+{\small Joining on \texttt{book\_id}, on three loans and three books of the town's tables: each loan meets the book
+with its number. Book $28$ appears in two joined records; book $40$, which none of these three loans names, appears in
+none.}
+\end{omfigure}
+
+The simplest program compares every record of one table with every record of the other: a \emph{nested-loop \omterm{def:g10:data-tables:join}{join}}.
+
+\omcode{code/grade-10/07-data-tables/listings/join_loans.py}{1}{16}{A nested-loop \omterm{def:g10:data-tables:join}{join} of the loans still out with
+the books.}\label{lst:g10:data-tables:join-loans}
+
+\omoutput{code/grade-10/07-data-tables/outputs/join_loans.txt}{$22 \times 80 = 1760$ comparisons for $22$
+matches.}\label{out:g10:data-tables:join-loans}
+
+A dictionary does better: build it once from the books, by number, and each loan then finds its book in one lookup.
+The listing \omterm{def:g10:data-tables:join}{joins} four tables this way, from the loan to the book, and from the loan to the member and to the person.
+
+\omcode{code/grade-10/07-data-tables/listings/join_index.py}{1}{17}{Joining through dictionary indexes: overdue loans
+with the title and the borrower.}\label{lst:g10:data-tables:join-index}
+
+\omoutput{code/grade-10/07-data-tables/outputs/join_index.txt}{The ten loans still out that were due before
+July.}\label{out:g10:data-tables:join-index}
+
+\begin{proposition}[Cost of a join]\label{prop:g10:data-tables:join-cost}
+Joining a table of $n$ records with a table of $m$ records takes $n \times m$ comparisons with nested loops; with a
+dictionary built on the second table, it takes $m$ insertions and $n$ lookups.
+\end{proposition}
+
+For the $400$ loans and $80$ books, that is $32{,}000$ comparisons against $480$ steps. The cost of an algorithm is
+the subject of grade 11; here it is enough to count.
+
+\section{Missing and inconsistent data}\label{sec:g10:data-tables:clean}
+
+\begin{definition}[Missing value, consistency test]\label{def:g10:data-tables:missing}
+A \emph{missing value}\index{missing value} is a cell with no data: empty in the file, \code{None} in the program.
+A \emph{consistency test}\index{consistency test} is a rule that every correct record satisfies, such as a value
+inside its column's \omterm{def:g10:data-tables:header}{domain}, or a due date $21$ days after the loan; a record that fails it is wrong, or the rule is.
+\end{definition}
+
+Error codes are the worst kind of bad value: a station that cannot measure writes $-99.0$, a number inside the
+column's type but far outside its \omterm{def:g10:data-tables:header}{domain}, and every sum and mean takes it at face value.
+
+\omcode{code/grade-10/07-data-tables/listings/clean_weather.py}{1}{28}{Finding the defects, and the means with and
+without them.}\label{lst:g10:data-tables:clean-weather}
+
+\omoutput{code/grade-10/07-data-tables/outputs/clean_weather.txt}{Six \omterm{def:g10:data-tables:missing}{missing values}, two error codes, one duplicate
+record; the Riverside mean moves by more than half a degree.}\label{out:g10:data-tables:clean-weather}
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[omrecord, width=0.85\linewidth, height=5.5cm, xlabel={month of 2025}, ylabel={mean temperature (°C)},
+      xmin=0.5, xmax=12.5, xtick={1,...,12}, ymin=-1, ymax=23, legend pos=north west, legend cell align=left]
+    \addplot[omThm, thick, dashed, mark=o] table[x=month, y=riverside_raw]
+      {code/grade-10/07-data-tables/figures/monthly_means.dat};
+    \addlegendentry{Riverside, raw}
+    \addplot[omDef, thick, mark=*] table[x=month, y=riverside]
+      {code/grade-10/07-data-tables/figures/monthly_means.dat};
+    \addlegendentry{Riverside, cleaned}
+    \addplot[omMeth, thick, mark=square*] table[x=month, y=hilltop]
+      {code/grade-10/07-data-tables/figures/monthly_means.dat};
+    \addlegendentry{Hilltop, cleaned}
+  \end{axis}
+\end{tikzpicture}
+
+{\small Monthly means of the two stations. The two error codes pull January and December of the raw river record
+below the hill; once they are removed, the river station is the warmer one in every month.}
+\end{omfigure}
+
+\begin{method}[Cleaning a table]\label{met:g10:data-tables:clean}
+\begin{enumerate}
+  \item Count the records and compare with what is expected (one per station and per day).
+  \item For each column, check every value against the \omterm{def:g10:data-tables:header}{domain}; list the \omterm{def:g10:data-tables:missing}{missing values} and the impossible ones.
+  \item Look for records that repeat a key that should be unique, such as (date, station).
+  \item Decide, for each kind of defect, a rule: drop the record, keep it without that value, or correct it from
+    another source, and write the rule down next to the result.
+  \item Never change the original file: write the cleaned table to a new one, or clean while reading.
+\end{enumerate}
+\end{method}
+
+\begin{inpractice}[Data about people]
+The library tables are about people: who borrowed what, and when. A table that lets someone be identified,
+directly by a name or indirectly by a joined number, holds personal data, which data protection law lets an
+organisation keep only for a stated purpose, and for no longer than that purpose needs. A \omterm{def:g10:data-tables:join}{join} is exactly how
+scattered harmless columns become a profile of a person.
+\end{inpractice}
+
+Not every table is flat. A member has several loans, and a loan list inside a record does not fit in a CSV line.
+
+\begin{definition}[JSON]\label{def:g10:data-tables:json}
+% ledger: g10:json-8259
+\emph{JSON}\index{JSON} (JavaScript Object Notation, specified in its current form in 2017) is a text format for
+nested data: objects between braces, which map names to values, lists between square brackets, and numbers,
+strings, \code{true}, \code{false} and \code{null}. A value may itself be an object or a list. JSON exchanged
+between systems is written in \omterm{def:g10:text-encodings:utf8}{UTF-8}.
+\end{definition}
+
+\omcode{code/grade-10/07-data-tables/listings/to_json.py}{1}{13}{A member and their first loans as nested
+\omterm{def:g10:data-tables:json}{JSON}.}\label{lst:g10:data-tables:to-json}
+
+\omoutput{code/grade-10/07-data-tables/outputs/to_json.txt}{\code{None} is written \code{null}, and reading the text
+back gives the same dictionary.}\label{out:g10:data-tables:to-json}
+
+Python's \code{json.dumps} turns dictionaries and lists into \omterm{def:g10:data-tables:json}{JSON} text, and \code{json.loads} reads it back; web
+services exchange their data this way, as the next chapter shows.
+
+\section{Exercises}\label{sec:g10:data-tables:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g10:data-tables:1}
+Change the condition of the \omterm{def:g10:data-tables:selection}{selection} listing to \code{row["rain_mm"] >= 15} without the station test. Will the
+result have more or fewer records than before? Can it have fewer than $4$?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:data-tables:2}
+What does \code{sorted(["pear", "fig", "apple", "kiwi"], key=len)} return? Why does \code{"kiwi"} stay after
+\code{"pear"}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:data-tables:3}
+Write \code{project(table, cols)}, which returns the table restricted to the columns of the list \code{cols}, in that
+order.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:data-tables:4}
+Table $A$ has $5$ records whose key values are $1, 1, 2, 3, 3$; table $B$ has $4$ records with keys $1, 2, 2, 4$. How
+many records does the \omterm{def:g10:data-tables:join}{join} of $A$ and $B$ on the key have? Which keys never appear in it?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:data-tables:5}
+A program reads the books with \code{csv.DictReader} and sorts them with \code{key=lambda r: r["year"]}, without
+converting anything. Why does a book of year \code{10} come before one of year \code{9}? Correct it. Why does the
+mistake not show on the town's books, whose years all have four digits?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:data-tables:6}
+Write \code{group_count(table, col)}, which returns a dictionary from each value of the column to the number of
+records with that value. Use it to count the books of each genre.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:data-tables:7}
+A duplicate detector stores each line of a file in a set and reports a line already seen. The file holds
+\code{2025-06-14,Riverside,21.5} and, further on, the same record with a space after the first comma. Why is the
+duplicate missed? Correct the detector.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:data-tables:8}
+Records $(\text{name}, \text{class})$: (Ada, B), (Ben, A), (Cy, B), (Dee, A), (Eli, B). Give the result of a \omterm{def:g10:data-tables:sort-key}{stable
+sort} on the class; then of a \omterm{def:g10:data-tables:sort-key}{stable sort} on the name followed by a \omterm{def:g10:data-tables:sort-key}{stable sort} on the class.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:data-tables:9}
+Write \code{median_by(table, group, col)}, which returns the median of the column \code{col} for each value of
+\code{group}, skipping \omterm{def:g10:data-tables:missing}{missing values}. Compare the median and the mean temperature of the raw Riverside record: which
+is less disturbed by the error codes, and why?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:data-tables:10}
+How many comparisons does a nested-loop \omterm{def:g10:data-tables:join}{join} of the $400$ loans with the $80$ books make, and how many steps does a
+\omterm{def:g10:data-tables:join}{join} through a dictionary make? And for $100{,}000$ loans and $20{,}000$ books?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:data-tables:11}
+A program computes the mean temperature by skipping \code{None} values only. On Riverside it prints $11.43$. Explain
+what is wrong, and correct the function so that it also skips a given list of error codes.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:data-tables:12}
+Write \code{left_join(left, right, key)}: like a \omterm{def:g10:data-tables:join}{join}, but a record of \code{left} without any match is kept once,
+with \code{None} for the columns of \code{right}. Use it to find the members who borrowed nothing in 2025, and the
+books that were never lent. How many records does the left \omterm{def:g10:data-tables:join}{join} of the members with the loans have?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:data-tables:13}
+Prove that sorting a table stably by a key $k_2$, then stably by a key $k_1$, gives the table sorted by the pair
+$(k_1, k_2)$. Take two records $r$ and $s$ with $(k_1(r), k_2(r)) < (k_1(s), k_2(s))$ and show that $r$ ends before
+$s$, in each of the two possible cases.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:data-tables:14}
+Write a consistency checker for the loans: every due date is $21$ days after its out date, and no book comes back
+before it went out. Use \code{datetime.date.fromisoformat} and \code{timedelta}. Run it on the town's loans; then
+change one line of a copy and check that it is caught.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:data-tables:15}
+Export all members with their list of loans as \omterm{def:g10:data-tables:json}{JSON}, read the text back, and test that the result equals what was
+exported. Which Python values would not survive such a round trip?
+\end{exercise}
+
+\section{Problem: The Corrected Weather Record}\label{sec:g10:data-tables:problem}
+
+\begin{problem}[{Weekend problem --- what the river station really measured in 2025}]\label{pb:g10:data-tables:1}
+The program \code{exercises/corrected_weather.py} cleans the weather table and computes the year's mean temperature
+and warmest month of each station. Use it and the listings of the chapter.
+
+\medskip\noindent\textbf{Part I --- Loading and counting.}
+\begin{enumerate}
+  \item How many records should the table hold for two stations over the year 2025? How many does it hold?
+  \item How many records does each station have?
+  \item Which \omterm{def:g10:data-tables:header}{descriptors} does the \omterm{def:g10:data-tables:header}{header} give, and what is the \omterm{def:g10:data-tables:header}{domain} of each column?
+  \item Which value does a blank temperature cell become after \code{read_table}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Finding the defects.}
+\begin{enumerate}[resume]
+  \item List the defects that \code{clean_weather.py} finds, by kind and by station.
+  \item Which \omterm{def:g10:data-tables:missing}{consistency test} reveals each kind of defect?
+  \item Are the two records of 14 June at Riverside identical? What does that suggest about their origin?
+  \item How many temperature values does each station have once \omterm{def:g10:data-tables:missing}{missing values} are left out?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Rules.}
+\begin{enumerate}[resume]
+  \item For a missing temperature, would you drop the whole record or keep its rain and wind? Why?
+  \item For a record with $-99.0$, why must the value not be replaced by $0$?
+  \item For the duplicate, which record do you keep?
+  \item Could a \omterm{def:g10:data-tables:missing}{missing value} be filled from the other station on the same day? What would that assume?
+  \item How many records remain once the rules of the program are applied?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The corrected record.}
+\begin{enumerate}[resume]
+  \item Run the program. Give the raw and the corrected mean temperature of each station.
+  \item Why does the Hilltop mean not change?
+  \item What would the Riverside mean be with only the duplicate removed, the codes still in? Compare with the
+    corrected one.
+  \item Check the size of the codes' effect by hand: two values of $-99$ instead of values near $4$ among $362$.
+  \item Which month is the warmest at each station, and by how much is the river warmer than the hill then?
+  \item State the result: the corrected 2025 mean temperature at Riverside, the number of days it rests on, and the
+    error that the error codes would have caused.
+\end{enumerate}
+\end{problem}

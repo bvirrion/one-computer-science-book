@@ -1,0 +1,316 @@
+% Provenance (never printed): SNT "Le Web" (client-server, HTTP, forms) carried into a project; NSI premiere
+% "Interactions entre l'homme et la machine sur le Web" (forms, GET/POST, server side). See sources/book2/BRIEFS.md.
+\chapter{Project: A Small Web Application}\label{ch:g10:project-web-application}
+
+The chapter on \omterm{def:g10:http-clients-servers:http}{HTTP} ended with a server that knew five addresses by heart. A real site is not written that way:
+its pages are built from data at the moment they are asked for, its forms change that data, and it is tested as
+carefully as any other program. This project builds such a site for the Brenmoor library, from a one-paragraph
+specification to a tested program, in five milestones.
+
+\begin{recall}
+A request has a method, a path and headers; the answer has a \omterm{def:g10:http-clients-servers:status}{status code}, headers and a body. \omterm{def:g10:http-clients-servers:methods}{GET} puts its
+parameters in the \omterm{def:g10:http-clients-servers:url}{query string}, \omterm{def:g10:http-clients-servers:methods}{POST} in the body; a \omterm{def:g10:http-clients-servers:cookie}{cookie} is a value the browser sends back to the server that
+set it (the chapter on \omterm{def:g10:http-clients-servers:http}{HTTP}). A join matches the rows of two tables on a common column (the chapter on tables). A
+test compares what a function does with what it should do (the chapter on testing). An HTML page is made of
+elements written as tags, and a style sheet decides how they look (Book 1, grade 9).
+\end{recall}
+
+\section{The specification}\label{sec:g10:project-web-application:spec}
+
+\begin{quote}
+\itshape A catalogue of the Brenmoor library, served on \code{127.0.0.1} at port $42110$, built from the town's
+tables of books, loans and members. It has a home page listing every book; a page for each book, with its loans; a
+search form that finds books by a word of their title; a form on each book's page to reserve it, given a member
+number, which records the reservation in memory; and a clear error page for any other address. Every address is
+tested. Nothing leaves the machine.
+\end{quote}
+
+The program is split in three layers. A small \emph{server} part speaks \omterm{def:g10:http-clients-servers:http}{HTTP}: it turns each request into a
+dictionary and sends back what the application returns. The \emph{application} decides, for each path, which
+function builds the answer. The \emph{data} part reads the three tables once, at the start.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, b/.style={draw, rounded corners=2pt, minimum height=10mm, align=center,
+    minimum width=24mm}]
+  \node[b, fill=ocBlue!10] (br) at (0,0) {browser\\or test};
+  \node[b, fill=omCode!10] (sv) at (4.0,0) {\code{server.py}\\request $\to$ dict};
+  \node[b, fill=omDef!10] (ap) at (8.2,0) {\code{dispatch}\\route $\to$ function};
+  \node[b, fill=omMeth!10] (da) at (11.8,0.7) {\code{data.py}\\three tables};
+  \node[b, fill=omProp!10] (re) at (11.8,-0.7) {reservations\\(in memory)};
+  \draw[ptr, <->] (br) -- node[above] {HTTP} (sv);
+  \node[font=\scriptsize, below] at (2.0,-0.55) {port 42110};
+  \draw[ptr, ->] ([yshift=2mm]sv.east) -- node[above] {dict} ([yshift=2mm]ap.west);
+  \draw[ptr, ->] ([yshift=-2mm]ap.west) -- node[below] {answer} ([yshift=-2mm]sv.east);
+  \draw[ptr] (ap.east) -- (da.west);
+  \draw[ptr, <->] (ap.east) -- (re.west);
+  \node[font=\scriptsize, black!60] at (11.8,1.6) {\code{books.csv} \code{loans.csv} \code{members.csv}};
+\end{tikzpicture}
+
+{\small The three layers. Only the server part knows about \omterm{def:g10:http-clients-servers:http}{HTTP}; the application receives a dictionary and returns
+a status, a type, a text and some headers, so it can be tested without any network at all.}
+\end{omfigure}
+
+The server part is given: \code{server.py} builds a dictionary with the method, the path (with its \texttt{\%}
+escapes decoded), the query, the form and the \omterm{def:g10:http-clients-servers:cookie}{cookies}, calls \code{app.dispatch}, and writes the answer. A function
+\code{start(app, port)} runs it in the background, and \code{client.py} sends one request and shows the answer
+without following redirects.
+
+\omcode{code/grade-10/11-project-web-application/listings/server.py}{12}{34}{The heart of the given server: a
+request becomes a dictionary.}\label{lst:g10:project-web-application:server}
+
+\section{Milestone 1: routes and a dispatcher}\label{sec:g10:project-web-application:m1}
+
+\begin{definition}[Route, dispatcher]\label{def:g10:project-web-application:route}
+In a web application, a \emph{route}\index{route (web application)} links a family of paths to the function that
+answers them, such as every path \code{/book/<number>} to the function \code{book}. The
+\emph{dispatcher}\index{dispatcher} is the function that receives each request, finds its route, and calls that
+function with the parts of the path it needs.
+\end{definition}
+
+The first milestone answers in plain text: the point is to get the \omterm{def:g10:project-web-application:route}{routes} right before any page is built. The \omterm{def:g10:project-web-application:route}{route}
+table is a dictionary from the first part of the path to a pair: the function, and the number of further parts it
+takes. The key \code{None} holds the function for every path that matches no \omterm{def:g10:project-web-application:route}{route}.
+
+\omcode{code/grade-10/11-project-web-application/listings/app_m1.py}{1}{34}{Milestone 1: a \omterm{def:g10:project-web-application:route}{route} table and a
+\omterm{def:g10:project-web-application:route}{dispatcher}.}\label{lst:g10:project-web-application:m1}
+
+\omcode{code/grade-10/11-project-web-application/listings/run_m1.py}{1}{9}{Start, request six paths,
+stop.}\label{lst:g10:project-web-application:run-m1}
+
+\omoutput{code/grade-10/11-project-web-application/outputs/run_m1.txt}{Every path gets an answer: a page, or a
+404 that says what was asked.}\label{out:g10:project-web-application:run-m1}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, p/.style={draw, fill=black!4, minimum width=34mm, minimum height=6mm,
+    anchor=west, font=\ttfamily\footnotesize}, f/.style={draw, fill=omDef!10, rounded corners=2pt,
+    minimum width=22mm, minimum height=6mm, anchor=west}]
+  \foreach \y/\pth/\fun/\m in {0/{/}/home/1, -0.75/{/book/<n>}/book/1, -1.5/{/style.css}/style/2,
+      -2.25/{/search?q=\dots}/search/3, -3/{/reserve \ (POST)}/reserve/3, -3.75/{/api/book/<n>}/api/5,
+      -4.5/{anything else}/not\_found/1} {
+    \node[p] (a) at (0,\y) {\pth};
+    \node[f, font=\ttfamily\footnotesize] (b) at (5,\y) {\fun};
+    \draw[ptr] (a.east) -- (b.west);
+    \node[anchor=west, font=\scriptsize, black!60] at (7.6,\y) {milestone \m};
+  }
+\end{tikzpicture}
+
+{\small The \omterm{def:g10:project-web-application:route}{route} map of the finished application, with the milestone that adds each \omterm{def:g10:project-web-application:route}{route}. Milestones 3 and 5
+also replace the functions for \code{/book/<n>}, \code{/} and \code{/search} with richer ones.}
+\end{omfigure}
+
+\section{Milestone 2: pages built from the tables}\label{sec:g10:project-web-application:m2}
+
+The pages are now HTML, built by a function \code{page(title, body)} that adds the parts every page shares. A book's
+page joins two tables: the book's row in \code{BOOKS}, and its loans in \code{LOANS}, a dictionary from book number
+to loans that \code{data.py} builds once at the start.
+
+A page is text, and some of that text comes from outside: a title in a table, a word typed in a form, a path. If a
+path contained \code{<script>}, a page that printed it as it is would contain a script, and the browser would run
+it. Text that comes from outside must never be read as HTML.
+
+\begin{definition}[Escaping]\label{def:g10:project-web-application:escaping}
+\emph{Escaping}\index{escaping (HTML)} a text for HTML replaces each character that has a meaning in HTML by an
+entity that only displays it: \code{<} becomes \code{&lt;}, \code{>} becomes \code{&gt;}, \code{&} becomes
+\code{&amp;}, and the quotes become \code{&quot;} and \texttt{\&\#x27;}. Python's \code{html.escape} does it.
+\end{definition}
+% ledger: g10:html-escape
+
+\omcode{code/grade-10/11-project-web-application/listings/app_m2.py}{1}{36}{Milestone 2: HTML pages, every value
+from outside escaped.}\label{lst:g10:project-web-application:m2}
+
+The rest of the file adds \code{not_found}, which escapes the path it shows, a \omterm{def:g10:project-web-application:route}{route} for the style sheet, and a
+\code{dispatch} that calls the one of milestone~1 with the new \omterm{def:g10:project-web-application:route}{route} table: the \omterm{def:g10:project-web-application:route}{dispatcher} itself does not change.
+
+\omcode{code/grade-10/11-project-web-application/listings/run_m2.py}{1}{11}{The home page, a book's page, and an
+attack on the error page.}\label{lst:g10:project-web-application:run-m2}
+
+\omoutput{code/grade-10/11-project-web-application/outputs/run_m2.txt}{The script in the path comes back as text:
+the browser shows it, and runs nothing.}\label{out:g10:project-web-application:run-m2}
+
+\omcode{code/grade-10/11-project-web-application/listings/style.css}{1}{5}{The style sheet, served at
+\code{/style.css}.}\label{lst:g10:project-web-application:style}
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \omwindow{8}{4.6}{The Silent Kingdom}
+  \pic at (0,0) {window};
+  \node[anchor=north west, font=\sffamily\bfseries\large, text=ocBlue] at (0.3,3.95) {The Silent Kingdom};
+  \node[anchor=west, font=\sffamily\small] at (0.3,3.0) {Ines Yewwell, 1950, 286 pages};
+  \foreach \i/\o/\b in {0/2025-02-09/2025-02-24, 1/2025-03-20/2025-03-30, 2/{\dots}/{\dots},
+      3/2025-07-16/not yet} {
+    \draw[black!50] (0.3,2.5-0.35*\i) rectangle (1.9,2.15-0.35*\i);
+    \draw[black!50] (1.9,2.5-0.35*\i) rectangle (3.5,2.15-0.35*\i);
+    \node[font=\sffamily\scriptsize] at (1.1,2.325-0.35*\i) {\o};
+    \node[font=\sffamily\scriptsize] at (2.7,2.325-0.35*\i) {\b};
+  }
+  \node[anchor=west, font=\sffamily\small] at (0.3,0.85) {Reserved by: 12};
+  \node[anchor=west, font=\sffamily\small] at (0.3,0.35) {Member number:};
+  \draw[black!60, fill=white] (3.0,0.15) rectangle (4.8,0.55);
+  \node[draw=black!60, fill=black!8, rounded corners=1pt, font=\sffamily\small] at (5.55,0.35) {Reserve};
+\end{tikzpicture}
+
+{\small A book's page as a browser shows it, from the HTML of milestone~3: the loans table (rows left out here), the
+reservations, and the form that sends \code{book} and \code{member} to \code{/reserve} with \omterm{def:g10:http-clients-servers:methods}{POST}.}
+\end{omfigure}
+
+\section{Milestone 3: forms}\label{sec:g10:project-web-application:m3}
+
+The search form uses \omterm{def:g10:http-clients-servers:methods}{GET}: searching changes nothing on the server, and its address can be bookmarked. The
+reservation form uses \omterm{def:g10:http-clients-servers:methods}{POST}: it changes the server's data. After a successful \omterm{def:g10:http-clients-servers:methods}{POST}, the server does not send a
+page; it answers \code{303 See Other} with a \code{Location} header, and the browser then asks for the book's page
+with \omterm{def:g10:http-clients-servers:methods}{GET}. This is called \emph{redirect after \omterm{def:g10:http-clients-servers:methods}{POST}}: if the reader reloads the page, the browser repeats the \omterm{def:g10:http-clients-servers:methods}{GET},
+not the reservation.
+% ledger: g10:http-9110-classes
+
+\omcode{code/grade-10/11-project-web-application/listings/app_m3.py}{13}{43}{Milestone 3: a search, a book page
+with a form, and the reservation.}\label{lst:g10:project-web-application:m3}
+
+Every value of the form is checked before it is used: a book number that is not a number, or not in the catalogue,
+and a member number that is not a member, are answered with \code{400 Bad Request}. A program that trusts its forms
+can be broken by anyone who types into them, or who sends a request without any form at all.
+
+\omcode{code/grade-10/11-project-web-application/listings/run_m3.py}{1}{11}{Two searches, two reservations, and
+the book's page.}\label{lst:g10:project-web-application:run-m3}
+
+\omoutput{code/grade-10/11-project-web-application/outputs/run_m3.txt}{The second reservation names a member who
+does not exist, and is refused.}\label{out:g10:project-web-application:run-m3}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, >={Stealth[length=2mm]}]
+  \node[font=\bfseries\footnotesize] at (0,0) {browser};
+  \node[font=\bfseries\footnotesize] at (7,0) {server};
+  \draw[black!40, dashed] (0,-0.3) -- (0,-5.6);
+  \draw[black!40, dashed] (7,-0.3) -- (7,-5.6);
+  \foreach \y/\l/\d in {-0.7/{GET /book/7}/1, -1.3/{200: the page, with its form}/0,
+      -2.1/{POST /reserve \ book=7\&member=12}/1, -2.7/{303 See Other, Location: /book/7}/0,
+      -3.5/{GET /book/7}/1, -4.1/{200: Reserved by: 12}/0, -4.9/{reload: GET /book/7 again}/1} {
+    \ifnum\d=1
+      \draw[->, thick, ocBlue] (0,\y) -- node[above, text=black] {\l} (7,\y);
+    \else
+      \draw[->, thick, omProp] (7,\y) -- node[above, text=black] {\l} (0,\y);
+    \fi
+  }
+  \node[anchor=west, font=\scriptsize, black!60] at (7.2,-4.9) {no second reservation};
+\end{tikzpicture}
+
+{\small Redirect after \omterm{def:g10:http-clients-servers:methods}{POST}. The \omterm{def:g10:http-clients-servers:methods}{POST} is answered by a 303, and the browser itself asks for the page with \omterm{def:g10:http-clients-servers:methods}{GET};
+reloading that page repeats only the \omterm{def:g10:http-clients-servers:methods}{GET}.}
+\end{omfigure}
+
+\section{Milestone 4: tests against the real server}\label{sec:g10:project-web-application:m4}
+
+Each milestone has been tried by hand. A \omterm{def:g10:specifications-and-tests:test-suite}{test suite} tries every \omterm{def:g10:project-web-application:route}{route} at once, every time the program changes. It
+starts the real server in a process of its own, sends \omterm{def:g10:http-clients-servers:http}{HTTP} requests with \code{urllib} like any client, and checks
+each status and one line of each page. \code{urlopen} follows the 303 by itself, and turns a 4xx or 5xx answer into
+an exception, whose code the helper \code{get} returns.
+
+\omcode{code/grade-10/11-project-web-application/listings/app_tests.py}{1}{40}{Milestone 4: the server under test,
+started once for all the tests.}\label{lst:g10:project-web-application:tests-setup}
+
+\omcode{code/grade-10/11-project-web-application/listings/app_tests.py}{42}{75}{The tests: one per \omterm{def:g10:project-web-application:route}{route}, and the
+errors.}\label{lst:g10:project-web-application:tests}
+
+\omoutput{code/grade-10/11-project-web-application/outputs/run_tests.txt}{The command is
+\code{python -m unittest -v app_tests}; the line that gives the duration is left out.}\label{out:g10:project-web-application:tests}
+
+\begin{inpractice}[Two kinds of tests]
+The tests of this milestone go through the network, the server and the application: they are slow, a fraction of
+a second each, but they would catch a mistake in any layer. Because the application only receives a dictionary,
+it can also be tested by calling \code{dispatch} directly, with no server at all; the chapter's own tests do both.
+\end{inpractice}
+
+\section{Milestone 5: a cookie and a JSON route}\label{sec:g10:project-web-application:m5}
+
+Two improvements finish the project. The search answer sets a \omterm{def:g10:http-clients-servers:cookie}{cookie} \code{last}, which the browser sends back with
+every later request; the home page then offers the last search as a link. And a \omterm{def:g10:project-web-application:route}{route} \code{/api/book/<n>} answers
+in \omterm{def:g10:data-tables:json}{JSON} instead of HTML, for another program rather than a person: the same data, in the format of the chapter on
+tables.
+
+\omcode{code/grade-10/11-project-web-application/listings/app_m5.py}{13}{45}{Milestone 5: wrapping the search
+and the home page, and a \omterm{def:g10:project-web-application:route}{route} for programs.}\label{lst:g10:project-web-application:m5}
+
+\omcode{code/grade-10/11-project-web-application/listings/run_m5.py}{1}{14}{A search, the home page with the
+\omterm{def:g10:http-clients-servers:cookie}{cookie}, and the \omterm{def:g10:data-tables:json}{JSON} \omterm{def:g10:project-web-application:route}{route}.}\label{lst:g10:project-web-application:run-m5}
+
+\omoutput{code/grade-10/11-project-web-application/outputs/run_m5.txt}{The \omterm{def:g10:http-clients-servers:cookie}{cookie}'s value is percent-encoded, like
+a \omterm{def:g10:http-clients-servers:url}{query string}; the \omterm{def:g10:data-tables:json}{JSON} names its fields.}\label{out:g10:project-web-application:run-m5}
+
+The application meets its specification: every \omterm{def:g10:project-web-application:route}{route} answers, every value from outside is checked or escaped,
+and the \omterm{def:g10:specifications-and-tests:test-suite}{test suite} proves it each time it runs. What it lacks is memory: the reservations live in a dictionary and
+vanish when the server stops. Keeping them in a database, which several servers can share safely, is the subject of
+a later chapter.
+
+\section{Exercises}\label{sec:g10:project-web-application:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g10:project-web-application:1}
+For each path, say which function of milestone~1 answers, and with which arguments: \code{/}, \code{/book/12},
+\code{/book/12/}, \code{/book/12/loans}, \code{/books/12}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:project-web-application:2}
+What does the page of milestone~2 contain, exactly, for the path \code{/a&b<i>}? What would a browser display?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:project-web-application:3}
+Add a \omterm{def:g10:project-web-application:route}{route} \code{/about} with a page of one sentence about the catalogue.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:project-web-application:4}
+How many \omterm{def:g10:http-clients-servers:http}{HTTP} requests does the \omterm{def:g10:specifications-and-tests:test-suite}{test suite} of milestone~4 send in all? Count the redirection.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:project-web-application:5}
+A student forgets the word \code{return} on the last line of \code{book}. What does \code{dispatch} give back for
+\code{/book/7}, and what happens in the server?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:project-web-application:6}
+Add a \omterm{def:g10:project-web-application:route}{route} \code{/author/<name>} that lists the books of an author, with a 404 if there are none. How many books
+does Zoe Stoneton have?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:project-web-application:7}
+In a copy of \code{reserve}, the values are read from \code{request["query"]} instead of
+\code{request["form"]}. What does every reservation sent by the form now get, and why? Which test catches it?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:project-web-application:8}
+Let the home page take a parameter \code{sort}, which may be \code{title}, \code{author} or \code{year}; any other
+value gets a 400.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:project-web-application:9}
+With $n$ books in the catalogue, how many different addresses answer 200 with \omterm{def:g10:http-clients-servers:methods}{GET}, if searches are not counted? How
+many for the Brenmoor catalogue?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:project-web-application:10}
+A test file starts the server with \code{subprocess.Popen} at its top, runs its tests, and stops the server on its
+last line. One test fails. What happens to the server, and to the next run of the tests? Fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:project-web-application:11}
+The specification says that \code{/reserve} accepts only \omterm{def:g10:http-clients-servers:methods}{POST}, and the other \omterm{def:g10:project-web-application:route}{routes} only \omterm{def:g10:http-clients-servers:methods}{GET}. Make the \omterm{def:g10:project-web-application:route}{dispatcher}
+answer \code{405 Method Not Allowed} otherwise, with the header that this status requires.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:project-web-application:12}
+Show the home page twenty books at a time: \code{/?page=1} to the last page, 404 outside. Test the first and last
+pages, the pages just outside, and that all the pages together show every book once.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:project-web-application:13}
+A reader reserves a book, then reloads the page three times. Count the reservations recorded if the server answers
+the \omterm{def:g10:http-clients-servers:methods}{POST} with the book's page directly, and if it answers with a 303. Why does a browser warn before repeating a
+\omterm{def:g10:http-clients-servers:methods}{POST}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:project-web-application:14}
+A member may hold at most three reservations. Refuse a fourth with status \code{409 Conflict}, and test it.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:project-web-application:15}
+The server answers several requests at the same time, one thread each. Member $5$ holds two reservations and sends
+two more at the same moment. Show an order of the steps of the limit check of the previous exercise in which both
+are accepted. How can the program prevent it?
+\end{exercise}

@@ -1,0 +1,291 @@
+\chapter{NP-Completeness}\label{ch:b3:np-completeness}
+
+\Cref{ch:b3:complexity-classes} defined NP, the problems whose yes-answers have certificates that are quick to check, and left open whether they can all be solved quickly. Nobody knows. What is known is that thousands of problems from scheduling, routing, packing and logic are equally hard: a fast algorithm for any one of them would give fast algorithms for all of NP. This chapter proves the first such result, the Cook--Levin theorem, by turning the run of any nondeterministic machine into a Boolean formula, and then spreads it by reductions, each one a program tested against brute force: satisfiability to 3-SAT, to \omterm{def:b3:np-completeness:problems}{independent set}, \omterm{def:b3:np-completeness:problems}{clique} and vertex cover, to 3-colouring, to subset sum. It ends with what such a proof tells an engineer: which special cases are easy, and why a ``polynomial'' dynamic program can still be exponential.
+
+\begin{recall}
+A formula in conjunctive normal form is a conjunction of clauses, each a disjunction of literals; SAT asks whether it has a satisfying assignment, and $k$-SAT is SAT for clauses of at most $k$ literals (Year~1 volume). A strongly connected component of a directed graph is a maximal set of vertices that can all reach one another; the components can be found in linear time, and contracting them leaves a graph with no cycle (Year~1 volume). A vertex cover of a graph is a set of vertices touching every edge (Year~2 volume). Dynamic programming fills a table of answers to subproblems (Year~1 volume). P, NP and verifiers are those of \cref{ch:b3:complexity-classes}.
+\end{recall}
+
+\section{Polynomial reductions}\label{sec:b3:np-completeness:reductions}
+
+\begin{definition}[Polynomial-time reduction, NP-hard, NP-complete]\label{def:b3:np-completeness:reduction}
+A \emph{polynomial-time reduction}\index{polynomial-time reduction} from a problem $A$ to a problem $B$ is a \omterm{def:b3:computability:reduction}{many-one reduction} $f$ computable in polynomial time: $x \in A$ if and only if $f(x) \in B$. We write $A \le_p B$. A problem $B$ is \emph{NP-hard}\index{NP-hard} when $A \le_p B$ for every $A$ in NP, and \emph{NP-complete}\index{NP-complete} when, in addition, $B$ is in NP.
+\end{definition}
+
+Reductions compose: if $A \le_p B$ and $B \le_p C$, then $A \le_p C$, since a polynomial of a polynomial is a polynomial (the output of the first reduction has polynomial size). And they carry speed one way: if $A \le_p B$ and $B \in \mathrm{P}$, then $A \in \mathrm{P}$. So one \omterm{def:b3:np-completeness:reduction}{NP-complete} problem in P would put all of NP in P; and to prove a new problem $B$ \omterm{def:b3:np-completeness:reduction}{NP-complete} it suffices to show $B \in \mathrm{NP}$ and $A \le_p B$ for one known \omterm{def:b3:np-completeness:reduction}{NP-complete} $A$. The direction matters: the reduction goes \emph{from} the known hard problem \emph{to} the new one. Reducing the new problem to SAT shows only that it is no harder than SAT.
+
+Richard Karp introduced completeness by polynomial-time \omterm{def:b3:computability:reduction}{many-one reductions} in 1972 and used it to show 21 problems \omterm{def:b3:np-completeness:reduction}{NP-complete}. % ledger: b3:karp-1972
+% ledger: b3:karp-list
+Michael Garey and David Johnson's book of 1979 lists over 300. % ledger: b3:garey-johnson-1979
+All of them rest on a first one.
+
+\section{The Cook--Levin theorem}\label{sec:b3:np-completeness:cook-levin}
+
+\begin{theorem}[Cook--Levin theorem]\label{thm:b3:np-completeness:cook-levin}\index{Cook--Levin theorem}
+SAT is \omterm{def:b3:np-completeness:reduction}{NP-complete}.
+\end{theorem}
+
+Stephen Cook published it in 1971, with a different notion of reduction; Leonid Levin, working independently in the Soviet Union, published an equivalent result for search problems in 1973; the proof with \omterm{def:b3:np-completeness:reduction}{polynomial-time reductions} is Karp's. % ledger: b3:cook-1971
+% ledger: b3:levin-1973
+% ledger: b3:cook-levin
+
+\begin{proof}
+SAT is in NP: an assignment is a certificate, checked clause by clause. Let $A$ be in NP, decided by a nondeterministic machine $N$ in time $n^c$ (\cref{def:b3:complexity-classes:np}). For an input $w$ of length $n$, let $t = n^c$. A run of $N$ on $w$ is a \emph{tableau}: $t + 1$ rows, each a configuration written as $\#\,u\,q\,v\,\#$ with the state $q$ just left of the cell under the head, all padded to the same width $W = O(t)$. Build the formula $\varphi_w$ on the variables $x_{i,j,s}$, ``cell $j$ of row $i$ holds symbol $s$'', with four parts.
+\begin{itemize}
+  \item Cells: each cell holds exactly one symbol, a clause of all its symbols and a clause $\neg x_{i,j,s} \vee \neg x_{i,j,s'}$ for each pair.
+  \item Start: row 0 is the start configuration on $w$, one unit clause per cell.
+  \item Accept: some cell of some row holds the accepting state, one clause.
+  \item Windows: every $2 \times 3$ window, three adjacent cells of a row and the three below, is \emph{legal}, that is, occurs in some configuration and one of its successors.
+\end{itemize}
+Only one cell per row holds a state, and a step changes only the cells next to it; so if every window is legal, each row is a successor of the one above, and the tableau is an accepting run. Conversely an accepting run fills a tableau whose windows are all legal. So $\varphi_w$ is satisfiable if and only if $N$ accepts $w$. The legal windows form a fixed finite set, depending on $N$ only. The formula has $O(t^2)$ variables and $O(t^2)$ clauses of constant size, and is written in polynomial time.
+\end{proof}
+
+The window condition says ``one of the legal windows is here'', a disjunction of conjunctions. \code{cook_levin.py} writes it in conjunctive normal form with one new variable $y$ per window and position, a clause ``some $y$ is true'' and clauses $y \Rightarrow$ each of its six cells. It builds the formula for a three-state machine that guesses where the pair \texttt{11} begins in its input, and \code{dpll.py}, a plain DPLL solver that \cref{ch:b3:hard-problems} develops, finds the accepting run.
+
+\omcode{code/bachelor-3/17-np-completeness/listings/cook_levin.py}{41}{64}{The tableau formula: cells, start row, acceptance, windows.}\label{lst:b3:np-completeness:cook-levin}
+
+\omoutput{code/bachelor-3/17-np-completeness/outputs/cook_levin.txt}{The formula for three steps on \texttt{011}, and the tableau read from its satisfying assignment: the machine guessed right at the second 1.}\label{out:b3:np-completeness:cook-levin}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small]
+  \foreach \r [count=\i from 0] in {{\#,q0,0,1,1,\_,\#}, {\#,0,q0,1,1,\_,\#}, {\#,0,1,q1,1,\_,\#}, {\#,0,1,1,qa,\_,\#}} {
+    \foreach \s [count=\j from 0] in \r {
+      \draw (0.8*\j, -0.6*\i) rectangle ++(0.8, 0.6);
+      \node at (0.8*\j + 0.4, -0.6*\i + 0.3) {\texttt{\s}};
+    }
+    \node[anchor=east] at (-0.1, -0.6*\i + 0.3) {row \i};
+  }
+  \draw[omThm, line width=2pt] (1.52, -1.28) rectangle (4.08, 0.08);
+  \node[anchor=west, align=left] at (6.0, -0.3) {a window: rows 1 and 2,\\cells 2 to 4; legal, since\\\texttt{q0} reading 1 may go to \texttt{q1}};
+\end{tikzpicture}
+\par\smallskip{\small The tableau of \cref{out:b3:np-completeness:cook-levin}, one configuration per row. The formula forces every $2 \times 3$ window to be one of the 193 legal ones.}
+\end{omfigure}
+
+\section{A chain of reductions}\label{sec:b3:np-completeness:chain}
+
+Every reduction below is a function in a listing, run on one small formula, and tested on random small formulas by comparing brute force on both sides; the tests generate the formulas with the \code{hypothesis} library.
+
+\begin{definition}[Independent set, clique, Hamiltonian cycle, subset sum problem]\label{def:b3:np-completeness:problems}
+An \emph{independent set}\index{independent set} of a graph is a set of pairwise non-adjacent vertices; a \emph{clique}\index{clique} is a set of pairwise adjacent ones. The \omterm{def:b3:complexity-classes:decision}{decision problems} ask whether one of size $k$ exists. A \emph{Hamiltonian cycle}\index{Hamiltonian cycle} is a cycle through every vertex exactly once. The \emph{subset sum problem}\index{subset sum problem} asks whether some of given positive integers add up to a target $T$.
+\end{definition}
+
+\begin{definition}[Gadget]\label{def:b3:np-completeness:gadget}
+A \emph{gadget}\index{gadget} is a small fixed piece of the instance a reduction builds, one per variable or per clause of the formula, whose possible solutions behave like the truth values or the satisfied clauses.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, p/.style={draw, rounded corners, fill=omDef!12, minimum height=7mm}]
+  \node[p] (sat) at (0, 0) {SAT};
+  \node[p] (three) at (2.6, 0) {3-SAT};
+  \node[p] (is) at (5.6, 1.3) {independent set};
+  \node[p] (cl) at (9.2, 1.9) {clique};
+  \node[p] (vc) at (9.2, 0.7) {vertex cover};
+  \node[p] (col) at (5.6, 0) {3-colouring};
+  \node[p] (ss) at (5.6, -1.3) {subset sum};
+  \node[p, fill=black!5] (ham) at (9.2, -0.6) {Hamiltonian cycle};
+  \node[p, fill=omThm!20] (np) at (-3.4, 0) {all of NP};
+  \draw[->] (np) -- node[above, font=\scriptsize] {Cook--Levin} (sat);
+  \draw[->] (sat) -- (three);
+  \draw[->] (three) -- (is);
+  \draw[->] (three) -- (col);
+  \draw[->] (three) -- (ss);
+  \draw[->] (is) -- (cl);
+  \draw[->] (is) -- (vc);
+  \draw[->, dashed] (vc) -- (ham);
+\end{tikzpicture}
+\par\smallskip{\small The reductions of the chapter. Each arrow $A \to B$ is $A \le_p B$; the dashed one is told, not built.}
+\end{omfigure}
+
+\subsection{From SAT to 3-SAT}
+
+A clause of one or two literals is padded with new variables taken with both signs, so that the new clauses hold exactly when the old one does; a clause $\ell_1 \vee \cdots \vee \ell_k$ with $k > 3$ becomes a chain $(\ell_1 \vee \ell_2 \vee y_1)(\neg y_1 \vee \ell_3 \vee y_2) \cdots (\neg y_{k-3} \vee \ell_{k-1} \vee \ell_k)$. If some $\ell_i$ is true, set the $y$s before its clause to true and the others to false; if all $\ell_i$ are false, the chain forces $y_1$, then $y_2$, \dots, and the last clause fails.
+
+\omcode{code/bachelor-3/17-np-completeness/listings/reduce_3sat.py}{6}{26}{SAT to 3-SAT: every clause becomes clauses of exactly three literals.}\label{lst:b3:np-completeness:3sat}
+
+\omoutput{code/bachelor-3/17-np-completeness/outputs/reduce_3sat.txt}{A formula with clauses of one, two, five and two literals, and its 3-SAT version: 11 clauses, 6 new variables.}\label{out:b3:np-completeness:3sat}
+
+So 3-SAT, with clauses of exactly three literals, is \omterm{def:b3:np-completeness:reduction}{NP-complete}.
+
+\subsection{Independent set, clique, vertex cover}
+
+For a 3-CNF formula with $m$ clauses, build one vertex per literal occurrence, join the three vertices of each clause into a triangle, and join every pair of complementary literals $x$ and $\neg x$. Ask for an \omterm{def:b3:np-completeness:problems}{independent set} of size $k = m$. It can take at most one vertex per triangle, so it takes exactly one literal per clause, and never two complementary ones: making them true satisfies the formula. Conversely, a satisfying assignment makes one literal per clause true, and those $m$ vertices are independent.
+
+\omcode{code/bachelor-3/17-np-completeness/listings/reduce_is.py}{10}{28}{3-SAT to \omterm{def:b3:np-completeness:problems}{independent set}, then to \omterm{def:b3:np-completeness:problems}{clique} and to vertex cover.}\label{lst:b3:np-completeness:is}
+
+\omoutput{code/bachelor-3/17-np-completeness/outputs/reduce_is.txt}{Nine vertices for three clauses; the brute-force check agrees on 200 random formulas.}\label{out:b3:np-completeness:is}
+
+The other two follow at once. A set is independent in a graph if and only if it is a \omterm{def:b3:np-completeness:problems}{clique} in the complement graph. And $S$ is independent if and only if the other vertices cover every edge, so $G$ has an \omterm{def:b3:np-completeness:problems}{independent set} of size $k$ if and only if it has a vertex cover of size $n - k$ (\cref{exo:b3:np-completeness:7}). From vertex cover a longer chain of \omterm{def:b3:np-completeness:gadget}{gadgets} reaches \omterm{def:b3:np-completeness:problems}{Hamiltonian cycle}: each edge becomes a \omterm{def:b3:np-completeness:gadget}{gadget} of twelve vertices that a tour crosses in one of three ways, according to which end of the edge is in the cover. It is told here, not built.
+
+\subsection{3-colouring}
+
+Three colours, three special vertices T, F and B in a triangle: in any colouring they take the three colours, and their names fix what the colours mean. For each variable, $x$ and $\neg x$ are joined to each other and to B, so one is coloured T and the other F. For each clause $a \vee b \vee c$, an OR \omterm{def:b3:np-completeness:gadget}{gadget} takes $a$ and $b$ and gives an output vertex that can be coloured T if and only if $a$ or $b$ is; a second \omterm{def:b3:np-completeness:gadget}{gadget} takes that output and $c$; its output is joined to F and B, so it must be T.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, v/.style={circle, draw, inner sep=1pt, minimum size=6mm}]
+  \node[v, fill=omDef!20] (a) at (0, 2.2) {$a$};
+  \node[v, fill=omDef!20] (b) at (0, 0.8) {$b$};
+  \node[v, fill=omDef!20] (c) at (0, -0.8) {$c$};
+  \node[v] (u1) at (1.8, 2.2) {$u_1$};
+  \node[v] (v1) at (1.8, 0.8) {$v_1$};
+  \node[v] (o1) at (3.2, 1.5) {$o_1$};
+  \node[v] (u2) at (4.8, 1.5) {$u_2$};
+  \node[v] (v2) at (4.8, -0.8) {$v_2$};
+  \node[v] (o2) at (6.4, 0.35) {$o_2$};
+  \node[v, fill=omThm!20] (F) at (8.4, 1.2) {F};
+  \node[v, fill=black!15] (B) at (8.4, -0.5) {B};
+  \draw (a) -- (u1); \draw (b) -- (v1); \draw (u1) -- (v1) -- (o1) -- (u1);
+  \draw (o1) -- (u2); \draw (c) -- (v2); \draw (u2) -- (v2) -- (o2) -- (u2);
+  \draw (o2) -- (F); \draw (o2) -- (B);
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b3:np-completeness:gadget}{gadget} of one clause $a \vee b \vee c$: two OR \omterm{def:b3:np-completeness:gadget}{gadgets}, six vertices and twelve edges. If $a$ and $b$ are both F, then $u_1$ and $v_1$ must be T and B, which leaves F for $o_1$.}
+\end{omfigure}
+
+\omcode{code/bachelor-3/17-np-completeness/listings/reduce_col.py}{11}{28}{3-SAT to 3-colouring: the palette, a pair per variable, two OR \omterm{def:b3:np-completeness:gadget}{gadgets} per clause.}\label{lst:b3:np-completeness:col}
+
+\omoutput{code/bachelor-3/17-np-completeness/outputs/reduce_col.txt}{The sizes match $2n + 6m + 3$ vertices and $3n + 12m + 3$ edges, and the eight clauses that forbid every assignment give a graph with no 3-colouring.}\label{out:b3:np-completeness:col}
+
+\Cref{exo:b3:np-completeness:10} proves the reduction correct.
+
+\subsection{Subset sum}
+
+Numbers can simulate clauses too, if their digits never carry. For $n$ variables and $m$ clauses, write numbers of $n + m$ decimal digits. For each variable $x_i$, two numbers $y_i$ and $z_i$ have a 1 in digit $i$; $y_i$ also has a 1 in the digit of each clause containing $x_i$, and $z_i$ in each clause containing $\neg x_i$. Each clause also gets two slack numbers with a 1 in its digit. The target has a 1 in each variable digit and a 3 in each clause digit. A digit sums to at most $3 + 2 = 5$, so nothing carries. Reaching a 1 in digit $i$ means choosing exactly one of $y_i$, $z_i$: an assignment. Reaching 3 in a clause digit needs at least one true literal, since the slacks give at most 2.
+
+\omcode{code/bachelor-3/17-np-completeness/listings/reduce_ss.py}{10}{27}{3-SAT to subset sum, digit by digit.}\label{lst:b3:np-completeness:ss}
+
+\omoutput{code/bachelor-3/17-np-completeness/outputs/reduce_ss.txt}{Ten numbers for three variables and two clauses (leading zeros are not shown), and the check on 200 random formulas.}\label{out:b3:np-completeness:ss}
+
+\section{co-NP}\label{sec:b3:np-completeness:conp}
+
+\begin{definition}[co-NP]\label{def:b3:np-completeness:conp}
+\emph{co-NP}\index{co-NP} is the class of problems whose complement is in NP: those whose no-instances have certificates checkable in polynomial time.
+\end{definition}
+
+Is a formula a tautology, true under every assignment? A no-answer has a short certificate, a falsifying assignment; a yes-answer seems to need all $2^n$ assignments. Tautology is in \omterm{def:b3:np-completeness:conp}{co-NP}, and it is \omterm{def:b3:np-completeness:reduction}{co-NP-complete}, since $\varphi$ is a tautology exactly when $\neg \varphi$ is unsatisfiable. P is inside NP $\cap$ \omterm{def:b3:np-completeness:conp}{co-NP}, because P is closed under complement. If some \omterm{def:b3:np-completeness:reduction}{NP-complete} problem were in \omterm{def:b3:np-completeness:conp}{co-NP}, then NP would equal \omterm{def:b3:np-completeness:conp}{co-NP} (\cref{exo:b3:np-completeness:12}). Factoring, as the \omterm{def:b3:complexity-classes:decision}{decision problem} ``does $N$ have a factor below $k$?'', is in NP $\cap$ \omterm{def:b3:np-completeness:conp}{co-NP}, since the full factorisation, checked with a primality test, certifies both answers; it is not known to be in P, and if it were \omterm{def:b3:np-completeness:reduction}{NP-complete}, NP would equal \omterm{def:b3:np-completeness:conp}{co-NP}.
+
+\section{What a proof of hardness tells an engineer}\label{sec:b3:np-completeness:engineer}
+
+An NP-completeness proof says that no algorithm is known that is polynomial on every instance, and that finding one would settle P against NP. It does not say that the instances in front of you are hard. Three ways out are common: a special case that is easy, an algorithm polynomial in the numbers rather than their length, and the approximation and exact methods of \cref{ch:b3:hard-problems}.
+
+\begin{definition}[2-SAT, implication graph]\label{def:b3:np-completeness:2sat}
+\emph{2-SAT}\index{2-SAT} is SAT for formulas whose clauses have at most two literals. The \emph{implication graph}\index{implication graph (of a 2-CNF formula)} of such a formula has a vertex per literal and, for each clause $a \vee b$, the edges $\neg a \to b$ and $\neg b \to a$.
+\end{definition}
+
+\begin{theorem}[2-SAT is in P]\label{thm:b3:np-completeness:2sat}
+A 2-CNF formula is unsatisfiable if and only if some variable $x$ and its negation $\neg x$ lie in the same strongly connected component of the \omterm{def:b3:np-completeness:2sat}{implication graph}. This is decided, and a satisfying assignment found, in time linear in the size of the formula.
+\end{theorem}
+
+The edges are implications that every satisfying assignment respects, so a path from $x$ to $\neg x$ and back makes both values impossible. The converse, and the assignment ``$x$ is true when its component comes after that of $\neg x$ in topological order'', are \cref{exo:b3:np-completeness:9}. Aspvall, Plass and Tarjan gave this linear-time algorithm in 1979. % ledger: b3:aspvall-1979
+
+\omcode{code/bachelor-3/17-np-completeness/listings/two_sat.py}{49}{54}{\omterm{def:b3:np-completeness:2sat}{2-SAT} from the components, numbered in topological order by Kosaraju's algorithm.}\label{lst:b3:np-completeness:2sat}
+
+\omoutput{code/bachelor-3/17-np-completeness/outputs/two_sat.txt}{The components of a formula's \omterm{def:b3:np-completeness:2sat}{implication graph}, the assignment they give, and an unsatisfiable extension.}\label{out:b3:np-completeness:2sat}
+
+So \omterm{def:b3:np-completeness:2sat}{2-SAT} is linear while 3-SAT is \omterm{def:b3:np-completeness:reduction}{NP-complete}: the boundary between easy and hard can be one literal wide.
+
+\begin{definition}[Pseudo-polynomial algorithm, strongly NP-complete]\label{def:b3:np-completeness:pseudo}
+An algorithm is \emph{pseudo-polynomial}\index{pseudo-polynomial algorithm} when its running time is polynomial in the size of the input and in the magnitude of the numbers in it, rather than in their number of digits. A problem with numbers is \emph{strongly NP-complete}\index{strongly NP-complete} when it remains \omterm{def:b3:np-completeness:reduction}{NP-complete} even with all its numbers bounded by a polynomial in the input size.
+\end{definition}
+
+Subset sum has the dynamic program of the Year~1 volume: the set of sums reachable with the first $i$ numbers, for sums up to the target $T$, filled in $O(nT)$ steps. That is polynomial in $T$, but $T$ is written with about $\log_2 T$ bits.
+
+\omcode{code/bachelor-3/17-np-completeness/listings/subset_dp.py}{7}{15}{Subset sum by dynamic programming, counting the cells it fills.}\label{lst:b3:np-completeness:dp}
+
+\omoutput{code/bachelor-3/17-np-completeness/outputs/subset_dp.txt}{Four more bits per number multiply the table by about 16 while the input grows by 80 bits: exponential in the input size.}\label{out:b3:np-completeness:dp}
+
+The reduction from 3-SAT builds targets with $n + m$ digits, so the dynamic program does not contradict NP-completeness. With numbers written in unary, or bounded by a polynomial, subset sum is in P; it is not \omterm{def:b3:np-completeness:pseudo}{strongly NP-complete}. 3-colouring has no numbers at all, and is \omterm{def:b3:np-completeness:reduction}{NP-complete} in the strong sense automatically.
+
+\section{Exercises}\label{sec:b3:np-completeness:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:np-completeness:1}
+A student shows that a new scheduling problem $S$ is \omterm{def:b3:np-completeness:reduction}{NP-complete} by writing a \omterm{def:b3:np-completeness:reduction}{polynomial-time reduction} from $S$ to SAT. What has been proved, and what reduction is needed instead?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:np-completeness:2}
+Apply the chain of \cref{lst:b3:np-completeness:3sat} to the clause $x_1 \vee \neg x_2 \vee x_3 \vee x_4 \vee \neg x_5$. Check by hand that the result is satisfied by $x_4$ true and the rest false, and say how the new variables are set.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:np-completeness:3}
+Draw the independent-set graph for $(x_1 \vee x_2 \vee \neg x_3) \wedge (\neg x_1 \vee x_3 \vee x_2)$ and give an \omterm{def:b3:np-completeness:problems}{independent set} of size 2 with the assignment it encodes.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:np-completeness:4}
+Predict the numbers and the target that \code{to_subset_sum} builds for the single clause $x_1 \vee \neg x_2 \vee x_3$, and give a subset reaching the target.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:np-completeness:5}
+\code{exercises/ex5_clique.py} has a reduction from 3-SAT to \omterm{def:b3:np-completeness:problems}{clique} that joins every two literals that are not complementary. Find a formula on which it answers wrongly and fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:np-completeness:6}
+Write \code{colouring_to_sat(n, edges)}, a reduction from 3-colouring to SAT. It is tested against backtracking on random graphs.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:np-completeness:7}
+Prove that vertex cover is \omterm{def:b3:np-completeness:reduction}{NP-complete}, from \omterm{def:b3:np-completeness:problems}{independent set}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:np-completeness:8}
+Count the variables and clauses of the formula of \cref{lst:b3:np-completeness:cook-levin} for $t$ steps, width $W$, 7 symbols and $L$ legal windows, and check the counts of \cref{out:b3:np-completeness:cook-levin}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:np-completeness:9}
+Prove \cref{thm:b3:np-completeness:2sat}: if no $x$ shares a component with $\neg x$, the assignment of \cref{lst:b3:np-completeness:2sat} satisfies every clause. (Use the symmetry of the graph: $a \to b$ is an edge if and only if $\neg b \to \neg a$ is.)
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:np-completeness:10}
+Prove that the 3-colouring reduction is correct: the graph is 3-colourable if and only if the formula is satisfiable.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:np-completeness:11}
+Prove that subset sum is \omterm{def:b3:np-completeness:reduction}{NP-complete}, and explain why the dynamic program of \cref{lst:b3:np-completeness:dp} does not show it is in P.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:np-completeness:12}
+Prove that if some \omterm{def:b3:np-completeness:reduction}{NP-complete} problem is in \omterm{def:b3:np-completeness:conp}{co-NP}, then $\mathrm{NP} = \mathrm{co\text{-}NP}$.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:np-completeness:problem}
+
+\begin{problem}[{Weekend problem --- Timetabling the town's exams}]\label{pb:b3:np-completeness:1}
+Brenmoor's school sets its exams in a few time slots; two exams taken by a common student must not share a slot. Exams are vertices, clashes are edges, slots are colours. This problem shows that three slots make the problem \omterm{def:b3:np-completeness:reduction}{NP-complete}, with the \omterm{def:b3:np-completeness:gadget}{gadgets} of \cref{lst:b3:np-completeness:col}, and that two slots do not.
+
+\medskip\noindent\textbf{Part I --- The decision problem.}
+\begin{enumerate}
+  \item State the timetabling problem with $s$ slots as a \omterm{def:b3:complexity-classes:decision}{decision problem} on graphs.
+  \item Show it is in NP for every $s$: what is the certificate, and how long does checking take?
+  \item Six exams, A to F; clashes AB, BC, CA, CD, DE, EF, FD. How many slots are needed?
+  \item Why does a triangle of clashes need three slots, whatever the rest of the graph?
+  \item Why is the optimisation problem ``fewest slots'' no easier than the \omterm{def:b3:complexity-classes:decision}{decision problem} with $s = 3$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The gadgets.}
+\begin{enumerate}[resume]
+  \item In the palette triangle, why can the names T, F and B be given to the colours after the colouring is found?
+  \item Why is exactly one of $x$, $\neg x$ coloured T in any 3-colouring?
+  \item In an OR \omterm{def:b3:np-completeness:gadget}{gadget}, show that if $a$ and $b$ are both F then the output is F.
+  \item Show that if $a$ is T, the \omterm{def:b3:np-completeness:gadget}{gadget} can be coloured with output T, whatever $b$ is.
+  \item Why must the second output of each clause be T?
+  \item Why does a clause with three false literals make the graph uncolourable?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Sizes.}
+\begin{enumerate}[resume]
+  \item Count the vertices: $2n + 6m + 3$.
+  \item Count the edges: $3n + 12m + 3$.
+  \item Check both counts against \cref{out:b3:np-completeness:col}.
+  \item A timetable instance built from a formula with 100 variables and 430 clauses: how many exams and clashes?
+  \item Why is the reduction computable in polynomial time?
+  \item What do the counts say about the size of the hard instances 3-colouring inherits from 3-SAT?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Two slots against three.}
+\begin{enumerate}[resume]
+  \item Show that a graph has a 2-colouring if and only if it has no cycle of odd length.
+  \item Give a linear-time algorithm for two slots, and say what it returns when there is no timetable.
+  \item Reduce 2-slot timetabling to \omterm{def:b3:np-completeness:2sat}{2-SAT}: one variable per exam.
+  \item Why does the same idea fail for three slots?
+  \item The school has 40 exams and three slots. Does NP-completeness mean that its timetable cannot be found?
+  \item What does a school with too many clashes for three slots learn from a failed search, and what would a certificate of impossibility look like?
+  \item Sum up: what changes between two slots and three?
+\end{enumerate}
+\end{problem}

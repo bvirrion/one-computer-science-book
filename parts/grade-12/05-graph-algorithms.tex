@@ -1,0 +1,387 @@
+% Provenance (never printed): NSI terminale "Structures de donnees: graphes (listes d'adjacence, matrice);
+% algorithmique: parcours en profondeur et en largeur, detection de cycle, chemin" and the Dijkstra algorithm met in
+% the routing chapter. See sources/book2/BRIEFS.md.
+\chapter{Graph Traversals and Shortest Paths}\label{ch:g12:graph-algorithms}
+
+A classic way out of a maze is to put one hand on a wall and never let go. It works in every maze whose exit is on the
+outer wall, and it needs no memory at all. But it walks into every dead end on its side, and comes back out of each:
+the way it finds is rarely the shortest.
+
+This chapter writes the two systematic ways of exploring a \omterm{def:g10:graphs-first-look:graph}{graph}, depth first with a stack and breadth first with a
+queue, and uses them to decide what can be reached, to find \omterm{def:g12:graph-algorithms:cycle}{cycles} and to find shortest paths counted in edges. Then
+the edges get lengths, and \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} finds the shortest routes across the town.
+
+\begin{recall}
+A \omterm{def:g10:graphs-first-look:graph}{graph} is made of vertices and edges, possibly directed and weighted; a path, its length, the distance between two
+vertices, and the components of a \omterm{def:g10:graphs-first-look:graph}{graph} were defined in chapter \ref{ch:g10:graphs-first-look}, where the town's road
+\omterm{def:g10:graphs-first-look:graph}{graph} was first loaded. A stack gives back its newest element first, a queue its oldest (chapter
+\ref{ch:g12:lists-stacks-queues}). The adjacency matrix of a \omterm{def:g10:graphs-first-look:graph}{graph} (the mathematics book).
+\end{recall}
+
+\section{Representations}\label{sec:g12:graph-algorithms:representations}
+
+\begin{definition}[Adjacency list, successor, predecessor]\label{def:g12:graph-algorithms:adjacency-list}
+The \emph{adjacency lists}\index{adjacency list} of a \omterm{def:g10:graphs-first-look:graph}{graph} give, for each vertex, the list of its neighbours; in
+Python, a dictionary from each vertex to that list. In a \omterm{def:g10:graphs-first-look:directed}{directed graph}, the vertices at the end of the edges leaving
+$v$ are its \emph{successors}\index{successor}, and those at the start of the edges arriving at $v$ its
+\emph{predecessors}\index{predecessor}; the lists usually give the successors.
+\end{definition}
+
+The adjacency matrix of a \omterm{def:g10:graphs-first-look:graph}{graph} of $n$ vertices is an $n \times n$ table of $0$ and $1$, with a $1$ in row $v$ and
+column $w$ when there is an edge from $v$ to $w$.
+
+\omcode{code/grade-12/05-graph-algorithms/listings/representations.py}{1}{29}{The two representations, converted both
+ways, and the \omterm{def:g12:graph-algorithms:adjacency-list}{predecessors} of a \omterm{def:g10:graphs-first-look:directed}{directed graph}.}\label{lst:g12:graph-algorithms:representations}
+
+\omoutput{code/grade-12/05-graph-algorithms/outputs/representations.txt}{Each row of the matrix holds the same
+information as one list.}\label{out:g12:graph-algorithms:representations}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, v/.style={draw, circle, minimum size=6mm, inner sep=0pt, fill=omDef!10}]
+  \node[v] (A) at (0,1) {A}; \node[v] (B) at (1.2,2) {B}; \node[v] (C) at (1.2,0) {C};
+  \node[v] (D) at (2.6,1.4) {D}; \node[v] (E) at (2.6,-0.4) {E}; \node[v] (F) at (3.8,0.6) {F};
+  \foreach \a/\b in {A/B, A/C, B/D, C/D, C/E, D/F, E/F} \draw (\a) -- (\b);
+  \node[align=left, right] at (4.6,0.8) {\code{A: B C}\\ \code{B: A D}\\ \code{C: A D E}\\ \code{D: B C F}\\
+    \code{E: C F}\\ \code{F: D E}};
+  \matrix[matrix of math nodes, right, nodes={minimum width=4mm, font=\scriptsize}, left delimiter={(},
+      right delimiter={)}] at (7.6,0.8) {
+    0 & 1 & 1 & 0 & 0 & 0 \\ 1 & 0 & 0 & 1 & 0 & 0 \\ 1 & 0 & 0 & 1 & 1 & 0 \\
+    0 & 1 & 1 & 0 & 0 & 1 \\ 0 & 0 & 1 & 0 & 0 & 1 \\ 0 & 0 & 0 & 1 & 1 & 0 \\};
+\end{tikzpicture}
+
+{\small The \omterm{def:g10:graphs-first-look:graph}{graph} \code{G} of the listings, its \omterm{def:g12:graph-algorithms:adjacency-list}{adjacency lists} and its adjacency matrix (rows and columns in the order
+A to F). The matrix is symmetric because the \omterm{def:g10:graphs-first-look:graph}{graph} is undirected.}
+\end{omfigure}
+
+The two cost differently. The matrix always takes $n^2$ cells, and answers ``is there an edge from $v$ to $w$?'' in one
+step. The lists take one entry per edge end, and list the neighbours of $v$ without looking at the others. For a town
+of $30$ places and $53$ roads the lists are far smaller; most \omterm{def:g10:graphs-first-look:graph}{graphs} met in practice are like it, with few edges per
+vertex, and are stored as lists.
+
+\section{Depth-first search}\label{sec:g12:graph-algorithms:dfs}
+
+\begin{method}[Depth-first search]\label{def:g12:graph-algorithms:dfs}
+A \emph{depth-first search}\index{depth-first search} explores a \omterm{def:g10:graphs-first-look:graph}{graph} from a starting vertex by always going on from
+the most recently found vertex: visit it, mark it as visited, then search from each of its unvisited neighbours in
+turn, before coming back. A stack holds the vertices still to explore; the recursion's \omterm{def:g12:recursion:call-stack}{call stack} can play that role.
+\end{method}
+
+\omcode{code/grade-12/05-graph-algorithms/listings/dfs.py}{1}{33}{Depth-first search with a stack and with
+recursion.}\label{lst:g12:graph-algorithms:dfs}
+
+\omoutput{code/grade-12/05-graph-algorithms/outputs/dfs.txt}{Both versions give the same order; everything is
+reachable from E.}\label{out:g12:graph-algorithms:dfs}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, v/.style={draw, circle, minimum size=6mm, inner sep=0pt, fill=omDef!10}]
+  \node[v] (A) at (0,1) {A}; \node[v] (B) at (1.6,2.2) {B}; \node[v] (C) at (1.6,-0.2) {C};
+  \node[v] (D) at (3.4,1.6) {D}; \node[v] (E) at (3.4,-0.6) {E}; \node[v] (F) at (5.0,0.6) {F};
+  \foreach \a/\b in {A/B, B/D, D/C, C/E, E/F} \draw[very thick, omDef] (\a) -- (\b);
+  \foreach \a/\b in {A/C, D/F} \draw[dashed, black!50] (\a) -- (\b);
+  \foreach \n/\k/\x/\y in {A/1/-0.45/0, B/2/0/0.45, D/3/0/0.45, C/4/0/-0.45, E/5/0/-0.45, F/6/0.45/0}
+    \node[omThm, font=\scriptsize\bfseries] at ($(\n)+(\x,\y)$) {\k};
+\end{tikzpicture}
+
+{\small The depth-first search of \code{G} from A: the numbers give the order of visit. Bold edges are those used to
+reach a new vertex; they form a tree. The dashed edges lead to vertices already visited.}
+\end{omfigure}
+
+A search from $v$ visits exactly the vertices reachable from $v$; each vertex is visited once, and each edge looked at
+once from each end, so the cost is proportional to the number of vertices plus the number of edges.
+
+\begin{definition}[Cycle]\label{def:g12:graph-algorithms:cycle}
+A \emph{cycle}\index{cycle} is a path of at least one edge that comes back to its first vertex without using any edge
+twice; in an undirected \omterm{def:g10:graphs-first-look:graph}{graph}, it has at least three vertices.
+\end{definition}
+
+In an undirected \omterm{def:g10:graphs-first-look:graph}{graph}, a depth-first search that meets an already visited vertex, other than the one it came from,
+has found a \omterm{def:g12:graph-algorithms:cycle}{cycle}. In a \omterm{def:g10:graphs-first-look:directed}{directed graph} that is not enough: two paths may join without any \omterm{def:g12:graph-algorithms:cycle}{cycle}. The search then gives
+each vertex one of three colours: white, not yet seen; grey, being explored, its search not finished; black,
+finished. An edge to a grey vertex goes back to a vertex whose search is still running, so there is a path from it
+to the present vertex and back: a \omterm{def:g12:graph-algorithms:cycle}{cycle}.
+
+\omcode{code/grade-12/05-graph-algorithms/listings/cycle.py}{1}{22}{\omterm{def:g12:graph-algorithms:cycle}{Cycles} in an undirected
+\omterm{def:g10:graphs-first-look:graph}{graph}.}\label{lst:g12:graph-algorithms:cycle-u}
+
+\omcode{code/grade-12/05-graph-algorithms/listings/cycle.py}{23}{46}{\omterm{def:g12:graph-algorithms:cycle}{Cycles} in a \omterm{def:g10:graphs-first-look:directed}{directed graph}, with three colours;
+course prerequisites.}\label{lst:g12:graph-algorithms:cycle-d}
+
+\omoutput{code/grade-12/05-graph-algorithms/outputs/cycle.txt}{A course that would require itself is a
+\omterm{def:g12:graph-algorithms:cycle}{cycle}.}\label{out:g12:graph-algorithms:cycle}
+
+\section{Breadth-first search}\label{sec:g12:graph-algorithms:bfs}
+
+\begin{method}[Breadth-first search]\label{def:g12:graph-algorithms:bfs}
+A \emph{breadth-first search}\index{breadth-first search} from a vertex $s$ visits $s$, then all its neighbours, then
+all their unvisited neighbours, and so on, layer by layer. A queue holds the vertices found but not yet explored. Each
+vertex records its distance from $s$ in edges and its parent, the vertex from which it was found.
+\end{method}
+
+\omcode{code/grade-12/05-graph-algorithms/listings/bfs.py}{1}{32}{Breadth-first search: distances and
+parents.}\label{lst:g12:graph-algorithms:bfs}
+
+\omoutput{code/grade-12/05-graph-algorithms/outputs/bfs.txt}{Following the parents back from F gives a shortest
+path.}\label{out:g12:graph-algorithms:bfs}
+
+The queue gives back the vertices in order of distance: all those at distance $d$ before any at distance $d + 1$. So
+the first time a vertex is found, it is found by a shortest path (exercise \ref{exo:g12:graph-algorithms:12}). The
+parents form a tree, the breadth-first search tree, and the path from $s$ to any vertex in that tree is a shortest one.
+
+A maze drawn on squared paper is a \omterm{def:g10:graphs-first-look:graph}{graph}: each square is a vertex, and two squares are joined when no wall separates
+them.
+
+\begin{omfigure}
+\begin{tikzpicture}[x=10mm, y=-10mm, font=\footnotesize]
+  \foreach \r/\c/\d in {0/0/0, 0/1/1, 0/2/2, 0/3/5, 1/0/1, 1/1/4, 1/2/3, 1/3/4, 2/0/2, 2/1/5, 2/2/6, 2/3/7} {
+    \pgfmathsetmacro{\shade}{45 - 5*\d}
+    \fill[omDef!\shade!white] (\c,\r) rectangle (\c+1,\r+1);
+    \node at (\c+0.5,\r+0.5) {$\d$};
+  }
+  \draw[thick] (0,0) rectangle (4,3);
+  \draw[very thick] (1,1) -- (2,1); \draw[very thick] (1,1) -- (1,2); \draw[very thick] (2,2) -- (3,2);
+  \draw[very thick] (3,0) -- (3,1); \draw[very thick] (3,2) -- (4,2); \draw[very thick] (1,2) -- (1,3);
+\end{tikzpicture}
+
+{\small A small maze and the distances found by breadth-first search from the top-left square. Each number is one
+more than a neighbour's that can be reached without crossing a wall; the darker the square, the closer.}
+\end{omfigure}
+
+The program below builds a maze of $8 \times 14$ squares by carving passages at random from a fixed seed, then knocks
+down twelve more walls so that some places can be reached in several ways. It finds the shortest way from the
+top-left square to the bottom-right one, and compares it with the hand on the wall.
+
+\omcode{code/grade-12/05-graph-algorithms/listings/maze.py}{1}{35}{A maze as a grid \omterm{def:g10:graphs-first-look:graph}{graph}, carved by a depth-first
+search.}\label{lst:g12:graph-algorithms:maze}
+
+\omcode{code/grade-12/05-graph-algorithms/listings/maze.py}{48}{70}{The right hand on the wall, and the
+comparison.}\label{lst:g12:graph-algorithms:maze-run}
+
+\omoutput{code/grade-12/05-graph-algorithms/outputs/maze.txt}{The stars mark the shortest exit. Lines 36 to 47 of the
+file, not printed, draw the maze as text.}\label{out:g12:graph-algorithms:maze}
+
+\section{Dijkstra's algorithm}\label{sec:g12:graph-algorithms:dijkstra}
+
+When edges have lengths, the path with fewest edges is not always the shortest: breadth-first search no longer
+answers. The \omterm{def:g10:graphs-first-look:path}{length of a path} is now the sum of the weights of its edges, all assumed positive or zero.
+
+\begin{method}[Dijkstra's algorithm]\label{met:g12:graph-algorithms:dijkstra}
+\emph{Dijkstra's algorithm}\index{Dijkstra's algorithm} computes the distances from a source $s$ in a \omterm{def:g10:graphs-first-look:graph}{graph} with
+weights $\ge 0$. It keeps a tentative distance for each vertex found, starting with $0$ for $s$, and a set of
+finished vertices, at first empty. At each step:
+\begin{enumerate}
+  \item among the vertices found and not finished, pick one, $u$, with the smallest tentative distance, and finish it;
+  \item for each edge from $u$ to an unfinished $v$ of weight $w$, if $d(u) + w$ is smaller than the tentative
+    distance of $v$, or $v$ has none, set it to $d(u) + w$, and record $u$ as the parent of $v$.
+\end{enumerate}
+It stops when every vertex found is finished.
+\end{method}
+
+\begin{history}[Dijkstra, 1959]
+Edsger W.\ Dijkstra published the method in 1959, in a three-page note titled ``A note on two problems in connexion
+with \omterm{def:g10:graphs-first-look:graph}{graphs}'', in the first volume of the journal \emph{Numerische Mathematik}.
+% ledger: g12:dijkstra-1959
+\end{history}
+
+\omcode{code/grade-12/05-graph-algorithms/listings/dijkstra.py}{1}{30}{\omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm}, with the minimum found by
+a scan.}\label{lst:g12:graph-algorithms:dijkstra}
+
+\omoutput{code/grade-12/05-graph-algorithms/outputs/dijkstra.txt}{The tentative distances after each vertex is
+finished.}\label{out:g12:graph-algorithms:dijkstra}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, v/.style={draw, circle, minimum size=6mm, inner sep=0pt, fill=omMeth!15}]
+  \node[v] (S) at (0,1) {S}; \node[v] (A) at (2,2) {A}; \node[v] (B) at (2,0) {B};
+  \node[v] (C) at (4.4,2) {C}; \node[v] (D) at (4.4,0) {D}; \node[v] (T) at (6.6,1) {T};
+  \foreach \a/\b/\w/\t in {S/A/4/0, S/B/1/1, A/B/2/1, A/C/5/1, B/D/8/0, C/D/1/0, C/T/3/1, D/T/6/0} {
+    \ifnum\t=1 \draw[very thick, omDef] (\a) -- node[fill=white, inner sep=1pt, text=black] {$\w$} (\b);
+    \else \draw[black!50] (\a) -- node[fill=white, inner sep=1pt, text=black] {$\w$} (\b); \fi
+  }
+  \foreach \n/\d/\k/\x/\y in {S/0/1/-1.25/0, B/1/2/0/-0.5, A/3/3/0/0.5, C/8/4/0/0.5, D/9/5/0/-0.5, T/11/6/1.35/0}
+    \node[omThm, font=\scriptsize] at ($(\n)+(\x,\y)$) {$d = \d$, \#\k};
+\end{tikzpicture}
+
+{\small The \omterm{def:g10:graphs-first-look:graph}{graph} \code{W}: each vertex with its final distance from S and the step at which it was finished. The bold
+edges join each vertex to its parent; they form the tree of shortest routes. B is finished before A although S--A is
+a direct edge: through B, A is at $3$, not $4$.}
+\end{omfigure}
+
+\begin{theorem}[The finished distances are final]\label{thm:g12:graph-algorithms:dijkstra}
+With weights $\ge 0$, when \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} finishes a vertex, its tentative distance is its distance from $s$.
+\end{theorem}
+
+The idea of the proof (exercise \ref{exo:g12:graph-algorithms:13}): take a shortest path from $s$ to the vertex $u$
+being finished, and the first vertex $y$ on it that is not yet finished. The vertex before $y$ is
+finished, and gave $y$ a tentative distance at most the length of the path up to $y$; that $d(y)$ is at least $d(u)$,
+since $u$ was picked as the smallest; and the rest of the path has weights $\ge 0$. So
+no path is shorter than $d(u)$. This version scans the unfinished vertices at each step: with $n$ vertices, $n$ steps
+of up to $n$ comparisons, a cost in $n^2$. A better structure for picking the minimum, met in a later volume, makes
+it much faster on large \omterm{def:g10:graphs-first-look:graph}{graphs}.
+
+Negative weights break the proof, and the algorithm:
+
+\omcode{code/grade-12/05-graph-algorithms/listings/negative_weight.py}{1}{22}{A negative weight, and every path tried
+by brute force.}\label{lst:g12:graph-algorithms:negative}
+
+\omoutput{code/grade-12/05-graph-algorithms/outputs/negative_weight.txt}{A finished at $1$, before the edge of weight
+$-3$ was seen.}\label{out:g12:graph-algorithms:negative}
+
+\section{On the town}\label{sec:g12:graph-algorithms:town}
+
+The town's road \omterm{def:g10:graphs-first-look:graph}{graph} has $30$ places and $53$ roads, one of them one-way: road $1$ goes from the Town Square to the
+Library only. \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} from the Station gives the length of the shortest drive to every place.
+
+\omcode{code/grade-12/05-graph-algorithms/listings/dijkstra_town.py}{1}{21}{Shortest drives from the
+Station.}\label{lst:g12:graph-algorithms:town}
+
+\omoutput{code/grade-12/05-graph-algorithms/outputs/dijkstra_town.txt}{The one-way road makes the return from the
+Library almost twice as long.}\label{out:g12:graph-algorithms:town}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=10cm, height=8.6cm, xlabel={$x$ (km)}, ylabel={$y$ (km)}, xmin=-0.2, xmax=6, ymin=-0.2,
+    ymax=5.1, axis equal image, grid=none]
+  \addplot[black!25, line width=0.6pt] table[x=x, y=y]{code/grade-12/05-graph-algorithms/figures/town_roads.dat};
+  \addplot[omDef, line width=1.4pt] table[x=x, y=y]{code/grade-12/05-graph-algorithms/figures/town_tree.dat};
+  \addplot[only marks, mark=*, mark size=1.6pt, omThm, nodes near coords, point meta=explicit symbolic,
+    nodes near coords style={font=\tiny, black!70, anchor=south west, inner sep=1pt}]
+    table[x=x, y=y, meta=d]{code/grade-12/05-graph-algorithms/figures/town_places.dat};
+  \node[font=\scriptsize, anchor=north] at (axis cs:2.301,2.80) {Station};
+\end{axis}
+\end{tikzpicture}
+
+{\small The town's roads (grey) and the tree of shortest routes from the Station (blue), drawn from the coordinates of
+the places by \code{figures/town_tree.py}; each place is labelled with its distance from the Station in kilometres.}
+\end{omfigure}
+
+The functions above take a \omterm{def:g10:graphs-first-look:graph}{graph} as a dictionary. A class can hide that dictionary behind methods; if it offers
+\code{g[v]} and a loop over the vertices, through two \omterm{def:g12:classes-and-objects:special-method}{special methods}, the same \code{dijkstra} works on it unchanged.
+
+\omcode{code/grade-12/05-graph-algorithms/listings/graph_class.py}{1}{28}{A \omterm{def:g10:graphs-first-look:graph}{graph} class.}%
+\label{lst:g12:graph-algorithms:graph-class}
+
+\omcode{code/grade-12/05-graph-algorithms/listings/use_graph.py}{1}{11}{The \omterm{def:g10:graphs-first-look:graph}{graph} \code{W} rebuilt with the class, plus
+a one-way edge.}\label{lst:g12:graph-algorithms:use-graph}
+
+\omoutput{code/grade-12/05-graph-algorithms/outputs/use_graph.txt}{The same distances as before, and X reached through
+its one-way edge.}\label{out:g12:graph-algorithms:use-graph}
+
+\section{Exercises}\label{sec:g12:graph-algorithms:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g12:graph-algorithms:1}
+Give the order of the recursive depth-first search of \code{G} from D.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:graph-algorithms:2}
+Give the order of the breadth-first search of \code{G} from D, layer by layer.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:graph-algorithms:3}
+Four vertices $1$, $2$, $3$, $4$ form a square, $1$--$2$--$3$--$4$--$1$, with one diagonal $1$--$3$. Write its
+adjacency matrix and its \omterm{def:g12:graph-algorithms:adjacency-list}{adjacency lists}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:graph-algorithms:4}
+Give the distances in edges from E to every vertex of \code{G}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:graph-algorithms:5}
+Write \code{count_edges(adj)}, the number of edges of an undirected \omterm{def:g10:graphs-first-look:graph}{graph} given by \omterm{def:g12:graph-algorithms:adjacency-list}{adjacency lists}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:graph-algorithms:6}
+A student's search marks a vertex when it enters it and unmarks it when it returns, ``to keep the marks clean''. On a
+grid of $4 \times 4$ squares, it makes $2111$ calls from a corner. How many does the depth-first search of the chapter
+make, and why does the student's version make so many?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:graph-algorithms:7}
+Write \code{has_path(g, a, b)}, which stops as soon as \code{b} is found.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:graph-algorithms:8}
+Run \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} by hand on \code{W} from A: the vertex finished at each step and the tentative distances.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:graph-algorithms:9}
+A version of \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} finishes, at each step, the vertex found last instead of the closest. On \code{W}
+from S it gives $15$ for T. Find where it goes wrong.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:graph-algorithms:10}
+The town has $30$ places and $53$ roads, one of them one-way. How many entries do its \omterm{def:g12:graph-algorithms:adjacency-list}{adjacency lists} hold, and how
+many cells its adjacency matrix?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:graph-algorithms:11}
+Write \code{bfs_layers(g, s)}, which returns the list of layers: \code{[[s], [vertices at distance 1], ...]}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:graph-algorithms:12}
+Prove that breadth-first search gives every reachable vertex its distance in edges from $s$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:graph-algorithms:13}
+Prove the theorem on \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:graph-algorithms:14}
+Write \code{topological_order(g)}, which orders the vertices of a \omterm{def:g10:graphs-first-look:directed}{directed graph} so that every edge goes from an
+earlier vertex to a later one, and raises \code{ValueError} if the \omterm{def:g10:graphs-first-look:graph}{graph} has a \omterm{def:g12:graph-algorithms:cycle}{cycle}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:graph-algorithms:15}
+To remove negative weights, a student adds the same number to every weight, then runs \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm}. Show with
+the \omterm{def:g10:graphs-first-look:graph}{graph} of \code{negative_weight.py} that the path found is not the shortest in the original \omterm{def:g10:graphs-first-look:graph}{graph}.
+\end{exercise}
+
+\section{Problem: The Shortest Exit}\label{sec:g12:graph-algorithms:problem}
+
+\begin{problem}[{Weekend problem --- the shortest exit}]\label{pb:g12:graph-algorithms:1}
+The maze of \code{maze.py} has $8 \times 14$ squares, an entrance at the top-left square and an exit at the
+bottom-right one. In its second version, $30$ of its passages, chosen at random, are doors that take $6$ seconds to
+cross instead of $1$.
+
+\omcode{code/grade-12/05-graph-algorithms/listings/maze_doors.py}{1}{21}{The maze with doors.}%
+\label{lst:g12:graph-algorithms:doors}
+
+\omoutput{code/grade-12/05-graph-algorithms/outputs/maze_doors.txt}{The path with fewest steps is not the fastest.}%
+\label{out:g12:graph-algorithms:doors}
+
+\medskip\noindent\textbf{Part I --- A maze as a graph.}
+\begin{enumerate}
+  \item What are the vertices and the edges of the maze's \omterm{def:g10:graphs-first-look:graph}{graph}? How many vertices?
+  \item The carving makes a tree of passages. How many passages does it open? How many does the program count in the
+    end, and why?
+  \item In \code{make_maze}, which structure of the chapter does \code{stack} implement, and which search does the
+    carving perform?
+  \item Why does the maze have several routes from the entrance to the exit, and not just one?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Searching for the exit.}
+\begin{enumerate}[resume]
+  \item How many squares does the depth-first search visit before it reaches the exit? Why so many?
+  \item Explain the order of the four turns in \code{wall_follower}.
+  \item How many steps does the hand on the wall take? Why more than the shortest exit?
+  \item Why is the hand on the wall sure to reach the exit here, although the maze has loops?
+  \item Which information does the wall follower keep, and which does a search keep?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The shortest exit.}
+\begin{enumerate}[resume]
+  \item How long is the shortest exit? Check it on the drawing by counting the stars.
+  \item Why is the path built from the parents a shortest one?
+  \item Is it the only shortest exit? How would you find out?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Doors.}
+\begin{enumerate}[resume]
+  \item How are the doors stored in the \omterm{def:g10:graphs-first-look:directed}{weighted graph} \code{g}?
+  \item Why can breadth-first search not find the fastest exit?
+  \item How long does the fewest-steps exit take, and how many doors does it cross?
+  \item How long is the fastest exit, in steps and in seconds, and how many doors does it cross?
+  \item Why is \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} correct here?
+  \item If every door took $1$ second, what would the fastest exit cost?
+  \item With $n$ squares, what is the cost of the scan version of \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm}, and is it acceptable here?
+  \item State the result: the shortest exit against the hand on the wall, and the fastest exit with doors.
+\end{enumerate}
+\end{problem}

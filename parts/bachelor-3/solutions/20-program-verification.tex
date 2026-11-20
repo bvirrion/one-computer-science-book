@@ -1,0 +1,105 @@
+\section*{Chapter \ref{ch:b3:program-verification} --- Program Verification: Hoare Logic and Model Checking}
+
+\begin{solution}{exo:b3:program-verification:1}
+Backwards: after \code{x = x - y}, $x - y = a \wedge y = b$; after \code{y = x - y}, $x - (x - y) = a \wedge x - y = b$; after \code{x = x + y}, $(x + y) - ((x + y) - y) = a \wedge (x + y) - y = b$, that is $y = a \wedge x = b$. The program swaps $x$ and $y$ without a third variable. In 8-bit arithmetic every step is modulo 256, where these identities still hold, so it swaps there too, even when $x + y$ wraps.
+\end{solution}
+
+\begin{solution}{exo:b3:program-verification:2}
+The \omterm{def:b3:program-verification:wp}{weakest precondition} is $x + 100 \ge 100$. With unbounded integers it holds for every $x \ge 0$, so the triple is valid. In 8 bits, for $156 \le x < 200$ the sum wraps to $x - 156 < 100$: not valid; $x = 156$ is a counterexample.
+\end{solution}
+
+\begin{solution}{exo:b3:program-verification:3}
+$I$: $2s = i(i + 1) \wedge i \le n$. At entry $s = i = 0$. Kept: from $2s = i(i + 1)$ and $i < n$, after $i = i + 1$ and $s = s + i$ we get $2s' = i(i + 1) + 2(i + 1) = (i + 1)(i + 2)$ and $i + 1 \le n$. At exit $i \ge n$ and $i \le n$, so $i = n$. In 8 bits, $s = n(n + 1)/2 \le 255$ requires $n \le 22$ ($s = 253$); at $n = 23$, $s$ would be 276 and wraps. The product $n(n + 1)$ in the postcondition wraps earlier, from $n = 16$, so an 8-bit proof must state it differently.
+\end{solution}
+
+\begin{solution}{exo:b3:program-verification:4}
+EX $p$: states with a successor in $\{1, 3\}$: $\{0, 2, 3\}$. EG $p$: from $\{1, 3\}$, state 1's only successor 2 is not in the set, so $\{3\}$. AF $p$: EG $\neg p$ starts from $\{0, 2\}$ and empties, since 0 leads to 1 and 2 leads to 1 or 3; so AF $p$ holds everywhere. E[$\neg p$ U $p$]: from $\{1, 3\}$, add 0 and 2: all four states.
+\end{solution}
+
+\begin{solution}{exo:b3:program-verification:5}
+The generator emits no \emph{exit} condition, $I \wedge \neg b \Rightarrow Q$, so the postcondition is never connected to the loop. It accepts \texttt{x = 0; while x < 10:\ x = x + 1} with invariant $x \le 10$ and postcondition $x = 11$, which is false (\code{test_exercise_5}). The fix appends \texttt{("exit", implies(conj(inv, neg(s.test)), q))}, as in \cref{lst:b3:program-verification:vcgen}; then $x = 11$ is rejected and $x = 10$ accepted.
+\end{solution}
+
+\begin{solution}{exo:b3:program-verification:6}
+\code{exercises/ex6_for.py}: entry $\mathit{pre} \Rightarrow I[a/i] \wedge a \le b$; preserved $I \wedge a \le i \wedge i < b \Rightarrow \mathrm{wp}(\mathit{body}, I[i + 1/i])$; exit $I[b/i] \Rightarrow \mathit{post}$. With \code{c = c + 1}, invariant $c = i \wedge n < 200$ and post $c = n$, all three are valid; with \code{c = c + 2}, preserved fails (\code{test_exercise_6}).
+\end{solution}
+
+\begin{solution}{exo:b3:program-verification:7}
+Facts used: evaluating an expression in a state looks only at the values of its variables.
+
+By induction on the formula $Q$: evaluating $Q[e/x]$ in $\sigma$ replaces each occurrence of $x$ by $e$, whose value in $\sigma$ is $v$; evaluating $Q$ in $\sigma[x \mapsto v]$ reads $v$ for each $x$ and the same values as $\sigma$ for every other variable. The two evaluations agree at every node, so $Q[e/x]$ holds in $\sigma$ exactly when $Q$ holds in $\sigma[x \mapsto v]$, the state after \code{x = e}. Wrap-around changes nothing, since both sides use the same 8-bit evaluation.
+\end{solution}
+
+\begin{solution}{exo:b3:program-verification:8}
+States are (pc0, pc1, flag0, flag1, turn). One step: $(1, 0, 1, 0, 0)$ (process 0 raised its flag) and $(0, 1, 0, 1, 0)$. Two steps: $(2, 0, 1, 0, 1)$, $(1, 1, 1, 1, 0)$ and $(0, 2, 0, 1, 0)$; the middle one is reached both ways. None has a blocked process: a process at line 2 here sees the other's flag down.
+\end{solution}
+
+\begin{solution}{exo:b3:program-verification:9}
+CTL: AG(\textit{req} $\Rightarrow$ AF \textit{grant}). LTL: G(\textit{req} $\Rightarrow$ F \textit{grant}). AG EF $\mathit{crit}_0$ is weaker: process 0 can always still get in, on some path, not on all. For a true \omterm{def:b3:concurrency:properties}{liveness property} the model needs fairness: a scheduler that lets every process that can move eventually move; without it, the path where only process 1 runs refutes AF $\mathit{crit}_0$.
+\end{solution}
+
+\begin{solution}{exo:b3:program-verification:10}
+Facts used: a terminating run of \texttt{while b:\ S} is a finite sequence of runs of $S$, each from a state where $b$ holds, ending in a state where $b$ fails.
+
+Let the run pass through states $\sigma_0, \sigma_1, \ldots, \sigma_k$, where $\sigma_{j+1}$ is the result of $S$ from $\sigma_j$, $b$ holds in $\sigma_0, \ldots, \sigma_{k-1}$ and fails in $\sigma_k$. By induction on $j$, $I$ holds in $\sigma_j$: in $\sigma_0$ by assumption, and if $I$ holds in $\sigma_j$ with $j < k$, then $I \wedge b$ holds there, and the premise gives $I$ in $\sigma_{j+1}$. So $I \wedge \neg b$ holds in $\sigma_k$.
+\end{solution}
+
+\begin{solution}{exo:b3:program-verification:11}
+Facts used: $F(Z) = g \cup \mathrm{EX}\,Z$ is monotone; the subsets of a finite set $S$ ordered by inclusion have no infinite strictly increasing chain.
+
+EF $g$ is a \omterm{def:b3:program-optimisation:lfp}{fixed point}: a state reaches $g$ if and only if it is in $g$ or has a successor that reaches $g$. It is the least: if $F(Z) = Z$, then by induction on $k$ every state reaching $g$ in $k$ steps is in $Z$ (for $k = 0$, $g \subseteq Z$; a state reaching $g$ in $k + 1$ steps has a successor in $Z$, so it is in $\mathrm{EX}\,Z \subseteq Z$). Iterating $Z_0 = \emptyset$, $Z_{k+1} = F(Z_k)$ gives $Z_k$ = the states reaching $g$ in fewer than $k$ steps, an increasing chain; it stops growing after at most $|S|$ strict increases, at EF $g$.
+\end{solution}
+
+\begin{solution}{exo:b3:program-verification:12}
+\code{exercises/ex12_sort.py} executes the program on words of gates: an assignment rebinds a variable's word, and an \code{if} runs both branches and merges each variable that differs with a multiplexer $c ? x : y$. The \omterm{def:b3:program-verification:vc}{verification condition}, inputs below 16 implies sorted output each equal to some input and each input equal to some output, gives a CNF of 1,390 variables and 4,538 clauses; the solver finds it valid. Replacing \code{a2 > a3} by \code{a2 < a3} gives a counterexample, $b = (0, 0, 0, 8)$ (\code{test_exercise_12}). wp duplicates the postcondition at each \code{if}, so six \omterm{def:b3:concurrency:atomics}{compare-and-swap} steps give $2^6$ copies, and the formula, built from substituted expressions, grows far faster than the program; the symbolic execution grows linearly. (Checking that the sums agree instead makes the solver's work much larger: equivalence of adders is hard for CDCL.)
+\end{solution}
+
+\begin{solution}{pb:b3:program-verification:1}
+\textbf{1.} The lock bit and the position of each lift, idle, waiting or in the shaft: $2 \cdot 3^n$ combinations.
+
+\textbf{2.} An idle lift can always move to waiting, and a lift in the shaft can always leave; a state with every lift waiting has the lock free (no lift holds it), so one of them can enter.
+
+\textbf{3.} (0, I), (0, W), (1, S).
+
+\textbf{4.} Moves of different lifts that happen at the same time can be put in either order, and every order is explored.
+
+\textbf{5.} Lock 0: II, IW, WI, WW; lock 1: SI, SW, IS, WS.
+
+\textbf{6.} Lock 0 with a lift in the shaft, lock 1 with none, and two lifts in the shaft.
+
+\textbf{7.} AG $\neg(\mathit{shaft}_0 \wedge \mathit{shaft}_1)$.
+
+\textbf{8.} AG($\mathit{wait}_0 \Rightarrow$ EF $\mathit{shaft}_0$).
+
+\textbf{9.} On the path where lift 1 enters, leaves and enters again for ever, lift 0 waits for ever.
+
+\textbf{10.} Strong fairness for the waiting lift, or a queue; the protocol as modelled has no queue.
+
+\textbf{11.} Safety: a counterexample is a finite trace ending in a bad state. Liveness: a counterexample is an infinite path, in a finite model a lasso, a prefix followed by a loop.
+
+\textbf{12.} AG $f$ fails exactly when a reachable state violates $f$; reaching it is all the counterexample needs.
+
+\textbf{13.} Lift 0 waits, lift 1 waits, lift 0 tests the free lock, lift 1 tests the free lock, lift 0 takes it and enters, lift 1 takes it and enters.
+
+\textbf{14.} Breadth-first search finds states in order of distance; and each lift needs 3 steps of its own to be in the shaft, so two lifts need 6.
+
+\textbf{15.} The same two lifts can do it; the other lifts staying idle does not shorten it.
+
+\textbf{16.} No: between the last test and the take, the other lift can still test and take.
+
+\textbf{17.} An atomic test-and-set or \omterm{def:b3:concurrency:atomics}{compare-and-swap}.
+
+\textbf{18.} Both test a shared flag, then act on it in a later step, so both can pass the test before either acts.
+
+\textbf{19.} With the lock free, no lift is in the shaft and each lift is idle or waiting: $2^n$ states. With the lock taken, exactly one lift is in the shaft, $n$ choices, and the others are idle or waiting: $n 2^{n-1}$. Each is reachable, and the total is $(n + 2) 2^{n - 1}$: 3, 8, 20, 48, 112, 256, as in the table.
+
+\textbf{20.} 2.426 per lift, because the factor $n + 2$ grows too, from 3 to 8 between 1 and 6 lifts, and the fit puts that growth into $b$; as $n$ grows, the rate per lift tends to 2.
+
+\textbf{21.} $22 \cdot 2^{19} = 11{,}534{,}336$ for 20 lifts; $42 \cdot 2^{39} \approx 2.3 \times 10^{13}$ for 40.
+
+\textbf{22.} About $2.3 \times 10^{15}$ bytes, more than two thousand terabytes: out of reach.
+
+\textbf{23.} Count only how many lifts are idle, waiting or in the shaft: with the lock free, $k$ waiting for $k = 0, \ldots, n$; with it taken, one in the shaft and $k$ waiting for $k = 0, \ldots, n - 1$: $2n + 1$ states.
+
+\textbf{24.} The correct protocol keeps AG $\neg$(two lifts in the shaft) over its $(n + 2)2^{n-1}$ reachable states, 256 for 6 lifts; the buggy one fails after 6 steps for every $n \ge 2$; and the state count grows about 2.4 times per lift, which is why model checkers need symmetry and symbolic methods.
+\end{solution}

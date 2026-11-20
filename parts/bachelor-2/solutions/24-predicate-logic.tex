@@ -1,0 +1,271 @@
+% Solutions of chapter 24 -- Predicate logic and formal proofs.
+\section*{Chapter \ref{ch:b2:predicate-logic} --- Predicate Logic and Formal Proofs}
+
+\begin{solution}{exo:b2:predicate-logic:1}
+In order: $\{y\}$; $\{x\}$, from the $x$ of $P(x)$ outside the brackets; $\{z\}$, since the \omterm{def:b2:predicate-logic:free}{scope} of $\forall y$ runs
+to the end and binds the $y$ of $R(y, z)$; $\{y\}$, the $x$ of $Q(x, f(y))$ being \omterm{def:b2:predicate-logic:free}{bound} by the outer $\forall x$;
+$\{x\}$, from $f(x)$, the later $x$ being \omterm{def:b2:predicate-logic:free}{bound} by $\forall x$.
+
+\omoutput{code/bachelor-2/24-predicate-logic/outputs/exo_free.txt}{The \omterm{def:b2:predicate-logic:free}{free variables} of the five formulas.}
+\end{solution}
+
+\begin{solution}{exo:b2:predicate-logic:2}
+\omoutput{code/bachelor-2/24-predicate-logic/outputs/exo_capture.txt}{The three \omterm{def:b2:predicate-logic:substitution}{substitutions} made by \code{replace}.}
+
+The first two are right: the \omterm{def:b2:predicate-logic:free}{bound} $y$ of the first formula is not touched because $z$ does not occur under it, and in
+the second $x$ is \omterm{def:b2:predicate-logic:free}{bound}, so nothing is replaced. The third is wrong. ``$x$ has a friend'' with $y$ for $x$ should say
+``$y$ has a friend'', $\exists y_1\, \mathit{Friend}(y, y_1)$; \code{replace} enters the \omterm{def:b2:predicate-logic:free}{scope} of $\exists y$ with the
+term $y$ and the $y$ is captured, giving ``someone is their own friend''. The correction is the \omterm{def:b2:predicate-logic:formula}{quantifier} case of
+\cref{lst:b2:predicate-logic:subst}: return $e$ when $x$ is not \omterm{def:b2:predicate-logic:free}{free} below, and rename the \omterm{def:b2:predicate-logic:free}{bound variable} first when it
+occurs in $t$. The function has a second defect: $\bot$ has no \code{left} field, so \code{replace} fails on it.
+\end{solution}
+
+\begin{solution}{exo:b2:predicate-logic:3}
+First pair: $y = f(x)$ from the first arguments, then $f(x) = f(a)$, so $x = a$: both become $P(f(a), f(a))$. Second:
+$x = f(y)$, then $f(f(y)) = y$, which the \omterm{def:b2:predicate-logic:unification}{occurs check} refuses: no \omterm{def:b2:predicate-logic:unification}{unifier}. Third: $x = y$, $y = z$, $z = a$, all
+three become $a$: $P(a, a, a)$. Fourth: $g(x) = f(y)$ is a clash of symbols: no \omterm{def:b2:predicate-logic:unification}{unifier}.
+
+\omoutput{code/bachelor-2/24-predicate-logic/outputs/exo_unify.txt}{The four pairs of the exercise.}
+\end{solution}
+
+\begin{solution}{exo:b2:predicate-logic:4}
+The clauses give the edges $\neg x_1 \to x_2$, $\neg x_2 \to x_1$; $x_1 \to x_3$, $\neg x_3 \to \neg x_1$; $x_2 \to \neg
+x_3$, $x_3 \to \neg x_2$; $x_3 \to x_1$, $\neg x_1 \to \neg x_3$. There are two components: $A = \{x_1, x_3, \neg x_2\}$
+(the cycle $x_1 \to x_3 \to \neg x_2 \to x_1$) and its mirror $B = \{\neg x_1, \neg x_3, x_2\}$, with no edge between
+them. No variable shares a component with its negation, so the formula is satisfiable, and either component may come
+last: making $A$ true gives $x_1 = x_3 = 1$, $x_2 = 0$, and making $B$ true gives the other \omterm{def:b2:predicate-logic:consequence}{model}.
+
+The clause $\neg x_1 \vee \neg x_3$ adds $x_1 \to \neg x_3$ and $x_3 \to \neg x_1$, edges from $A$ to $B$. Now $B$ comes
+after $A$ and is made true: $x_1 = x_3 = 0$, $x_2 = 1$. The clause $x_1 \vee x_3$ adds $\neg x_1 \to x_3$ and $\neg x_3
+\to x_1$, from $B$ to $A$; the two components merge, $x_1$ and $\neg x_1$ are in one, and the formula is unsatisfiable:
+its clauses say $x_1 \leftrightarrow x_3$ and $x_1 \neq x_3$.
+
+\omoutput{code/bachelor-2/24-predicate-logic/outputs/exo_twosat.txt}{The three formulas of the exercise.}
+\end{solution}
+
+\begin{solution}{exo:b2:predicate-logic:5}
+In $\mathbb{Z}/3$ with the successor: every $x$ has a successor, true; no $x$ is its own successor, true; every $y$ is
+the successor of something, so the third is false. In $\{0, 1, 2\}$ with $<$: $2$ has nothing above it, so the first
+is false; $<$ is irreflexive, true; $0$ has nothing below it, true. In $\{0, 1\}$ with $\neq$: each element has the
+other, true; irreflexive, true; each $y$ differs from the other element, so the third is false.
+
+\omoutput{code/bachelor-2/24-predicate-logic/outputs/exo_three.txt}{Each \omterm{def:b2:predicate-logic:structure}{structure}, then the truth of the three
+\omterm{def:b2:predicate-logic:free}{sentences} in it.}
+\end{solution}
+
+\begin{solution}{exo:b2:predicate-logic:6}
+\omoutput{code/bachelor-2/24-predicate-logic/outputs/exo_forall_bug.txt}{The checker names the broken side condition.}
+
+The conclusion is not a consequence. Take $D = \{0, 1\}$, $\mathit{Member} = \mathit{MayBorrow} = \{0\}$ and $\rho(y) =
+0$: the hypotheses $\forall x\, (\mathit{Member}(x) \to \mathit{MayBorrow}(x))$ and $\mathit{Member}(y)$ are true, and
+$\forall x\, \mathit{MayBorrow}(x)$ is false because of $1$. The steps above the last one are correct and prove
+$\mathit{MayBorrow}(y)$: what is known of one member is that this member may \omterm{def:b2:rust-ownership:borrow}{borrow}. The $y$ of the hypothesis is not
+arbitrary, which is what the side condition checks.
+\end{solution}
+
+\begin{solution}{exo:b2:predicate-logic:7}
+Write $\Gamma = \{\neg(P \vee Q)\}$. Under the extra hypothesis $P$, $\vee$\textsc{i}$_1$ gives $P \vee Q$, and
+$\neg$\textsc{e} with the hypothesis $\neg(P \vee Q)$ gives $\bot$; $\neg$\textsc{i} discharges $P$ and gives $\Gamma
+\vdash \neg P$. The same with $Q$ and $\vee$\textsc{i}$_2$ gives $\Gamma \vdash \neg Q$, and $\wedge$\textsc{i} ends:
+\begin{center}\small
+$\inferrule*[right=$\wedge$i]{
+\inferrule*[right=$\neg$i]{\inferrule*[right=$\neg$e]{\inferrule*[right=$\vee$i$_1$]{\inferrule*[right=hyp]{ }{\Gamma, P
+\vdash P}}{\Gamma, P \vdash P \vee Q} \\ \inferrule*[right=hyp]{ }{\Gamma, P \vdash \neg(P \vee Q)}}{\Gamma, P \vdash
+\bot}}{\Gamma \vdash \neg P} \\
+\inferrule*[right=$\neg$i]{\cdots}{\Gamma \vdash \neg Q}}{\Gamma \vdash \neg P \wedge \neg Q}$
+\end{center}
+
+\omcode{code/bachelor-2/24-predicate-logic/listings/proofs_more.py}{4}{11}{The proof as data; the checker accepts it in 11
+steps (first lines of \cref{out:b2:predicate-logic:exo-proofs})}
+\end{solution}
+
+\begin{solution}{exo:b2:predicate-logic:8}
+Fix a \omterm{def:b2:predicate-logic:structure}{structure} and an assignment $\rho$ that satisfies $\Gamma$.
+
+$\to$\textsc{i}: by induction $\Gamma, A \models B$. If $\rho$ satisfies $A$, it satisfies all of $\Gamma \cup \{A\}$,
+so it satisfies $B$; if it does not satisfy $A$, it satisfies $A \to B$ anyway. In both cases $\rho \models A \to B$.
+
+$\vee$\textsc{e}: by induction $\Gamma \models A \vee B$, $\Gamma, A \models C$ and $\Gamma, B \models C$. So $\rho$
+satisfies $A$ or $B$. In the first case it satisfies $\Gamma \cup \{A\}$, hence $C$; in the second it satisfies $\Gamma
+\cup \{B\}$, hence $C$.
+
+In both rules the hypothesis added in a premise is exactly what the case analysis on $\rho$ provides; this is the
+meaning of discharging it.
+\end{solution}
+
+\begin{solution}{exo:b2:predicate-logic:9}
+\omcode{code/bachelor-2/24-predicate-logic/listings/exists_rules.py}{5}{24}{The two rules of $\exists$; $\exists$e checks
+its second premise with the hypothesis on the witness added}
+
+The side condition of $\exists$\textsc{e} has three parts. If $y$ were \omterm{def:b2:predicate-logic:free}{free} in $C$, the conclusion would say something
+about the witness that leaves the \omterm{def:b2:predicate-logic:free}{scope} of the reasoning; if it were \omterm{def:b2:predicate-logic:free}{free} in a hypothesis, the witness would not be
+arbitrary; if it were \omterm{def:b2:predicate-logic:free}{free} in $\exists x\, A$, then $A[y/x]$ would confuse it with another variable of $A$. Each of
+them, removed, lets the checker accept a false conclusion: for the second, $P(y), \exists x\, \neg P(x) \vdash \bot$.
+\end{solution}
+
+\begin{solution}{exo:b2:predicate-logic:10}
+Let $v$ be arbitrary; from $\exists x\, \forall y\, R(x, y)$, take a witness $u$ with $\forall y\, R(u, y)$; then $R(u,
+v)$ by $\forall$\textsc{e}, so $\exists x\, R(x, v)$ by $\exists$\textsc{i}; $\exists$\textsc{e} concludes it from the
+hypothesis ($u$ is \omterm{def:b2:predicate-logic:free}{free} neither in the conclusion nor in the hypothesis), and $\forall$\textsc{i} on $v$ gives
+$\forall y\, \exists x\, R(x, y)$.
+
+\omcode{code/bachelor-2/24-predicate-logic/listings/proofs_more.py}{13}{30}{The proof, and the same plan tried for the
+converse}
+
+\omoutput{code/bachelor-2/24-predicate-logic/outputs/exo_proofs.txt}{The proofs of
+\cref{exo:b2:predicate-logic:7,exo:b2:predicate-logic:10,exo:b2:predicate-logic:11}; the converse attempt is
+rejected.}\label{out:b2:predicate-logic:exo-proofs}
+
+For the converse, the plan takes a $v$, gets $\exists x\, R(x, v)$, and works with a witness $u$ under the hypothesis
+$R(u, v)$; to conclude $\exists x\, \forall y\, R(x, y)$ it needs $\forall y\, R(u, y)$, and generalising $R(u, v)$ on
+$v$ is refused: $v$ is \omterm{def:b2:predicate-logic:free}{free} in the hypothesis $R(u, v)$. The witness depends on $v$. Something must stop every attempt:
+the two-element \omterm{def:b2:predicate-logic:structure}{structure} of \cref{sec:b2:predicate-logic:quantifiers} satisfies the hypothesis and not the conclusion,
+and by \cref{thm:b2:predicate-logic:soundness} no proof exists.
+\end{solution}
+
+\begin{solution}{exo:b2:predicate-logic:11}
+Assume $\neg(P \vee \neg P)$ and aim at $\bot$. Under the further hypothesis $P$, $\vee$\textsc{i}$_1$ gives $P \vee
+\neg P$, which contradicts the first hypothesis, so $\neg$\textsc{i} gives $\neg P$. Then $\vee$\textsc{i}$_2$ gives $P
+\vee \neg P$ again, the contradiction is $\bot$, and \textsc{raa} discharges $\neg(P \vee \neg P)$.
+
+\omcode{code/bachelor-2/24-predicate-logic/listings/proofs_more.py}{32}{39}{The proof as data; it is accepted in 9
+steps}
+
+\textsc{raa} is needed. Give each formula a value in $\{0, \tfrac12, 1\}$: $\wedge$ is the minimum, $\vee$ the maximum,
+$\bot$ is $0$, $a \to b$ is $1$ if $a \leq b$ and $b$ otherwise, and $\neg a$ is $a \to 0$, so $1$ if $a = 0$ and $0$
+otherwise. Call $\Gamma \vdash A$ \emph{\omterm{def:b2:predicate-logic:consequence}{valid}} when, for every choice of values of the variables, the minimum of the
+values of $\Gamma$ (1 if $\Gamma$ is empty) is at most the value of $A$. Every rule except \textsc{raa} turns \omterm{def:b2:predicate-logic:consequence}{valid}
+premises into a \omterm{def:b2:predicate-logic:consequence}{valid} conclusion; for instance for $\to$\textsc{i}, if $\min(\gamma, a) \leq b$ and $a > b$, then
+$\gamma \leq b$, which is the value of $a \to b$, and for $\vee$\textsc{e}, $\gamma = \max(\min(\gamma, a), \min(\gamma,
+b)) \leq c$ when $\gamma \leq \max(a, b)$. With $P = \tfrac12$, $P \vee \neg P$ has the value $\max(\tfrac12, 0) =
+\tfrac12 < 1$, so $\vdash P \vee \neg P$ is not \omterm{def:b2:predicate-logic:consequence}{valid}, and no proof without \textsc{raa} reaches it. \textsc{raa} itself
+fails the test: $\neg\neg P$ has the value $1$ when $P = \tfrac12$. The logic without \textsc{raa} is called
+intuitionistic.
+\end{solution}
+
+\begin{solution}{exo:b2:predicate-logic:12}
+By induction on the number of connectives and \omterm{def:b2:predicate-logic:formula}{quantifiers} of $A$, which renaming a variable does not change; write $d =
+\llbracket t \rrbracket_\rho$. \omterm{def:b2:predicate-logic:term}{Atomic formulas}: by the part on \omterm{def:b2:predicate-logic:term}{terms}, the arguments of $P$ have the same values on both
+sides. Connectives: $(A \wedge B)[t/x] = A[t/x] \wedge B[t/x]$, and the induction hypothesis applies to each side;
+the other connectives are the same.
+
+\omterm{def:b2:predicate-logic:formula}{Quantifiers}, $\forall y\, B$ (the case of $\exists$ is identical). If $y = x$, or if $x$ is not \omterm{def:b2:predicate-logic:free}{free} in $B$, the
+\omterm{def:b2:predicate-logic:substitution}{substitution} returns the formula unchanged; $x$ is not \omterm{def:b2:predicate-logic:free}{free} in it, so $\rho$ and $\rho[x \mapsto d]$ agree on its \omterm{def:b2:predicate-logic:free}{free
+variables} and give it the same truth. Otherwise, if $y$ is not \omterm{def:b2:predicate-logic:free}{free} in $t$:
+$\rho \models \forall y\, B[t/x]$ iff for every $e$, $\rho[y \mapsto e] \models B[t/x]$; the value of $t$ under $\rho[y
+\mapsto e]$ is still $d$ because $y$ is not in $t$, so by induction this is $\rho[y \mapsto e][x \mapsto d] \models
+B$, which is $\rho[x \mapsto d][y \mapsto e] \models B$ since $x \neq y$; that is $\rho[x \mapsto d] \models \forall y\,
+B$.
+
+If $y$ is \omterm{def:b2:predicate-logic:free}{free} in $t$, the program first renames: $\forall y\, B$ becomes $\forall z\, B[z/y]$ with $z$ \omterm{def:b2:predicate-logic:free}{free} nowhere.
+The two have the same truth under every assignment: $\rho[z \mapsto e] \models B[z/y]$ iff, by induction ($B$ is
+smaller than $A$), $\rho[z \mapsto e][y \mapsto e] \models B$, iff $\rho[y \mapsto e] \models B$ since $z$ is not \omterm{def:b2:predicate-logic:free}{free}
+in $B$. The previous case applies to $\forall z\, B[z/y]$, as $z$ is not in $t$. The renaming is used here, and only
+here: without it, the value of $t$ would change under $\rho[y \mapsto e]$, and the step ``still $d$'' fails, which is
+the capture of \cref{out:b2:predicate-logic:substitution}.
+\end{solution}
+
+\begin{solution}{pb:b2:predicate-logic:1}
+\textbf{1.} In the order of the statement:
+\begin{align*}
+H_1 &= \forall x\, \forall y\, (\mathit{Out}(x, y) \to \mathit{Member}(x)), &
+H_2 &= \forall x\, (\mathit{Member}(x) \to \mathit{MayBorrow}(x)),\\
+H_3 &= \forall x\, \forall y\, (\mathit{Out}(x, y) \to \mathit{Borrowed}(x, y)), &
+C_1 &= \forall x\, \forall y\, (\mathit{Out}(x, y) \to \mathit{MayBorrow}(x)),\\
+C_3 &= \forall x\, (\neg\mathit{MayBorrow}(x) \to \neg\mathit{Member}(x)), &
+C_4 &= \forall x\, (\mathit{Member}(x) \to \exists y\, \mathit{Out}(x, y)),
+\end{align*}
+\[
+C_2 = \forall x\, \forall y\, (\mathit{Out}(x, y) \to \mathit{Member}(x) \wedge \mathit{Borrowed}(x, y)).
+\]
+
+\textbf{2.} Fix $x$. If $\mathit{Out}(x, y) \to \mathit{Member}(x)$ holds for every $y$ and some $y$ has
+$\mathit{Out}(x, y)$, then $\mathit{Member}(x)$. Conversely, if $(\exists y\, \mathit{Out}(x, y)) \to
+\mathit{Member}(x)$ and $\mathit{Out}(x, y)$ for a given $y$, then the left side holds, so $\mathit{Member}(x)$. The
+argument uses that $y$ is not \omterm{def:b2:predicate-logic:free}{free} in $\mathit{Member}(x)$.
+
+\textbf{3.} $x$ and $y$. A formula with \omterm{def:b2:predicate-logic:free}{free variables} is true or false only once they have values; a rule must hold of
+everyone, so its variables are all quantified.
+
+\textbf{4.} $\forall y\, \forall x\, (\mathit{Out}(x, y) \to \forall z\, (\mathit{Out}(z, y) \to z = x))$: for every
+book $y$ and every person $x$ who has it out, every person $z$ who has it out is $x$.
+
+\textbf{5.} It reads $\forall x\, \exists y\, (\mathit{Out}(x, y) \to \mathit{Member}(x))$, since a \omterm{def:b2:predicate-logic:formula}{quantifier} reaches as
+far right as possible: for every $x$ there is a $y$ that $x$ does not have out, or $x$ is a member. With 200 elements
+and at most a few books out per person, it is true of everyone and says nothing.
+
+\textbf{6.} $C_2$ has 2 nested \omterm{def:b2:predicate-logic:formula}{quantifiers}, the rule of question 4 has 3. The \omterm{def:b2:predicate-logic:free}{bound} gives $200^3 = 8 \times 10^6$ visits
+for the second; the output reports 43,826 \omterm{def:b2:predicate-logic:term}{atomic formulas}, because the implication stops at a false
+$\mathit{Out}(x, y)$: 40,000 pairs $(y, x)$ are visited, and the inner $\forall z$ runs only for the 22 loans that are
+out, about 200 visits each.
+
+\textbf{7.} $H_1$ (as ``a person with a book out is a member''), $H_3$ (``what is out has been borrowed'') and ``every book
+has been borrowed''.
+
+\textbf{8.} Each of the 4 books is out to two people, and each of the two is a pair $(y, x)$ for which the body is
+false: $2 \times 4 = 8$.
+
+\textbf{9.} Two loans of the same copy, neither returned: one of the two return dates is missing, or two copies share a
+number. The library should look at the loans and correct the table, or record copies separately.
+
+\textbf{10.} No. Nothing requires a member to have a friend recorded; the table holds 50 friendships, and a rule that
+fails on the data is either a wrong rule or a sign of bad data. Here it is the rule.
+
+\textbf{11.} Because the tables were built so: every loan is by a member, and a loan that is out is in the loans table.
+Holding on the data says nothing of another town or of tomorrow's tables; a proof from the rules would.
+
+\textbf{12.} Go through the loans once; for each loan without a return date, add its member to a set kept per book in
+a dictionary; report the books whose set has two members. This is linear in the number of loans, against $|D|^3$ for
+the naive evaluation.
+
+\textbf{13.} With $\Gamma = \{H_1, H_2, H_3\}$ and $\Delta = \Gamma \cup \{\mathit{Out}(x, y)\}$: $\Delta \vdash
+\mathit{Member}(x) \to \mathit{MayBorrow}(x)$ by \textsc{hyp} and $\forall$\textsc{e}; $\Delta \vdash \mathit{Out}(x, y)
+\to \mathit{Member}(x)$ by \textsc{hyp} and two $\forall$\textsc{e}; $\Delta \vdash \mathit{Out}(x, y)$ by \textsc{hyp};
+$\to$\textsc{e} twice gives $\Delta \vdash \mathit{Member}(x)$, then $\Delta \vdash \mathit{MayBorrow}(x)$;
+$\to$\textsc{i} gives $\Gamma \vdash \mathit{Out}(x, y) \to \mathit{MayBorrow}(x)$, and $\forall$\textsc{i} on $y$, then
+on $x$, gives $C_1$.
+
+\textbf{14.} Both are applied after $\to$\textsc{i} has discharged $\mathit{Out}(x, y)$, so the hypotheses are $H_1$,
+$H_2$, $H_3$, \omterm{def:b2:predicate-logic:free}{sentences} in which no variable is \omterm{def:b2:predicate-logic:free}{free}; and the conclusions $\forall y\, (\dots)$ and $C_1$ have neither
+$y$ nor $x$ \omterm{def:b2:predicate-logic:free}{free}.
+
+\textbf{15.} Under $\Delta$, the proof of question 13 gives $\mathit{Member}(x)$; \textsc{hyp}, two $\forall$\textsc{e}
+on $H_3$ and $\to$\textsc{e} give $\mathit{Borrowed}(x, y)$; $\wedge$\textsc{i} joins them; then $\to$\textsc{i} and two
+$\forall$\textsc{i}. This is \code{C2} in \code{library.py}, 14 steps.
+
+\textbf{16.} Under $\neg\mathit{MayBorrow}(x)$ and $\mathit{Member}(x)$: $\forall$\textsc{e} on $H_2$ and $\to$\textsc{e}
+give $\mathit{MayBorrow}(x)$, and $\neg$\textsc{e} gives $\bot$. Then $\neg$\textsc{i} discharges $\mathit{Member}(x)$,
+$\to$\textsc{i} discharges $\neg\mathit{MayBorrow}(x)$, and $\forall$\textsc{i} on $x$ ends.
+
+\textbf{17.} Eleven: three \textsc{hyp}, three $\forall$\textsc{e}, two $\to$\textsc{e}, one $\to$\textsc{i}, two
+$\forall$\textsc{i}, as in the output.
+
+\textbf{18.} $\forall$\textsc{i} generalises a variable, not a constant: $p5$ names one person, of whom the data might
+say anything, and $\mathit{MayBorrow}(p5)$ needs the fact $\mathit{Out}(p5, b3)$, which is not about everyone. The
+proof with $x$ and $y$ uses only the rules.
+
+\textbf{19.} $H_1, H_2, H_3 \models C_i$ for $i = 1, 2, 3$: in every \omterm{def:b2:predicate-logic:structure}{structure}, every town, every state of the tables,
+in which the three rules hold, the three consequences hold too.
+
+\textbf{20.} The library has one member, element $0$, who may \omterm{def:b2:rust-ownership:borrow}{borrow}, has nothing out and has borrowed nothing; element
+$1$ is neither a member nor allowed to \omterm{def:b2:rust-ownership:borrow}{borrow}. The three rules hold, and $C_4$ fails because of $0$.
+
+\textbf{21.} If a proof of $C_4$ existed, by \cref{thm:b2:predicate-logic:soundness} $C_4$ would hold in every \omterm{def:b2:predicate-logic:consequence}{model} of
+the rules, and this \omterm{def:b2:predicate-logic:structure}{structure} is one where it does not.
+
+\textbf{22.} Yes: the domain $\{0\}$ with $\mathit{Member} = \mathit{MayBorrow} = \{0\}$ and $\mathit{Out} =
+\mathit{Borrowed} = \emptyset$. The program searches a fixed domain of two elements for all four \omterm{def:b2:predicate-logic:free}{sentences} alike; a
+domain of one would also have been enough here.
+
+\textbf{23.} A binary relation on two elements is one of $2^4 = 16$ sets, a unary one of $2^2 = 4$: $16 \cdot 16 \cdot 4
+\cdot 4 = 4096$. On three elements: $2^9 \cdot 2^9 \cdot 2^3 \cdot 2^3 = 16{,}777{,}216$ \omterm{def:b2:predicate-logic:structure}{structures}, 4096 times more,
+each costing more evaluations; the number grows exponentially with the square of the domain's size, and a search for
+countermodels tries the smallest domains first.
+
+\textbf{24.} The clauses are $\neg\mathit{Out}(x, y) \vee \mathit{Member}(x)$ and $\neg\mathit{Member}(x) \vee
+\mathit{MayBorrow}(x)$. The negation of $C_1$ is $\exists x\, \exists y\, (\mathit{Out}(x, y) \wedge
+\neg\mathit{MayBorrow}(x))$; naming the two witnesses by new constants $a$ and $b$ gives the clauses $\mathit{Out}(a,
+b)$ and $\neg\mathit{MayBorrow}(a)$. As in \cref{out:b2:predicate-logic:refute}: $\mathit{Member}(a)$ from the first
+and third, $\neg\mathit{Member}(a)$ from the second and fourth, then the empty clause. The result: 3 rules proved in 34
+checked steps, and a two-element countermodel for the one that does not follow.
+\end{solution}

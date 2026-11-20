@@ -1,0 +1,503 @@
+% Book 4, Year 2, chapter 3 -- Inheritance and polymorphism.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 3.
+\chapter{Inheritance and Polymorphism}\label{ch:b2:cpp-polymorphism}
+
+The town library fines late borrowers, and not every item is fined alike. Ordinary books cost 10 cents a day, at
+most 5.00; comics, always in demand, 25 cents a day, at most 3.00; study books get three days of grace, then 20
+cents a day with no ceiling. In C the natural program gives each item a kind tag and switches on it.
+
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/fines_switch.c}{4}{34}{Fines by a switch on a kind
+tag}\label{lst:b2:cpp-polymorphism:fines-switch}
+
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/fines_switch.txt}{Three items, three rules, three
+lateness values.}\label{out:b2:cpp-polymorphism:fines-switch}
+
+The program is correct, and it does not age well. Every function that depends on the kind repeats the switch: here
+two of them, in a real system dozens (the loan period, the shelf, the label, the reminder letter). When the library
+starts lending maps, someone must find every switch and add a case to each, and the compiler warns only for some
+of the switches it can see. This chapter gives each kind its own class and lets the call itself choose the code of
+the right kind: adding a kind then means adding a class, in a new file, and editing nothing that works.
+
+\begin{recall}
+A class (\cref{ch:b2:cpp-classes-raii}) bundles data with the functions that use them, with an invariant kept by
+its \omterm{def:b2:cpp-classes-raii:constructor}{constructor} and members. The school volumes met \omterm{def:b2:cpp-polymorphism:inheritance}{inheritance}, in Python: a class can be declared as a special
+case of another and inherit its methods. In C, a pointer to a function (Book 3) holds the address of a function,
+and a call through it runs whichever function it points to: the choice is made at run time. Objects are copied and
+moved by the rules of \cref{ch:b2:cpp-copy-move}.
+\end{recall}
+
+\section{Derived classes}\label{sec:b2:cpp-polymorphism:derived}
+
+\begin{definition}[Base class, derived class, inheritance]\label{def:b2:cpp-polymorphism:inheritance}
+A class \code{D} declared as \code{class D : public B} is a \emph{derived class}\index{derived class} of the
+\emph{base class}\index{base class} \code{B}. Every \code{D} object contains a \code{B} object (its \emph{base
+part}) followed by the members \code{D} declares, and \code{D} has every \omterm{def:b2:cpp-classes-raii:class}{member function} of \code{B}. This is
+\emph{inheritance}\index{inheritance}. A \code{D} can be used wherever a \code{B} is expected: a \code{D *} converts
+to a \code{B *} and a \code{D} binds to a \code{B &}, both pointing at the base part.
+\end{definition}
+
+Access gains a third level. A \code{public} member is visible to everyone, a \code{private} one only to the class's
+own members, and a \code{protected} one to the class's members and to those of the classes derived from it. Since
+a derived object contains a base object, building one runs two \omterm{def:b2:cpp-classes-raii:constructor}{constructors}.
+
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/ctor_order.cpp}{5}{32}{A \code{Map} is an
+\code{Item}}\label{lst:b2:cpp-polymorphism:ctor-order}
+
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/ctor_order.txt}{Base first on the way in, last on the way
+out.}\label{out:b2:cpp-polymorphism:ctor-order}
+
+The order is fixed by the language: the base part is constructed first (its members, then its \omterm{def:b2:cpp-classes-raii:constructor}{constructor}'s body),
+then the \omterm{def:b2:cpp-polymorphism:inheritance}{derived class}'s members in order of declaration, then its body; destruction runs the same steps in
+reverse. When a derived \omterm{def:b2:cpp-classes-raii:constructor}{constructor}'s body starts, its base part is complete and may be used; when a base
+\omterm{def:b2:cpp-classes-raii:constructor}{destructor}'s body runs, the derived part is already gone. A derived \omterm{def:b2:cpp-classes-raii:constructor}{constructor} passes arguments to the base
+\omterm{def:b2:cpp-classes-raii:constructor}{constructor} in its initialiser list, as \code{Recording(...) : Item(std::move(t))} does below.
+
+The rule ``a \code{D} can be used where a \code{B} is expected'' has a trap when the \code{B} is an object rather
+than a reference or a pointer. A \code{B} object has room for a \code{B} and nothing more.
+
+\begin{definition}[Object slicing]\label{def:b2:cpp-polymorphism:slicing}
+\emph{Object slicing}\index{object slicing} is the copy of a derived object into an object of its \omterm{def:b2:cpp-polymorphism:inheritance}{base class}: by
+assignment, by initialisation, or by passing it by value to a parameter of the base type. Only the base part is
+copied, and the result is a plain base object; the derived members and the derived behaviour are lost.
+\end{definition}
+
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/slicing.cpp}{5}{38}{A recording passed by reference and by
+value}\label{lst:b2:cpp-polymorphism:slicing}
+
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/slicing.txt}{By value, the recording lost its
+minutes.}\label{out:b2:cpp-polymorphism:slicing}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize]
+\node[font=\footnotesize\bfseries, anchor=west] at (-0.2,2.0) {\texttt{Recording r} (48 bytes)};
+\node[cell, minimum width=1.6cm, fill=omDef!10] (t) at (0.8,1.2) {table ptr};
+\node[cell, minimum width=2.6cm, fill=omDef!10, right=0mm of t] (ti) {\texttt{title\_}};
+\node[cell, minimum width=1.4cm, fill=omThm!10, right=0mm of ti] (mi) {\texttt{minutes\_}};
+\draw[decorate, decoration={brace, mirror, amplitude=4pt}] (t.south west) -- (ti.south east)
+  node[midway, below=4pt, font=\scriptsize] {base part: an \texttt{Item}};
+\node[font=\footnotesize\bfseries, anchor=west] at (7.4,2.0) {\texttt{Item copy = r;} (40 bytes)};
+\node[cell, minimum width=1.6cm, fill=omDef!10] (t2) at (8.2,1.2) {table ptr};
+\node[cell, minimum width=2.6cm, fill=omDef!10, right=0mm of t2] (ti2) {\texttt{title\_}};
+\draw[->, thick, omThm] (mi.east) ++(0.2,0) -- ++(1.0,0) node[midway, above, font=\scriptsize] {copy};
+\node[font=\scriptsize, text=omThm, align=center, below=1mm of mi] {\texttt{minutes\_} has no\\ room: it is cut off};
+\node[font=\scriptsize, text=black!60, align=center] at (9.5,0.2) {the table pointer is \texttt{Item}'s:\\ \texttt{label()} is \texttt{Item::label}};
+\end{tikzpicture}
+\par\smallskip{\small Slicing. Copying a \code{Recording} into an \code{Item} copies the base part only. The copy is
+a genuine \code{Item}, whose \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} (\cref{sec:b2:cpp-polymorphism:virtual}) is that of \code{Item}, so even its
+virtual calls run \code{Item}'s functions.}
+\end{omfigure}
+
+\section{Virtual functions}\label{sec:b2:cpp-polymorphism:virtual}
+
+\begin{definition}[Virtual function, override]\label{def:b2:cpp-polymorphism:virtual}
+A \omterm{def:b2:cpp-classes-raii:class}{member function} declared \code{virtual} in a \omterm{def:b2:cpp-polymorphism:inheritance}{base class} is a \emph{virtual function}\index{virtual function}. A
+\omterm{def:b2:cpp-polymorphism:inheritance}{derived class} \emph{overrides}\index{override} it by declaring a function with the same name and parameters; the
+keyword \code{override} asks the compiler to check that there is something to override, and \code{final} forbids
+further overriding. A function that is not virtual can only be \emph{hidden} by a derived function of the same name,
+which is a different thing.
+\end{definition}
+
+\begin{definition}[Dynamic dispatch, subtype polymorphism]\label{def:b2:cpp-polymorphism:dispatch}
+A call of a \omterm{def:b2:cpp-polymorphism:virtual}{virtual function} through a pointer or a reference runs the version of the class of the object pointed
+at, which is known only at run time, not the version of the pointer's type: this is \emph{dynamic
+dispatch}\index{dynamic dispatch}. Code written against a \omterm{def:b2:cpp-polymorphism:inheritance}{base class} and able to work, through dynamic dispatch, with
+objects of every \omterm{def:b2:cpp-polymorphism:inheritance}{derived class} has \emph{subtype polymorphism}\index{subtype polymorphism}.
+\end{definition}
+
+The shapes below share one \omterm{def:b2:cpp-polymorphism:inheritance}{base class}. \code{area} has no sensible default and is declared \code{= 0} (the next
+section explains); \code{name} has one; \code{describe} is an ordinary function written once in the \omterm{def:b2:cpp-polymorphism:inheritance}{base class},
+whose calls to \code{name} and \code{area} are dispatched.
+
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/shapes.hpp}{5}{31}{A \omterm{def:b2:cpp-polymorphism:inheritance}{base class} and two derived
+classes}\label{lst:b2:cpp-polymorphism:shapes}
+
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/shapes.cpp}{6}{19}{A plan of shapes, each called through
+\code{Shape}}\label{lst:b2:cpp-polymorphism:shapes-main}
+
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/shapes.txt}{Each call ran the function of the real
+class.}\label{out:b2:cpp-polymorphism:shapes}
+
+The loop sees only \code{const Shape &}, yet each \code{describe} printed the right name and area. Destroying the
+objects through the \omterm{def:b2:cpp-polymorphism:inheritance}{base class} needs one more \omterm{def:b2:cpp-polymorphism:virtual}{virtual function}. When \code{delete} is applied to a \code{B *} that
+points at a \code{D}, the \omterm{def:b2:cpp-classes-raii:constructor}{destructor} called is \code{B}'s unless \code{B}'s \omterm{def:b2:cpp-classes-raii:constructor}{destructor} is virtual, and the behaviour
+is undefined.
+
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/no_virtual_dtor.cpp}{6}{22}{A derived object deleted
+through its base}\label{lst:b2:cpp-polymorphism:no-virtual-dtor}
+
+\omoutput[1-7,18-18]{code/bachelor-2/03-cpp-polymorphism/outputs/no_virtual_dtor.txt}{AddressSanitizer: the size
+freed is not the size allocated.}\label{out:b2:cpp-polymorphism:no-virtual-dtor}
+
+Only \code{~Item} ran: the four strings of the recording were never destroyed, and \code{delete} returned the block
+as if it held a 4-byte \code{Item} when 136 bytes had been allocated. The rule follows: a class meant to be used
+through base pointers declares \code{virtual ~B() = default;}, as \code{Shape} does. A \code{std::unique_ptr<B>} does
+not help, since it calls the same \code{delete} (\cref{exo:b2:cpp-polymorphism:2}).
+
+How does a call find the right function at run time? The compiler gives every class with \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions} one
+table of function addresses, and every object of such a class one hidden pointer to the table of its class, set by
+the \omterm{def:b2:cpp-classes-raii:constructor}{constructor}. The same mechanism can be written by hand in C.
+
+\begin{definition}[Dispatch table, table pointer]\label{def:b2:cpp-polymorphism:vtable}
+The \emph{dispatch table}\index{dispatch table} (or \emph{vtable}\index{vtable}) of a class with \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions} is
+an array, one per class and built by the compiler, of the addresses of the versions of its \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions} that
+apply to that class. Each object of the class holds a \emph{table pointer}\index{table pointer} to its class's table.
+A virtual call loads the table pointer from the object, loads the address from a fixed position in the table, and
+calls it.
+\end{definition}
+
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/vtable_by_hand.c}{4}{41}{\omterm{def:b2:cpp-polymorphism:vtable}{Dispatch tables} written in
+C}\label{lst:b2:cpp-polymorphism:vtable-c}
+
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/vtable_by_hand.txt}{The output of
+\cref{lst:b2:cpp-polymorphism:shapes-main}, by hand.}\label{out:b2:cpp-polymorphism:vtable-c}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize]
+\foreach \nm/\y/\cls/\col in {bed/2.4/rect/omDef, plot/1.2/rect/omDef, pond/0/circle/omThm} {
+  \node[anchor=east] at (-0.1,\y) {\texttt{\nm}};
+  \node[cell, minimum width=1.2cm, fill=\col!10] (\nm p) at (0.6,\y) {$\bullet$};
+  \node[cell, minimum width=1.9cm, right=0mm of \nm p, font=\scriptsize] {data of a \cls};
+}
+\node[draw, fill=omDef!10, align=left, minimum width=3.0cm, font=\scriptsize\ttfamily] (RT) at (5.6,2.4)
+  {RECT\_TABLE\\ [0] rect\_area\\ [1] rect\_name};
+\node[draw, fill=omThm!10, align=left, minimum width=3.0cm, font=\scriptsize\ttfamily] (CT) at (5.6,0.0)
+  {CIRCLE\_TABLE\\ [0] circle\_area\\ [1] circle\_name};
+\draw[ptr] (bedp.center) -- (0.6,3.0) -- (3.4,3.0) -- (RT.west);
+\draw[ptr] (plotp.center) -- (0.6,1.8) -- (3.4,1.8) -- (RT.west);
+\draw[ptr] (pondp.center) -- (0.6,-0.6) -- (3.4,-0.6) -- (CT.west);
+\node[draw, rounded corners=2pt, align=left, font=\scriptsize\ttfamily, fill=black!4] (code) at (10.2,1.2)
+  {rect\_area: w*h\\ rect\_name: its name\\ circle\_area: pi*r*r\\ circle\_name: its name};
+\draw[ptr, black!60] (RT.east) -- (code.west);
+\draw[ptr, black!60] (CT.east) -- (code.west);
+\node[font=\scriptsize, text=black!60, align=center] at (1.3,-1.2) {objects: one table pointer each};
+\node[font=\scriptsize, text=black!60, align=center] at (5.6,-1.2) {tables: one per class};
+\node[font=\scriptsize, text=black!60, align=center] at (10.2,-1.2) {code: one copy of each function};
+\end{tikzpicture}
+\par\smallskip{\small Three objects of two classes. A call \code{s->table->area(s)}, or its C++ form
+\code{s->area()}, follows the object's \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} to its class's table, takes the address at the position
+reserved for \code{area}, and calls that function with the object.}
+\end{omfigure}
+
+\begin{proposition}[Cost of dispatch tables]\label{prop:b2:cpp-polymorphism:layout}
+In this scheme, a program with $k$ classes that have \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions} holds $k$ tables, the table of a class
+having one entry per \omterm{def:b2:cpp-polymorphism:virtual}{virtual function} of the class, and each object of these classes holds exactly one \omterm{def:b2:cpp-polymorphism:vtable}{table
+pointer}, whatever the number of \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions}. A virtual call costs two loads (the \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} and the
+address) and an indirect call, independently of the number of classes.
+\end{proposition}
+
+\begin{proof}
+The tables depend on the class only: all objects of one class call the same versions, so one table per class
+suffices, with one slot per \omterm{def:b2:cpp-polymorphism:virtual}{virtual function}, a \omterm{def:b2:cpp-polymorphism:inheritance}{derived class}'s table extending its base's with the same positions
+for the inherited functions so that a call compiled against the base finds the right slot. An object needs only to
+say which class it is of, and one pointer to that class's table says it, whatever the table's length. The call
+sequence of \cref{def:b2:cpp-polymorphism:vtable} reads the object's pointer and one slot at a position fixed at
+compile time, then calls; nothing in it depends on how many classes exist.
+\end{proof}
+
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/sizes.cpp}{4}{29}{Sizes of objects with and without \omterm{def:b2:cpp-polymorphism:virtual}{virtual
+functions}}\label{lst:b2:cpp-polymorphism:sizes}
+
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/sizes.txt}{One \omterm{def:b2:cpp-polymorphism:vtable}{table pointer}, whatever the number of \omterm{def:b2:cpp-polymorphism:virtual}{virtual
+functions}.}\label{out:b2:cpp-polymorphism:sizes}
+
+The C++ standard does not prescribe tables, but every major compiler uses them, with the \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} at the start
+of the object, as the last line of the output shows. On this 64-bit machine a pointer is 8 bytes: \code{Plain} is
+its \code{int}; \code{OneVirtual} and \code{ManyVirtual} are a pointer plus an \code{int}, padded to a multiple of 8;
+and \code{Derived}'s extra \code{int} fits in that padding (\cref{exo:b2:cpp-polymorphism:4}).
+
+\section{Abstract classes}\label{sec:b2:cpp-polymorphism:abstract}
+
+\begin{definition}[Pure virtual function, abstract class]\label{def:b2:cpp-polymorphism:abstract}
+A \omterm{def:b2:cpp-polymorphism:virtual}{virtual function} declared with \code{= 0}, as \code{virtual double area() const = 0;}, is a \emph{pure virtual
+function}\index{pure virtual function}: it has no version in its class, and every \omterm{def:b2:cpp-polymorphism:inheritance}{derived class} that is to be
+instantiated must \omterm{def:b2:cpp-polymorphism:virtual}{override} it. A class with at least one pure \omterm{def:b2:cpp-polymorphism:virtual}{virtual function}, declared or inherited and not
+overridden, is an \emph{abstract class}\index{abstract class}: no object of it can be created, only objects of
+derived classes that \omterm{def:b2:cpp-polymorphism:virtual}{override} every pure function.
+\end{definition}
+
+An \omterm{def:b2:cpp-polymorphism:abstract}{abstract class} with only \omterm{def:b2:cpp-polymorphism:abstract}{pure virtual functions} and a virtual \omterm{def:b2:cpp-classes-raii:constructor}{destructor} describes what its derived classes
+provide and nothing of how. It plays the role an interface plays in other languages, and code written against it
+can be compiled before any of its implementations exists. \code{Shape} is such a class but for \code{describe} and
+\code{name}, which every shape shares.
+
+One question remains: which version runs when a \omterm{def:b2:cpp-classes-raii:constructor}{constructor} calls a \omterm{def:b2:cpp-polymorphism:virtual}{virtual function}? While the base \omterm{def:b2:cpp-classes-raii:constructor}{constructor}
+runs, the derived members have not been built yet (\cref{out:b2:cpp-polymorphism:ctor-order}); calling a derived
+version would read them uninitialised. C++ therefore treats the object, during the base \omterm{def:b2:cpp-classes-raii:constructor}{constructor} and the base
+\omterm{def:b2:cpp-classes-raii:constructor}{destructor}, as an object of the \omterm{def:b2:cpp-polymorphism:inheritance}{base class}: virtual calls made there run the base versions
+(\cref{exo:b2:cpp-polymorphism:5}). In terms of tables, each \omterm{def:b2:cpp-classes-raii:constructor}{constructor} sets the \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} to its own class's
+table on entry, so the pointer is the base's while the base \omterm{def:b2:cpp-classes-raii:constructor}{constructor} runs.
+
+\section{Designing with classes}\label{sec:b2:cpp-polymorphism:design}
+
+\omterm{def:b2:cpp-polymorphism:inheritance}{Inheritance} says ``a \code{D} is a \code{B}'': every \code{D} can stand in for a \code{B}. It is often used where a
+weaker relation is meant.
+
+\begin{definition}[Composition]\label{def:b2:cpp-polymorphism:composition}
+A class uses \emph{composition}\index{composition} when it holds an object of another class as a member (``has a'')
+and calls it, rather than deriving from it (``is a''). A member may be held by value, or by reference or pointer to an
+object of an \omterm{def:b2:cpp-polymorphism:abstract}{abstract class}, in which case the behaviour it provides can be chosen at run time.
+\end{definition}
+
+A car has an engine and is not one; a loan has a fine policy. \omterm{def:b2:cpp-polymorphism:composition}{Composition} exposes only what the class chooses to
+forward, whereas a \omterm{def:b2:cpp-polymorphism:inheritance}{derived class} inherits the whole public interface of its base, along with every promise the base
+makes. Those promises are what \omterm{def:b2:cpp-polymorphism:inheritance}{inheritance} must keep.
+
+% ledger: b2:lsp-1987
+% ledger: b2:lsp-1994
+\begin{definition}[Substitution principle]\label{def:b2:cpp-polymorphism:lsp}
+A \omterm{def:b2:cpp-polymorphism:inheritance}{derived class} \code{D} of \code{B} satisfies the \emph{substitution principle}\index{substitution principle} if
+every property that a client can prove about objects of \code{B} from the specification of \code{B} (the
+preconditions and postconditions of its functions, and its invariant) also holds for objects of \code{D}.
+Equivalently, a correct client of \code{B} stays correct when given a \code{D}. The principle bears the name of
+Barbara Liskov, who stated it in a keynote in 1987 and, with Jeannette Wing, as a definition of subtyping in 1994.
+\end{definition}
+
+Geometry says that a square is a rectangle. Here is what happens when a class \code{Square} derives from a class
+\code{Rectangle} whose setters promise to change one side only.
+
+\begin{example}[A square that is not a rectangle]\label{ex:b2:cpp-polymorphism:square}
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/square.cpp}{4}{37}{A client of \code{Rectangle} given a
+\code{Square}}
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/square.txt}{The client's promise holds for one of the
+two.}\label{out:b2:cpp-polymorphism:square}
+\code{resize_plot} relies on the postconditions of \code{Rectangle}: after \code{set_width(4)} and
+\code{set_height(5)} the area is 20. \code{Square} must keep its sides equal, so its \code{set_height(5)} also changes
+the width, and the client sees 25. The square of geometry is a rectangle because a geometric rectangle never
+changes; a mutable \code{Square} cannot keep the promises of a mutable \code{Rectangle}, whichever way it \omterm{def:b2:cpp-polymorphism:virtual}{overrides}
+the setters (\cref{exo:b2:cpp-polymorphism:8}). Either the two classes have no setters, or \code{Square} is not
+derived from \code{Rectangle}.
+\end{example}
+
+The library's fines are the case where \omterm{def:b2:cpp-polymorphism:inheritance}{inheritance} fits. A policy is a function of the days late, and every policy
+can stand in for every other: a loan asks its policy for a fine and accepts any answer. The policies form an
+\omterm{def:b2:cpp-polymorphism:abstract}{abstract class} and three derived ones; the loan, or here the function that sums the fines, holds a policy by
+\omterm{def:b2:cpp-polymorphism:composition}{composition}. The rule that maps a book to its policy is written once, in \code{policy_for}.
+
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/library.hpp}{65}{100}{The fine policies, and the only
+function that knows the genres}\label{lst:b2:cpp-polymorphism:library}
+
+The rest of \code{library.hpp} reads \code{books.csv} and \code{loans.csv} of the town (the book's genre, and each
+loan's dates; a loan not yet returned has an empty return date) and counts the days late at the end of 2025. The
+program below sums the fines.
+
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/library_demo.cpp}{12}{27}{Fines on all the town's loans; the
+call \code{p.fine_cents(d)} is dispatched}\label{lst:b2:cpp-polymorphism:library-demo}
+
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/run_library.txt}{The fines owed on 31 December
+2025.}\label{out:b2:cpp-polymorphism:library}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, cls/.style={draw, fill=omDef!8, minimum width=2.6cm, align=center, inner sep=3pt}]
+\node[cls] (loan) at (0,1.6) {\textbf{fine summing}\\[1pt] \scriptsize\texttt{policy\_for(book)}};
+\node[cls, fill=omThm!8] (pol) at (5.0,1.6) {\textit{\textbf{FinePolicy}}\\[1pt] \scriptsize\texttt{fine\_cents(d) = 0}\\ \scriptsize\texttt{name() = 0}};
+\node[cls] (s) at (2.2,-0.4) {\textbf{StandardFine}};
+\node[cls] (c) at (5.0,-0.4) {\textbf{ComicFine}};
+\node[cls] (st) at (7.8,-0.4) {\textbf{StudyFine}};
+\foreach \n in {s,c,st} \draw[-{Triangle[open, length=2.5mm, width=2.5mm]}] (\n.north) -- (pol.south);
+\draw[-{Stealth}, thick, black!70] (loan.east) -- node[above, font=\scriptsize] {has a} (pol.west);
+\node[cls, dashed, fill=white] (map) at (10.6,-0.4) {\textbf{MapFine}\\ \scriptsize (new file)};
+\draw[dashed, -{Triangle[open, length=2.5mm, width=2.5mm]}] (map.north) -- (pol.south east);
+\node[font=\scriptsize, text=black!60, align=left, anchor=west] at (9.0,1.6) {open arrow: ``is a'' (inherits)\\ filled arrow: ``has a'' (holds)};
+\end{tikzpicture}
+\par\smallskip{\small The design of the fines. The code that sums fines holds a policy (\omterm{def:b2:cpp-polymorphism:composition}{composition}) and knows only
+the \omterm{def:b2:cpp-polymorphism:abstract}{abstract class}; the three policies derive from it (\omterm{def:b2:cpp-polymorphism:inheritance}{inheritance}). A fourth policy, for maps, is one more class
+in one more file, plus one line in \code{policy_for}.}
+\end{omfigure}
+
+\begin{method}[Adding a kind without editing working code]\label{met:b2:cpp-polymorphism:open-closed}
+To make a family of kinds open to new members:
+\begin{enumerate}
+\item collect what every kind must provide into an \omterm{def:b2:cpp-polymorphism:abstract}{abstract class} of \omterm{def:b2:cpp-polymorphism:abstract}{pure virtual functions}, with a virtual
+\omterm{def:b2:cpp-classes-raii:constructor}{destructor};
+\item write each kind as a \omterm{def:b2:cpp-polymorphism:inheritance}{derived class}, in a file of its own, overriding every pure function;
+\item write the code that uses the kinds against references or pointers to the \omterm{def:b2:cpp-polymorphism:abstract}{abstract class} only, so that it
+compiles without seeing any \omterm{def:b2:cpp-polymorphism:inheritance}{derived class};
+\item create the objects in one place (here \code{policy_for}), the only code that names the derived classes.
+\end{enumerate}
+A new kind is then one new file and one new line in the creating function; no switch has to be found, and the code
+of step 3 is neither edited nor recompiled. This is the \emph{open--closed} rule: open to extension, closed to
+modification.
+\end{method}
+
+The price is a virtual call where the switch had a jump. The program below compares a direct call that the
+compiler may not inline, a virtual call on objects of one class, the same on a random mix of two classes, and a
+switch on a tag that the compiler inlined, ten million calls each.
+
+\omcodes{code/bachelor-2/03-cpp-polymorphism/listings/dispatch_cost.cpp}{8-20,47-50}{Four ways to call an area
+function (\code{ns_per} returns the time of its argument divided by \code{n})}\label{lst:b2:cpp-polymorphism:dispatch-cost}
+
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/dispatch_cost.txt}{One run on the author's laptop; the digits
+change from run to run.}\label{out:b2:cpp-polymorphism:dispatch-cost}
+
+Every line costs a few nanoseconds. The virtual calls cost more than the direct one for two reasons besides the two
+loads: each object sits in its own heap block reached through a \code{unique_ptr}, where the direct call walks one
+contiguous array; and with mixed kinds the processor cannot guess which function comes next, a cost that
+\cref{ch:b2:processor-and-pipelining} explains. For a fine computed once per loan none of this matters; in an inner
+loop over millions of small objects it can, and the switch or a template (\cref{ch:b2:cpp-templates}) is then the
+better tool.
+
+\begin{history}[Simula]
+% ledger: b2:simula-oop
+% ledger: b2:simula-hopl
+Classes, \omterm{def:b2:cpp-polymorphism:inheritance}{inheritance} and dispatch on the class of an object come from Simula 67, a language designed by Ole-Johan
+Dahl and Kristen Nygaard to write simulations, whose objects were the people and machines being simulated. Its
+designers told the history of the language at the first conference on the history of programming languages, in
+1978. C++ was created to write systems programs in the style Simula encouraged, with the efficiency of C.
+\end{history}
+
+\section{Exercises}\label{sec:b2:cpp-polymorphism:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-polymorphism:1}
+Predict the four lines printed. For each call, say whether it is dispatched at run time and why.
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/exo_which.cpp}{4}{27}{Pointer, reference, value}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-polymorphism:2}
+This program owns its sensors with \code{std::unique_ptr}, so nothing should go wrong; yet AddressSanitizer stops it
+at the end of \code{main}. Explain the report and fix the program with one word.
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/exo_owner.cpp}{7}{23}{Two sensors}
+\omoutput[1-7]{code/bachelor-2/03-cpp-polymorphism/outputs/exo_owner.txt}{The start of the report.}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-polymorphism:3}
+Add a class \code{Triangle}, given its three sides, to the shapes of \cref{lst:b2:cpp-polymorphism:shapes}, in a new
+file and without editing \code{shapes.hpp} or \code{shapes.cpp}'s loop. Its \omterm{def:b2:cpp-classes-raii:constructor}{constructor} must refuse three lengths
+that are not the sides of a (non-flat) triangle. Which step of \cref{met:b2:cpp-polymorphism:open-closed} does each
+part of your file follow?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:cpp-polymorphism:4}
+On this machine \code{int} is 4 bytes and aligned on 4, a pointer 8 bytes and aligned on 8, and an object's size is
+a multiple of its strictest member alignment. Explain each size of \cref{out:b2:cpp-polymorphism:sizes}. What would
+\code{sizeof} print for a class with a \omterm{def:b2:cpp-polymorphism:vtable}{table pointer} and three \code{char} members? For a class with two
+\code{double} members and five \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-polymorphism:5}
+Predict the output, line by line. Why does the \omterm{def:b2:cpp-classes-raii:constructor}{constructor} of \code{Item} not print \code{a map of the coast}? Which
+would be worse if it did?
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/exo_ctor_virtual.cpp}{5}{22}{A virtual call in a \omterm{def:b2:cpp-classes-raii:constructor}{constructor} and
+a \omterm{def:b2:cpp-classes-raii:constructor}{destructor}}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-polymorphism:6}
+The catalogue below prints \code{Harbour Songs} without its minutes. Explain why, then fix it so that the catalogue
+holds books and recordings and prints each with its own label. Which owner type did you choose for the elements,
+and why not \code{std::vector<Item &>}?
+\omcode{code/bachelor-2/03-cpp-polymorphism/listings/exo_slice_vector.cpp}{6}{30}{A catalogue}
+\omoutput{code/bachelor-2/03-cpp-polymorphism/outputs/exo_slice_vector.txt}{The output.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-polymorphism:7}
+Rewrite \code{fines_switch.c} in C without any \code{switch}, with one table per kind as in
+\cref{lst:b2:cpp-polymorphism:vtable-c}: a \code{struct kind_table} holding the kind's name and a pointer to its fine
+function, and items that point to their kind's table. Test that your fines equal those of the switch for every
+kind and every lateness from $-2$ to 400 days. What must be done to add a kind?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-polymorphism:8}
+State the postconditions of \code{Rectangle::set_width} and \code{set_height}. Prove that no \omterm{def:b2:cpp-polymorphism:virtual}{override} of the two
+setters in a class \code{Square} derived from \code{Rectangle} can both keep the invariant ``width equals height''
+and satisfy the \omterm{def:b2:cpp-polymorphism:lsp}{substitution principle} for the client \code{resize_plot}. Then show that an immutable
+\code{Rectangle} (\omterm{def:b2:cpp-classes-raii:constructor}{constructor} and \code{area} only) can have an immutable \code{Square} as a \omterm{def:b2:cpp-polymorphism:inheritance}{derived class} that
+satisfies the principle.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:cpp-polymorphism:9}
+The council caps every fine at 10.00. Write a policy \code{CappedFine} that holds a reference to another policy and
+a cap, and returns the smaller of the two. Is it \omterm{def:b2:cpp-polymorphism:composition}{composition} or \omterm{def:b2:cpp-polymorphism:inheritance}{inheritance}, and why is it both? Compute the total
+owed on the town's loans at the end of 2025 with every policy capped at 10.00, and check that a very large cap
+changes nothing.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-polymorphism:10}
+Represent arithmetic expressions with an \omterm{def:b2:cpp-polymorphism:abstract}{abstract class} \code{Expr} and derived classes for numbers, variables,
+sums and products, owned through \code{std::unique_ptr}. Give them \code{eval} (in an environment mapping variables
+to values), \code{str} (fully parenthesised) and \code{simplify}, which folds operations on two numbers and applies
+$0 + e = e$, $1 \times e = e$ and $0 \times e = 0$. Put what sums and products share in a common \omterm{def:b2:cpp-polymorphism:inheritance}{base class}. Test
+that \code{((x * (2 + 3)) + (0 * y))} simplifies to \code{(x * 5)} and evaluates as before.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-polymorphism:11}
+A program has $k$ classes with \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions}; class $i$ has $m_i$ \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions} and $N_i$ objects. Count the
+bytes of tables and of \omterm{def:b2:cpp-polymorphism:vtable}{table pointers}, with 8-byte pointers and one slot per \omterm{def:b2:cpp-polymorphism:virtual}{virtual function}. For the library with
+3 policies of 3 \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions} each (the \omterm{def:b2:cpp-classes-raii:constructor}{destructor} counts once), one object each, and 400 loans that each hold a
+policy pointer, compare with the C design of \cref{lst:b2:cpp-polymorphism:fines-switch}. Then take a game with
+10 kinds of particles, 4 \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions} each, and $10^6$ particles: what fraction of the memory is \omterm{def:b2:cpp-polymorphism:vtable}{table
+pointers} if a particle holds 24 bytes of data?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:cpp-polymorphism:12}
+A virtual call chooses a function by the class of one object. Collision tests between two bodies, discs and boxes
+with sides parallel to the axes, depend on both. Implement \code{bool hits(const Body &other)} by \emph{double
+dispatch}: \code{a.hits(b)} makes a virtual call on \code{a}, which makes a second virtual call on \code{b} naming
+its own class. Test all four pairs. How many functions does each class need with $c$ classes of bodies, and what
+must change when a class is added?
+\end{exercise}
+
+\section{Problem: The town library's lending rules}\label{sec:b2:cpp-polymorphism:problem}
+
+\begin{problem}[{Weekend problem --- The town library's lending rules}]\label{pb:b2:cpp-polymorphism:1}
+The library of Brenmoor wants its software to handle every rule that depends on the kind of item: the fine, the loan
+period and the label printed on reminders. It starts from the C program of \cref{lst:b2:cpp-polymorphism:fines-switch}
+and the class design of \cref{lst:b2:cpp-polymorphism:library}, and plans to lend maps from next year, fined 50 cents
+a day, at most 4.00.
+
+\medskip\noindent\textbf{Part I --- The rules as a switch.}\par\nopagebreak
+\begin{enumerate}[beginpenalty=10000]
+\item In the C program, list every place that must change to add the kind \code{MAP}.
+\item The library adds two more functions on the kind: the loan period (21 days for every kind but study books, 28)
+and the shelf. With $f$ such functions and $k$ kinds, how many \code{case}s does the C program contain? How many must
+be written to add one kind, and in how many places?
+\item With \code{-Wall}, \code{gcc} warns about a \code{switch} on an \code{enum} that misses a value, but only if
+the switch has no \code{default}. Which switches of the program would warn after \code{MAP} is added?
+\item Using the fines of \cref{out:b2:cpp-polymorphism:fines-switch}, give the fine of a map 2, 10 and 60 days late.
+\item Why can a C program read in from files (the kind as a string in a catalogue) not escape a switch or a table
+somewhere, even with classes?
+\item In which file of the class design does that unavoidable choice live?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- A class hierarchy.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Write the class \code{MapFine}. Which files change, and which do not?
+\item Add the loan period and the shelf to \code{FinePolicy}. Should the class keep its name? Propose one, and say
+which method of the chapter you follow.
+\item With $f$ \omterm{def:b2:cpp-polymorphism:virtual}{virtual functions} and $k$ kinds, how many function bodies does the design contain? Compare with
+question 2.
+\item From \cref{out:b2:cpp-polymorphism:library}, give the number of late loans and the mean fine per late loan for
+each policy.
+\item Loan 27 owes 62.40 under the study policy. How many days late is it? Was it returned?
+\item The library council finds the study policy unfair to long loans and caps it at 10.00, using the
+\code{CappedFine} of \cref{exo:b2:cpp-polymorphism:9}. Which file changes?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Substitution.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item State the specification of \code{fine_cents} that every policy must satisfy, as a precondition on
+\code{d} and postconditions on the result, so that the fine-summing code is correct for every policy.
+\item The library's reminder letter promises ``the fine never exceeds 5.00''. Which policies satisfy that promise?
+Is it part of the specification of \code{FinePolicy}?
+\item A client test suite checks, for every policy and every $d$ from 0 to 400, that the fine is non-negative and
+non-decreasing in $d$. Do the three policies pass? Does \code{CappedFine}?
+\item A clerk proposes a policy for damaged items that returns $-500$ (a refund) when $d = 0$. Which property of
+question 13 does it break, and what could the summing code then compute wrongly?
+\item Is \code{StudyFine} a substitute for \code{StandardFine}, in the sense of the principle, for a client that
+relies on the 5.00 ceiling? For a client that relies only on question 13?
+\item Should \code{ComicFine} derive from \code{StandardFine} because both cap the fine? Argue with the principle.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The price of dispatch.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item In \cref{out:b2:cpp-polymorphism:dispatch-cost}, how many more nanoseconds does a virtual call on a mix of
+kinds cost than the switch?
+\item The library computes fines for its 400 loans once a night. Estimate the time spent in dispatch.
+\item A simulation updates $10^8$ particles of two kinds per second with one virtual call each. Estimate the share
+of a second spent in calls, from the same output.
+\item Name two changes to the simulation that would reduce that share, from the end of
+\cref{sec:b2:cpp-polymorphism:design}.
+\item Why is the measured difference between ``one kind'' and ``mixed kinds'' not explained by the two loads of
+\cref{prop:b2:cpp-polymorphism:layout}?
+\item State the result of the problem: what adding a kind costs in each design, in files and places edited, and what
+a virtual call costs against a switch on this machine.
+\end{enumerate}
+\end{problem}

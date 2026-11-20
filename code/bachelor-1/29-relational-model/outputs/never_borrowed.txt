@@ -1,0 +1,34 @@
+$ python sqlrun.py never_borrowed.sql
+sql> CREATE VIEW poetry_loans AS
+...>   SELECT l.member_id FROM loans AS l JOIN books AS b ON b.book_id = l.book_id
+...>   WHERE b.genre = 'poetry';
+OK
+
+sql> SELECT count(*) FROM (
+...>   SELECT member_id FROM members EXCEPT SELECT member_id FROM poetry_loans);
++----------+
+| count(*) |
++----------+
+| 28       |
++----------+
+(1 row)
+
+sql> SELECT count(*) FROM members AS m
+...> WHERE NOT EXISTS (SELECT * FROM poetry_loans AS p WHERE p.member_id = m.member_id);
++----------+
+| count(*) |
++----------+
+| 28       |
++----------+
+(1 row)
+
+sql> SELECT count(*) FROM members AS m
+...>   LEFT JOIN poetry_loans AS p ON p.member_id = m.member_id
+...> WHERE p.member_id IS NULL;
++----------+
+| count(*) |
++----------+
+| 28       |
++----------+
+(1 row)
+

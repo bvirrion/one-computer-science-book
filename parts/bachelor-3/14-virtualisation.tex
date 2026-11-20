@@ -1,0 +1,265 @@
+\chapter{Virtual Machines and Containers}\label{ch:b3:virtualisation}
+
+A data centre rents out machines that do not exist: one physical server runs dozens of operating systems, each convinced that it owns the processor, the memory and the devices. The kernel of the Year~2 volume already gave processes that illusion; this chapter gives it to whole kernels. A monitor written in Python runs a small \omterm{def:b3:virtualisation:vm}{guest} kernel on the \code{rv} machine, intercepts every instruction the \omterm{def:b3:virtualisation:vm}{guest} may not run itself, and emulates its devices; the cost of each interception is counted, and the theorem that says when the trick works is stated. Then the hardware's help is drawn, address translation done twice, and finally \omterm{def:b3:virtualisation:container}{containers}, which isolate processes without a second kernel, and the price of each kind of isolation.
+
+\begin{recall}
+\Cref{ch:b3:kernel-and-scheduling} showed how a trap moves the processor from user mode to the kernel at a fixed entry point, saving the interrupted program counter, and how the kernel returns. \Cref{ch:b3:virtual-memory} translated virtual addresses through \omterm{def:b3:virtual-memory:paging}{page tables} of several levels, one memory reference per level, and cached the results in a \omterm{def:b3:virtual-memory:tlb}{TLB}. In the Year~2 volume a program asks the kernel for a service with a system call, made on RISC-V by the instruction \code{ecall}.
+\end{recall}
+
+\section{What a virtual machine is}\label{sec:b3:virtualisation:vm}
+
+\begin{definition}[System virtual machine, hypervisor, type-1 and type-2 hypervisor, guest, host]\label{def:b3:virtualisation:vm}
+A \emph{system virtual machine}\index{system virtual machine} is an efficient, isolated duplicate of a real machine, on which an unmodified operating system can run. The software that creates it is a \emph{hypervisor}\index{hypervisor}, or virtual machine monitor. A \emph{type-1 hypervisor}\index{type-1 hypervisor} runs on the bare hardware; a \emph{type-2 hypervisor}\index{type-2 hypervisor} runs as an application of an ordinary operating system, the \emph{host}\index{host}. The operating system that runs inside a virtual machine is a \emph{guest}\index{guest}.
+\end{definition}
+
+``Efficient'' is part of the definition. Robert Goldberg's definition, which John Scott Robin and Cynthia Irvine quote, asks that a statistically dominant subset of the virtual processor's instructions run on the \omterm{def:b3:virtualisation:vm}{host} processor directly; a program that interprets every instruction, as the \code{rv} machine does, is an emulator, not a virtual machine. % ledger: b3:goldberg-vm
+The same distinction separates the two types: a \omterm{def:b3:virtualisation:vm}{type-1 hypervisor} is itself an operating system with the means to virtualise, and a type-2 one relies on a \omterm{def:b3:virtualisation:vm}{host} for everything else. % ledger: b3:vmm-types
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, b/.style={draw, minimum width=46mm, minimum height=7mm, fill=#1}, b/.default=black!4]
+  \node[b=omDef!12, minimum width=23mm] at (-1.15, 2.1) {guest OS 1};
+  \node[b=omDef!12, minimum width=23mm] at (1.15, 2.1) {guest OS 2};
+  \node[b=omThm!20] at (0, 1.4) {hypervisor};
+  \node[b] at (0, 0.7) {hardware};
+  \node at (0, -0.1) {type 1};
+  \node[b=omDef!12] at (6.2, 2.8) {guest OS};
+  \node[b=omThm!20] at (6.2, 2.1) {hypervisor (an application)};
+  \node[b=black!10] at (6.2, 1.4) {host OS};
+  \node[b] at (6.2, 0.7) {hardware};
+  \node at (6.2, -0.1) {type 2};
+\end{tikzpicture}
+\par\smallskip{\small The two types of \omterm{def:b3:virtualisation:vm}{hypervisor}, as stacks of software. Each layer sees the one below as its machine.}
+\end{omfigure}
+
+\section{Trap and emulate}\label{sec:b3:virtualisation:trap}
+
+The \omterm{def:b3:virtualisation:vm}{guest} kernel believes it runs in supervisor mode. The \omterm{def:b3:virtualisation:vm}{hypervisor} runs it in user mode instead, so that the instructions only a kernel may execute leave the \omterm{def:b3:virtualisation:vm}{guest} and come to the \omterm{def:b3:virtualisation:vm}{hypervisor}.
+
+\begin{definition}[Sensitive instruction, privileged instruction, trap and emulate]\label{def:b3:virtualisation:sensitive}
+A \emph{sensitive instruction}\index{sensitive instruction} is one whose effect depends on, or changes, the state of the machine that the \omterm{def:b3:virtualisation:vm}{hypervisor} must keep for itself: the privilege mode, the translation of addresses, the devices, the clocks. A \emph{privileged instruction}\index{privileged instruction} traps when executed outside the most privileged mode. \emph{Trap and emulate}\index{trap and emulate} runs the \omterm{def:b3:virtualisation:vm}{guest} in a less privileged mode, directly on the processor, lets every privileged instruction trap to the \omterm{def:b3:virtualisation:vm}{hypervisor}, and has the \omterm{def:b3:virtualisation:vm}{hypervisor} perform its effect on the \omterm{def:b3:virtualisation:vm}{guest}'s virtual state before resuming the \omterm{def:b3:virtualisation:vm}{guest} after it.
+\end{definition}
+
+\begin{theorem}[Popek--Goldberg theorem]\label{thm:b3:virtualisation:popek-goldberg}\index{Popek--Goldberg theorem}
+If every \omterm{def:b3:virtualisation:sensitive}{sensitive instruction} of a machine is privileged, a \omterm{def:b3:virtualisation:vm}{hypervisor} for that machine can be built by \omterm{def:b3:virtualisation:sensitive}{trap and emulate}: the \omterm{def:b3:virtualisation:vm}{guest} runs directly except for its \omterm{def:b3:virtualisation:sensitive}{sensitive instructions}, each of which traps and is emulated. % ledger: b3:sensitive-def
+\end{theorem}
+
+\begin{proof}[Proof idea]
+Run the \omterm{def:b3:virtualisation:vm}{guest} in user mode, and keep for it a virtual copy of every register and device that \omterm{def:b3:virtualisation:sensitive}{sensitive instructions} read or write. An instruction that is not sensitive behaves the same whatever that state is, so running it directly gives the same result as on a real machine in the \omterm{def:b3:virtualisation:vm}{guest}'s state. A \omterm{def:b3:virtualisation:sensitive}{sensitive instruction} is privileged, so it traps; the \omterm{def:b3:virtualisation:vm}{hypervisor} applies its effect to the virtual copy, which is what the real machine would have done, and resumes the \omterm{def:b3:virtualisation:vm}{guest}. By induction on the steps, the \omterm{def:b3:virtualisation:vm}{guest}'s state stays what it would be on a real machine of its own. Gerald Popek and Robert Goldberg made this precise in 1974, with a formal model of the machine and its states (exercise~\ref{exo:b3:virtualisation:10} proves it for a small model). % ledger: b3:popek-goldberg-1974
+\end{proof}
+
+RISC-V follows the rule for its control and status registers, the CSRs: bits 9 and 8 of a CSR's number give the lowest privilege level that may access it, and an access without enough privilege raises an illegal-instruction exception. % ledger: b3:csr-privilege
+The \omterm{def:b3:virtualisation:vm}{guest} of \cref{lst:b3:virtualisation:guest} drives three devices and reads a clock through CSRs numbered from \code{0x5c0}, in a range the specification reserves for custom supervisor-level registers. % ledger: b3:csr-custom
+The \code{rv} machine has no CSR instructions at all, so the \omterm{def:b3:virtualisation:vm}{guest} writes them as raw words: for \code{rv}, as for user mode, they are illegal.
+
+\omcode{code/bachelor-3/14-virtualisation/listings/guest.S}{1}{24}{A \omterm{def:b3:virtualisation:vm}{guest} kernel: a message to the console, some work, the clock, then power off.}\label{lst:b3:virtualisation:guest}
+
+\omoutput{code/bachelor-3/14-virtualisation/outputs/guest.txt}{On the bare machine, the \omterm{def:b3:virtualisation:vm}{guest}'s first device access stops it.}\label{out:b3:virtualisation:guest}
+
+The monitor of \cref{lst:b3:virtualisation:monitor} catches these traps with \code{rv}'s \code{on_trap} hook, which is called with the program counter still at the trapping instruction. It decodes the CSR instruction from the \omterm{def:b3:virtualisation:vm}{guest}'s memory, emulates it on the virtual devices, and steps over it.
+
+\omcode{code/bachelor-3/14-virtualisation/listings/monitor.py}{9}{47}{The monitor. The virtual clock counts the \omterm{def:b3:virtualisation:vm}{guest}'s instructions; the console collects what the \omterm{def:b3:virtualisation:vm}{guest} prints.}\label{lst:b3:virtualisation:monitor}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, box/.style={draw, rounded corners, minimum height=7mm, align=center}]
+  \node[box, fill=omDef!12] (g) at (0, 0) {guest: \texttt{.word 0x5c051073}\\(\texttt{csrw 0x5c0, a0})};
+  \node[box, fill=omThm!20] (t) at (7, 0) {\code{trap(m, "illegal")}\\decode: CSR \texttt{0x5c0}, \texttt{rs1 = a0}};
+  \node[box, fill=omThm!20] (e) at (7, -1.8) {emulate: append \texttt{chr(a0)}\\to the console};
+  \node[box, fill=omDef!12] (r) at (0, -1.8) {guest resumes at \texttt{pc + 4}};
+  \draw[->] (g) -- node[below, font=\scriptsize] {trap} (t);
+  \draw[->] (t) -- (e);
+  \draw[->] (e) -- node[above, font=\scriptsize] {\texttt{m.pc += 4}} (r);
+\end{tikzpicture}
+\par\smallskip{\small One trap. The \omterm{def:b3:virtualisation:vm}{guest} never knows that the console is a Python list.}
+\end{omfigure}
+
+\omcode{code/bachelor-3/14-virtualisation/listings/run_guest.py}{1}{11}{The \omterm{def:b3:virtualisation:vm}{guest} under the monitor.}\label{lst:b3:virtualisation:run}
+
+\omoutput{code/bachelor-3/14-virtualisation/outputs/run_guest.txt}{The \omterm{def:b3:virtualisation:vm}{guest} prints, computes 5,050, reads 413 on its clock and powers off: 25 of its 416 instructions trapped.}\label{out:b3:virtualisation:run}
+
+How much does a trap cost? \Cref{lst:b3:virtualisation:cost} counts it, using as its clock the number of Python lines that the machine and the monitor execute, which, unlike a time on a busy laptop, does not jitter.
+
+\omcode{code/bachelor-3/14-virtualisation/listings/trap_cost.py}{11}{42}{The same loop with a trapping clock read, or an ordinary \code{addi}, once every $B$ instructions.}\label{lst:b3:virtualisation:cost}
+
+\omoutput{code/bachelor-3/14-virtualisation/outputs/trap_cost.txt}{A trap costs about as much as one instruction here, and the slowdown follows $1 + f(T - 1)$ to within a few parts in ten thousand.}\label{out:b3:virtualisation:cost}
+
+A trap replaces one ordinary instruction by one costing $T$, so a fraction $f$ of traps multiplies the time by $1 + f(T - 1)$. Here $T$ is barely more than 1, because \code{rv} interprets every instruction anyway: an emulator pays its large cost everywhere, and a trap adds little to it. A \omterm{def:b3:virtualisation:vm}{hypervisor} on real hardware is the opposite. Its \omterm{def:b3:virtualisation:vm}{guest} runs at the processor's own speed, and only a trap leaves it, through the hardware's exception entry, the \omterm{def:b3:virtualisation:vm}{hypervisor}'s decoding and emulation, and the return: $T$ is then a large number of instructions, and the fraction $f$ decides everything (the weekend problem computes it).
+
+\section{Hardware support}\label{sec:b3:virtualisation:hardware}
+
+The theorem's condition is not automatic. Robin and Irvine examined every instruction of the Intel Pentium in 2000 and found seventeen that are sensitive but not privileged, among them \code{SGDT}, \code{SIDT}, \code{SLDT} and \code{SMSW}, which read registers describing the processor's own protection tables: run in user mode, they do not trap, and return the \omterm{def:b3:virtualisation:vm}{host}'s values to the \omterm{def:b3:virtualisation:vm}{guest}. By the theorem's standard the processor was not virtualisable. % ledger: b3:pentium-17
+% ledger: b3:robin-irvine-2000
+Three answers appeared.
+
+\begin{definition}[Binary translation, paravirtualisation, nested paging]\label{def:b3:virtualisation:techniques}
+\emph{Binary translation}\index{binary translation} rewrites the \omterm{def:b3:virtualisation:vm}{guest}'s code before it runs, replacing each \omterm{def:b3:virtualisation:sensitive}{sensitive instruction} by a call to the \omterm{def:b3:virtualisation:vm}{hypervisor} and leaving the others to run directly. \emph{Paravirtualisation}\index{paravirtualisation} modifies the \omterm{def:b3:virtualisation:vm}{guest}'s source so that it calls the \omterm{def:b3:virtualisation:vm}{hypervisor} explicitly, with hypercalls, instead of executing \omterm{def:b3:virtualisation:sensitive}{sensitive instructions}. Hardware virtualisation adds a processor mode for \omterm{def:b3:virtualisation:vm}{guests} in which \omterm{def:b3:virtualisation:sensitive}{sensitive instructions} trap; \emph{nested paging}\index{nested paging} adds a second stage of hardware address translation, from the \omterm{def:b3:virtualisation:vm}{guest}'s physical addresses to the \omterm{def:b3:virtualisation:vm}{host}'s.
+\end{definition}
+
+RISC-V's \omterm{def:b3:virtualisation:vm}{hypervisor} extension is of the third kind: it \omterm{def:b3:virtualisation:vm}{hosts} \omterm{def:b3:virtualisation:vm}{guest} operating systems under a type-1 or a \omterm{def:b3:virtualisation:vm}{type-2 hypervisor}, % ledger: b3:rv-hypervisor
+and translates in two stages, the \omterm{def:b3:virtualisation:vm}{guest}'s own tables taking a \omterm{def:b3:virtual-memory:space}{virtual address} to a \omterm{def:b3:virtualisation:vm}{guest} \omterm{def:b3:virtual-memory:space}{physical address}, and the \omterm{def:b3:virtualisation:vm}{hypervisor}'s tables that address to a real one. Every \omterm{def:b3:virtualisation:vm}{guest} \omterm{def:b3:virtual-memory:space}{physical address} goes through the second stage, including the addresses of the \omterm{def:b3:virtualisation:vm}{guest}'s \omterm{def:b3:virtual-memory:paging}{page-table entries} themselves. % ledger: b3:rv-two-stage
+A walk therefore nests one walk inside another (\cref{lst:b3:virtualisation:walk}).
+
+\omcode{code/bachelor-3/14-virtualisation/listings/nested_walk.py}{8}{16}{The references of a two-stage walk: before each \omterm{def:b3:virtualisation:vm}{guest} level, a whole \omterm{def:b3:virtualisation:vm}{host} walk.}\label{lst:b3:virtualisation:walk}
+
+\omoutput{code/bachelor-3/14-virtualisation/outputs/nested_walk.txt}{The memory references before the data can be read. With four levels on each side, 24 instead of 4.}\label{out:b3:virtualisation:walk}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, >=Stealth, c/.style={draw, minimum width=12mm, minimum height=6mm}]
+  \foreach \r/\y/\l in {0/0/{guest L0 entry}, 1/-1.1/{guest L1 entry}, 2/-2.2/{data}} {
+    \node[anchor=east] at (-0.5, \y) {\l};
+    \node[c, fill=omThm!20] (a\r) at (0.3, \y) {host L0};
+    \node[c, fill=omThm!20] (b\r) at (2.0, \y) {host L1};
+    \node[c, fill=omDef!20] (d\r) at (3.7, \y) {read};
+    \draw[->] (a\r) -- (b\r);
+    \draw[->] (b\r) -- (d\r);
+  }
+  \draw[->, black!60] (d0.south) -- (a1.north east);
+  \draw[->, black!60] (d1.south) -- (a2.north east);
+  \node[anchor=west, align=left] at (4.6, -1.1) {each row: a guest physical address,\\translated by the host's two levels,\\then read: $2 \times 3 + 2 = 8$ references\\before the data};
+\end{tikzpicture}
+\par\smallskip{\small A two-stage walk with two levels on each side, as in the last line of \cref{out:b3:virtualisation:walk}. With $k$ levels on both sides it costs $(k + 1)^2 - 1$ references.}
+\end{omfigure}
+
+With $k$ \omterm{def:b3:virtualisation:vm}{guest} levels and $h$ \omterm{def:b3:virtualisation:vm}{host} levels, each of the $k$ \omterm{def:b3:virtualisation:vm}{guest} entries costs a \omterm{def:b3:virtualisation:vm}{host} walk of $h$ references and its own read, and the data's address one more \omterm{def:b3:virtualisation:vm}{host} walk: $k(h + 1) + h = kh + k + h$, and $(k + 1)^2 - 1$ when $h = k$. A \omterm{def:b3:virtual-memory:tlb}{TLB} hit skips all of it, which is why a miss under virtualisation is so much dearer than without.
+
+\section{Containers}\label{sec:b3:virtualisation:containers}
+
+A virtual machine runs a whole kernel per \omterm{def:b3:virtualisation:vm}{guest}. Often the \omterm{def:b3:virtualisation:vm}{guests} would all run the same kernel anyway, and what they need is only to be kept apart.
+
+\begin{definition}[Container, kernel namespace, control group, resource limit]\label{def:b3:virtualisation:container}
+A \emph{kernel namespace}\index{kernel namespace} wraps a global resource of the kernel so that the processes inside it see their own isolated instance of it. A \emph{control group}\index{control group} is a set of processes, arranged in a hierarchy, among which the kernel divides resources such as memory and processor time, within limits set for the group. A \emph{resource limit}\index{resource limit} caps what one process may use of a resource. A \emph{container}\index{container} is a group of processes that share the \omterm{def:b3:virtualisation:vm}{host}'s kernel but are placed in their own namespaces and control group, so that they see a machine of their own and use a bounded share of it.
+\end{definition}
+
+Linux has eight kinds of namespace, and each isolates one thing: the mount points, the process IDs, the network devices and ports, the user and group IDs, the \omterm{def:b3:virtualisation:vm}{host} name, the inter-process communication objects, the root of the \omterm{def:b3:virtualisation:container}{control groups}, and the boot and monotonic clocks. Its manual page names \omterm{def:b3:virtualisation:container}{containers} as one use of them. % ledger: b3:namespace-types
+% ledger: b3:namespace-def
+A \omterm{def:b3:virtualisation:container}{control group}'s \code{memory.max} is a hard limit on its memory: when its use reaches it and cannot be reduced, the kernel's out-of-memory killer acts inside the group. % ledger: b3:cgroup-def
+A process can also limit itself: POSIX's \code{RLIMIT_AS} caps the total memory of a process, beyond which \code{malloc} and \code{mmap} fail with \code{ENOMEM} (\cref{lst:b3:virtualisation:rlimit}). % ledger: b3:rlimit-as
+
+\omcode{code/bachelor-3/14-virtualisation/listings/rlimit.c}{12}{35}{A child that limits itself to 64~MiB of \omterm{def:b3:virtual-memory:space}{address space}.}\label{lst:b3:virtualisation:rlimit}
+
+\omoutput{code/bachelor-3/14-virtualisation/outputs/rlimit.txt}{Three blocks of 16~MiB fit, not four: the program's code, libraries and stack already use part of the 64~MiB. The child sees the refusal as a \code{NULL}, and nobody else is affected.}\label{out:b3:virtualisation:rlimit}
+
+The old \code{chroot} call, which changes the directory a process sees as \code{/}, is sometimes described as a \omterm{def:b3:virtualisation:container}{container}. Its manual page says otherwise: it changes one step of resolving a path and does nothing else, and it is not intended for any security purpose. % ledger: b3:chroot-not-security
+
+\section{What each one isolates}\label{sec:b3:virtualisation:isolation}
+
+\begin{definition}[Isolation boundary]\label{def:b3:virtualisation:isolation}
+An \emph{isolation boundary}\index{isolation boundary} is the interface through which isolated code can reach what lies outside it; an attacker inside must find a flaw in the code behind that interface to cross it.
+\end{definition}
+
+\begin{table}[ht]
+\centering\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{24mm}>{\raggedright\arraybackslash}p{40mm}>{\raggedright\arraybackslash}p{34mm}>{\raggedright\arraybackslash}p{34mm}@{}}
+\hline
+isolation & boundary & shared with the neighbours & cost \\
+\hline
+process & system calls, \omterm{def:b3:virtual-memory:paging}{page tables} & the kernel, the file system & almost none \\
+\omterm{def:b3:virtualisation:container}{container} & system calls, filtered by namespaces and limits & the kernel & almost none; the same kernel for all \\
+virtual machine & the trapping instructions and the virtual devices & the \omterm{def:b3:virtualisation:vm}{hypervisor}, the hardware & a kernel per \omterm{def:b3:virtualisation:vm}{guest}, traps, two-stage walks \\
+language sandbox & the language's operations and its library & the interpreter's process & checks on every operation \\
+\hline
+\end{tabular}
+\caption{Four isolation boundaries. The narrower the interface behind the boundary, the less code an attacker can attack: a \omterm{def:b3:virtualisation:vm}{hypervisor}'s interface is a few instructions and devices, a kernel's hundreds of system calls.}\label{tab:b3:virtualisation:isolation}
+\end{table}
+
+A \omterm{def:b3:virtualisation:container}{container}'s boundary is the whole system-call interface of the shared kernel, so a flaw in the kernel is a flaw in every \omterm{def:b3:virtualisation:container}{container}; a virtual machine's boundary is much narrower. A \omterm{def:b3:virtualisation:vm}{host} that must run strangers' code side by side therefore has reason to prefer the narrower boundary, or to narrow a \omterm{def:b3:virtualisation:container}{container}'s by filtering the system calls it may make. The table does not rank them: each boundary is chosen for what it isolates and what it costs.
+
+\begin{history}[Virtualisation]
+Popek and Goldberg's \emph{Formal requirements for virtualizable third generation architectures} appeared in the Communications of the ACM in July 1974, % ledger: b3:popek-goldberg-1974
+and Robin and Irvine's analysis of the Pentium at the USENIX Security Symposium in August 2000. % ledger: b3:robin-irvine-2000
+\end{history}
+
+\section{Exercises}\label{sec:b3:virtualisation:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:virtualisation:1}
+By the CSR numbering rule, which of these RISC-V instructions trap when a \omterm{def:b3:virtualisation:vm}{guest} kernel runs in user mode: a write to \code{satp} (CSR \code{0x180}), a read of \code{time} (\code{0xC01}), a write to \code{sstatus} (\code{0x100}), \code{add}, a load from the \omterm{def:b3:virtualisation:vm}{guest}'s own memory? Which of them are sensitive? Is any sensitive and not privileged?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:virtualisation:2}
+Which type of \omterm{def:b3:virtualisation:vm}{hypervisor} is each: (a)~a program a developer starts on a laptop's usual operating system to try another system in a window; (b)~the only software below a server's \omterm{def:b3:virtualisation:vm}{guests}, which schedules them and drives the hardware?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:virtualisation:3}
+How many memory references does a two-stage walk make before the data with two-level tables on both sides? With two-level \omterm{def:b3:virtualisation:vm}{guest} tables and four-level \omterm{def:b3:virtualisation:vm}{host} tables?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:virtualisation:4}
+Predict the number of traps in \cref{out:b3:virtualisation:run} from \cref{lst:b3:virtualisation:guest}, without running it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:virtualisation:5}
+\code{exercises/ex5_stuck.py} emulates each instruction but leaves the \omterm{def:b3:virtualisation:vm}{guest}'s \code{pc} where it was. What does the \omterm{def:b3:virtualisation:vm}{guest} do, what does the console contain, and how does the run end? Fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:virtualisation:6}
+Write a virtual timer for the monitor: the \omterm{def:b3:virtualisation:vm}{guest} writes the address of a handler to CSR \code{0x5c5} and a time to CSR \code{0x5c4}; when the virtual clock reaches that time, the monitor saves the \omterm{def:b3:virtualisation:vm}{guest}'s \code{pc} in CSR \code{0x5c6} and jumps to the handler, once. The test runs a \omterm{def:b3:virtualisation:vm}{guest} that counts in a loop until the timer stops it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:virtualisation:7}
+Prove that a two-stage walk with $k$ \omterm{def:b3:virtualisation:vm}{guest} levels and $h$ \omterm{def:b3:virtualisation:vm}{host} levels makes $kh + k + h$ references before the data, and that this is $(k + 1)^2 - 1$ when $h = k$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:virtualisation:8}
+A trap costs $T = 2{,}000$ instruction times on some hypothetical server. What slowdown does a \omterm{def:b3:virtualisation:vm}{guest} with one trap every 10,000 instructions see? What trap fraction keeps the slowdown under 5~\%? The \omterm{def:b3:virtualisation:vm}{guest} of \cref{lst:b3:virtualisation:guest} traps once every 16.6 instructions: what would it see?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:virtualisation:9}
+Before reading \cref{out:b3:virtualisation:rlimit}, predict what \cref{lst:b3:virtualisation:rlimit} prints: could the child get four blocks of 16~MiB under a 64~MiB limit? What would change with \code{RLIMIT_AS} at 1~GiB?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:virtualisation:10}
+A machine has a mode bit $s$ (supervisor or user), registers, and memory. A user-mode step of a \omterm{def:b3:virtualisation:sensitive}{privileged instruction} traps: it saves the pc and jumps to the \omterm{def:b3:virtualisation:vm}{hypervisor} in supervisor mode. Model a \omterm{def:b3:virtualisation:vm}{guest} state as a pair (virtual mode bit, registers and memory), and assume every \omterm{def:b3:virtualisation:sensitive}{sensitive instruction} is privileged. Prove that running the \omterm{def:b3:virtualisation:vm}{guest} in user mode, with the \omterm{def:b3:virtualisation:vm}{hypervisor} emulating each trapped instruction on the virtual mode bit, produces after every step the state that a real machine in the \omterm{def:b3:virtualisation:vm}{guest}'s state would produce.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:virtualisation:11}
+\code{exercises/ex11_detect.py} gives a monitor that adds its own work, \code{charge} instructions per trap, to the \omterm{def:b3:virtualisation:vm}{guest}'s clock. Its \omterm{def:b3:virtualisation:vm}{guest} reads the clock twice in a row. What does it print for each charge? Can a monitor that charges nothing still be detected by a \omterm{def:b3:virtualisation:vm}{guest}? Discuss what a \omterm{def:b3:virtualisation:vm}{guest} can measure.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:virtualisation:12}
+The monitor runs the \omterm{def:b3:virtualisation:vm}{guest} directly, so the \omterm{def:b3:virtualisation:vm}{guest} can load and store anywhere in the machine's memory. Write \code{checked_step(m, lo, hi)}, which, before each \omterm{def:b3:virtualisation:vm}{guest} load or store, computes its address and stops the \omterm{def:b3:virtualisation:vm}{guest} if it falls outside $[\mathit{lo}, \mathit{hi})$. Test that a store outside is stopped before it happens. What does this check cost, and what does hardware do instead?
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:virtualisation:problem}
+
+\begin{problem}[{Weekend problem --- The cost of trapping}]\label{pb:b3:virtualisation:1}
+A \omterm{def:b3:virtualisation:vm}{hypervisor}'s overhead comes from two places: the \omterm{def:b3:virtualisation:vm}{guest}'s instructions that trap, and the addresses translated twice. This problem builds a model of each, checks the first against the counts of \cref{out:b3:virtualisation:cost}, and the second against \cref{out:b3:virtualisation:walk}.
+
+\medskip\noindent\textbf{Part I --- A guest's instruction mix.}
+\begin{enumerate}
+\item In \cref{out:b3:virtualisation:run}, what fraction $f$ of the \omterm{def:b3:virtualisation:vm}{guest}'s instructions trapped? Which instructions were they?
+\item How many traps would the \omterm{def:b3:virtualisation:vm}{guest} make to print a message of 1,000 characters, and what would $f$ become?
+\item A console that takes a whole buffer at once, its address and its length in two CSRs, then a third write to start it: how many traps for the same 1,000 characters?
+\item The sum $1 + 2 + \dots + 100$ takes how many instructions in the \omterm{def:b3:virtualisation:vm}{guest}? Why does it never trap?
+\item Which kinds of programs have a small $f$, and which a large one?
+\item Why does a \omterm{def:b3:virtualisation:vm}{guest} kernel trap more often than the programs that run on it?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- A model of the cost.}
+\begin{enumerate}[resume]
+\item A program runs $N$ instructions, a fraction $f$ of which trap, each trap costing $T$ ordinary instructions' time. Show that the slowdown is $1 + f(T - 1)$.
+\item What does the slowdown tend to as $f \to 0$? And as $T \to 1$?
+\item With $T = 1{,}000$, compute the slowdown for $f = 10^{-4}, 10^{-3}, 10^{-2}$ and $10^{-1}$.
+\item For $T = 1{,}000$, what $f$ keeps the slowdown under 10~\%?
+\item How does the buffered console of question 3 change the slowdown of the 1,000-character message?
+\item An emulator interprets every instruction at a cost of $E$ \omterm{def:b3:virtualisation:vm}{host} instructions each. Compare its slowdown with that of \omterm{def:b3:virtualisation:sensitive}{trap and emulate}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The counts.}
+\begin{enumerate}[resume]
+\item In \cref{lst:b3:virtualisation:cost}, how is $T$ obtained from a loop in which every third instruction traps?
+\item Check the first line of the table against the formula: what is the relative difference between the counted slowdown and $1 + f(T - 1)$?
+\item The formula assumes that every ordinary instruction costs the same. Which instructions of the loop do not, and in which direction does that move the counted slowdown?
+\item Why is $T$ about 1 for this monitor, when it does more work per trap than the machine does per instruction?
+\item A plain instruction costs 64.7 Python lines. If one Python line took as long as one native instruction, what would $E$ be for the \code{rv} machine? Compare with \omterm{def:b3:virtualisation:sensitive}{trap and emulate} for the \omterm{def:b3:virtualisation:vm}{guest} of \cref{out:b3:virtualisation:run} and $T = 1{,}000$.
+\item Why did the listing count lines instead of measuring seconds?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Translating twice.}
+\begin{enumerate}[resume]
+\item Show that the two-stage walk makes $kh + k + h$ references before the data, and compute it for $k = h = 4$.
+\item Without virtualisation, how many references does a four-level walk make? By what factor does nesting multiply the cost of a \omterm{def:b3:virtual-memory:tlb}{TLB} miss?
+\item If a fraction $m$ of the accesses miss the \omterm{def:b3:virtual-memory:tlb}{TLB}, what is the average number of references per access, with and without nesting, for $k = h = 4$? Compute it for $m = 0.01$.
+\item The \omterm{def:b3:virtualisation:vm}{host} maps the \omterm{def:b3:virtualisation:vm}{guest}'s memory with large pages, using two levels instead of four. What does a walk cost now?
+\item Instead of nesting, a \omterm{def:b3:virtualisation:vm}{hypervisor} can keep its own table that maps the \omterm{def:b3:virtualisation:vm}{guest}'s virtual addresses directly to real ones. What must it do whenever the \omterm{def:b3:virtualisation:vm}{guest} changes one of its \omterm{def:b3:virtual-memory:paging}{page tables}?
+\item Sum up: what makes virtualisation cheap, and what makes it dear?
+\end{enumerate}
+\end{problem}

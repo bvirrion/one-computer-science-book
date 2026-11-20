@@ -1,0 +1,392 @@
+% Book 3, Year 1, chapter 27 -- Boolean algebra and combinational circuits.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 27.
+% ledger: b1:boole-1854, b1:shannon-1938, b1:karnaugh-1953, b1:sheffer-1913
+\chapter{Boolean Algebra and Combinational Circuits}\label{ch:b1:combinational-circuits}
+
+The adder inside a processor adds two 64-bit numbers in a fraction of a nanosecond. It is built from gates, each of
+which knows only one or two bits and computes a function as simple as ``both'' or ``either''. This chapter is about how
+such gates are combined: how any function of bits can be written with them, how to write it with few, why one kind of
+gate is enough, and how the arrangement of the gates, not their number, decides the speed of an adder. The circuits
+are built and run in a small simulator, in which a circuit is what it is in the hardware: a \omterm{def:b1:graph-traversals:dag}{directed acyclic graph} of
+gates.
+
+\begin{recall}
+Gates and the half adder were built in the first book; the second built an adder and a \omterm{def:b1:combinational-circuits:mux}{multiplexer}. Formulas, their
+truth tables and the normal forms DNF and CNF are in \cref{def:b1:propositional-logic:normal-forms}; DAGs and their
+longest paths in \cref{ch:b1:graph-traversals,ch:b1:shortest-paths}.
+\end{recall}
+
+\section{Boolean functions and canonical forms}\label{sec:b1:combinational-circuits:functions}
+
+\begin{definition}[Boolean function]\label{def:b1:combinational-circuits:boolean-function}
+A \emph{Boolean function}\index{Boolean function} of $n$ variables is a function $f\colon \{0, 1\}^n \to \{0, 1\}$. It is
+given by its truth table, $2^n$ rows; so there are $2^{2^n}$ Boolean functions of $n$ variables.
+\end{definition}
+
+We write $x'$ for the negation of $x$, $xy$ for the conjunction and $x + y$ for the disjunction. These operations obey
+the laws of \emph{Boolean algebra}\index{Boolean algebra}: commutativity and associativity of $+$ and of the product;
+each distributes over the other, $x(y + z) = xy + xz$ and $x + yz = (x + y)(x + z)$; $x + 0 = x$, $x \cdot 1 = x$, $x + x'
+= 1$, $x x' = 0$; and De Morgan's laws $(x + y)' = x' y'$, $(xy)' = x' + y'$. Each is checked on the four (or eight)
+rows of a truth table. Boole set them out in 1854 as laws of thought; in 1938 Shannon showed that they describe
+circuits of relays.
+
+\omimg{book3/george-boole.jpg}{0.22\linewidth}{George Boole, whose book of 1854 set out these laws as the laws of
+thought. Portrait by an unknown artist, public domain.}
+
+\begin{definition}[Minterm, maxterm, canonical forms]\label{def:b1:combinational-circuits:canonical}
+A \emph{minterm}\index{minterm} of $n$ variables is a product in which every variable appears once, plain or negated: it
+is 1 on exactly one row. A \emph{maxterm}\index{maxterm} is a sum in which every variable appears once: it is 0 on exactly
+one row. The \emph{canonical sum of products}\index{canonical sum of products} of $f$ is the sum of the minterms of the
+rows where $f$ is 1; its \emph{canonical product of sums}\index{canonical product of sums} is the product of the maxterms
+of the rows where $f$ is 0.
+\end{definition}
+
+Both equal $f$: the sum is 1 exactly on the rows of its \omterm{def:b1:combinational-circuits:canonical}{minterms}, and the product 0 exactly on the rows of its
+\omterm{def:b1:combinational-circuits:canonical}{maxterms}. They are the DNF and CNF of \cref{ch:b1:propositional-logic} read off a truth table, and they prove that
+negation, conjunction and disjunction can express every \omterm{def:b1:combinational-circuits:boolean-function}{Boolean function}.
+
+\omcode{code/bachelor-1/27-combinational-circuits/listings/canonical.py}{15}{29}{The canonical forms from the truth
+table}\label{lst:b1:combinational-circuits:canonical}
+
+\omoutput{code/bachelor-1/27-combinational-circuits/outputs/canonical.txt}{The majority of three bits, its two
+canonical forms, and the number of functions of 1 to 5 variables.}\label{out:b1:combinational-circuits:canonical}
+
+\begin{definition}[Combinational circuit]\label{def:b1:combinational-circuits:combinational}
+A \emph{combinational circuit}\index{combinational circuit} is a \omterm{def:b1:graph-traversals:dag}{directed acyclic graph} whose sources are the inputs,
+whose other \omterm{def:b1:graph-traversals:graph}{vertices} are logic gates, each fed by the \omterm{def:b1:graph-traversals:graph}{vertices} it has \omterm{def:b1:graph-traversals:graph}{arcs} from, and some of whose \omterm{def:b1:graph-traversals:graph}{vertices} are marked as
+outputs. Its outputs depend only on its current inputs.
+\end{definition}
+
+The simulator stores the gates in the order they were added; a gate may only use wires that exist already, so that
+order is topological, and evaluation is one pass, as for the DAG paths of \cref{ch:b1:shortest-paths}.
+
+\omcode{code/bachelor-1/27-combinational-circuits/listings/circuit.py}{20}{40}{The simulator: adding a gate, evaluating,
+and the delay}\label{lst:b1:combinational-circuits:circuit}
+
+\section{Simplification}\label{sec:b1:combinational-circuits:simplification}
+
+The majority function needs four products of three literals in its canonical form, but $ab + ac + bc$ will do. Algebra
+finds it: $abc$ can be repeated, $a'bc + abc = bc$, and so on. A picture finds it faster.
+
+\begin{definition}[Karnaugh map]\label{def:b1:combinational-circuits:karnaugh}
+A \emph{Karnaugh map}\index{Karnaugh map} of a function of four variables is its truth table arranged as a $4 \times 4$
+grid, rows labelled by $ab$ and columns by $cd$ in the order $00, 01, 11, 10$, so that two neighbouring cells, the
+first and last of a row or column included, differ in exactly one variable.
+\end{definition}
+
+Two neighbouring 1 cells merge into a product without the variable in which they differ; four cells in a $2 \times 2$
+square or a row of four lose two variables; eight cells lose three. Groups must be rectangles of $1$, $2$, $4$ or $8$
+cells, possibly wrapping around the edges.
+
+\begin{definition}[Implicant, prime implicant, essential prime implicant, don't-care]\label{def:b1:combinational-circuits:implicant}
+An \emph{implicant}\index{implicant} of $f$ is a product of literals that is 1 only where $f$ is 1. It is
+\emph{prime}\index{prime implicant} if removing any literal makes it cover a 0 of $f$, and \emph{essential}\index{essential
+prime implicant} if it is the only prime implicant covering some 1 of $f$. A \emph{don't-care
+condition}\index{don't-care condition} is a row whose output does not matter, because it never occurs; it may be
+covered or not, as suits the simplification.
+\end{definition}
+
+A minimal sum of products is made of \omterm{def:b1:combinational-circuits:implicant}{prime implicants} (a \omterm{def:b1:combinational-circuits:implicant}{non-prime} one can lose a literal) and contains every \omterm{def:b1:combinational-circuits:implicant}{essential}
+one. The program finds the \omterm{def:b1:combinational-circuits:implicant}{prime implicants} by merging terms that differ in one variable, round after round, the method
+of Quine and McCluskey; with four variables, a \omterm{def:b1:combinational-circuits:karnaugh}{Karnaugh map} shows the same groups at a glance.
+
+\omcode{code/bachelor-1/27-combinational-circuits/listings/karnaugh.py}{19}{40}{\omterm{def:b1:combinational-circuits:implicant}{Prime implicants} by repeated merging;
+\code{-} marks a variable that has gone}\label{lst:b1:combinational-circuits:qm}
+
+\omoutput{code/bachelor-1/27-combinational-circuits/outputs/karnaugh.txt}{The map of a function of four variables, its six
+\omterm{def:b1:combinational-circuits:implicant}{prime implicants} and the two \omterm{def:b1:combinational-circuits:implicant}{essential} ones.}\label{out:b1:combinational-circuits:qm}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=9mm, y=-7mm, font=\small]
+\foreach \lab [count=\j from 0] in {00,01,11,10} {\node at (\j,-1) {\lab}; \node at (-1,\j) {\lab};}
+\node at (-1,-1) {\scriptsize $ab \backslash cd$};
+\foreach \i/\row in {0/{1,1,0,1}, 1/{0,1,1,1}, 2/{0,0,0,1}, 3/{1,1,0,1}}
+  \foreach \v [count=\j from 0] in \row {\draw[gray] (\j-0.5,\i-0.5) rectangle (\j+0.5,\i+0.5);
+    \ifnum\v=1 \node at (\j,\i) {1};\fi}
+\draw[omDef, very thick, rounded corners=2mm] (2.65,-0.4) rectangle (3.35,3.4);
+\draw[omThm, very thick, rounded corners=2mm] (-0.4,-0.65) -- (-0.4,0.35) -- (1.4,0.35) -- (1.4,-0.65);
+\draw[omThm, very thick, rounded corners=2mm] (-0.4,3.65) -- (-0.4,2.65) -- (1.4,2.65) -- (1.4,3.65);
+\draw[black!70, very thick, dashed, rounded corners=2mm] (0.62,0.62) rectangle (2.38,1.38);
+\node[anchor=west, align=left, font=\scriptsize] at (4,1.5) {\textcolor{omDef}{$cd'$: the column $10$}\\
+\textcolor{omThm}{$b'c'$: rows $00$ and $10$ wrap round}\\ $a'bd$ (dashed): covers 5 and 7};
+\end{tikzpicture}
+\par\smallskip{\small The map of \cref{out:b1:combinational-circuits:qm} covered by three \omterm{def:b1:combinational-circuits:implicant}{prime implicants}: $f = cd' +
+b'c' + a'bd$. The two \omterm{def:b1:combinational-circuits:implicant}{essential} ones leave the cells 5 and 7 bare; $a'bd$ covers both, where $a'c'd$ or $a'bc$ would
+cover only one.}
+\end{omfigure}
+
+A seven-segment display shows a digit with seven lit bars, named $a$ to $g$. Its \omterm{def:b1:combinational-circuits:mux}{decoder} takes the digit in four bits;
+the codes 10 to 15 never occur, and the don't-cares let the groups grow.
+
+\omoutput{code/bachelor-1/27-combinational-circuits/outputs/seven_segment.txt}{The seven segments, each simplified with
+the codes 10 to 15 as don't-cares, and checked on the ten digits. The variables are $abcd$, $a$ the high
+bit.}\label{out:b1:combinational-circuits:seven}
+
+\section{NAND alone is enough}\label{sec:b1:combinational-circuits:nand}
+
+\begin{definition}[Functionally complete set]\label{def:b1:combinational-circuits:complete}
+A set of Boolean operations is \emph{functionally complete}\index{functionally complete set} if every \omterm{def:b1:combinational-circuits:boolean-function}{Boolean function} of
+any number of variables can be computed by a circuit of gates from the set.
+\end{definition}
+
+The canonical forms show that $\{\text{NOT}, \text{AND}, \text{OR}\}$ is complete; by De Morgan, so are $\{\text{NOT},
+\text{AND}\}$ and $\{\text{NOT}, \text{OR}\}$.
+
+\begin{proposition}[NAND is complete]\label{prop:b1:combinational-circuits:nand}
+$\{\text{NAND}\}$ is \omterm{def:b1:combinational-circuits:complete}{functionally complete}.
+\end{proposition}
+
+\begin{proof}
+$x' = \text{NAND}(x, x)$ and $xy = \text{NAND}(x, y)'$, so NOT and AND are expressed with NAND, and $\{\text{NOT},
+\text{AND}\}$ is complete.
+\end{proof}
+
+\omcode{code/bachelor-1/27-combinational-circuits/listings/nand_only.py}{9}{23}{NOT, AND, OR and XOR from NAND
+gates}\label{lst:b1:combinational-circuits:nand}
+
+\omoutput{code/bachelor-1/27-combinational-circuits/outputs/nand_only.txt}{Each construction checked on its four
+inputs.}\label{out:b1:combinational-circuits:nand}
+
+\begin{omfigure}
+\begin{circuitikz}[font=\small]
+\node[nand port] (n) at (1.6,0) {};
+\coordinate (j) at ($(n.in 1)!0.5!(n.in 2)+(-0.35,0)$);
+\draw (j) -- ++(-0.5,0) node[left] {$x$}; \draw (j) |- (n.in 1); \draw (j) |- (n.in 2); \fill (j) circle (1.3pt);
+\draw (n.out) -- ++(0.3,0) node[right] {$x'$};
+\node at (1.4,-1.1) {NOT};
+\begin{scope}[xshift=43mm]
+\node[nand port] (a1) at (1.0,0) {}; \node[nand port] (a2) at (3.2,0) {};
+\draw (a1.in 1) -- ++(-0.4,0) node[left] {$x$}; \draw (a1.in 2) -- ++(-0.4,0) node[left] {$y$};
+\coordinate (k) at ($(a2.in 1)!0.5!(a2.in 2)+(-0.35,0)$);
+\draw (a1.out) -- (k); \draw (k) |- (a2.in 1); \draw (k) |- (a2.in 2); \fill (k) circle (1.3pt);
+\draw (a2.out) -- ++(0.3,0) node[right] {$xy$}; \node at (2.1,-1.1) {AND};
+\end{scope}
+\begin{scope}[xshift=96mm]
+\node[nand port] (o1) at (1.2,0.75) {}; \node[nand port] (o2) at (1.2,-0.75) {}; \node[nand port] (o3) at (3.2,0) {};
+\coordinate (p) at ($(o1.in 1)!0.5!(o1.in 2)+(-0.35,0)$); \coordinate (q) at ($(o2.in 1)!0.5!(o2.in 2)+(-0.35,0)$);
+\draw (p) -- ++(-0.4,0) node[left] {$x$}; \draw (p) |- (o1.in 1); \draw (p) |- (o1.in 2);
+\draw (q) -- ++(-0.4,0) node[left] {$y$}; \draw (q) |- (o2.in 1); \draw (q) |- (o2.in 2);
+\fill (p) circle (1.3pt) (q) circle (1.3pt);
+\draw (o1.out) -- ++(0.25,0) |- (o3.in 1); \draw (o2.out) -- ++(0.25,0) |- (o3.in 2);
+\draw (o3.out) -- ++(0.3,0) node[right] {$x + y$};
+\node at (2.0,-1.75) {OR, by De Morgan: $x + y = (x' y')'$};
+\end{scope}
+\end{circuitikz}
+\par\smallskip{\small NOT, AND and OR from NAND gates, as in \cref{lst:b1:combinational-circuits:nand}: one, two and
+three gates.}
+\end{omfigure}
+
+Not every set is complete. A function is \emph{monotone} if raising an input from 0 to 1 never lowers the output; AND
+and OR are monotone, and so is any circuit of AND and OR gates, by induction along the DAG. NOT is not monotone, so
+$\{\text{AND}, \text{OR}\}$ is not complete (\cref{exo:b1:combinational-circuits:10}). Sheffer showed in 1913 that one
+operation, the ``stroke'' now called NAND, suffices for all of Boolean algebra. In hardware a NAND gate is the
+cheapest: a few transistors used as switches, the physics of which belongs to the physics books.
+
+\begin{history}[Gates on a chip]
+% ledger: b1:7400, b1:7400-gates
+In the 1960s, gates stopped being wired one by one from separate parts and began to be made together on one chip of
+silicon, an integrated circuit. In 1966 Texas Instruments announced its 7400 series of such chips in cheap plastic
+packages. The 7400 itself holds four independent two-input NAND gates in a package of 14 pins: three for each gate,
+and two for the power supply. Circuits like those of this chapter were then built by wiring such chips together on a
+board.
+\end{history}
+
+\omimg{book3/sn7400n-nand-chip.jpg}{0.4\linewidth}{A 7400 chip in its plastic package with two rows of seven pins.
+Inside are the four NAND gates; the notch marks the end where pin 1 is. Photograph: Mister rf, CC BY-SA 4.0.}
+
+\section{Arithmetic and routing}\label{sec:b1:combinational-circuits:arithmetic}
+
+\begin{definition}[Full adder, ripple-carry adder]\label{def:b1:combinational-circuits:adder}
+A \emph{full adder}\index{full adder} adds three bits $a$, $b$ and a carry in $c$: its sum is $a \oplus b \oplus c$ and its
+carry out is $ab + c(a \oplus b)$, where $\oplus$ is XOR. A \emph{ripple-carry adder}\index{ripple-carry adder} of $n$
+bits chains $n$ full adders, the carry out of each feeding the carry in of the next.
+\end{definition}
+
+Subtraction comes free: in two's complement, $a - b = a + b' + 1$, where $b'$ inverts every bit; XOR gates with a control
+bit invert $b$ on demand, and the same bit is the first carry in.
+
+The carry is the trouble: bit $i$ cannot finish before bit $i - 1$, and the last carry waits for the whole chain. The way
+out is to compute every carry directly from the inputs. Write $g_i = a_i b_i$ (bit $i$ \emph{generates} a carry) and
+$p_i = a_i \oplus b_i$ (it \emph{propagates} the carry it receives). Then $c_{i+1} = g_i + p_i c_i$, and unrolling,
+\[ c_{i+1} = g_i + p_i g_{i-1} + p_i p_{i-1} g_{i-2} + \dots + p_i p_{i-1} \cdots p_0 c_0. \]
+
+\begin{definition}[Generate and propagate, carry-lookahead adder]\label{def:b1:combinational-circuits:lookahead}
+The signals $g_i$ and $p_i$ are the \emph{generate and propagate signals}\index{generate and propagate signals}. A
+\emph{carry-lookahead adder}\index{carry-lookahead adder} computes the carries of a block of bits by the unrolled formula,
+with one level of AND gates and one OR gate per carry.
+\end{definition}
+
+\omcode{code/bachelor-1/27-combinational-circuits/listings/adders.py}{23}{35}{A 4-bit lookahead
+block}\label{lst:b1:combinational-circuits:lookahead}
+
+\begin{omfigure}
+\begin{tikzpicture}[b/.style={draw, minimum width=11mm, minimum height=9mm, font=\small}, >=stealth, font=\scriptsize]
+\foreach \i in {0,...,3} {\node[b] (fa\i) at ({-1.5*\i},0) {FA}; \node at ({-1.5*\i},0.85) {$a_\i\ b_\i$};
+  \draw[->] ({-1.5*\i},0.65) -- (fa\i.north); \draw[->] (fa\i.south) -- ++(0,-0.4) node[below] {$s_\i$};}
+\foreach \i/\j in {0/1, 1/2, 2/3} \draw[->, omThm, thick] (fa\i.west) -- node[above] {$c_\j$} (fa\j.east);
+\draw[<-, omThm, thick] (fa0.east) -- ++(0.6,0) node[right] {$c_0$};
+\draw[->, omThm, thick] (fa3.west) -- ++(-0.6,0) node[left] {$c_4$};
+\node at (-2.25,-1.6) {ripple: the carry crosses every stage};
+\begin{scope}[xshift=38mm]
+\node[b, minimum width=34mm] (gp) at (1.6,0.9) {$g_i = a_i b_i$, $p_i = a_i \oplus b_i$};
+\node[b, minimum width=34mm, fill=omDef!12] (cl) at (1.6,-0.5) {carries $c_1 \dots c_4$ at once};
+\node[b, minimum width=34mm] (s) at (1.6,-1.9) {$s_i = p_i \oplus c_i$};
+\draw[->] (gp) -- (cl); \draw[->] (cl) -- (s); \draw[<-] (cl.east) -- ++(0.5,0) node[right] {$c_0$};
+\draw[<-] (gp.north) -- ++(0,0.35) node[above] {$a_3 \dots a_0$, $b_3 \dots b_0$};
+\node[below=1mm] at (s.south) {4 gate delays};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Left, a 4-bit \omterm{def:b1:combinational-circuits:adder}{ripple-carry adder}: each \omterm{def:b1:combinational-circuits:adder}{full adder} waits for the carry of the one before. Right, a
+lookahead block: generate and propagate in one gate delay, all four carries in two more, the sums in one more.}
+\end{omfigure}
+
+\begin{definition}[Multiplexer, decoder]\label{def:b1:combinational-circuits:mux}
+A $2^k$-to-1 \emph{multiplexer}\index{multiplexer} has $2^k$ data inputs and $k$ select inputs, and outputs the data input
+whose number the select inputs spell. A $k$-to-$2^k$ \emph{decoder}\index{decoder} has $k$ inputs and $2^k$ outputs, of
+which exactly the one numbered by the inputs is 1.
+\end{definition}
+
+A 2-to-1 \omterm{def:b1:combinational-circuits:mux}{multiplexer} is $s' x_0 + s x_1$; a \omterm{def:b1:combinational-circuits:mux}{decoder} is one AND gate per \omterm{def:b1:combinational-circuits:canonical}{minterm}. \omterm{def:b1:combinational-circuits:mux}{Multiplexers} \emph{route} information:
+they choose which result goes on.
+
+\begin{definition}[Arithmetic and logic unit]\label{def:b1:combinational-circuits:alu}
+An \emph{arithmetic and logic unit}\index{arithmetic and logic unit} (ALU) computes, from two operands and an operation
+code, one of several results, chosen by \omterm{def:b1:combinational-circuits:mux}{multiplexers}, and \emph{flags} that describe it: $Z$ (zero), $N$ (negative, the
+top bit), $C$ (carry out) and $V$ (overflow in two's complement).
+\end{definition}
+
+\omcode{code/bachelor-1/27-combinational-circuits/listings/alu.py}{15}{33}{A 4-bit ALU: AND, OR, addition and
+subtraction}\label{lst:b1:combinational-circuits:alu}
+
+\omoutput{code/bachelor-1/27-combinational-circuits/outputs/alu.txt}{Checked against integer arithmetic on all 1024
+cases; $7 + 1$ overflows in signed 4-bit arithmetic, and $9 + 9$ carries out.}\label{out:b1:combinational-circuits:alu}
+
+Overflow happens when the two operands of the addition have the same sign and the result the other one; the circuit
+tests exactly that, on the top bits.
+
+\section{Propagation delay}\label{sec:b1:combinational-circuits:delay}
+
+\begin{definition}[Propagation delay, longest delay path]\label{def:b1:combinational-circuits:delay}
+Each gate takes a small time, its \emph{propagation delay}\index{propagation delay}, to update its output. The delay of a
+circuit is the largest total delay along a path from an input to an output, a \emph{longest delay path}\index{longest
+delay path}. With every gate counted as one delay, as in the simulator, it is the longest path of the DAG, counted in
+gates.
+\end{definition}
+
+\omoutput{code/bachelor-1/27-combinational-circuits/outputs/adders.txt}{Sizes and delays of the two adders, both checked
+on every input for 4 and 8 bits.}\label{out:b1:combinational-circuits:adders}
+
+The \omterm{def:b1:combinational-circuits:adder}{ripple-carry adder} has delay $2n + 1$ (\cref{exo:b1:combinational-circuits:11}): linear in the number of bits. A
+lookahead block has delay 4 whatever the carry in, at the price of more gates, and of gates with many inputs, which real
+hardware limits. Rippling between blocks of four still costs two delays per block. Lookahead applied again to the blocks,
+in a tree of lookahead units, brings the delay to $O(\log n)$; processors add 64 bits that way, within a clock cycle.
+
+\section{Exercises}\label{sec:b1:combinational-circuits:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:combinational-circuits:1}
+Give the truth table of the circuit $f = \text{OR}(\text{AND}(a, \text{NOT}(b)), \text{AND}(b, c))$, and its delay.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:combinational-circuits:2}
+The function $f(a, b, c)$ is 1 exactly when an odd number of its inputs are 1. Write its \omterm{def:b1:combinational-circuits:canonical}{canonical sum of products}, and
+explain why no Karnaugh grouping shortens it.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:combinational-circuits:3}
+Using the map of \cref{out:b1:combinational-circuits:qm}, find another minimal sum of products, if there is one, and say
+why every minimal sum has at least three products.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:combinational-circuits:4}
+What does the ALU of \cref{lst:b1:combinational-circuits:alu} output for the operation code 11 with $a = 3$ and $b = 9$?
+Give the four flags, and interpret them as unsigned and as signed numbers.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:combinational-circuits:5}
+A student labels the columns of a \omterm{def:b1:combinational-circuits:karnaugh}{Karnaugh map} $00, 01, 10, 11$ and the rows likewise, then groups the two middle 1s of
+the row $ab = 00$ of a function that is 1 on the \omterm{def:b1:combinational-circuits:canonical}{minterms} 1 and 2 only, writing $a'b'$ times ``whatever $cd$ is''. What
+went wrong, and what is the correct sum?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:combinational-circuits:6}
+This \omterm{def:b1:combinational-circuits:adder}{full adder} assembles its carry differently. On which row is it wrong, and why on that row only?
+\omcode{code/bachelor-1/27-combinational-circuits/listings/exo_carry_xor.py}{7}{10}{Another carry}
+\omoutput[2-2]{code/bachelor-1/27-combinational-circuits/outputs/exo_carry_xor.txt}{Every row checked.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:combinational-circuits:7}
+Build a 2-to-1 and a 4-to-1 \omterm{def:b1:combinational-circuits:mux}{multiplexer} in the simulator, and test them on every input.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:combinational-circuits:8}
+Build a circuit that outputs $a < b$ for two 4-bit unsigned numbers, test it on every input, and give its delay.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:combinational-circuits:9}
+Count the monotone \omterm{def:b1:combinational-circuits:boolean-function}{Boolean functions} of $n$ variables for $n \leq 3$, by program and by argument for $n \leq 2$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:combinational-circuits:10}
+Prove that $\{\text{NOR}\}$ is \omterm{def:b1:combinational-circuits:complete}{functionally complete}, and that $\{\text{AND}, \text{OR}\}$ is not.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:combinational-circuits:11}
+Prove that in the simulator's model the $n$-bit \omterm{def:b1:combinational-circuits:adder}{ripple-carry adder} has delay $2n + 1$ for $n \geq 1$, and the lookahead
+block delay 4.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:combinational-circuits:12}
+Build a 4-bit \omterm{def:b1:pointers-and-arrays:array}{array} multiplier from AND gates and \omterm{def:b1:combinational-circuits:adder}{full adders}, test it on all 256 inputs, and give its size and delay.
+\end{exercise}
+
+\section{Problem: An arithmetic unit from one kind of gate}\label{sec:b1:combinational-circuits:problem}
+
+\begin{problem}[{Weekend problem --- An arithmetic unit from one kind of gate}]\label{pb:b1:combinational-circuits:1}
+A factory makes only NAND gates. How many does a half adder need? The program tries every circuit of $k$ two-input NAND
+gates, for $k = 1, 2, \dots$; each signal is kept as its truth table on the four rows, a number of four bits.
+\omcode{code/bachelor-1/27-combinational-circuits/listings/min_nand.py}{10}{27}{Every NAND circuit of $k$
+gates}\label{lst:b1:combinational-circuits:min-nand}
+\omoutput{code/bachelor-1/27-combinational-circuits/outputs/min_nand.txt}{The number of circuits tried, and the first
+half adder found; signals 0 and 1 are $a$ and $b$, signal $i + 2$ the output of gate $i$.}\label{out:b1:combinational-circuits:min-nand}
+
+\medskip\noindent\textbf{Part I --- Functions and forms.}
+\begin{enumerate}
+\item Give the truth tables of the sum and the carry of a half adder.
+\item Write their canonical sums of products.
+\item Why are \code{0b0011} and \code{0b0101} the truth tables of $a$ and $b$?
+\item How does \code{\textasciitilde(x & y) & 0b1111} compute a NAND on the four rows at once?
+\item How many \omterm{def:b1:combinational-circuits:boolean-function}{Boolean functions} of two variables are there? How many can a single NAND gate of $a$ and $b$ compute?
+\item Why is a circuit of gates with no loop a \omterm{def:b1:combinational-circuits:combinational}{combinational circuit}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Translations into NAND.}
+\begin{enumerate}[resume]
+\item Translate the carry $ab$ into NAND gates, and count them.
+\item Translate the sum $a \oplus b$ with four NAND gates, and check it on the four rows.
+\item Read the circuit found for $k = 5$ and explain each gate.
+\item Why may the two outputs share a gate?
+\item Translate a \omterm{def:b1:combinational-circuits:adder}{full adder} into NAND gates by the same method, and count them.
+\item What happens to the delay when each gate is replaced by its NAND translation?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Adders and delays.}
+\begin{enumerate}[resume]
+\item Read the sizes and delays of \cref{out:b1:combinational-circuits:adders}.
+\item Why is the delay of the \omterm{def:b1:combinational-circuits:adder}{ripple-carry adder} linear and that of a lookahead block constant?
+\item Why do 8-bit lookahead adders have delay 6, and 64-bit ones 34?
+\item How many inputs does the largest AND gate of a lookahead block have? What does that cost in hardware?
+\item How many cases does the exhaustive check of the 8-bit adders try, and why is that a proof for 8 bits?
+\item Why can the 64-bit adders not be checked the same way?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The smallest half adder.}
+\begin{enumerate}[resume]
+\item Show that the number of circuits of $k$ gates is $\prod_{i=0}^{k-1} \binom{i + 3}{2}$, and check it against the
+output.
+\item Why may a gate take the same signal twice?
+\item Why do circuits with unused gates not spoil the search?
+\item Why does the search for $k = 4$ prove that four gates are not enough?
+\item Could a gate with three inputs, or a circuit with loops, do better? Does the search say?
+\item State the named result, \emph{the half adder needs exactly five NAND gates}.
+\end{enumerate}
+\end{problem}

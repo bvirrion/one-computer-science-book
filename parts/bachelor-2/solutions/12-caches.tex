@@ -1,0 +1,215 @@
+% Solutions of Book 4, chapter 12 (caches).
+\section*{Chapter \ref{ch:b2:caches} --- Caches and the Memory Hierarchy}
+
+\begin{solution}{exo:b2:caches:1}
+$128 / 16 = 8$ sets: 4 offset bits (bits 3 to 0), 3 index bits (bits 6 to 4), and the tag is the address shifted
+right by 7. The trace:
+\code{0x00} set 0, tag 0, \omterm{def:b2:caches:cache}{miss}; \code{0x04} and \code{0x08} \omterm{def:b2:caches:cache}{hit} in the same line; \code{0x10} set 1, tag 0, \omterm{def:b2:caches:cache}{miss};
+\code{0x80} set 0, tag 1, \omterm{def:b2:caches:cache}{miss}, evicting tag 0; \code{0x00} \omterm{def:b2:caches:cache}{miss}, evicting tag 1; \code{0x14} set 1, tag 0, \omterm{def:b2:caches:cache}{hit};
+\code{0x90} set 1, tag 1, \omterm{def:b2:caches:cache}{miss}; \code{0x1C} set 1, tag 0, \omterm{def:b2:caches:cache}{miss}; \code{0x84} set 0, tag 1, \omterm{def:b2:caches:cache}{miss}. Three \omterm{def:b2:caches:cache}{hits} and seven
+misses, \code{MHHMMMHMMM}, as the chapter's tests check. The \omterm{def:b2:caches:three-c}{compulsory} misses are the first accesses to the four
+lines \code{0x00}, \code{0x10}, \code{0x80} and \code{0x90}; the three others are conflicts, since only four
+distinct lines are used and the \omterm{def:b2:caches:cache}{cache} has eight.
+\end{solution}
+
+\begin{solution}{exo:b2:caches:2}
+The 512-byte array is 16 lines. With the correct mapping they go to 16 different sets of the 32: the first reading
+misses once per line (16 misses, 112 \omterm{def:b2:caches:cache}{hits}) and the second \omterm{def:b2:caches:cache}{hits} everywhere. With the wrong mapping the index is the
+top 5 bits of the address, the same, 2, for every address of the array: all 16 lines compete for one set of one
+line. Each line still serves its 8 words in a row, so each reading misses 16 times: 32 misses. Taking the index from
+the low bits above the offset spreads consecutive lines over all the sets, which is exactly what \omterm{def:b2:caches:locality}{spatial locality}
+needs; the high bits change only between distant regions of memory.
+\end{solution}
+
+\begin{solution}{exo:b2:caches:3}
+\omcode{code/bachelor-2/12-caches/exercises/flush.py}{4}{11}{Writes still owed by a \omterm{def:b2:caches:write}{write-back} \omterm{def:b2:caches:cache}{cache}}
+Ten stores to one word in a \omterm{def:b2:caches:write}{write-back}, \omterm{def:b2:caches:write}{write-allocate} \omterm{def:b2:caches:cache}{cache}: the first misses and brings the line, marked dirty;
+the nine others \omterm{def:b2:caches:cache}{hit}. Nothing is written to memory until the line is evicted or the \omterm{def:b2:caches:cache}{cache} emptied: one write in all,
+which \code{total_writes} counts. A \omterm{def:b2:caches:write}{write-through} \omterm{def:b2:caches:cache}{cache} writes memory ten times. The tests check both counts.
+\end{solution}
+
+\begin{solution}{exo:b2:caches:4}
+$32\,768 / (8 \times 64) = 64$ sets: 6 offset bits, 6 index bits, $32 - 12 = 20$ tag bits. The L2 of
+\cref{out:b2:caches:getconf} has $2\,097\,152 / (16 \times 64) = 2048$ sets: 6 offset bits, 11 index bits, and with
+32-bit addresses $32 - 17 = 15$ tag bits per line (more on the laptop itself, whose addresses are wider).
+\end{solution}
+
+\begin{solution}{exo:b2:caches:5}
+8 sets, 4 offset bits, index bits 6 to 4, tag the address shifted right by 7. Every address of the trace has index 0,
+\code{0x084} included ($\code{0x84} = 1000\,0100_2$), with tags 0, 2, 0, 4, 2, 1, 0, 6, 0. Set 0, \omterm{def:b2:caches:lru}{least recently
+used} first: $[0]$, $[0, 2]$, $[2, 0]$ (\omterm{def:b2:caches:cache}{hit}), $[0, 4]$, $[4, 2]$, $[2, 1]$, $[1, 0]$, $[0, 6]$, $[6, 0]$ (\omterm{def:b2:caches:cache}{hit}): two \omterm{def:b2:caches:cache}{hits}.
+In the \omterm{def:b2:caches:mapping}{direct-mapped cache} of 256 bytes (16 sets, index bits 7 to 4), \code{0x000}, \code{0x100}, \code{0x200} and
+\code{0x300} all have index 0 and \code{0x084} index 8: every access evicts the one before in set 0, and all nine
+\omterm{def:b2:caches:cache}{miss}. The 2-way \omterm{def:b2:caches:cache}{cache} does better because the trace alternates between two lines of the same set, which it can hold
+together.
+\end{solution}
+
+\begin{solution}{exo:b2:caches:6}
+\omcode{code/bachelor-2/12-caches/listings/exo_colsums.c}{26}{33}{Column sums, row by row}
+\omoutput{code/bachelor-2/12-caches/outputs/exo_colsums.txt}{One run on the author's laptop, $8192 \times 4096$
+grid.}
+The slow version walks a column, 16 KiB from one element to the next: by \cref{prop:b2:caches:traversal}, with 8192
+rows, every load misses in L1. The fast one walks the grid in the order it is stored, and the 4096 running sums,
+32 KiB, stay in the L1 between rows. The same sums come out about thirty times faster.
+\end{solution}
+
+\begin{solution}{exo:b2:caches:7}
+\omcode{code/bachelor-2/12-caches/listings/three_c.py}{5}{23}{Classifying misses with a shadow \omterm{def:b2:caches:cache}{cache}}
+A line seen for the first time is \omterm{def:b2:caches:three-c}{compulsory}, whatever the shadow did. Otherwise, if the shadow, \omterm{def:b2:caches:mapping}{fully associative}
+with the same number of lines, also missed, the \omterm{def:b2:caches:cache}{miss} is one of capacity; if it \omterm{def:b2:caches:cache}{hit}, the mapping alone caused the
+\omterm{def:b2:caches:cache}{miss}. Each \omterm{def:b2:caches:cache}{miss} goes to exactly one branch, so the counts add up to the misses; the tests check it on random traces
+for four associativities, and \cref{out:b2:caches:three-c} uses it.
+\end{solution}
+
+\begin{solution}{exo:b2:caches:8}
+First, a \omterm{def:b2:caches:mapping}{fully associative} LRU \omterm{def:b2:caches:cache}{cache} of $C$ lines always holds the (at most $C$) distinct lines most recently used.
+By induction on the accesses: a \omterm{def:b2:caches:cache}{hit} only reorders them; a \omterm{def:b2:caches:cache}{miss} inserts the new line, which becomes the most recent,
+and if the \omterm{def:b2:caches:cache}{cache} was full, evicts the \omterm{def:b2:caches:lru}{least recently used} of the $C$ it held, which is the one that is no longer
+among the $C$ most recent.
+Now let access $t$ be to $\ell_{t \bmod (C+1)}$. For $t \le C$, the line is used for the first time: a \omterm{def:b2:caches:cache}{miss}. For
+$t > C$, the accesses $t - C, \dots, t - 1$ are to $C$ distinct lines, all different from $\ell_{t \bmod (C+1)}$,
+since any $C + 1$ consecutive accesses of the sweep are to distinct lines. The \omterm{def:b2:caches:cache}{cache} holds exactly those $C$ lines,
+so access $t$ misses.
+Over $C + 2$ lines, or any number more than $C$, the same argument applies: the last $C$ accesses are to $C$ distinct
+lines other than the requested one. Over $C$ lines, the first $C$ accesses \omterm{def:b2:caches:cache}{miss} and all others \omterm{def:b2:caches:cache}{hit}, since the whole
+sweep fits.
+\end{solution}
+
+\begin{solution}{exo:b2:caches:9}
+\omcode{code/bachelor-2/12-caches/listings/transpose.c}{23}{30}{The tiled transpose}
+\omoutput{code/bachelor-2/12-caches/outputs/transpose.txt}{One run on the author's laptop, $8192 \times 8192$
+\code{int}.}
+The plain version reads $a$ by rows but writes $b$ by columns, 32 KiB apart: every write is to a new line, and with
+8192 rows, each line of $b$ is evicted before the next element of it is written, by
+\cref{prop:b2:caches:traversal}. Exchanging the loops only moves the problem to the reads. A tile of $t \times t$ uses
+$t$ lines of $a$ and $t$ lines of $b$, each reused $t$ times while it stays in \omterm{def:b2:caches:cache}{cache}; tiles of 8 make the transpose
+about seven times faster here. A likely reason why larger tiles do worse: rows 32 KiB apart are a multiple of the L1's 4 KiB of sets
+($64 \times 64$ bytes), so all the lines of a tile's column of $b$ fall in the same set of the L1, and 12 ways hold
+the 8 lines of a tile of 8 but not the 16 of a tile of 16. Those tiles still gain from the L2.
+\end{solution}
+
+\begin{solution}{exo:b2:caches:10}
+A column steps by $4N$ bytes, that is by $s = 4N / B$ lines, and the line of row $i$ has index $(i s + c) \bmod C$
+for a constant $c$. If $s \ge C$, every row of the column falls in the same set; otherwise the column visits $C / s$
+sets in turn (all powers of two). So a column uses $u = \min(N, \max(1, C B / (4N)))$ sets.
+The line of $(i, j)$ is next needed at $(i, j + 1)$, which lies in the same line when $B \ge 8$. Between the two
+accesses, the column order reads rows $i + 1, \dots, N - 1$ of column $j$ and rows $0, \dots, i - 1$ of column
+$j + 1$. If $u < N$, rows $i + u$ or $i - u$ (one of them exists, since $u \le N / 2$) share the set of row $i$, and
+their line, read in between, evicts it: every read misses. If $u = N$, every row has its own set, and the column order
+misses only on the $4N^2 / B$ first uses. Now $u = N$ means $C B \ge 4N^2$: the \omterm{def:b2:caches:cache}{cache} must be as large as the whole
+matrix. For the chapter's example, $C B = 1$ KiB and $4N^2 = 4$ KiB, so every read misses. A \omterm{def:b2:caches:mapping}{fully associative cache}
+needs only $C \ge N$ lines (\cref{prop:b2:caches:traversal}), one column's worth: the direct mapping costs a factor
+$4N / B$ in size on this access pattern.
+\end{solution}
+
+\begin{solution}{exo:b2:caches:11}
+\omoutput{code/bachelor-2/12-caches/outputs/run_block_3c.txt}{The same misses, split by the classifier of
+\cref{exo:b2:caches:7}.}
+The \omterm{def:b2:caches:cache}{cache} has 64 lines in 16 sets; a row of either matrix is 512 bytes, 8 lines, so going down a column adds 8 to
+the index modulo 16: a column uses only 2 sets, 8 lines.
+Tile 1 is the plain transpose: $a$ is read by rows (1024 misses, one per line) and $b$ written by columns, each
+column touching 128 lines, more than the \omterm{def:b2:caches:cache}{cache} holds, so every write misses: $1024 + 16\,384 = 17\,408$. With tiles of
+$t \le 8$, the writes into one line of $b$ come $t$ at a time, and the misses of $b$ fall to about $16\,384 / t$:
+$9216 = 1024 + 8192$ for $t = 2$. For $t = 4$ and 8, the lines of a tile of $a$ and of the matching tile of $b$ fall in
+the same sets for some tiles, and the classifier finds 288, then 1824 conflict misses. At $t = 16$ a tile's column of $b$
+has 16 lines in 2 sets of 4 ways: each line is evicted before its next write, and everything misses again, now as
+conflicts, since a \omterm{def:b2:caches:mapping}{fully associative cache} would hold the tile. The least possible is the \omterm{def:b2:caches:three-c}{compulsory} count, every
+line of both matrices once: $2 \times 65\,536 / 64 = 2048$, $0.125$ per element. Tile 8 is the best here, at 4896.
+\end{solution}
+
+\begin{solution}{exo:b2:caches:12}
+Without L2, $\mathrm{AMAT} = 1 + 0.05 \times 100 = 6$\,ns. With an L2 of local \omterm{def:b2:caches:cache}{miss} ratio $m_2$,
+$\mathrm{AMAT} = 1 + 0.05\,(4 + 100\,m_2)$, lower than 6 if and only if $4 + 100\,m_2 < 100$, that is
+$m_2 < 0.96$: the L2 pays for itself as soon as it catches more than 4\,\% of the L1's misses. With $m_2 = 0.25$,
+$\mathrm{AMAT} = 1 + 0.05 \times 29 = 2.45$\,ns. Adding an L3 replaces the term $100\,m_2$ by $m_2(15 + 100\,m_3)$,
+lower if and only if $m_3 < 0.85$. With $m_3 = 0.4$:
+$\mathrm{AMAT} = 1 + 0.05\,(4 + 0.25\,(15 + 40)) = 1 + 0.05 \times 17.75 = 1.8875$\,ns. The three AMATs are 6, 2.45
+and about 1.89\,ns: each level gains less than the one before, because it only acts on what the levels above it \omterm{def:b2:caches:cache}{miss}.
+\end{solution}
+
+\begin{solution}{pb:b2:caches:1}
+\textbf{1.} Nine reads per output pixel, and $(N - 2)^2$ output pixels: $9(N - 2)^2$, that is
+$9 \times 254^2 = 580\,644$ for $N = 256$.
+
+\textbf{2.} Rows $y - 1$, $y$ and $y + 1$. Row $y - 1$ read rows $y - 2$, $y - 1$ and $y$: two of the three were
+already read.
+
+\textbf{3.} A line of input row $r$ is read for output rows $r - 1$, $r$ and $r + 1$, three consecutive rows. Between
+two consecutive uses, at output pixel $x$ of one row and output pixel $x$ of the next, the blur reads, at each column
+position, three lines: those of three rows to the right of $x$ in the first output row and to its left in the next.
+So fewer than three rows' worth of distinct lines, plus a few at the ends, come in between. If the \omterm{def:b2:caches:cache}{cache} holds three
+rows, LRU keeps the line, and only its first use misses.
+
+\textbf{4.} Every line misses once, so there are $N^2 / 16$ misses for $N^2$ pixels of the image: one every 16
+pixels, a \omterm{def:b2:caches:cache}{miss} ratio of $1/16$ per pixel; since each pixel is read about nine times, $1/144$ per read.
+
+\textbf{5.} A row is $256 \times 4 = 1024$ bytes, 16 lines; three rows are 48 lines, less than the 64 of a 4 KiB
+\omterm{def:b2:caches:cache}{cache}. The 16 lines of a row fall in the 16 sets, one each, so three rows put 3 lines in each 4-way set: they fit.
+
+\textbf{6.} One column of output reads three columns of input over all $N$ rows: at least one line per row, 256
+lines, and two per row where $x - 1$ or $x + 1$ is in another line. The \omterm{def:b2:caches:cache}{cache} has 64 lines: the lines of the first
+rows are gone when the next column needs them.
+
+\textbf{7.} $9 \times 254^2 = 580\,644$, the simulator's figure.
+
+\textbf{8.} The image is $256^2 \times 4 / 64 = 4096$ lines, and the row order misses once on each, by question 3.
+The last column divides by the $254^2$ output pixels, not by the $256^2$ pixels read: $4096 / 64\,516 = 0.0635$,
+against $4096 / 65\,536 = 1/16$.
+
+\textbf{9.} Output pixel $(y, x)$ comes after $(y - 1, x)$, which read rows $y - 2$ to $y$; the lines of rows
+$y - 1$ and $y$ are still in \omterm{def:b2:caches:cache}{cache}, and those of row $y + 1$ are new. That is one line if $x - 1$, $x$ and $x + 1$ are
+in the same line, that is $x \bmod 16 \notin \{0, 15\}$, and two otherwise: on average $1 + 2/16 = 1.125$ misses per
+pixel. Exactly: each of the 224 columns of the first kind misses $3 + 253 = 256$ times (three rows at $y = 1$, then
+one per row), each of the 30 others 512 times: $224 \times 256 + 30 \times 512 = 72\,704$, the simulator's count, and
+$72\,704 / 64\,516 = 1.1269$.
+
+\textbf{10.} 4096 of them are \omterm{def:b2:caches:three-c}{compulsory}, the first use of each line. The others are capacity misses: the line of
+$(y, x)$ is next needed one column later, after the lines of about 255 other rows, and a \omterm{def:b2:caches:mapping}{fully associative cache} of
+64 lines would not keep it either.
+
+\textbf{11.} No: by \cref{prop:b2:caches:traversal}, a column needs $C \ge N$, here 256 lines, and the \omterm{def:b2:caches:cache}{cache} has 64.
+
+\textbf{12.} 4096: every line must be read at least once, and the row order reaches that bound.
+
+\textbf{13.} Three: the strip's own line, and the lines holding $x_0 - 1$ and $x_0 + 16$.
+
+\textbf{14.} $3N$ misses per strip, $N / 16$ strips, less the missing left neighbour of the first strip and right
+neighbour of the last, $N$ lines each: $3N^2/16 - 2N = 12\,288 - 512 = 11\,776$.
+
+\textbf{15.} Six lines per row of a strip of 64 (four of its own, two neighbours): $6N \times N/64 - 2N =
+6144 - 512 = 5632$, and $5632 / 64\,516 = 0.0873$.
+
+\textbf{16.} $(w/16 + 2) N$ misses per strip of $w N$ pixels, so $(w/16 + 2)/w = 1/16 + 2/w$ per pixel, which tends to
+$1/16$, the row order's ratio, as $w$ grows.
+
+\textbf{17.} Three rows of the strip need $3(w/16 + 2)$ lines; with 64 lines, $w/16 + 2 \le 21$, so $w \le 304$.
+But rows 16 lines apart start in the same set: the $w/16 + 2$ consecutive lines of a row occupy as many consecutive
+sets, and three rows put three lines in each of them only if a row covers at most 16 sets. A row of more than 16
+lines puts 6 lines in some 4-way sets. The widest strip is therefore $w/16 + 2 = 16$, $w = 224$ pixels.
+
+\textbf{18.} Each strip also loads the lines of its two neighbours, which the neighbouring strips load again. A strip
+of 16 pays two extra lines for one useful one, $3/16$ per pixel; a strip of 64 two for four, $6/64$.
+
+\textbf{19.} $4096 \times 4 = 16$ KiB per row; three rows are 48 KiB, exactly the L1, which also holds the output
+and the stack, so the L1 is just short. A column's lines, 4096 of 64 bytes and more where neighbours cross a line,
+are 256 to 512 KiB: far more than the L1, much less than the 2 MiB L2.
+
+\textbf{20.} $72\,704 / 4096 \approx 17.8$ times more misses; measured, $483.7 / 53.7 \approx 9.0$ times slower.
+
+\textbf{21.} The simulator has one \omterm{def:b2:caches:cache}{cache} of 4 KiB and counts every \omterm{def:b2:caches:cache}{miss} as a trip to memory. On the laptop the column
+order's lines fit in the L2: its misses cost the L2's few nanoseconds, not a trip to memory. Both orders also pay the
+same arithmetic, which dilutes the ratio, and the processor overlaps independent misses.
+
+\textbf{22.} Measured: rows 53.7, strips of 64 69.3, strips of 16 170.9, columns 483.7\,ms. Predicted per pixel:
+$0.0635 < 0.0873 < 0.1825 < 1.1269$. The order is the same.
+
+\textbf{23.} $4094^2 \approx 16.8$ million pixels: about 3.2\,ns per pixel in row order, 28.9\,ns in column order, a
+difference of about 25.7\,ns. The column order also writes its output down a column, so it misses about $1.125$ times
+per pixel on the reads and once on the writes: about 12\,ns per \omterm{def:b2:caches:cache}{miss}, between the L2's and the L3's plateaus of
+\cref{out:b2:caches:sweep}. It is an estimate: overlap and prefetching blur it.
+
+\textbf{24.} In row order the blur misses once every 16 pixels, a predicted \omterm{def:b2:caches:cache}{miss} ratio of $1/16$, the least any order
+can reach; the column order misses more than once per pixel ($1.127$ in the simulator, about eighteen times more),
+strips of $w$ columns sit between at $1/16 + 2/w$; and on the laptop the row order is measured nine times faster than
+the column order, with the four measured times in the order of the predicted \omterm{def:b2:caches:cache}{miss} ratios.
+\end{solution}

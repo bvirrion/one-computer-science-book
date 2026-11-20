@@ -1,0 +1,206 @@
+% Solutions of Book 4, chapter 15 (threads-and-synchronisation).
+\section*{Chapter \ref{ch:b2:threads-and-synchronisation} --- Threads and Synchronisation}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:1}
+Each \omterm{def:b2:threads-and-synchronisation:thread}{thread} has 4 steps, so there are $\binom{8}{4} = 70$ schedules (\cref{prop:b2:threads-and-synchronisation:interleavings}).
+The final value is 4, 3 or 2. It is 4 when no load is overwritten, as when A runs its four steps and then B its four.
+It is 3 when exactly one update is lost: A loads 0, B loads 0, A stores 1, B stores 1, then A loads 1 and stores 2, B
+loads 2 and stores 3. It is 2 when A loads 0, B runs both its increments (\code{x} becomes 2), A stores 1, then A
+loads 1 and stores 2. It cannot be 1: every store writes at least 1, so a \omterm{def:b2:threads-and-synchronisation:thread}{thread}'s second load, which follows its own
+first store, reads at least 1, and its last store writes at least 2; the final value is some \omterm{def:b2:threads-and-synchronisation:thread}{thread}'s last store. The explorer, on \code{counter(2)}, counts 6 schedules
+giving 4, 32 giving 3 and 32 giving 2.
+\end{solution}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:2}
+The refusal returns with the mutex still locked: the next call to \code{withdraw} waits for it forever, in the same
+\omterm{def:b2:threads-and-synchronisation:thread}{thread}, which nothing will ever wake. First fix: unlock before every \code{return}, here with an
+\code{pthread_mutex_unlock(&m)} before \code{return 0}. Second fix: a single exit, \code{int ok = amount <= balance; if
+(ok) balance -= amount;} and one unlock before \code{return ok}. In C++ a \code{std::lock_guard} makes the bug
+impossible, since its \omterm{def:b2:cpp-classes-raii:constructor}{destructor} unlocks on every path (\cref{exo:b2:threads-and-synchronisation:3}).
+\end{solution}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:3}
+\omcode{code/bachelor-2/15-threads-and-synchronisation/exercises/safe_counter.hpp}{7}{33}{\code{SafeCounter}}
+Each member takes the \omterm{def:b2:threads-and-synchronisation:lock}{lock} for its whole body, so \code{take}'s test and subtraction form one \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical section}: two
+\omterm{def:b2:threads-and-synchronisation:thread}{threads} cannot both see 5 and both take 5. The early \code{return false} unlocks through the guard's \omterm{def:b2:cpp-classes-raii:constructor}{destructor}. The
+mutex is \code{mutable} so that the \code{const} member \code{get} can \omterm{def:b2:threads-and-synchronisation:lock}{lock} it. The test runs 8 \omterm{def:b2:threads-and-synchronisation:thread}{threads}, each adding 2
+and taking 1 ten thousand times, and finds 80\,000.
+\end{solution}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:4}
+Two \omterm{def:b2:threads-and-synchronisation:thread}{threads} of 5 steps: $\binom{10}{5} = 252$. Three \omterm{def:b2:threads-and-synchronisation:thread}{threads} of 2 steps: choose the positions of the first \omterm{def:b2:threads-and-synchronisation:thread}{thread}'s
+steps, then of the second's among those left: $\binom{6}{2}\binom{4}{2} = 15 \times 6 = 90$. In general, $k$ \omterm{def:b2:threads-and-synchronisation:thread}{threads}
+of $n_1, \dots, n_k$ steps have the multinomial number
+$\frac{(n_1 + \dots + n_k)!}{n_1! \cdots n_k!}$ of \omterm{def:b2:threads-and-synchronisation:interleaving}{interleavings}: each arrangement of the $n = \sum n_i$ positions
+among the \omterm{def:b2:threads-and-synchronisation:thread}{threads} is one \omterm{def:b2:threads-and-synchronisation:interleaving}{interleaving}, and there are $n!$ orders of $n$ distinct steps, of which only one in
+$n_1! \cdots n_k!$ keeps every \omterm{def:b2:threads-and-synchronisation:thread}{thread} in its order. The test checks $9!/(3!\,3!\,3!) = 1680$.
+\end{solution}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:5}
+\omoutput{code/bachelor-2/15-threads-and-synchronisation/outputs/sem_outcomes.txt}{The explorer on the program's
+model.}
+Order the five prints. \omterm{def:b2:threads-and-synchronisation:thread}{Thread} one prints A, C, E in that order and \omterm{def:b2:threads-and-synchronisation:thread}{thread} two B then D. \code{D} comes after
+\code{post(s)}, so after A; \code{E} comes after \code{wait(t)}, which needs \code{post(t)}, so after D. Hence E is
+last, and A, B, C, D appear in any order with A before C, B before D and A before D. The orders of four letters with A
+before C and B before D are 6; the one with D before A, BDAC, is excluded. Five outputs remain. Each \code{printf}
+is treated as one step: the library \omterm{def:b2:threads-and-synchronisation:lock}{locks} the stream for each call, so letters never mix inside a call.
+\end{solution}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:6}
+\omcode{code/bachelor-2/15-threads-and-synchronisation/listings/cond_model.py}{19}{35}{A consumer: test, wait, wake,
+take}
+\omoutput{code/bachelor-2/15-threads-and-synchronisation/outputs/cond_model.txt}{\code{if} lets a consumer take from an
+empty buffer; \code{while} never does.}
+\code{wait} releases the \omterm{def:b2:threads-and-synchronisation:lock}{lock} and records the \omterm{def:b2:threads-and-synchronisation:thread}{thread} as waiting; a signal moves one waiter to the woken set; a woken
+\omterm{def:b2:threads-and-synchronisation:thread}{thread} must win the \omterm{def:b2:threads-and-synchronisation:lock}{lock} again. In the bad schedule C1 waits; the producer adds an item and signals, waking C1; but C2
+takes the \omterm{def:b2:threads-and-synchronisation:lock}{lock} first and takes the item. C1 then gets the \omterm{def:b2:threads-and-synchronisation:lock}{lock}, and with \code{if} goes straight on to take from an
+empty buffer. With \code{while}, C1 tests again, finds 0 and waits again, until the second item. The cause is that a
+woken \omterm{def:b2:threads-and-synchronisation:thread}{thread} does not own the \omterm{def:b2:threads-and-synchronisation:lock}{lock} between the signal and its return from \code{wait}: what was true at the signal
+may be false by then. POSIX also allows spurious wake-ups, with no signal at all, another reason for the loop.
+\end{solution}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:7}
+\omcode{code/bachelor-2/15-threads-and-synchronisation/exercises/barrier2.c}{13}{28}{A reusable \omterm{def:b2:threads-and-synchronisation:barrier}{barrier}: the last to
+arrive opens a new round}
+The last \omterm{def:b2:threads-and-synchronisation:thread}{thread} to arrive resets the count and increments \code{round}, then wakes everyone. A waiting \omterm{def:b2:threads-and-synchronisation:thread}{thread} waits
+for \code{round} to change, not for the count to reach $n$. With \code{while (waiting < n)}, the count is reset to 0 by
+the last arrival, so a woken \omterm{def:b2:threads-and-synchronisation:thread}{thread} that tests it finds it below $n$ and sleeps again, forever; and if it were not
+reset, the next use could not start. Keeping the round number in a local variable also protects against spurious
+wake-ups. The test runs 1, 2, 4 and 8 \omterm{def:b2:threads-and-synchronisation:thread}{threads} through 2000 rounds of two uses each, checks that nobody is ever a round
+ahead, and that exactly one \omterm{def:b2:threads-and-synchronisation:thread}{thread} per round is told it was last.
+\end{solution}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:8}
+The proof fails, and the algorithm too. With the entry \code{turn = j; flag[i] = true}: \omterm{def:b2:threads-and-synchronisation:thread}{thread} 0 writes \code{turn =
+1}; \omterm{def:b2:threads-and-synchronisation:thread}{thread} 1 writes \code{turn = 0}, sets \code{flag[1]}, and tests: \code{flag[0]} is still false, so \omterm{def:b2:threads-and-synchronisation:thread}{thread} 1
+enters. \omterm{def:b2:threads-and-synchronisation:thread}{Thread} 0 sets \code{flag[0]} and tests: \code{flag[1]} is true but \code{turn} is 0, its own number, so \omterm{def:b2:threads-and-synchronisation:thread}{thread}
+0 enters too. The proof used that the \omterm{def:b2:threads-and-synchronisation:thread}{thread} writing \code{turn} last had the other's flag already set, which the swap
+destroys. The explorer, on the swapped model, finds 12 bad schedules out of 60.
+\end{solution}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:9}
+\omcode{code/bachelor-2/15-threads-and-synchronisation/exercises/rwlock.rs}{18}{48}{Readers wait while a writer is
+inside or waiting}
+The state, behind one \code{Mutex}, counts the readers inside, says whether a writer is inside, and counts the waiting
+writers. A reader waits while a writer is inside or waiting: that is the preference. A writer waits while anyone is
+inside. Every unlock that may let someone in notifies all waiters, which test their condition again in a
+\code{while}. Readers can starve, if writers keep arriving; writers cannot, since once one waits no new reader enters.
+The test checks with an \omterm{def:b2:threads-and-synchronisation:atomic}{atomic} counter that a writer is always alone, and that a reader arriving after a waiting
+writer enters after it.
+\end{solution}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:10}
+A schedule: A passes its wait (\code{flag} is 0), B passes its wait (\code{flag} is still 0), A sets \code{flag = 1}, B
+sets \code{flag = 1}; both are in their \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical sections}. Counting the explorer's schedules: if one \omterm{def:b2:threads-and-synchronisation:thread}{thread} sets the
+flag before the other has passed its wait, the other waits until the flag is cleared, so the \omterm{def:b2:threads-and-synchronisation:thread}{threads} run one after
+the other: 2 schedules. Otherwise both waits come first, in 2 orders, followed by any \omterm{def:b2:threads-and-synchronisation:interleaving}{interleaving} of the two remaining
+chains of 3 steps (set, \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical section}, clear): $2 \times \binom{6}{3} = 40$ schedules, $40 + 2 = 42$. Among the 20
+\omterm{def:b2:threads-and-synchronisation:interleaving}{interleavings} of the two chains, the \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical sections} overlap unless one \omterm{def:b2:threads-and-synchronisation:thread}{thread} has already entered (run its
+critical-section step) before the other sets its flag: that is 4 \omterm{def:b2:threads-and-synchronisation:interleaving}{interleavings} for each \omterm{def:b2:threads-and-synchronisation:thread}{thread} finishing first, 8 in
+all, so $20 - 8 = 12$ overlap, and $2 \times 12 = 24$ schedules are bad.
+\end{solution}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:11}
+\omcode{code/bachelor-2/15-threads-and-synchronisation/listings/bakery_model.py}{7}{29}{The bakery's steps for \omterm{def:b2:threads-and-synchronisation:thread}{thread}
+$i$}
+\omoutput{code/bachelor-2/15-threads-and-synchronisation/outputs/bakery_model.txt}{\omterm{def:b2:threads-and-synchronisation:mutex-property}{Mutual exclusion} over every
+schedule; and its loss without \code{choosing}.}
+The model reads the other tickets one at a time, as \code{locks.c} does, so a \omterm{def:b2:threads-and-synchronisation:thread}{thread} can read a ticket while another
+is changing. The explorer counts the schedules without listing them: they pass through the same states, and one pass
+of three \omterm{def:b2:threads-and-synchronisation:thread}{threads} has only 4579 states. With \code{choosing} removed it finds the violation: B and C read every ticket as 0; C
+writes ticket 1 and checks B, whose ticket is still 0, and enters; B then writes ticket 1 and checks C, whose ticket
+$(1, 2)$ comes after its own $(1, 1)$, and enters as well. \code{choosing} makes B's check of C wait while C computes,
+and C's check of B wait while B computes; the proof of \cref{thm:b2:threads-and-synchronisation:bakery} uses it at
+exactly that point.
+\end{solution}
+
+\begin{solution}{exo:b2:threads-and-synchronisation:12}
+Suppose \omterm{def:b2:threads-and-synchronisation:thread}{threads} $T_1, \dots, T_m$ wait in a circle: $T_i$ waits for a \omterm{def:b2:threads-and-synchronisation:lock}{lock} $b_i$ held by $T_{i+1}$ (indices modulo
+$m$). Let $a_i$ be the largest \omterm{def:b2:threads-and-synchronisation:lock}{lock} $T_i$ holds. $T_i$ acquires in increasing order, so the \omterm{def:b2:threads-and-synchronisation:lock}{lock} it asks for is larger
+than every \omterm{def:b2:threads-and-synchronisation:lock}{lock} it holds: $a_i < b_i$. $T_{i+1}$ holds $b_i$, so $b_i \le a_{i+1}$. Then
+$a_1 < b_1 \le a_2 < b_2 \le \dots \le a_m < b_m \le a_1$, so $a_1 < a_1$: impossible.
+
+For the philosophers, let philosopher $k$ alone take fork $k + 1$ first and fork $k$ second, the others taking fork
+$i$ then $i + 1$. Renumber the forks going round the table from fork $k + 1$: it gets label 0, fork $k + 2$ label 1,
+and so on to fork $k$, label 4. Every other philosopher $i$ then takes the fork labelled one less than the other one
+first, and philosopher $k$ takes label 0 before label 4: everyone acquires in increasing label order, and the
+proposition rules out a circle. Philosopher 4 of \code{philosophers_ordered.c} is the case $k = 4$, with the labels
+equal to the fork numbers.
+\end{solution}
+
+\begin{solution}{pb:b2:threads-and-synchronisation:1}
+\textbf{1.} The check is \code{if (seats_left > 0)} with \code{int seat = seats_left}; the sale is
+\code{seats_left = seat - 1} and \code{w->sold = seat}. \code{pause_ms(50)} is the work between them, the clerk
+printing, which leaves time for the other \omterm{def:b2:threads-and-synchronisation:thread}{thread} to run.
+
+\textbf{2.} A checks at 0 ms: 1 seat; it remembers \code{seat = 1} and pauses. B checks at 10 ms: \code{seats_left} is
+still 1; it remembers 1 and pauses. A, at 50 ms, writes $1 - 1 = 0$ and sells seat 1; B, at 60 ms, writes its own
+$1 - 1 = 0$ and sells seat 1. Each computes from the value it read, so the second write repeats the first instead of
+going below 0.
+
+\textbf{3.} At 60 ms A has already written 0, so B's check fails: A sells seat 1, B sells nothing (\code{sold = 0}),
+and 0 seats are left.
+
+\textbf{4.} Two chains of 3 steps: $\binom{6}{3} = 20$.
+
+\textbf{5.} A schedule is good when one window's write comes before the other's read. Then B finds 0 and sells
+nothing; that requires A's read and decrement before B's read, and A's sale step
+can then be anywhere after its decrement: it interleaves with B's 3 steps in 4 ways. So 4 good schedules with A
+first, 4 with B first: 8.
+
+\textbf{6.} ThreadSanitizer records which accesses are ordered by synchronisation, not which happened to collide. A
+write and a read of \code{seats_left} from two \omterm{def:b2:threads-and-synchronisation:thread}{threads} with no \omterm{def:b2:threads-and-synchronisation:lock}{lock} or \omterm{def:b2:threads-and-synchronisation:atomic}{atomic} between them form a \omterm{def:b2:threads-and-synchronisation:data-race}{data race} in every
+run, and it reports it whether or not the outcome was wrong.
+
+\textbf{7.} The guard \code{lock == 0} and the action \code{lock = 1} together model a mutex's \omterm{def:b2:threads-and-synchronisation:lock}{lock}: it tests and sets
+as one \omterm{def:b2:threads-and-synchronisation:atomic}{atomic} step, which is exactly what the naive flag \omterm{def:b2:threads-and-synchronisation:lock}{lock} could not do.
+
+\textbf{8.} The whole purchase is inside the \omterm{def:b2:threads-and-synchronisation:lock}{lock}, and nothing else happens outside it. The first window to \omterm{def:b2:threads-and-synchronisation:lock}{lock} runs
+its purchase entirely, the other waits; the two schedules are A then B and B then A.
+
+\textbf{9.} Each customer's purchase is a block that no other step can enter. The schedule is the order of the 8
+blocks, 4 from each window, each window's in its own order: $\binom{8}{4} = 70$.
+
+\textbf{10.} \omterm{def:b2:threads-and-synchronisation:lock}{Lock} before \code{if (seats_left > 0)}, unlock after \code{seats_left = seat - 1}: the check, the
+decrement and the record go inside. B then waits until A's sale is complete, finds 0 seats, and sells nothing.
+
+\textbf{11.} Peterson's algorithm is for two \omterm{def:b2:threads-and-synchronisation:thread}{threads}. For three, the bakery would do; a system mutex,
+\code{pthread_mutex_t}, is simpler and does not spin.
+
+\textbf{12.} The three windows sell one after another: 50 ms per sale, whatever the number of windows. Take the seat
+under the \omterm{def:b2:threads-and-synchronisation:lock}{lock}, release it, and print the ticket outside: the \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical section} shrinks to a few instructions.
+
+\textbf{13.} A \omterm{def:b2:threads-and-synchronisation:semaphore}{semaphore} \code{room} starting at 8: entering is $P$, leaving the hall for a window is $V$.
+
+\textbf{14.} On \code{waiting}, starting at 0: a person who enters does $V$, a window does $P$ before calling the next
+customer.
+
+\textbf{15.} With produced = people who entered and consumed = people called to a window, the proposition gives
+$\text{produced} - \text{consumed} \le 8$: never more than 8 in the hall.
+
+\textbf{16.} The \omterm{def:b2:threads-and-synchronisation:semaphore}{semaphores} count, but do not say which slot: two windows passing $P$ at once would both read
+\code{out} and take the same slot. The mutex makes reading and advancing the index one \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical section}.
+
+\textbf{17.} A deadlock: the first holds $a$ and waits for $b$, the second holds $b$ and waits for $a$. With one global
+order, say $a$ before $b$, both take $a$ first; whoever gets it also gets $b$, and the circle cannot form.
+
+\textbf{18.} With the ring full, a producer would hold the mutex while waiting for a free slot; consumers would need
+the mutex to free one; nobody moves: a deadlock. Wait on the \omterm{def:b2:threads-and-synchronisation:semaphore}{semaphore} first, then \omterm{def:b2:threads-and-synchronisation:lock}{lock}.
+
+\textbf{19.} \code{atomic_fetch_sub(&seats, 1)} returns the old value $n$ and decrements; the window sells seat $n$ if
+$n > 0$, else refuses. The counter may go below 0, which changes nothing, as the decisions depend only on $n$.
+
+\textbf{20.} Neither step has a guard: no step ever waits, so every order of the 16 steps that keeps each window's
+order is possible.
+
+\textbf{21.} $\binom{16}{8} = 12\,870$.
+
+\textbf{22.} That the seats sold are exactly $1, \dots, \min(6, 8) = 6$, each once: no seat sold twice, none invented,
+none left unsold while a customer was refused. Those are the company's three failures.
+
+\textbf{23.} The future of a state depends only on the state, the positions in each \omterm{def:b2:threads-and-synchronisation:thread}{thread} and the variables, not on
+the path that led there; so its counts are the same each time it is reached. Reusing them changes the time taken,
+not the counts: each schedule is still counted once, through the states it passes.
+
+\textbf{24.} All $\binom{16}{8} = 12\,870$ \omterm{def:b2:threads-and-synchronisation:interleaving}{interleavings} checked: no violation.
+\end{solution}

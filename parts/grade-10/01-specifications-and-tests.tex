@@ -1,0 +1,517 @@
+% Provenance (never printed): NSI premiere, "Langages et programmation" (specification, preconditions and
+% postconditions, assertions, test sets, a passing test set does not prove a program correct); NSI premiere,
+% "Valeurs booleennes" (sequential evaluation of and/or); NSI terminale, "Mise au point des programmes"
+% (typical causes of bugs). See sources/book2/BRIEFS.md.
+\chapter{Specifications, Assertions and Tests}\label{ch:g10:specifications-and-tests}
+
+Sam writes a function that tells whether a year is a leap year, the kind of year with a 29th of February. She
+tries it on $2024$ (leap), on $2023$ (not leap) and on $2000$ (leap): three right answers. She shares it with her
+class. A week later a friend who is building a calendar of the twentieth century finds that her function
+gives $1900$ a 29th of February, a day that never existed.
+
+Was the function wrong? It depends on what it promised. This chapter is about writing down that promise, the
+\emph{\omterm{def:g10:specifications-and-tests:specification}{specification}}, so that ``right'' and ``wrong'' have a meaning; about making the program check the
+promise while it runs, with \emph{\omterm{def:g10:specifications-and-tests:assertion}{assertions}}; and about choosing the inputs that are most likely to break a
+function, the \emph{tests}, and running them automatically every time the code changes.
+
+\begin{recall}
+A function has a name, parameters and a body; \code{return} sends a value back to the caller (Book 1, grade 7).
+A program can fail in three ways: it does not start, it stops with an error message, or it gives a wrong answer;
+a trace table follows its variables step by step (Book 1, grade 7). A comparison such as \code{x < 10} has a
+Boolean value, \code{True} or \code{False}, and \code{and}, \code{or}, \code{not} combine such values (Book 1,
+grade 6).
+\end{recall}
+
+\section{What a function promises}\label{sec:g10:specifications-and-tests:promise}
+
+A function is written once and called many times, often by people who never read its body. They need to know two
+things: what they must give it, and what they get back.
+
+\begin{definition}[Specification]\label{def:g10:specifications-and-tests:specification}
+The \emph{specification}\index{specification} of a function states, without describing how the function works,
+what it computes: its name and parameters, the values its parameters may take, and the result it returns or the
+change it makes for each of those values.
+\end{definition}
+
+A \omterm{def:g10:specifications-and-tests:specification}{specification} is usually split into two parts: what the caller must guarantee, and what the function
+guarantees in return.
+
+\begin{definition}[Precondition, postcondition]\label{def:g10:specifications-and-tests:pre-post}
+A \emph{precondition}\index{precondition} of a function is a condition on its arguments that the caller must
+make true before the call. A \emph{postcondition}\index{postcondition} is a condition on the result (and on the
+arguments) that the function makes true when it returns, provided the precondition held.
+\end{definition}
+
+The two form a contract. If the caller keeps its side, the function must keep its own; if the caller breaks the
+\omterm{def:g10:specifications-and-tests:pre-post}{precondition}, the function promises nothing at all.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, box/.style={draw, rounded corners=2pt, minimum height=9mm, inner sep=4pt}]
+  \node[box, fill=omDef!8, text width=27mm, align=center] (caller) at (0,0) {caller};
+  \node[box, fill=omThm!6, text width=27mm, align=center] (f) at (6.4,0) {function\\[-1pt]\footnotesize\code{leap_year}};
+  \draw[ptr] (caller.north east) to[bend left=18] node[above, align=center, font=\footnotesize]
+    {arguments that satisfy\\the \textbf{precondition}} (f.north west);
+  \draw[ptr] (f.south west) to[bend left=18] node[below, align=center, font=\footnotesize]
+    {a result that satisfies\\the \textbf{postcondition}} (caller.south east);
+  \node[font=\footnotesize, align=left, anchor=west] at (8.3,0)
+    {precondition broken:\\no promise at all};
+\end{tikzpicture}
+
+{\small The contract of a function. The caller's duty comes first, the function's duty after.}
+\end{omfigure}
+
+In Python the \omterm{def:g10:specifications-and-tests:specification}{specification} lives inside the function, as its first line of text.
+
+\begin{definition}[Docstring]\label{def:g10:specifications-and-tests:docstring}
+A \emph{docstring}\index{docstring} (documentation string) is a string written as the first statement of a
+function's body. Python keeps it with the function, and \code{help(f)} prints it. In this book a docstring states
+the function's \omterm{def:g10:specifications-and-tests:specification}{specification}.
+\end{definition}
+
+% ledger: g10:gregorian-rule, g10:gregorian-1582
+The calendar in use almost everywhere today was instituted in $1582$. Its rule is that a year is a leap year when
+it is divisible by $4$, except the century years ($1700$, $1800$, $1900$, \dots), which are leap years only when
+they are divisible by $400$. Here is Sam's function, with a \omterm{def:g10:specifications-and-tests:docstring}{docstring} that says so.
+
+\omcode{code/grade-10/01-specifications-and-tests/listings/leap.py}{1}{8}{Sam's function, with its
+\omterm{def:g10:specifications-and-tests:specification}{specification}.}\label{lst:g10:specifications-and-tests:leap}
+
+The \omterm{def:g10:specifications-and-tests:pre-post}{precondition} ($1583$ or later) is there because the rule means nothing before the calendar existed. The
+\omterm{def:g10:specifications-and-tests:pre-post}{postcondition} says exactly which years must give \code{True}. With it, the run below is not a matter of opinion.
+
+\omoutput{code/grade-10/01-specifications-and-tests/outputs/leap_demo.txt}{Four calls. The last line breaks the
+\omterm{def:g10:specifications-and-tests:pre-post}{postcondition}: $1900$ is divisible by $100$ and not by $400$.}\label{out:g10:specifications-and-tests:leap-demo}
+
+The body tests only the first part of the rule. The \omterm{def:g10:specifications-and-tests:specification}{specification} has turned ``my friend's calendar looks odd''
+into a precise statement: for $1900$, the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition} requires \code{False} and the function returns
+\code{True}. That is what a bug is: a call whose \omterm{def:g10:specifications-and-tests:pre-post}{precondition} holds and whose \omterm{def:g10:specifications-and-tests:pre-post}{postcondition} fails.
+
+\begin{method}[Writing a specification]\label{met:g10:specifications-and-tests:write-spec}
+\begin{enumerate}
+  \item Name each parameter and say what kind of value it holds (a whole number, a list of numbers, a string).
+  \item Write the \omterm{def:g10:specifications-and-tests:pre-post}{precondition}: every restriction on the arguments (``not empty'', ``from 1 to 12'').
+  \item Write the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition} in terms of the arguments: what the result is, not how it is found.
+  \item Check it on two or three examples worked by hand, including one at an edge.
+\end{enumerate}
+\end{method}
+
+\begin{example}[The specification of a maximum]\label{ex:g10:specifications-and-tests:max-spec}
+For a function \code{largest(t)}: the \omterm{def:g10:specifications-and-tests:pre-post}{precondition} is ``\code{t} is a non-empty list of numbers''; the
+\omterm{def:g10:specifications-and-tests:pre-post}{postcondition} is ``the result is an element of \code{t}, and no element of \code{t} is larger''. The empty list
+is excluded because it has no largest element: the \omterm{def:g10:specifications-and-tests:specification}{specification} forces the author to decide this case instead of
+leaving it to chance.
+\end{example}
+
+The corrected version tests the exceptions first, from the rarest case to the commonest.
+
+\omcode{code/grade-10/01-specifications-and-tests/listings/leap_fixed.py}{8}{12}{The body of the corrected
+function (its \omterm{def:g10:specifications-and-tests:docstring}{docstring} is the same).}\label{lst:g10:specifications-and-tests:leap-fixed}
+
+\section{Assertions}\label{sec:g10:specifications-and-tests:assertions}
+
+A \omterm{def:g10:specifications-and-tests:specification}{specification} written in a \omterm{def:g10:specifications-and-tests:docstring}{docstring} is read by people. An \omterm{def:g10:specifications-and-tests:assertion}{assertion} is read by the machine.
+
+\begin{definition}[Assertion]\label{def:g10:specifications-and-tests:assertion}
+An \emph{assertion}\index{assertion} is a statement \code{assert condition, message} that evaluates the
+condition. If it is true, the program goes on; if it is false, the program stops with an \code{AssertionError}
+that carries the message.
+\end{definition}
+
+An \omterm{def:g10:specifications-and-tests:assertion}{assertion} at the top of a function checks its \omterm{def:g10:specifications-and-tests:pre-post}{precondition}: a caller who breaks the contract is stopped at once,
+with a message that names the problem, instead of receiving a strange result much later.
+
+\omcode{code/grade-10/01-specifications-and-tests/listings/average.py}{1}{15}{A \omterm{def:g10:specifications-and-tests:pre-post}{precondition} checked by an
+\omterm{def:g10:specifications-and-tests:assertion}{assertion}. The last line breaks it on purpose.}\label{lst:g10:specifications-and-tests:average}
+
+\omoutput{code/grade-10/01-specifications-and-tests/outputs/average.txt}{The first call keeps the
+contract; the second stops with the message of the \omterm{def:g10:specifications-and-tests:assertion}{assertion}. The error report is read from the bottom: the
+last line says what went wrong, the lines above say where.}\label{out:g10:specifications-and-tests:average}
+
+Without the \omterm{def:g10:specifications-and-tests:assertion}{assertion}, \code{average([])} would stop too, but with \code{ZeroDivisionError} on the line
+\code{total / len(t)}: a message about division, not about the caller's mistake.
+
+\begin{remark}[What assertions are for]\label{rem:g10:specifications-and-tests:what-for}
+An \omterm{def:g10:specifications-and-tests:assertion}{assertion} catches the \emph{programmer's} mistakes: a call that breaks a contract, a value that ``cannot''
+happen. It is not the way to handle a user who types a wrong value: a program answers a user with a message and
+asks again. One reason is that \omterm{def:g10:specifications-and-tests:assertion}{assertions} can be switched off.
+% ledger: g10:py-assert-O
+Python removes every \code{assert} statement when it is started with the option \code{-O}, so a program must
+never rely on an \omterm{def:g10:specifications-and-tests:assertion}{assertion} to do its work.
+\end{remark}
+
+\omterm{def:g10:specifications-and-tests:assertion}{Assertions} often guard an expression that would crash: ``the list is not empty, \emph{and} its first element is
+3''. This works because Python evaluates such a condition from left to right and stops as soon as the answer is
+known.
+
+\begin{definition}[Short-circuit evaluation]\label{def:g10:specifications-and-tests:short-circuit}
+Python evaluates \code{a and b} by evaluating \code{a} first; if \code{a} is false, the result is false and
+\code{b} is not evaluated at all. It evaluates \code{a or b} by evaluating \code{a} first; if \code{a} is true,
+the result is true and \code{b} is not evaluated. This is \emph{short-circuit evaluation}\index{short-circuit
+evaluation}.
+\end{definition}
+
+The function \code{loud} below prints a line each time it is evaluated, so the output shows which operands Python
+actually computes.
+
+\omcode{code/grade-10/01-specifications-and-tests/listings/short_circuit.py}{1}{11}{A function that announces
+each evaluation.}\label{lst:g10:specifications-and-tests:short-circuit}
+
+\omoutput{code/grade-10/01-specifications-and-tests/outputs/short_circuit.txt}{\code{loud} runs only in the middle
+case, where the left operand does not settle the answer.}\label{out:g10:specifications-and-tests:short-circuit}
+
+The order of the operands therefore matters. The guarded version below tests the length before it reads
+\code{t[0]}; the unguarded version reads \code{t[0]} on an empty list.
+
+\omcode{code/grade-10/01-specifications-and-tests/listings/guard.py}{2}{13}{A guard on the left of
+\code{and}.}\label{lst:g10:specifications-and-tests:guard}
+
+\omoutput{code/grade-10/01-specifications-and-tests/outputs/guard.txt}{The guarded function answers
+\code{False} for the empty list; the unguarded one stops.}\label{out:g10:specifications-and-tests:guard}
+
+Written \code{t[0] == x and len(t) > 0}, the guard would come too late: the crash happens while evaluating the
+left operand.
+
+\section{Choosing test cases}\label{sec:g10:specifications-and-tests:choosing}
+
+Sam's three tries were not careless; they were badly chosen. All three were ordinary years, and none of them was a
+century. Choosing tests is a skill with a method.
+
+\begin{definition}[Test case, boundary case]\label{def:g10:specifications-and-tests:test-case}
+A \emph{test case}\index{test case} is an input for which the expected result is known in advance, from the
+\omterm{def:g10:specifications-and-tests:specification}{specification}, together with that expected result. A test case \emph{passes} when the function returns the
+expected result and \emph{fails} otherwise. A \emph{boundary case}\index{boundary case} is a test case at the edge
+between two kinds of input that the \omterm{def:g10:specifications-and-tests:specification}{specification} treats differently.
+\end{definition}
+
+The \omterm{def:g10:specifications-and-tests:specification}{specification} of \code{leap_year} splits the years into four kinds, nested inside each other, as the figure
+shows.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small]
+  \draw[thick, fill=black!3, rounded corners=6pt] (0,0) rectangle (11,4.4);
+  \draw[thick, fill=omDef!8, rounded corners=6pt] (2.2,0.35) rectangle (10.6,4.05);
+  \draw[thick, fill=omThm!8, rounded corners=6pt] (5.0,0.7) rectangle (10.25,3.7);
+  \draw[thick, fill=omProp!14, rounded corners=6pt] (7.6,1.05) rectangle (9.9,3.35);
+  \node[anchor=north west, align=left] at (0.15,4.3) {all years\\from 1583};
+  \node[anchor=north west, align=left] at (2.35,3.95) {divisible\\by 4};
+  \node[anchor=north west, align=left] at (5.15,3.6) {divisible\\by 100};
+  \node[anchor=north west, align=left] at (7.75,3.25) {divisible\\by 400};
+  \node[font=\footnotesize\ttfamily] at (1.1,1.2) {2023};
+  \node[font=\footnotesize] at (1.1,0.75) {not leap};
+  \node[font=\footnotesize\ttfamily] at (3.6,1.6) {2024};
+  \node[font=\footnotesize] at (3.6,1.15) {leap};
+  \node[font=\footnotesize\ttfamily] at (6.3,1.9) {1900};
+  \node[font=\footnotesize] at (6.3,1.45) {not leap};
+  \node[font=\footnotesize\ttfamily] at (8.75,2.0) {2000};
+  \node[font=\footnotesize] at (8.75,1.55) {leap};
+\end{tikzpicture}
+
+{\small The four kinds of year in the \omterm{def:g10:specifications-and-tests:specification}{specification} of \code{leap_year}, with one test year in each. Sam's
+three tries came from the two outer kinds and from the innermost one, never from the third.}
+\end{omfigure}
+
+\begin{method}[Choosing test cases from a specification]\label{met:g10:specifications-and-tests:choose}
+\begin{enumerate}
+  \item Split the allowed inputs into the kinds that the \omterm{def:g10:specifications-and-tests:specification}{specification} treats differently.
+  \item Take one ordinary input of each kind.
+  \item Add the \omterm{def:g10:specifications-and-tests:test-case}{boundary cases}: the inputs where one kind meets the next (a mark of exactly $10$ when $10$ or more
+    passes), and the edges of the \omterm{def:g10:specifications-and-tests:pre-post}{precondition} (the smallest allowed year, a list of one element).
+  \item If the \omterm{def:g10:specifications-and-tests:specification}{specification} says what happens to invalid inputs (an error, a special value), add one invalid
+    input; if it says nothing, invalid inputs are not \omterm{def:g10:specifications-and-tests:test-case}{test cases}.
+  \item Write the expected result of each case from the \omterm{def:g10:specifications-and-tests:specification}{specification}, \emph{before} running the function.
+\end{enumerate}
+\end{method}
+
+\begin{example}[Tests for \code{leap_year}]\label{ex:g10:specifications-and-tests:leap-tests}
+One year of each kind: $2023$, $2024$, $1900$, $2000$; the edge of the \omterm{def:g10:specifications-and-tests:pre-post}{precondition}: $1583$, which is not a leap
+year. Sam's original function fails exactly one of these five tests, the one for $1900$. Any suite that misses the
+third kind misses her bug, however many years it contains.
+\end{example}
+
+A \omterm{def:g10:specifications-and-tests:test-suite}{test suite} should also make every line of the function run at least once. The corrected \code{leap_year} has
+three \code{return} lines; the decision diagram below shows which test reaches which.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, q/.style={draw, rounded corners=2pt, fill=omDef!8, inner sep=3pt},
+    r/.style={draw, fill=omProp!12, inner sep=3pt}, level distance=13mm]
+  \node[q] (a) at (0,0) {\texttt{year \% 400 == 0}?};
+  \node[r] (t1) at (-3,-1.4) {\code{return True}};
+  \node[q] (b) at (2.4,-1.4) {\texttt{year \% 100 == 0}?};
+  \node[r] (f1) at (-0.3,-2.8) {\code{return False}};
+  \node[r] (l) at (4.8,-2.8) {\texttt{return year \% 4 == 0}};
+  \draw[->] (a) -- node[above left, font=\footnotesize] {yes} (t1);
+  \draw[->] (a) -- node[above right, font=\footnotesize] {no} (b);
+  \draw[->] (b) -- node[above left, font=\footnotesize] {yes} (f1);
+  \draw[->] (b) -- node[above right, font=\footnotesize] {no} (l);
+  \node[below=1mm of t1, font=\footnotesize\ttfamily] {2000};
+  \node[below=1mm of f1, font=\footnotesize\ttfamily] {1900};
+  \node[below=1mm of l, font=\footnotesize\ttfamily] {2023, 2024, 1583};
+\end{tikzpicture}
+
+{\small The paths through the corrected function. The five tests reach every \code{return}; the last one in both
+of its outcomes.}
+\end{omfigure}
+
+However well chosen, a \omterm{def:g10:specifications-and-tests:test-suite}{test suite} tries finitely many inputs.
+
+\begin{proposition}[Tests do not prove correctness]\label{prop:g10:specifications-and-tests:no-proof}
+Let \code{f} be a function whose \omterm{def:g10:specifications-and-tests:pre-post}{precondition} allows infinitely many inputs, and let $T$ be any finite set of
+\omterm{def:g10:specifications-and-tests:test-case}{test cases} that \code{f} passes. There is a function that also passes every test of $T$ and breaks the
+\omterm{def:g10:specifications-and-tests:specification}{specification}.
+\end{proposition}
+
+\begin{proof}
+Choose an allowed input $x$ that is not in $T$ (there is one, since $T$ is finite). Let \code{g} return what
+\code{f} returns, except on $x$, where it returns a value that the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition} forbids. On every input of $T$,
+\code{g} returns what \code{f} returns, so it passes $T$; on $x$ it breaks the \omterm{def:g10:specifications-and-tests:specification}{specification}.
+\end{proof}
+
+Tests find bugs; they cannot show that none is left. Showing that a function is correct for \emph{every} input
+needs a proof, which is the subject of a chapter next year. Tests remain the everyday tool: cheap, automatic, and
+very good at catching the mistakes that people actually make.
+
+\section{Tests that run themselves}\label{sec:g10:specifications-and-tests:automatic}
+
+Tests typed by hand at the prompt are lost when the window closes. Written in a file, they can be run again after
+every change, in a second, by anyone.
+
+\begin{definition}[Test suite]\label{def:g10:specifications-and-tests:test-suite}
+A \emph{test suite}\index{test suite} is a program that runs a set of \omterm{def:g10:specifications-and-tests:test-case}{test cases} on a function, compares each
+result with the expected one, and reports which tests pass and which fail.
+\end{definition}
+
+Python's standard library includes \code{unittest} for this. Each test is a function whose name starts with
+\code{test}, inside a class (the word \code{class} is explained in grade 12; here it only groups the tests).
+\code{assertTrue(x)} checks that \code{x} is true, \code{assertFalse(x)} that it is false, and
+\code{assertEqual(a, b)} that \code{a == b}. The first lines choose which version of \code{leap_year} to test.
+
+\omcode{code/grade-10/01-specifications-and-tests/listings/leap_tests.py}{1}{27}{The five \omterm{def:g10:specifications-and-tests:test-case}{test cases} of the
+example, as a \omterm{def:g10:specifications-and-tests:test-suite}{test suite}.}\label{lst:g10:specifications-and-tests:suite}
+
+The session below runs the suite on Sam's version, then on the corrected one. (The runner also prints a line
+with the time the tests took, which changes from run to run; \code{grep -v} removes it, so that the printed output
+can be checked exactly. Commands like this one are explained next year.)
+
+\omoutput{code/grade-10/01-specifications-and-tests/outputs/run_tests.txt}{A failing test is a bug report: it
+names the test, the line, and what came back instead of what was
+expected.}\label{out:g10:specifications-and-tests:run-tests}
+
+A smaller tool, \code{doctest}, reads examples written in the \omterm{def:g10:specifications-and-tests:docstring}{docstring} itself, in the form of a session at the
+prompt (\code{>>>} then the expected answer), and checks them.
+
+\omcode{code/grade-10/01-specifications-and-tests/listings/mean.py}{1}{11}{Examples in a \omterm{def:g10:specifications-and-tests:docstring}{docstring} are also
+tests.}\label{lst:g10:specifications-and-tests:mean}
+
+\omoutput{code/grade-10/01-specifications-and-tests/outputs/doctest_run.txt}{\code{python -m doctest -v} runs each
+example and compares what is printed.}\label{out:g10:specifications-and-tests:doctest}
+
+\begin{inpractice}[Tests in a software project]
+Professional projects keep thousands of tests and run all of them on every change, often with a tool such as
+\code{pytest}, which finds the test functions by their names. A change is accepted only when every test passes.
+When a bug is reported, the first step is to write a test that fails because of it; the bug is fixed when that
+test passes, and the test stays in the suite so that the bug cannot come back unnoticed.
+\end{inpractice}
+
+\section{Where bugs come from}\label{sec:g10:specifications-and-tests:causes}
+
+Most bugs belong to a handful of families. Knowing them tells you where to look first. One family deserves a
+name.
+
+\begin{definition}[Side effect]\label{def:g10:specifications-and-tests:side-effect}
+A \emph{side effect}\index{side effect} of a function is any change it makes that outlives the call, apart from
+the value it returns: a change to a list it received as an argument, to a variable outside the function, to a
+file, or text printed on the screen.
+\end{definition}
+
+A \omterm{def:g10:specifications-and-tests:side-effect}{side effect} is not a mistake in itself (\code{print} exists for its \omterm{def:g10:specifications-and-tests:side-effect}{side effect}). It becomes a bug when the
+\omterm{def:g10:specifications-and-tests:specification}{specification} does not mention it and the caller does not expect it.
+
+\omcode{code/grade-10/01-specifications-and-tests/listings/side_effect.py}{1}{9}{The \omterm{def:g10:specifications-and-tests:specification}{specification} promises a
+result, not a change to \code{t}.}\label{lst:g10:specifications-and-tests:side-effect}
+
+\omoutput{code/grade-10/01-specifications-and-tests/outputs/side_effect.txt}{The result is right, but the
+caller's list of scores has been reordered.}\label{out:g10:specifications-and-tests:side-effect}
+
+The method \code{sort} changes the list it is applied to, and \code{t} is the caller's list itself, not a copy
+(grade 10's next chapter explains why). The fix is \code{sorted(t, reverse=True)[:3]}, which builds a new list.
+
+A second family is the \code{if} that forgets a case.
+
+\omcode{code/grade-10/01-specifications-and-tests/listings/missing_branch.py}{1}{12}{Three branches, and a mark
+that falls between them.}\label{lst:g10:specifications-and-tests:missing-branch}
+
+\omoutput{code/grade-10/01-specifications-and-tests/outputs/missing_branch.txt}{A function that reaches its end
+without \code{return} returns \code{None}.}\label{out:g10:specifications-and-tests:missing-branch}
+
+The \omterm{def:g10:specifications-and-tests:test-case}{boundary case} $15$ falls through all three tests. Writing the last branch as \code{else} makes the
+\code{if} exhaustive, and the boundary test of the method above would have caught it.
+
+\begin{method}[A checklist of common causes]\label{met:g10:specifications-and-tests:checklist}
+When a test fails, or before trusting a function, look for:
+\begin{enumerate}
+  \item \emph{a value of the wrong type}: a number read with \code{input} is a string, and \code{"10" < "9"} is
+    true because strings compare letter by letter;
+  \item \emph{an unexpected \omterm{def:g10:specifications-and-tests:side-effect}{side effect}}: a list argument changed in place;
+  \item \emph{an index out of range}: \code{t[len(t)]}, \code{t[0]} on an empty list, a loop one step too long;
+  \item \emph{a non-exhaustive \code{if}}: a case that no branch handles;
+  \item \emph{the wrong inequality}: \code{<} where the \omterm{def:g10:specifications-and-tests:specification}{specification} says ``at most'' (\code{<=});
+  \item \emph{equality between decimal numbers}: computed decimals are rarely exact, so \code{==} between two of
+    them is a trap (grade 10 explains why in the chapter on floating-point numbers);
+  \item \emph{a misleading name}: a variable called \code{total} that holds an average invites the next mistake.
+\end{enumerate}
+\end{method}
+
+\section{Exercises}\label{sec:g10:specifications-and-tests:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g10:specifications-and-tests:1}
+The \omterm{def:g10:specifications-and-tests:docstring}{docstring} of a function \code{half(n)} holds the two examples \code{>>> half(10)} with the expected answer
+\code{5} and \code{>>> half(7)} with the expected answer \code{3}. The body is \code{return n / 2}. What does
+\code{python -m doctest} report for each example, and why?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:specifications-and-tests:2}
+With the function \code{loud} of the listing on \omterm{def:g10:specifications-and-tests:short-circuit}{short-circuit evaluation}, what do these two lines print?
+\code{print(3 > 5 and loud(1))} and \code{print(3 < 5 or loud(2))}. Then the same for
+\code{print(loud(0) or loud(4))}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:specifications-and-tests:3}
+Write the \omterm{def:g10:specifications-and-tests:docstring}{docstring} of a function \code{smallest_positive(t)} that returns the smallest strictly positive number of
+a list \code{t}. State a \omterm{def:g10:specifications-and-tests:pre-post}{precondition} and a \omterm{def:g10:specifications-and-tests:pre-post}{postcondition}, and decide what the \omterm{def:g10:specifications-and-tests:pre-post}{precondition} must say for the
+function to always have an answer.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:specifications-and-tests:4}
+The function \code{clamp(x, lo, hi)} has the \omterm{def:g10:specifications-and-tests:pre-post}{precondition} \code{lo <= hi} and returns \code{lo} if
+\code{x < lo}, \code{hi} if \code{x > hi}, and \code{x} otherwise. List the kinds of input its \omterm{def:g10:specifications-and-tests:specification}{specification} treats
+differently and the \omterm{def:g10:specifications-and-tests:test-case}{boundary cases} between them, and give one \omterm{def:g10:specifications-and-tests:test-case}{test case} (input and expected result) for each.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g10:specifications-and-tests:5}
+The \omterm{def:g10:specifications-and-tests:specification}{specification} of \code{is_adult(age)} says: ``return \code{True} when \code{age} is $18$ or more''. The body is
+\code{return age > 18}. Which \omterm{def:g10:specifications-and-tests:test-case}{test case} reveals the bug? Correct the body.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:specifications-and-tests:6}
+The function below should return the non-negative numbers of a list.
+\code{def remove_negatives(t):} then \code{for x in t:} \code{if x < 0: t.remove(x)} and finally
+\code{return t}. Called on \code{[-1, -2, 3]} it returns \code{[-2, 3]}. Explain the result, name the two bugs (one
+is a \omterm{def:g10:specifications-and-tests:side-effect}{side effect}), and write a version that builds a new list.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:specifications-and-tests:7}
+The function \code{days_in_month(month, year)} returns the number of days of a month (\code{1} to \code{12}) of a
+year from $1583$ on. Write a \code{unittest} \omterm{def:g10:specifications-and-tests:test-suite}{test suite} for it with every kind of input and every \omterm{def:g10:specifications-and-tests:test-case}{boundary case} you
+can find, then a body that passes it (you may call the corrected \code{leap_year}).
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:specifications-and-tests:8}
+A function \code{is_sorted(t)} should return \code{True} when the list \code{t} is in increasing order. Its body is
+\code{return len(t) < 2 or t[0] <= t[-1]}. For each \omterm{def:g10:specifications-and-tests:test-case}{test case} below, say whether it passes or fails:
+\code{[]}, \code{[4]}, \code{[1, 2, 3]}, \code{[3, 2, 1]}, \code{[1, 5, 2, 6]}. Which kind of input did the author
+forget?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:specifications-and-tests:9}
+A friend says: ``my function \code{is_prime(n)} passes my tests for every \code{n} from $2$ to $1000$, so it is
+correct''. Using the proposition of this chapter, build a function that passes the same tests and is wrong. What
+would it take to know that \code{is_prime} is correct?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:specifications-and-tests:10}
+The function \code{sign(x)} should return \code{-1}, \code{0} or \code{1} according to the sign of the number
+\code{x}. Its body is \code{if x > 0: return 1} followed by \code{elif x < 0: return -1}. What does
+\code{sign(0)} return? Which item of the checklist is this? Correct it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g10:specifications-and-tests:11}
+Write a function \code{percent(part, whole)} that returns \code{part} as a percentage of \code{whole}. Its
+\omterm{def:g10:specifications-and-tests:pre-post}{preconditions} are \code{whole > 0} and \code{0 <= part <= whole}; check them with \omterm{def:g10:specifications-and-tests:assertion}{assertions} with clear messages, and
+check the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition} (the result lies between $0$ and $100$) with a third \omterm{def:g10:specifications-and-tests:assertion}{assertion}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:specifications-and-tests:12}
+A ticket costs $10$; a child under $12$ pays half, and on Tuesdays everyone has $2$ off (after the child
+reduction). The function has two \code{if} statements one after the other, one for each rule. \emph{(a)} How many
+different paths through the function are there? \emph{(b)} What is the smallest number of tests that makes every
+line run? \emph{(c)} What is the smallest number that follows every path? Give such tests with their expected
+prices.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:specifications-and-tests:13}
+Write \code{roman(n)} for $1 \le n \le 3999$, which returns the Roman numeral of \code{n} (\code{4} is \code{IV},
+\code{9} is \code{IX}, \code{1994} is \code{MCMXCIV}), with its \omterm{def:g10:specifications-and-tests:specification}{specification}, an \omterm{def:g10:specifications-and-tests:assertion}{assertion} on its \omterm{def:g10:specifications-and-tests:pre-post}{precondition} and a
+\omterm{def:g10:specifications-and-tests:test-suite}{test suite} that includes the subtractive forms, the smallest and the largest allowed values, and two invalid inputs.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:specifications-and-tests:14}
+This loop should count the steps of $0.1$ from $0$ to $1$: \code{x = 0.0}, \code{steps = 0}, then
+\code{while x != 1.0:} with the body \code{x = x + 0.1} and \code{steps = steps + 1}. Run in your head with exact
+decimals, it stops after $10$ steps; run by Python, it never stops. Which item of the checklist explains it? Fix the
+loop in two ways: with a counter that does not depend on \code{x}, and with \code{math.isclose(x, 1.0)} as the test.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g10:specifications-and-tests:15}
+A \emph{mutant} of a function is a copy with one small change, such as one number or one operator replaced. A \omterm{def:g10:specifications-and-tests:test-suite}{test
+suite} \emph{kills} a mutant when at least one of its tests fails on it. For the corrected \code{leap_year} and the
+suite of the two years $2024$ and $2000$, say which of these mutants survive: \emph{(a)} \code{400} replaced by
+\code{100}; \emph{(b)} \code{return False} replaced by \code{return True}; \emph{(c)} the last line's \code{4}
+replaced by \code{400}; \emph{(d)} \texttt{year \% 100 == 0} replaced by \texttt{year \% 100 != 0}. Which single year
+added to the suite kills every survivor?
+\end{exercise}
+
+\section{Problem: The Mutants of the Leap Year}\label{sec:g10:specifications-and-tests:problem}
+
+\begin{problem}[{Weekend problem --- how good is a test suite?}]\label{pb:g10:specifications-and-tests:1}
+Sam's teacher grades \omterm{def:g10:specifications-and-tests:test-suite}{test suites}, not programs. Her method: she makes many mutants of a correct function (see
+\cref{exo:g10:specifications-and-tests:15}) and counts how many of them a suite kills. A suite that kills every mutant
+would have caught all those mistakes. This problem compares two suites for the corrected \code{leap_year}: four
+years chosen with the method of this chapter, and a hundred years drawn at random between $1583$ and $2400$.
+
+\medskip\noindent\textbf{Part I --- The specification.}
+\begin{enumerate}
+  \item State the \omterm{def:g10:specifications-and-tests:pre-post}{precondition} of \code{leap_year}, and explain why it starts at $1583$.
+  \item Name the four kinds of year that the \omterm{def:g10:specifications-and-tests:pre-post}{postcondition} treats differently, and say for each whether it is a
+    leap year.
+  \item How many years from $1583$ to $2400$ (both included) are century years? How many of them are leap years?
+  \item What fraction of the years from $1583$ to $2400$ belong to the kind that Sam's first version got wrong?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- A suite from the specification.}
+\begin{enumerate}[resume]
+  \item Give the smallest suite with one year of each kind, using $2023$, $2024$, $1900$ and $2000$, with the
+    expected results.
+  \item Show that no suite of three years can contain one year of each kind.
+  \item Which test of this suite does Sam's first version fail, and which of the four kinds would a suite need to
+    miss to let her bug through?
+  \item Why is $1583$ a \omterm{def:g10:specifications-and-tests:test-case}{boundary case}, and what is the expected result for it?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Mutants.}
+\begin{enumerate}[resume]
+  \item The teacher's program changes the body of the corrected function (its lines $8$ to $12$) in one place, by
+    these rules: each \code{==} becomes \code{!=}; each \code{True} becomes \code{False} and each \code{False} becomes
+    \code{True}; the number \code{400} becomes \code{100} or \code{4}; \code{100} becomes \code{400} or \code{4};
+    \code{4} becomes \code{100} or \code{400}; each \code{0} on the right of an \code{==} becomes \code{1}. Count
+    the mutants by hand.
+  \item Write out the mutant where \texttt{year \% 100 == 0} becomes \texttt{year \% 100 != 0}, and find one year of the
+    four-year suite on which it fails.
+  \item Write out the mutant where \texttt{year \% 400} becomes \texttt{year \% 4}. Which kind of year does it get wrong?
+  \item Run the program \code{exercises/mutants.py} of this chapter's code. How many mutants does the four-year suite
+    kill?
+  \item Explain without running it why the mutant ``the first \code{True} becomes \code{False}'' is killed by the
+    four-year suite.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- A hundred random years.}
+\begin{enumerate}[resume]
+  \item Using the answer to question 3, how many century years would you expect among $100$ years drawn at random
+    from $1583$ to $2400$, as a rough frequency?
+  \item The random suite of the program kills only $7$ mutants. List the seven survivors that the program prints and
+    find what they have in common.
+  \item How many century years does the program's random suite contain? Explain the survivors with this number.
+  \item Which single year added to the random suite would kill the most survivors? Does any one year kill all seven?
+  \item Find the smallest set of years that, added to the random suite, kills all seven survivors.
+  \item State the result of the comparison: how many mutants does each suite kill, and with how many tests?
+\end{enumerate}
+\end{problem}

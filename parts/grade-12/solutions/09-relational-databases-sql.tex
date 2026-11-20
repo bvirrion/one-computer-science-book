@@ -1,0 +1,192 @@
+\section*{Chapter \ref{ch:g12:relational-databases-sql} --- Relational Databases and SQL}
+
+\begin{solution}{exo:g12:relational-databases-sql:1}
+One row: Max. Rex is a dog but only $4$; the condition needs both parts true.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:2}
+The group (\code{train}, \code{coach}, \code{seat}): a seat is identified by its train, its coach and its number, and
+holds one passenger. \code{passenger} is not part of it: one passenger may book two seats. Over several days, the date
+would join the key.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:3}
+\code{SELECT COUNT(DISTINCT author) FROM books;} \code{DISTINCT} inside \code{COUNT} counts each author once.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:4}
+\texttt{SELECT title, year FROM books WHERE author = \textquotesingle{}Caio Lakeby\textquotesingle{} ORDER BY year;} It returns four books, from
+\emph{A Year by the Lighthouse} (1955) to \emph{The Last Forest} (1995).
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:5}
+Every pair of a loan and a book, whether related or not: $400 \times 80 = 32\,000$ \omterm{def:g12:relational-databases-sql:relation}{rows}. A join is this product
+filtered by the condition that the keys agree.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:6}
+\smallskip\noindent\hspace*{2em}\code{SELECT DISTINCT p.first_name, p.last_name}
+
+\noindent\hspace*{2em}\code{FROM loans AS l JOIN members AS m ON l.member_id = m.member_id}
+
+\noindent\hspace*{4em}\code{JOIN people AS p ON m.person_id = p.person_id}
+
+\noindent\hspace*{2em}\code{WHERE l.return_date IS NULL;}
+
+\smallskip\noindent $17$ members hold the $22$ loans still out. The tests pin the number.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:7}
+$400$, one per loan. \code{book_id} is a \omterm{def:g12:relational-databases-sql:keys}{foreign key}, so each loan's value is the key of some book; it is the \omterm{def:g12:relational-databases-sql:keys}{primary
+key} of \code{books}, so of exactly one book. Each loan therefore meets exactly one row.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:8}
+\code{NULL} means ``no value''. A comparison with it has no truth value, neither true nor false, and \code{WHERE}
+keeps only the \omterm{def:g12:relational-databases-sql:relation}{rows} where the condition is true. The test for a \omterm{def:g10:data-tables:missing}{missing value} is
+\code{WHERE return_date IS NULL}.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:9}
+\smallskip\noindent\hspace*{2em}\texttt{UPDATE loans SET due\_date = date(due\_date, \textquotesingle{}+14 days\textquotesingle{})}
+
+\noindent\hspace*{2em}\code{WHERE return_date IS NULL;}
+
+\smallskip\noindent It changes the $22$ loans still out. Forgetting the \code{WHERE} would move all $400$ due dates.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:10}
+Street $1$: refused, people live there (their \code{street_id} points to it). Loan $1$: accepted, since no \omterm{def:g12:relational-databases-sql:relation}{relation}
+points to a loan. Person $1$: refused; that person is not a member, but appears in \code{friendships}, whose two
+\omterm{def:g12:relational-databases-sql:relation}{attributes} are \omterm{def:g12:relational-databases-sql:keys}{foreign keys} to \code{people}. Member $1$: refused, the member has loans. The tests run the four
+deletes.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:11}
+Update: a teacher's new phone number must be changed in every row of a mark that teacher gave. Deletion: deleting the
+only mark of a class loses who teaches it. Insertion: a new teacher's phone cannot be recorded before the teacher gives
+a mark. A schema without them:
+
+\smallskip\noindent\hspace*{2em}\code{teachers(teacher_id, name, phone)}
+
+\noindent\hspace*{2em}\code{classes(class, subject, teacher_id)}
+
+\noindent\hspace*{2em}\code{marks(student, class, subject, mark)}
+
+\smallskip\noindent Each fact is stored once, and the marks point to the rest by keys.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:12}
+\smallskip\noindent\hspace*{2em}\code{CREATE TABLE teacher (teacher_id INTEGER PRIMARY KEY, name TEXT NOT NULL);}
+
+\noindent\hspace*{2em}\code{CREATE TABLE room (room TEXT PRIMARY KEY, seats INTEGER CHECK (seats > 0));}
+
+\noindent\hspace*{2em}\code{CREATE TABLE lesson (}
+
+\noindent\hspace*{4em}\texttt{day TEXT CHECK (day IN (\textquotesingle{}Mon\textquotesingle{}, \textquotesingle{}Tue\textquotesingle{}, \textquotesingle{}Wed\textquotesingle{}, \textquotesingle{}Thu\textquotesingle{}, \textquotesingle{}Fri\textquotesingle{})),}
+
+\noindent\hspace*{4em}\code{hour INTEGER CHECK (hour BETWEEN 8 AND 17),}
+
+\noindent\hspace*{4em}\code{room TEXT REFERENCES room(room),}
+
+\noindent\hspace*{4em}\code{teacher INTEGER REFERENCES teacher(teacher_id),}
+
+\noindent\hspace*{4em}\code{subject TEXT NOT NULL,}
+
+\noindent\hspace*{4em}\code{PRIMARY KEY (day, hour, room),}
+
+\noindent\hspace*{4em}\code{UNIQUE (day, hour, teacher));}
+
+\smallskip\noindent The \omterm{def:g12:relational-databases-sql:keys}{primary key} allows one lesson per room and hour; \code{UNIQUE} does the same for teachers. The
+tests insert a lesson, then check that a second lesson in the same room at the same hour, a Sunday lesson and a lesson
+in an unknown room are all refused.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:13}
+\smallskip\noindent\hspace*{2em}\code{def books_between(conn, first, last):}
+
+\noindent\hspace*{4em}\code{return [row[0] for row in conn.execute(}
+
+\noindent\hspace*{6em}\code{"SELECT title FROM books WHERE year BETWEEN ? AND ?"}
+
+\noindent\hspace*{6em}\code{" ORDER BY year, title",}
+
+\noindent\hspace*{6em}\code{(first, last))]}
+
+\smallskip\noindent A test: \code{books_between(conn, 1950, 1951)} on the town's tables must give \emph{The Silent
+Kingdom}, then \emph{Beyond the Code} and \emph{The Paper Comet}, the two of 1951 by title.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:14}
+A \omterm{def:g12:relational-databases-sql:relation}{relation} is a set of \omterm{def:g12:relational-databases-sql:relation}{rows}, so no two of its \omterm{def:g12:relational-databases-sql:relation}{rows} are equal: they differ in at least one attribute. So the group of
+all the \omterm{def:g12:relational-databases-sql:relation}{attributes} takes different values in every row, which makes it a key. Removing \omterm{def:g12:relational-databases-sql:relation}{attributes} one at a time while
+the group stays a key ends with a group from which nothing can be removed; that is the kind of key a designer usually
+picks.
+\end{solution}
+
+\begin{solution}{exo:g12:relational-databases-sql:15}
+The name \texttt{x\textquotesingle{} OR \textquotesingle{}1\textquotesingle{} = \textquotesingle{}1} makes the condition \texttt{owner = \textquotesingle{}x\textquotesingle{} OR \textquotesingle{}1\textquotesingle{} = \textquotesingle{}1\textquotesingle{}}, true for every row: every note is
+deleted. The safe line passes the name as a parameter:
+\code{conn.execute("DELETE FROM notes WHERE owner = ?", (name,))}.
+\end{solution}
+
+\begin{solution}{pb:g12:relational-databases-sql:1}
+\textbf{1.} \code{loans}, \code{books}, \code{members}, \code{people} and \code{streets}. Keys: \code{loan_id},
+\code{book_id}, \code{member_id}, \code{person_id}, \code{street_id}. \omterm{def:g12:relational-databases-sql:keys}{Foreign keys}, as in the schema figure: the
+book and the member of a loan, the person of a member, the street of a person.
+
+\textbf{2.} A book still out has no return date yet, so the value is missing; every loan has started, so its date is
+always known.
+
+\textbf{3.} The name is a fact about the member, stored once in \code{people}; copying it into each loan would bring
+back the \omterm{def:g12:relational-databases-sql:anomaly}{anomalies} of the wide table.
+
+\textbf{4.} The join with \code{members} would find no row for that loan, which would silently disappear from the
+answer. The reference constraint prevents it.
+
+\textbf{5.} \code{out_date <= D}: the book had been borrowed by then. \code{due_date < D}: it was due before that day.
+The bracket: it had not come back by then, either not at all (\code{NULL}) or later.
+
+\textbf{6.} \code{AND} binds more tightly than \code{OR}: without brackets, every loan returned after $D$ would be kept,
+whatever its dates.
+
+\textbf{7.} $18$. Four were returned in September: loans $236$ (on 4 September), $247$ (13 September), $258$ (18
+September) and $260$ (23 September). The other $14$ are still out.
+
+\textbf{8.} The earlier the due date, the longer the loan had been overdue on $D$.
+
+\textbf{9.} From a loan to its member by \code{member_id}, from the member to the person by \code{person_id}, from
+the person to the street by \code{street_id}.
+
+\textbf{10.} Some members held several overdue loans. \code{DISTINCT} keeps one copy of each repeated row of the
+answer: $14$ members.
+
+\textbf{11.} Church Lane, Church Way, Mill Avenue and School Avenue, each with two members. It is not \omterm{def:g12:relational-databases-sql:anomaly}{redundancy}: the
+answer repeats the name, but the \omterm{def:g12:relational-databases-sql:database}{database} stores each person's street once, as a key.
+
+\textbf{12.} $18$, one per loan.
+
+\textbf{13.} One row of \code{people} (its \code{street_id}); the answer changes in one row, since \code{DISTINCT}
+merged that member's loans.
+
+\textbf{14.} The number of days from the due date to $D$: how late the loan was on that day.
+
+\textbf{15.} $1696$ days in all; the longest $222$.
+
+\textbf{16.} Loan $3$, \emph{Under the Bridge}, due on 22 January 2025, and never returned.
+
+\textbf{17.} $1696 / 18 \approx 94$ days. The \omterm{def:g12:relational-databases-sql:sql}{query} has the same \code{WHERE}, after
+
+\smallskip\noindent\hspace*{2em}\texttt{SELECT AVG(julianday(\textquotesingle{}2025-09-01\textquotesingle{}) - julianday(due\_date))}
+
+\noindent\hspace*{2em}\code{FROM loans}
+
+\smallskip
+
+\textbf{18.} Loan $236$: $26$ days; $247$: $25$; $258$: $23$; $260$: $26$.
+
+\textbf{19.} $1696 \times 0.10 = 169.60$, in the town's money.
+
+\textbf{20.} \textbf{On 1 September 2025, $18$ loans of the town library were overdue, held by $14$ members on $10$
+streets; together they were $1696$ days late, the longest $222$ days.}
+\end{solution}

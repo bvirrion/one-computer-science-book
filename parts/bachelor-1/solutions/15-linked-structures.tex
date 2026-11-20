@@ -1,0 +1,142 @@
+% Solutions of 15-linked-structures.
+\section*{Chapter \ref{ch:b1:linked-structures} --- Linked Structures: Lists, Stacks and Queues}
+
+\begin{solution}{exo:b1:linked-structures:1}
+$3$; $8, 3$; $1, 8, 3$; $1, 5, 8, 3$; $1, 5, 3$; $2, 1, 5, 3$; and finally $1, 5, 3$.
+\end{solution}
+
+\begin{solution}{exo:b1:linked-structures:2}
+The \omterm{def:b1:linked-structures:stack}{stack} returns 3, 4 and 2, and holds 1. The \omterm{def:b1:linked-structures:stack}{queue} returns 1, 2 and 3, and holds 4.
+\end{solution}
+
+\begin{solution}{exo:b1:linked-structures:3}
+\code{f(a[0)]}: \code{(} and \code{[} are pushed; at position 5, \code{)} pops \code{[}: error at position 5, with \code{(}
+left on the \omterm{def:b1:linked-structures:stack}{stack}. \code{{}[]()} is balanced. \code{]}: error at position 0, on the empty \omterm{def:b1:linked-structures:stack}{stack}.
+\end{solution}
+
+\begin{solution}{exo:b1:linked-structures:4}
+After returning 2, the \omterm{def:b1:linked-structures:iterator}{iterator} points to the cell holding 3, the next to return. Removing that cell frees it, and the
+next call reads freed memory: \omterm{def:b1:c-types-and-control:ub}{undefined behaviour}, which may print 3, garbage, or crash. Removing the cell holding 2 is
+harmless here: the \omterm{def:b1:linked-structures:iterator}{iterator} no longer refers to it, and the loop continues with 3 and 4. An \omterm{def:b1:linked-structures:iterator}{iterator} is invalidated by
+any change to the \omterm{def:b1:linked-structures:list}{cells} it may still reach; most libraries simply forbid changes during an iteration.
+\end{solution}
+
+\begin{solution}{exo:b1:linked-structures:5}
+\omoutput[3-6,23-23]{code/bachelor-1/15-linked-structures/outputs/exo_free_bug.txt}{The sanitizer's report, shortened.}
+The increment \code{p = p->next} runs after \code{free(p)}: it reads 8 bytes, the \code{next} field, inside a cell of
+16 bytes that has just been freed, at line 11. The fix reads the successor first:
+\code{node *next = p->next; free(p); p = next;}, as \code{list_free} does in \cref{sec:b1:linked-structures:singly}.
+\end{solution}
+
+\begin{solution}{exo:b1:linked-structures:6}
+\code{take} does not reset \code{rear} when the \omterm{def:b1:linked-structures:stack}{queue} becomes empty. The invariant ``\code{front} is null exactly when
+\code{rear} is'' is broken: after the first take, \code{rear} still points to the freed cell, the next \code{put} writes
+into it, and \code{front} stays null, so the \omterm{def:b1:linked-structures:stack}{queue} looks empty while it holds 2 and 3. The repair adds
+\code{if (front == NULL) rear = NULL;} after advancing \code{front}, as in \cref{lst:b1:linked-structures:queue}.
+\end{solution}
+
+\begin{solution}{exo:b1:linked-structures:7}
+\omcode{code/bachelor-1/15-linked-structures/exercises/reverse.c}{4}{13}{Reversal in place}
+Invariant: \code{done} is the reversal of the \omterm{def:b1:linked-structures:list}{cells} already passed, and \code{head} is the rest of the original list;
+together they hold every cell once. Each turn moves one cell from \code{head} to the front of \code{done}. At the exit
+\code{head} is null, and \code{done} is the whole list reversed. One pass, $\Theta(n)$, no allocation. The test reverses
+a list of six \omterm{def:b1:linked-structures:list}{cells} and the empty list.
+\end{solution}
+
+\begin{solution}{exo:b1:linked-structures:8}
+\omcodes{code/bachelor-1/15-linked-structures/exercises/deque_ring.c}{7-27}{A \omterm{def:b1:linked-structures:stack}{deque} on a ring}
+Pushing at the front moves the head one step back, written \texttt{(head + CAP - 1) \% CAP} so that the unsigned index
+never goes below zero. The test runs 5000 random operations on this \omterm{def:b1:linked-structures:stack}{deque} and on the \omterm{def:b1:linked-structures:sentinel}{sentinel} list together, against a
+plain \omterm{def:b1:pointers-and-arrays:array}{array} model.
+\end{solution}
+
+\begin{solution}{exo:b1:linked-structures:9}
+Without a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to the last cell, the $j$-th append walks the $j - 1$ \omterm{def:b1:linked-structures:list}{cells} already present: $\sum_{j=1}^{n} (j - 1) =
+n(n - 1)/2 \in \Theta(n^2)$ visits. With a rear \omterm{def:b1:pointers-and-arrays:pointer}{pointer}, each append writes the new cell after \code{rear} and moves
+\code{rear}: $\Theta(1)$ each, $\Theta(n)$ in all.
+\end{solution}
+
+\begin{solution}{exo:b1:linked-structures:10}
+\omcode{code/bachelor-1/15-linked-structures/exercises/floyd.c}{5}{13}{Two \omterm{def:b1:pointers-and-arrays:pointer}{pointers}}
+Without a cycle, \code{fast} reaches the end and the function returns false. With one, both \omterm{def:b1:pointers-and-arrays:pointer}{pointers} end up in the
+cycle, where the fast one gains one cell per step on the slow one, so it catches it
+(\cref{exo:b1:linked-structures:11}). The test closes lists of every length up to 29 into a cycle at every cell.
+\end{solution}
+
+\begin{solution}{exo:b1:linked-structures:11}
+Number the \omterm{def:b1:linked-structures:list}{cells} $0, 1, \dots$ along the list, the cycle being the \omterm{def:b1:linked-structures:list}{cells} $\mu$ to $\mu + \lambda - 1$. After $t$ steps
+the slow \omterm{def:b1:pointers-and-arrays:pointer}{pointer} is at cell $t$ and the fast one at cell $2t$ (positions read modulo the cycle once past $\mu$). For
+$t \geq \mu$ both are in the cycle, and they coincide when $2t \equiv t \pmod \lambda$, that is when $\lambda$ divides
+$t$. Among $\mu, \mu + 1, \dots, \mu + \lambda - 1$ there is a multiple of $\lambda$, at least 1: they meet after at most
+$\mu + \lambda - 1$ steps, so within $\mu + \lambda$.
+\end{solution}
+
+\begin{solution}{exo:b1:linked-structures:12}
+Invariant: the \omterm{def:b1:linked-structures:stack}{queue}, front first, is \code{out} from top to bottom followed by \code{in} from bottom to top. A put
+pushes on \code{in}, at the rear. A take with \code{out} non-empty pops the front. A take with \code{out} empty first
+moves \code{in} onto \code{out}, which reverses it, so that the oldest element is on top; the invariant is kept.
+Cost: every element is pushed on \code{in} once, moved once (one pop and one push), and popped from \code{out} once: at
+most 4 \omterm{def:b1:linked-structures:stack}{stack} operations per element, so $m$ operations cost at most $4m$, amortised $O(1)$. A single take can cost
+$\Theta(n)$. The test checks the order against a model and the bound of 4 per operation along 100\,000 random
+operations.
+\end{solution}
+
+\begin{solution}{pb:b1:linked-structures:1}
+\textbf{1.} The departures are 2, 4, 1, 5, and 3 remains.
+
+\textbf{2.} Removing a cell from a \omterm{def:b1:linked-structures:list}{singly linked list} changes the \code{next} field of the cell before it.
+
+\textbf{3.} Nobody is ever freed: a departing cell is only unlinked, and the whole \omterm{def:b1:pointers-and-arrays:array}{array} is freed at the end.
+
+\textbf{4.} Each of the $n - 1$ departures follows $k - 1$ links: $(n - 1)(k - 1)$ steps, in $\Theta(nk)$ for $k \geq 2$.
+
+\textbf{5.} Counting is cheap with indices modulo the size, but each removal shifts up to $n$ elements: $\Theta(n^2)$ in
+the worst case, whatever $k$.
+
+\textbf{6.} Counting goes on past the last person to the first: the circle is the list's own shape.
+
+\textbf{7.} Counting starts at person 0, and the $k$-th person counted is $k - 1$, modulo $n$.
+
+\textbf{8.} The new person 0 is the old person $k \bmod n$, the new 1 is old $k + 1$, and so on around the circle.
+
+\textbf{9.} With one person, the survivor is 0. Otherwise the survivor of the circle of $n - 1$ is the same person, with
+new number $J(n - 1, k)$, hence old number $(J(n - 1, k) + k) \bmod n$.
+
+\textbf{10.} $J(n, 3)$ for $n = 1, \dots, 10$: 0, 1, 1, 0, 3, 0, 3, 6, 0, 3; from 1, the survivor of ten people is 4, as
+printed.
+
+\textbf{11.} $n - 1$ steps of constant cost, $\Theta(n)$ whatever $k$, against $\Theta(nk)$.
+
+\textbf{12.} The last line of the output reports 0 disagreements.
+
+\textbf{13.} The first round removes the even numbers $2, 4, \dots, 2m$ and comes back to 1. The person in position
+$i$ of the new circle is $2i - 1$, so $J(2m) = 2J(m) - 1$.
+
+\textbf{14.} After $2, \dots, 2m$, counting goes on with 1, the second counted after $2m$ is 1, which leaves; the circle
+restarts at 3 with $m$ people $3, 5, \dots, 2m + 1$, position $i$ being $2i + 1$: $J(2m + 1) = 2J(m) + 1$.
+
+\textbf{15.} 1, 1, 3, 1, 3, 5, 7, 1, 3, 5, 7, 9, 11, 13, 15, 1, the column of the table.
+
+\textbf{16.} $n = 1$: $J = 1$. For $n = 2m$ with $m = 2^{a - 1} + \ell/2$: $J(n) = 2(\ell + 1) - 1 = 2\ell + 1$, using
+$\ell$ even. For $n = 2m + 1$, $\ell$ is odd and $m = 2^{a - 1} + (\ell - 1)/2$: $J(n) = 2\ell - 1 + 2 = 2\ell + 1$.
+
+\textbf{17.} 1: each round halves the circle and restarts at person 1, who is never counted second.
+
+\textbf{18.} $n = 1b_{a-1}\dots b_0$ gives $\ell = b_{a-1}\dots b_0$, and $2\ell + 1 = b_{a-1}\dots b_0 1$.
+
+\textbf{19.} $\sum_{n \leq 10^4} (n - 1) \approx 5 \times 10^7$ link steps.
+
+\textbf{20.} It follows the definition literally, with no reasoning that could be wrong; the check would catch an error
+in the proof or in the closed form's code, for the values tried.
+
+\textbf{21.} Errors in a list simulation and in an \omterm{def:b1:pointers-and-arrays:array}{array} simulation are unlikely to be the same.
+
+\textbf{22.} $J(n) = n$ when $2\ell + 1 = 2^a + \ell$, that is $\ell = 2^a - 1$: for $n = 2^{a + 1} - 1$, such as 1, 3, 7
+and 15.
+
+\textbf{23.} $J(n + 1) = J(n) + 2$, except when $n + 1$ is a power of 2, where it falls back to 1.
+
+\textbf{24.} \emph{Josephus for $k = 2$}: with $n = 2^a + \ell$, $0 \leq \ell < 2^a$, the survivor is $J(n) = 2\ell + 1 =
+2(n - 2^{\lfloor \log_2 n \rfloor}) + 1$, proved from the recurrences of questions 13 and 14 by strong induction, and
+checked against the simulation for every $n \leq 10\,000$ with no disagreement.
+\end{solution}

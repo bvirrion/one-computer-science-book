@@ -1,0 +1,317 @@
+\chapter{Distributed Systems: Time, Failures and Remote Calls}\label{ch:b3:distributed-systems}
+
+The threads of the previous chapter shared one memory and one clock. Machines joined by a network share neither: each has its own memory and its own clock, and they learn about each other only from messages, which arrive late, out of step, or not at all. This chapter builds a small simulator of such machines, proves that two of them cannot even agree on a time to act when messages can be lost, makes one machine call a function on another and counts how often the call really runs, replaces the missing shared clock by counters that follow cause and effect, and takes a picture of a whole bank in which no money is lost, although no branch ever stops to have its picture taken.
+
+\begin{recall}
+A TCP connection carries a stream of bytes, in order and without loss as long as the connection lives; a socket is the program's end of it, and a server accepts connections on a port of an address such as 127.0.0.1, the machine itself (Year~2 volume). A partial order is a relation that is irreflexive and transitive in its strict form: two elements may be incomparable. A depth-first or breadth-first search reaches every vertex of a connected graph (Year~1 volume).
+\end{recall}
+
+\section{No shared clock, no shared memory}\label{sec:b3:distributed-systems:model}
+
+\begin{definition}[Distributed system, synchronous system, asynchronous system]\label{def:b3:distributed-systems:model}
+A \emph{distributed system}\index{distributed system} is a set of processes that have no shared memory and no shared clock and communicate only by sending messages over channels. Each process runs a sequence of \emph{events}: a local step, the sending of a message, or the receiving of one. In a \emph{synchronous system}\index{synchronous system}, known bounds hold on the time a message takes and on the relative speed of the processes. In an \emph{asynchronous system}\index{asynchronous system}, there is no such bound: a message arrives after a finite but unbounded time, and a process may be slow for as long as it likes.
+\end{definition}
+
+The difference matters most when something goes wrong. In a \omterm{def:b3:distributed-systems:model}{synchronous system}, a process that waits longer than the bound for an answer knows the other side has failed. In an \omterm{def:b3:distributed-systems:model}{asynchronous system} it knows nothing: the answer may still be on its way. Real networks lie between the two. Most messages arrive within milliseconds, but no fixed bound is guaranteed, and a program that assumes one will, one day, decide wrongly.
+
+Experiments on real networks are hard to repeat: delays change from run to run. The chapter's programs run instead on a simulator. Each process is an object that reacts to its start, to its messages and to its timers; the simulator keeps a queue of future events ordered by time, and draws every delay and every loss from a random generator with a fixed seed, so a run is the same each time.
+
+\omcode{code/bachelor-3/25-distributed-systems/listings/netsim.py}{53}{62}{Sending a message: it may be lost; otherwise it is delivered after a random delay, never before an earlier message on the same channel when channels are FIFO.}\label{lst:b3:distributed-systems:send}
+
+\omcode{code/bachelor-3/25-distributed-systems/listings/netsim.py}{87}{103}{The event loop: take the earliest event, deliver it to a process that is up, and log everything.}\label{lst:b3:distributed-systems:run}
+
+The simulator has no global time that the processes can read: \code{net.now} exists only to order the events, and a process that read it would be cheating. The rest of the chapter and the next one build their protocols on it.
+
+\section{Failures}\label{sec:b3:distributed-systems:failures}
+
+\begin{definition}[Crash failure, omission failure, Byzantine failure, failure detector]\label{def:b3:distributed-systems:failures}
+A process has a \emph{crash failure}\index{crash failure} when it stops and takes no further step; it may later recover, with what it had stored on disk. An \emph{omission failure}\index{omission failure} is a message that is sent but never received, lost by the network or dropped by a full buffer. A \emph{Byzantine failure}\index{Byzantine failure} is any behaviour at all: a process that sends wrong values, different values to different processes, or messages it was never meant to send. A \emph{failure detector}\index{failure detector} is a component that tells each process which other processes it suspects of having crashed.
+\end{definition}
+
+Between the crash and the \omterm{def:b3:distributed-systems:failures}{Byzantine failure} lies the timing failure: a process or a message that is correct but too slow for the bound a \omterm{def:b3:distributed-systems:model}{synchronous system} promised. Each kind contains the one before: a crashed process omits every message it should have sent, and a Byzantine process can behave as if it had crashed. Protocols are designed for a stated kind, and one that survives crashes may be helpless against a single Byzantine process.
+
+A \omterm{def:b3:distributed-systems:failures}{failure detector} is usually built on timeouts: each process sends a heartbeat message every second, and a process that has heard nothing for five seconds is suspected. In an \omterm{def:b3:distributed-systems:model}{asynchronous system} such a detector makes mistakes both ways: it suspects a process that is only slow, and it keeps trusting one that crashed until the timeout runs out. The next chapter shows what can still be done with such a detector; this one shows what cannot be done at all when messages can be lost.
+
+\begin{definition}[Two generals problem]\label{def:b3:distributed-systems:generals}
+In the \emph{two generals problem}\index{two generals problem}, two generals camp on the hills on either side of a valley and can win only if they attack together. They communicate by messengers who cross the valley and may be captured. General A has a plan to attack at dawn. A protocol tells each general which messengers to send and, from the messengers it has received, whether to attack. It solves the problem if, in every run, both generals take the same decision (agreement), and if they attack in the run where no messenger is captured (the plan is not simply dropped).
+\end{definition}
+
+The problem was first stated, and proved impossible, by Akkoyunlu, Ekanadham and Huber in 1975, with two groups of gangsters in place of the generals; Jim Gray gave it its present name in 1978. % ledger: b3:akkoyunlu-1975, b3:gray-1978
+
+\begin{theorem}[The two generals]\label{thm:b3:distributed-systems:generals}
+No protocol in which every run sends finitely many messengers solves the \omterm{def:b3:distributed-systems:generals}{two generals problem}, if a general who has received nothing about the plan does not attack.
+\end{theorem}
+
+\begin{proof}
+Suppose a protocol solves it. Let $R$ be the run in which no messenger is captured; it has finitely many deliveries, say $d$, and both generals attack. Build runs $R_d = R, R_{d-1}, \ldots, R_0$: the run $R_{j-1}$ is $R_j$ in which the last delivered messenger is captured instead, together with every messenger sent after it. We show by descending induction on $j$ that both generals attack in $R_j$. It holds for $R_d$. Assume it for $R_j$, $j \ge 1$, and let $m$ be the last messenger delivered in $R_j$, sent by general $X$. In $R_j$, nothing reaches $X$ after $m$ arrives, since $m$ is the last delivery; in $R_{j-1}$, $X$ receives exactly the same messengers. A general's decision depends only on the messengers it has received, so $X$ decides alike in both runs: it attacks in $R_{j-1}$. By agreement, the other general attacks too. In $R_0$, then, both attack; but no messenger reaches anyone in $R_0$, so B has heard nothing of the plan and does not attack. This contradiction proves the theorem.
+\end{proof}
+
+The proof never used the number of messengers: adding confirmations of confirmations only lengthens the chain of runs. The program below checks the theorem by brute force for the protocol in which messengers shuttle back and forth, each answering the last, up to $k$ of them. A general's whole knowledge is then the number of messengers it received, so a protocol is a pair of tables from that number to a decision, and every pair can be tried against every run.
+
+\omcode{code/bachelor-3/25-distributed-systems/listings/generals.py}{11}{32}{The runs of the shuttle with $k$ messengers, one for each first captured messenger, and every pair of decision tables tried against them.}\label{lst:b3:distributed-systems:generals}
+
+\omoutput{code/bachelor-3/25-distributed-systems/outputs/generals.txt}{Among all the protocols of the shuttle, one always agrees: never attack. None also attacks when every messenger gets through.}\label{out:b3:distributed-systems:generals}
+
+TCP does not escape the theorem. Its closing handshake can leave one side unsure whether its last acknowledgement arrived, and the protocol settles for waiting a while and giving up. What real systems do is weaken the problem: they accept a small probability of disagreement, or a protocol that may wait forever, or both.
+
+\section{Remote procedure calls}\label{sec:b3:distributed-systems:rpc}
+
+\begin{definition}[Remote procedure call, stub, marshalling, idempotent operation, at-most-once and at-least-once semantics]\label{def:b3:distributed-systems:rpc}
+A \emph{remote procedure call}\index{remote procedure call} (RPC) runs a function in another process, usually on another machine, as if it were a local call. The caller calls a \emph{stub}\index{stub}, a local function with the same signature, which turns the name of the function and its arguments into a message, sends it, waits for the reply and returns its result; on the server, another stub does the opposite. Turning values into a sequence of bytes that can travel is \emph{marshalling}\index{marshalling}, and the reverse unmarshalling. An operation is an \emph{idempotent operation}\index{idempotent operation} if running it twice has the same effect as running it once. A call has \emph{at-least-once semantics}\index{at-least-once semantics} if, when the caller gets a reply, the function ran one or more times, and \emph{at-most-once semantics}\index{at-most-once semantics} if it never runs twice for one call.
+\end{definition}
+
+Bruce Jay Nelson is generally credited with the term, in his thesis of 1981, and Birrell and Nelson's paper of 1984 described an implementation at Xerox PARC. % ledger: b3:nelson-1981, b3:birrell-nelson-1984
+A local call either returns or raises an exception; a remote one has a third outcome, silence. When no reply comes, the caller cannot tell whether the request was lost, the server crashed before running the function, after running it, or the reply was lost. Retrying covers the first case and harms the others: the function may run twice. Reading a balance is \omterm{def:b3:file-systems:consistency}{idempotent} and can be retried freely; adding 10 to it is not.
+
+The town's bank serves deposits over TCP. A request and its reply are each one line of JSON, and every request carries an identifier, the client's name and a counter. A server that remembers the reply to each identifier can answer a repeated request from memory.
+
+\omcode{code/bachelor-3/25-distributed-systems/listings/rpc_server.py}{24}{36}{The server's side: unmarshal a request, run it unless it is a duplicate the server remembers, marshal the reply.}\label{lst:b3:distributed-systems:server}
+
+\omcode{code/bachelor-3/25-distributed-systems/listings/rpc_client.py}{21}{40}{The client \omterm{def:b3:distributed-systems:rpc}{stub}: any method name becomes a call that sends a request with a fresh identifier and retries it after half a second without a reply.}\label{lst:b3:distributed-systems:stub}
+
+To make a reply go missing on demand, the demonstration puts a proxy between the client and the server, on 127.0.0.1:45102, which forwards everything except the second reply. The client makes three deposits of 10.
+
+\omoutput{code/bachelor-3/25-distributed-systems/outputs/rpc_demo.txt}{Three deposits through a proxy that loses the second reply. The at-least-once server runs the retried deposit twice; the at-most-once server answers the retry from its memory.}\label{out:b3:distributed-systems:rpc}
+
+The client's retry is identical in both cases. Against the first server, the second deposit runs twice and the client is told the balance is 30 after two deposits; against the second, the server recognises \code{c-2}, returns the reply it had sent, 20, and the deposit runs once. At-most-once is not exactly-once: if the server crashes and loses its memory of replies, a retry runs again, and if the server never comes back, the caller never learns whether the deposit happened. Exercise~\ref{exo:b3:distributed-systems:12} stores the memory on disk and finds what still fails.
+
+\section{Logical clocks}\label{sec:b3:distributed-systems:clocks}
+
+The machines' clocks drift apart, and no message can correct them exactly, since its own delay is unknown. Leslie Lamport observed in 1978 that most programs need less than the time: they need to know which events could have influenced which. % ledger: b3:lamport-1978
+
+\begin{definition}[Happened-before relation, concurrent events, Lamport clock, vector clock]\label{def:b3:distributed-systems:clocks}
+The \emph{happened-before relation}\index{happened-before relation} $\to$ on the events of a run is the smallest transitive relation such that $e \to f$ if $e$ comes before $f$ in the same process, or $e$ sends a message that $f$ receives. Two distinct events are \emph{concurrent events}\index{concurrent events}, written $e \parallel f$, if neither $e \to f$ nor $f \to e$. A \emph{Lamport clock}\index{Lamport clock} is a counter in each process: before each event the process adds 1 to it, a message carries the sender's counter, and a receive first sets the counter to the larger of its own and the message's. The value $L(e)$ after the event is its timestamp. A \emph{vector clock}\index{vector clock} keeps, in each of $n$ processes, a vector of $n$ counters: before each event, process $i$ adds 1 to entry $i$; a message carries the sender's vector, and a receive first takes the entrywise maximum of its own and the message's. $V(e)$ is the vector after the event. For vectors, $u \le v$ means $u_k \le v_k$ for every $k$, and $u < v$ means $u \le v$ and $u \ne v$.
+\end{definition}
+
+Happened-before is irreflexive: a run cannot contain a cycle, since a message is received after it is sent. It is a strict partial order on the events, and the events it leaves incomparable are the concurrent ones: no message chain links them, so neither could have influenced the other. The run recorded in \code{lamport.py} has three processes, eleven events and four messages.
+
+\omcode{code/bachelor-3/25-distributed-systems/listings/lamport.py}{21}{30}{A \omterm{def:b3:distributed-systems:clocks}{Lamport clock} replayed on a recorded run: tick at every event, and jump past the timestamp a message carries.}\label{lst:b3:distributed-systems:lamport}
+
+\omoutput{code/bachelor-3/25-distributed-systems/outputs/lamport.txt}{The timestamps of the run. Every pair ordered by happened-before has increasing timestamps; ten pairs have increasing timestamps although nothing links them.}\label{out:b3:distributed-systems:lamport}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, x=1.1cm, y=1.05cm, ev/.style={circle, fill=black, inner sep=1.6pt}, msg/.style={-{Stealth}, thick, omDef}]
+  \foreach \y/\p in {2/P1, 1/P2, 0/P3} {\draw[->, black!40] (0,\y) -- (9.2,\y); \node[left] at (0,\y) {\p};}
+  \foreach \n/\x/\y/\t in {a1/0.5/2/1, a2/1.5/2/2, a3/6.4/2/7, a4/7.2/2/8, b1/2.5/1/3, b2/3.3/1/4, b3/4.2/1/5, b4/5.2/1/6, c1/0.8/0/1, c2/4.5/0/5, c3/8.4/0/9} {\node[ev] (\n) at (\x,\y) {};}
+  \foreach \n/\t in {a1/1, a2/2, a3/7, a4/8} \node[above=2pt] at (\n) {\n:\,\t};
+  \foreach \n/\t/\w in {b1/3/below, b2/4/above, b3/5/above, b4/6/below} \node[\w=2pt] at (\n) {\n:\,\t};
+  \foreach \n/\t in {c1/1, c2/5, c3/9} \node[below=2pt] at (\n) {\n:\,\t};
+  \draw[msg] (a2) -- node[pos=0.35, left] {m1} (b1);
+  \draw[msg] (b2) -- node[pos=0.35, left] {m2} (c2);
+  \draw[msg] (b4) -- node[pos=0.65, left] {m3} (a3);
+  \draw[msg] (a4) -- node[pos=0.25, right] {m4} (c3);
+\end{tikzpicture}
+\par\smallskip{\small A space--time diagram of the run of \code{lamport.py}: time runs to the right on each process's line, and each arrow is a message. Each event shows its Lamport timestamp. c1 has the smaller timestamp than a2, yet no chain of messages leads from one to the other.}
+\end{omfigure}
+
+\begin{theorem}[Clock condition]\label{thm:b3:distributed-systems:clock-condition}
+If $e \to f$, then $L(e) < L(f)$.
+\end{theorem}
+
+\begin{proof}
+Since $\to$ is the transitive closure of the two direct cases and $<$ is transitive, it suffices to check them. If $e$ comes just before $f$ in the same process, the process's counter after $e$ is $L(e)$, and before $f$ it is at least $L(e)$: it adds 1, possibly after raising it at a receive, so $L(f) \ge L(e) + 1$. Events further apart in the same process follow by induction. If $e$ sends a message that $f$ receives, the message carries $L(e)$, and the receiver sets its counter to at least $L(e)$ before adding 1, so $L(f) \ge L(e) + 1$.
+\end{proof}
+
+The converse is false, and \cref{out:b3:distributed-systems:lamport} counts ten pairs that break it: $L(\mathrm{c1}) = 1 < L(\mathrm{a2}) = 2$ although c1 and a2 are concurrent. A Lamport timestamp can say that $e$ did not happen after $f$, never that it happened before. \omterm{def:b3:distributed-systems:clocks}{Vector clocks} remove this gap at the price of $n$ counters per message; Colin Fidge and Friedemann Mattern are canonically cited for them, both in 1988, though the idea was found several times independently. % ledger: b3:fidge-mattern-1988
+
+\omcode{code/bachelor-3/25-distributed-systems/listings/vclock.py}{10}{27}{\omterm{def:b3:distributed-systems:clocks}{Vector clocks}: on a receive, take the entrywise maximum, then count the event in the process's own entry. Comparing two vectors is comparing every entry.}\label{lst:b3:distributed-systems:vclock}
+
+\omoutput{code/bachelor-3/25-distributed-systems/outputs/vclock.txt}{The vectors of the same run. Comparing them gives happened-before exactly, and twelve pairs of events are concurrent.}\label{out:b3:distributed-systems:vclock}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, x=1.1cm, y=1.15cm, ev/.style={circle, fill=black, inner sep=1.6pt}, msg/.style={-{Stealth}, thick, omDef}, hi/.style={circle, draw=omThm, very thick, inner sep=3pt}]
+  \foreach \y/\p in {2/P1, 1/P2, 0/P3} {\draw[->, black!40] (0,\y) -- (9.2,\y); \node[left] at (0,\y) {\p};}
+  \foreach \n/\x/\y in {a1/0.5/2, a2/1.5/2, a3/6.4/2, a4/7.2/2, b1/2.5/1, b2/3.3/1, b3/4.2/1, b4/5.2/1, c1/0.8/0, c2/4.5/0, c3/8.4/0} {\node[ev] (\n) at (\x,\y) {};}
+  \foreach \n/\v in {a1/100, a2/200, a3/340, a4/440} \node[above=2pt, font=\footnotesize] at (\n) {(\v)};
+  \foreach \n/\v/\w in {b1/210/below, b2/220/above, b3/230/above, b4/240/below} \node[\w=2pt, font=\footnotesize] at (\n) {(\v)};
+  \foreach \n/\v in {c1/001, c2/222, c3/443} \node[below=2pt, font=\footnotesize] at (\n) {(\v)};
+  \node[hi] at (c2) {}; \node[hi] at (b3) {};
+  \draw[msg] (a2) -- (b1);
+  \draw[msg] (b2) -- (c2);
+  \draw[msg] (b4) -- (a3);
+  \draw[msg] (a4) -- (c3);
+\end{tikzpicture}
+\par\smallskip{\small The same run with \omterm{def:b3:distributed-systems:clocks}{vector clocks}, each vector written as its three entries, (220) for $[2, 2, 0]$. The circled events c2 $= [2, 2, 2]$ and b3 $= [2, 3, 0]$ are concurrent: each vector has an entry larger than the other's.}
+\end{omfigure}
+
+\begin{theorem}[Vector clocks characterise happened-before]\label{thm:b3:distributed-systems:vector}
+For any two events of a run, $e \to f$ if and only if $V(e) < V(f)$.
+\end{theorem}
+
+\begin{proof}
+Facts used: the definition of $\to$ and of the update rule. \emph{Lemma.} For every event $f$ and every process $k$, $V(f)_k$ is the number of events of process $k$ that are $\to f$ or equal to $f$. By induction along the run: process $k$'s own entry counts its own events, one per event. At a receive, the events that precede $f$ are those that precede or equal the previous event of $f$'s process, together with those that precede or equal the send; their counts per process are the two vectors, and since each process's past is a prefix of its events, the count for the union is the maximum. Then $f$ itself is added to its own entry. The lemma follows.
+
+($\Rightarrow$) If $e \to f$, every event that precedes or equals $e$ precedes $f$, so $V(e) \le V(f)$ by the lemma. They differ: let $j$ be $f$'s process; $f$ is counted in $V(f)_j$ but not in $V(e)_j$, since $f \to e$ would make a cycle with $e \to f$. ($\Leftarrow$) Suppose $V(e) < V(f)$. Let $i$ be $e$'s process and $e$ the $c$-th event of process $i$, so $V(e)_i = c$. Then $V(f)_i \ge c$: at least $c$ events of process $i$ precede or equal $f$, and since they are a prefix, the $c$-th one, $e$, precedes or equals $f$. It is not $f$, since $V(e) \ne V(f)$, so $e \to f$.
+\end{proof}
+
+A process can use the vectors to deliver messages in an order that respects cause and effect, even when the network reorders them.
+
+\begin{definition}[Causal delivery]\label{def:b3:distributed-systems:causal}
+A broadcast protocol has \emph{causal delivery}\index{causal delivery} if, whenever the broadcast of $m$ happened before the broadcast of $m'$, every process delivers $m$ before $m'$.
+\end{definition}
+
+The rule is short. Each process keeps a vector $v$ whose entry $k$ counts the broadcasts of process $k$ it has delivered, and stamps each of its own broadcasts with its vector after adding 1 to its own entry. A message from process $j$ stamped $w$ is delivered once $w_j = v_j + 1$, the next broadcast of $j$, and $w_k \le v_k$ for every other $k$, every broadcast the sender had delivered when it sent. Until then it waits in a buffer. Without the rule, a reply can reach a third process before the question it answers; exercise~\ref{exo:b3:distributed-systems:6} implements it on the simulator.
+
+\section{Consistent snapshots}\label{sec:b3:distributed-systems:snapshots}
+
+The bank of the weekend problem has five branches that send each other money. Its auditors want the total: the balances of all the branches plus the money in transit, at one instant. There is no instant to ask about, since there is no shared clock; asking each branch in turn mixes balances from different moments, and a transfer may be counted at neither end, or at both.
+
+\begin{definition}[Cut, consistent cut, global snapshot, channel state]\label{def:b3:distributed-systems:cuts}
+A \emph{cut}\index{cut (of a run)} of a run is a set of its events that contains, with each event, every earlier event of the same process: a prefix of each process's events. It is a \emph{consistent cut}\index{consistent cut} if it also contains, with each event, every event that happened before it; equivalently, no message is received inside the cut and sent outside it. The \emph{channel state}\index{channel state} of a channel at a cut is the sequence of messages sent on it inside the cut and received outside it, the messages in transit. A \emph{global snapshot}\index{global snapshot} is the state of every process at a consistent cut together with the state of every channel.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, x=1.1cm, y=1.4cm, ev/.style={circle, fill=black, inner sep=1.6pt}, msg/.style={-{Stealth}, thick, omDef}]
+  \foreach \y/\p in {2/P1, 1/P2, 0/P3} {\draw[->, black!40] (0,\y) -- (9.2,\y); \node[left] at (0,\y) {\p};}
+  \foreach \n/\x/\y in {a1/0.5/2, a2/1.5/2, a3/6.4/2, a4/7.2/2, b1/2.5/1, b2/3.3/1, b3/4.2/1, b4/5.2/1, c1/0.8/0, c2/4.5/0, c3/8.4/0} {\node[ev] (\n) at (\x,\y) {}; }
+  \foreach \n in {a1, a2, a3, a4} \node[above=2pt] at (\n) {\n};
+  \foreach \n/\w in {b1/below left, b2/below left, b3/above right, b4/below right} \node[\w=0pt and 1pt] at (\n) {\n};
+  \foreach \n in {c1, c2, c3} \node[below=2pt] at (\n) {\n};
+  \draw[msg] (a2) -- (b1);
+  \draw[msg] (b2) -- (c2);
+  \draw[msg] (b4) -- (a3);
+  \draw[msg] (a4) -- (c3);
+  \draw[omThm, very thick] (2.0,2.45) -- (2.0,2) -- (3.95,1) -- (3.0,0) -- (3.0,-0.45) node[below] {$C_1$};
+  \draw[omProp, very thick, dashed] (1.0,2.45) -- (1.0,2) -- (3.6,1) -- (5.0,0) -- (5.0,-0.45) node[below] {$C_2$};
+\end{tikzpicture}
+\par\smallskip{\small Two \omterm{def:b3:distributed-systems:cuts}{cuts} of the run, each containing the events to the left of its line. $C_1$ is consistent: m2 crosses it from inside to outside and is in transit. $C_2$ is not: b1 is inside, but a2, which sent the message b1 received, is outside.}
+\end{omfigure}
+
+A \omterm{def:b3:distributed-systems:cuts}{consistent cut} is a state the system could have been in: the events inside it can be replayed in some order respecting $\to$, and the run could have paused there. The algorithm of Chandy and Lamport, published in 1985, records one while the system runs, under two assumptions: channels are FIFO and lose nothing. % ledger: b3:chandy-lamport-1985
+
+\begin{definition}[Chandy--Lamport algorithm]\label{def:b3:distributed-systems:chandy-lamport}
+In the \emph{Chandy--Lamport algorithm}\index{Chandy--Lamport algorithm}, a process starts a snapshot by recording its own state and sending a special message, a marker, on each of its outgoing channels. When a process receives a marker on a channel: if it has not yet recorded its state, it records it, records the channel the marker came on as empty, sends a marker on each outgoing channel, and starts recording every other incoming channel; if it had already recorded its state, it stops recording that channel, whose state is the messages it received on it since it recorded its own state. The snapshot is complete when every process has received a marker on every incoming channel.
+\end{definition}
+
+\begin{theorem}[Chandy and Lamport]\label{thm:b3:distributed-systems:chandy-lamport}
+On FIFO channels that lose nothing, between processes whose channels connect every process to every other, the algorithm terminates; the recorded process states lie on a \omterm{def:b3:distributed-systems:cuts}{consistent cut}, and the recorded state of each channel is its \omterm{def:b3:distributed-systems:cuts}{channel state} at that \omterm{def:b3:distributed-systems:cuts}{cut}.
+\end{theorem}
+
+\begin{proof}
+Facts used: FIFO order; graph search. \emph{Termination.} The initiator records. A process that records sends a marker on every outgoing channel, and markers are not lost, so every neighbour of a recorded process receives a marker and records, at the latest then; since every process is reachable from the initiator, every process records, by induction along a search from the initiator. Each process then receives one marker on each incoming channel, which closes it. \emph{Consistency.} Let the \omterm{def:b3:distributed-systems:cuts}{cut} contain, for each process, the events before it recorded. Suppose a message $m$ from $p$ to $q$ is received inside the \omterm{def:b3:distributed-systems:cuts}{cut} and sent outside it: $q$ received $m$ before recording, and $p$ sent $m$ after recording. When $p$ recorded, it sent a marker to $q$ before $m$; by FIFO, the marker reached $q$ before $m$, and $q$ recorded at the latest on receiving it, so before receiving $m$, a contradiction. \emph{Channels.} $q$ records the channel from $p$ between its own recording and the arrival of $p$'s marker (empty if the marker caused $q$ to record). A message received in that window was received outside the \omterm{def:b3:distributed-systems:cuts}{cut}, and, arriving before the marker, was sent before it by FIFO, so inside the \omterm{def:b3:distributed-systems:cuts}{cut}: it is in transit. Conversely, a message in transit was sent before $p$'s marker, so arrives before it, and was received after $q$ recorded: it falls in the window.
+\end{proof}
+
+For the bank, the theorem says more: the snapshot's money is the bank's total. At a \omterm{def:b3:distributed-systems:cuts}{consistent cut}, a transfer sent inside the \omterm{def:b3:distributed-systems:cuts}{cut} is either received inside it, and counted in the receiving branch's balance, or not, and counted in the channel; one sent outside the \omterm{def:b3:distributed-systems:cuts}{cut} is counted nowhere, since it was not yet taken from its sender, and it cannot have been received inside the \omterm{def:b3:distributed-systems:cuts}{cut}. Every unit is counted exactly once.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, x=1.45cm, y=1.35cm, rec/.style={rectangle, fill=omThm, inner sep=2.6pt}, msg/.style={-{Stealth}, thick, omDef}, mk/.style={-{Stealth}, thick, dashed, omProp}]
+  \foreach \y/\p in {2/B1, 1/B2, 0/B3} {\draw[->, black!40] (0,\y) -- (6.6,\y); \node[left] at (0,\y) {\p};}
+  \fill[omThm!25] (1,1.94) rectangle (5,2.06);
+  \node[rec] (r1) at (1,2) {}; \node[above left=1pt and 0pt] at (r1) {400};
+  \node[rec] (r2) at (3,1) {}; \node[below left=1pt and 0pt] at (r2) {250};
+  \node[rec] (r3) at (4,0) {}; \node[below=2pt] at (r3) {380};
+  \draw[mk] (r1) -- (3,1);
+  \draw[mk] (r1) -- (4,0);
+  \draw[mk] (r2) -- (5,2);
+  \draw[mk] (r2) -- (4.6,0);
+  \draw[mk] (r3) -- (5.6,2);
+  \draw[mk] (r3) -- (6,1);
+  \draw[msg] (2.2,1) -- node[pos=0.6, right=1pt] {30} (3.6,2);
+  \draw[msg] (0.4,2) -- node[pos=0.3, left] {20} (2.4,0);
+\end{tikzpicture}
+\par\smallskip{\small Chandy--Lamport on three branches. B1 starts; the squares are the moments the branches record their balances, shown beside them, and markers are dashed. The transfer of 20, sent before B1 recorded and received before B3 did, is in B3's recorded balance. The transfer of 30 left B2 before B2 recorded and reached B1 in the shaded stretch, after B1 recorded and before B2's marker: it is the recorded state of the channel from B2 to B1.}
+\end{omfigure}
+
+The bank's program runs 1,000 transfers of random amounts between its five branches, and starts a snapshot every five time units, 100 in all, from the branches in turn. In parallel, a naive auditor asks the branches for their balances at the same moments and adds the answers.
+
+\omcode{code/bachelor-3/25-distributed-systems/listings/snapshot.py}{33}{57}{A branch's part of the algorithm: record and send markers; on a transfer, count it in every snapshot still recording that channel; on a marker, record if needed and close the channel.}\label{lst:b3:distributed-systems:snapshot}
+
+\omoutput{code/bachelor-3/25-distributed-systems/outputs/snapshot.txt}{Every Chandy--Lamport snapshot adds up to the bank's 5,000, with between about 200 and 250 in transit; every naive one is short.}\label{out:b3:distributed-systems:snapshot}
+
+The naive auditor can err both ways: it misses a transfer that left a branch already asked and reached one asked later, and counts twice one that left a branch asked later and reached one asked earlier. Here the money in transit, which it never sees, outweighs both. A snapshot is of no use for knowing the balance of a branch at a given moment, since it describes a state that may never have existed all at once; it is exactly what is needed for a \emph{stable} property, one that stays true once it is true, such as ``every branch is idle and no transfer is in transit'', or a \omterm{def:b3:concurrency:deadlock}{deadlock}: a cycle of processes each waiting for the next. Exercise~\ref{exo:b3:distributed-systems:11} proves that a snapshot sees such a property if it held when the snapshot started.
+
+\section{Exercises}\label{sec:b3:distributed-systems:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:distributed-systems:1}
+Three processes run seven events, in this order: x1, P1 sends n1 to P2; y1, a local step of P2; z1, P3 sends n3 to P1; y2, P2 receives n1; y3, P2 sends n2 to P3; x2, P1 receives n3; z2, P3 receives n2. Draw the space--time diagram and give the Lamport timestamp of every event. Find two events whose timestamps are equal, and a pair of events with increasing timestamps that are not related by $\to$.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:distributed-systems:2}
+Give the \omterm{def:b3:distributed-systems:clocks}{vector clocks} of the run of exercise~\ref{exo:b3:distributed-systems:1}. For each pair, say whether one happened before the other, or whether they are concurrent: (x1, z2), (x2, z2), (z1, x2), (y1, x2).
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:distributed-systems:3}
+A \omterm{def:b3:distributed-systems:cuts}{cut} of the run of \code{lamport.py} is given by the number of events it contains on P1, P2 and P3. Which of $(2, 2, 1)$, $(1, 1, 1)$, $(3, 3, 2)$ and $(4, 4, 2)$ are consistent? For each consistent one, which messages are in transit?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:distributed-systems:4}
+The proxy of \cref{out:b3:distributed-systems:rpc} is changed to lose the second and the third replies. Predict, for each server, how many deposits run and the final balance, and what the client is told at each call.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:distributed-systems:5}
+\code{vector_clocks_buggy} in \code{exercises/ex5_vclock_bug.py} merges the vectors at a receive but does not add 1 to its own entry there. Find two events of the run of \code{lamport.py} to which it gives the same vector, explain why the comparison of \cref{lst:b3:distributed-systems:vclock} then fails, and fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:distributed-systems:6}
+Implement causal broadcast on \code{netsim} with the delivery rule given after \cref{def:b3:distributed-systems:causal}, on channels that may reorder messages. P1 broadcasts three messages; P2 answers the first as soon as it delivers it. Check over 200 seeds that P3 never delivers the answer before the question, and that without the rule it sometimes does.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:distributed-systems:7}
+Order the events of a run by their Lamport timestamps, and break ties by the number of the process. Prove that this is a total order on the events, and that it extends $\to$: if $e \to f$, $e$ comes first. Why is it useful that every process can compute it alike?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:distributed-systems:8}
+Let $e$ and $f$ be distinct events and $i$ the process of $e$. Prove that $e \to f$ if and only if $V(e)_i \le V(f)_i$. How many integers must be compared, instead of $n$?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:distributed-systems:9}
+How many markers does one Chandy--Lamport snapshot send among $n$ processes whose channels connect every process to every other? Among processes joined by $c$ one-way channels? Check the count printed by \cref{out:b3:distributed-systems:snapshot}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:distributed-systems:10}
+Show, with two processes, that the \omterm{def:b3:distributed-systems:chandy-lamport}{Chandy--Lamport algorithm} can record an inconsistent \omterm{def:b3:distributed-systems:cuts}{cut} when a channel may reorder messages. \code{exercises/ex10_nonfifo.py} repairs it: every transfer carries the set of snapshots its sender has recorded, a process that receives a transfer tagged with a snapshot it has not recorded records before applying it, and each marker carries the number of transfers sent on its channel before the sender recorded. Prove that the repaired algorithm records a \omterm{def:b3:distributed-systems:cuts}{consistent cut} and the right \omterm{def:b3:distributed-systems:cuts}{channel states}, and run the file.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:distributed-systems:11}
+Let $S$ be the global state recorded by a Chandy--Lamport snapshot, $S_0$ the state when it started and $S_1$ the state when it completed. Prove that the run's events can be reordered, respecting $\to$, into a run that passes from $S_0$ through $S$ to $S_1$. Deduce that if a stable property held in $S_0$, it holds in $S$, and if it holds in $S$, it holds in $S_1$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:distributed-systems:12}
+\code{exercises/ex12_exactly_once.py} keeps the balances and the reply of every request in an SQLite file, so that the memory of replies survives a crash, and can crash before running a deposit, after running it, or after storing its reply. Run it with the deposit and the reply stored in two transactions, then in one, and explain each count. Does the second version give exactly-once semantics? Say what still fails.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:distributed-systems:problem}
+
+\begin{problem}[{Weekend problem --- The five branches of the Brenmoor savings bank}]\label{pb:b3:distributed-systems:1}
+The Brenmoor savings bank has five branches, B1 to B5, each starting with 1,000. They send each other money all day, and the bank's total, 5,000, never changes. The auditors want a picture of all the money at once, taken while the transfers go on. \Cref{lst:b3:distributed-systems:snapshot} and \cref{out:b3:distributed-systems:snapshot} are the bank's program and one day of it.
+
+\medskip\noindent\textbf{Part I --- Transfers as messages.}
+\begin{enumerate}
+  \item What are the processes, the messages and the channels of the bank's system? Is it synchronous or asynchronous in the simulator?
+  \item At snapshot 0, what is the sum of the five recorded balances? Where is the rest?
+  \item A transfer leaves its branch at time 10 and arrives at time 14. At time 12, which balance holds it?
+  \item Why does the simulator take a transfer out of the sender's balance as soon as it is sent?
+  \item With channels that lose messages, what would happen to the bank's total? Which kind of failure is that?
+  \item Could the bank make a transfer reliable over a lossy channel by retrying, and what must the receiving branch then do to avoid crediting it twice?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Clocks.}
+\begin{enumerate}[resume]
+  \item Read the run of \code{lamport.py} as three branches and four transfers. Which events of P2 happened before c3?
+  \item Which of P2's events can a transfer received at c2 have been caused by?
+  \item Give the Lamport timestamps of P3's events and show a pair of events that the timestamps order but nothing links.
+  \item Using the vectors of \cref{out:b3:distributed-systems:vclock}, decide whether b3 happened before a4.
+  \item How many pairs of events of the run are concurrent, and how many are ordered?
+  \item Could the auditors use Lamport timestamps alone to pick a set of states, one per branch, that is consistent? Explain.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Snapshots during the day.}
+\begin{enumerate}[resume]
+  \item How many markers does the day's run send, and how many per snapshot?
+  \item How does the number of markers compare with the number of transfers, and why?
+  \item At snapshot 50, what is in transit, and what is the sum?
+  \item By how much are the naive totals short, at least and at most?
+  \item Why is no Chandy--Lamport total short?
+  \item Give a scenario in which the naive auditor counts a transfer twice.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- What a snapshot can tell.}
+\begin{enumerate}[resume]
+  \item Snapshot 99 records 1,529 for B2. Did B2 hold 1,529 at the moment snapshot 99 started? Could it never have held it while the other branches held their recorded balances?
+  \item Is ``the total is 5,000'' a stable property? Is ``B2 holds more than 1,000''?
+  \item At the end of the day every branch stops sending. Which stable property describes the end, and how can repeated snapshots detect it?
+  \item In a system of processes that wait for each other's messages, why is a \omterm{def:b3:concurrency:deadlock}{deadlock} a stable property?
+  \item What does a snapshot cost the bank in messages, and does it stop any transfer?
+  \item Sum up: what does the day's run show about the two ways of auditing, and which assumption of the theorem made the difference?
+\end{enumerate}
+\end{problem}

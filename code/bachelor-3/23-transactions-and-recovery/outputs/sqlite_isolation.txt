@@ -1,0 +1,22 @@
+$ python sqlite_isolation.py
+-- journal mode delete
+A: BEGIN IMMEDIATE
+A: UPDATE stock SET copies = 2 WHERE book = 'atlas'
+B: BEGIN IMMEDIATE -> error: database is locked
+B: BEGIN
+B: SELECT copies FROM stock WHERE book = 'atlas' -> 3
+A: COMMIT -> error: database is locked
+B: SELECT copies FROM stock WHERE book = 'atlas' -> 3
+B: COMMIT
+A: COMMIT
+B: SELECT copies FROM stock WHERE book = 'atlas' -> 2
+-- journal mode wal
+A: BEGIN IMMEDIATE
+A: UPDATE stock SET copies = 2 WHERE book = 'atlas'
+B: BEGIN IMMEDIATE -> error: database is locked
+B: BEGIN
+B: SELECT copies FROM stock WHERE book = 'atlas' -> 3
+A: COMMIT
+B: SELECT copies FROM stock WHERE book = 'atlas' -> 3
+B: COMMIT
+B: SELECT copies FROM stock WHERE book = 'atlas' -> 2

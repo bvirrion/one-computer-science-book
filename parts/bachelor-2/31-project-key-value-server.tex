@@ -1,0 +1,431 @@
+% Book 4, Year 2, chapter 31 -- project: a key-value server in Rust.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 31.
+\chapter{Project: A Key-Value Server}\label{ch:b2:project-key-value-server}
+
+The server of this chapter listens on \code{127.0.0.1:44310} and keeps a map from string keys to string values. It
+speaks a line-based text protocol: a client sends \code{SET k v}, \code{GET k}, \code{DEL k}, \code{COUNT} or
+\code{QUIT}, one per line, and receives one line for each, \code{OK}, \code{VALUE v}, \code{NOTFOUND}, \code{COUNT n} or
+\code{ERR} followed by a reason. It serves many clients at once, it survives a restart by replaying an \omterm{def:b2:project-key-value-server:log}{append-only log},
+and it is measured under a \omterm{def:b2:project-key-value-server:load-test}{load test}. It is written in Rust with the standard library only, in six milestones, each with
+its code, its output and its tests; the Year 3 volume will make the same server survive the loss of a machine.
+
+\begin{recall}
+\omterm{def:b2:rust-ownership:ownership}{Ownership}, borrowing and lifetimes (\cref{ch:b2:rust-ownership}); \code{Result} and the \code{?} operator
+(\cref{ch:b2:rust-enums-and-errors}); \omterm{def:b2:rust-traits-and-generics:trait}{traits} and \omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects} (\cref{ch:b2:rust-traits-and-generics}). \omterm{def:b2:threads-and-synchronisation:thread}{Threads},
+mutexes, reader--writer \omterm{def:b2:threads-and-synchronisation:lock}{locks}, and the lock-order rule that prevents deadlock
+(\cref{prop:b2:threads-and-synchronisation:order}). A \omterm{def:b2:transport-layer:tcp}{TCP connection} carries a stream of bytes with no message boundaries,
+so a protocol must frame its messages (\cref{sec:b2:sockets:framing}, \cref{sec:b2:transport-layer:tcp}). The CRC-32
+detects every \omterm{def:b2:link-layer:burst}{burst} of errors up to 32 bits long (\cref{thm:b2:link-layer:crc-burst}). The Year 1 volume: hash tables,
+whose operations take expected constant time.
+\end{recall}
+
+\begin{definition}[Key--value store]\label{def:b2:project-key-value-server:kv}
+A \emph{key--value store}\index{key--value store} is a service that keeps a finite map from keys to values and offers
+three operations on it: set the value of a key, get the value of a key, and delete a key. It offers no query over the
+values, no join and no schema: a client that needs them builds them from keys.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[b/.style={draw, rounded corners=2pt, font=\small, align=center, minimum height=8mm},
+  >={Stealth[length=1.8mm]}]
+\foreach \i in {0, 1, 2} \node[b, minimum width=14mm] (c\i) at (0, -\i*1.05) {client \the\numexpr\i+1\relax};
+\node[b, minimum width=22mm] (l) at (3.2, -1.05) {listener\\\scriptsize\code{:44310}};
+\node[b, minimum width=16mm] (q) at (6.4, -1.05) {queue};
+\foreach \i in {0, 1, 2, 3} \node[b, minimum width=16mm, fill=omDef!8] (w\i) at (8.6, 0.3-\i*0.9) {worker \i};
+\foreach \i/\y in {0/0.3, 1/-0.6, 2/-1.5} \node[b, minimum width=12mm, fill=omProp!10, font=\scriptsize] (s\i)
+  at (11.2, \y) {shard \i};
+\node[font=\small] at (11.2, -2.15) {$\vdots$};
+\node[b, minimum width=12mm, fill=omProp!10, font=\scriptsize] (s3) at (11.2, -2.9) {shard 15};
+\node[b, minimum width=12mm, fill=omMeth!12] (log) at (11.2, -4.2) {log};
+\foreach \i in {0, 1, 2} \draw[<->] (c\i.east) -- (l.west);
+\draw[->] (l) -- node[above=2pt, font=\scriptsize] {accept} (q);
+\foreach \i in {0, 1, 2, 3} \draw[->] (q.east) -- (w\i.west);
+\draw[->, omProp] (w0.east) -- (s0.west); \draw[->, omProp] (w1.east) -- (s2.west); \draw[->, omProp] (w3.east) -- (s3.west);
+\draw[->, omMeth] (s3.south) -- (log.north);
+\draw[->, omMeth] (s2.east) to[bend left=50] (log.east);
+\end{tikzpicture}
+\par\smallskip{\small The server's architecture at the end of milestone 4. The listener accepts connections and puts them
+in a queue; a fixed set of workers take them, one each, and answer the requests. A request \omterm{def:b2:threads-and-synchronisation:lock}{locks} the one shard that holds
+its key; a change is appended to the log under that shard's \omterm{def:b2:threads-and-synchronisation:lock}{lock}.}
+\end{omfigure}
+
+\section{Milestone 1: the protocol}\label{sec:b2:project-key-value-server:protocol}
+
+A request is one line of text; the parser turns it into a value of an enum, or into the reason it is not one. Keys and
+values are words without spaces, so the arguments are the words of the line.
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/protocol.rs}{22}{43}{The parser: one line to a
+\code{Command}, or the reason in an \code{Err}}\label{lst:b2:project-key-value-server:parse}
+
+The match on the pair (first word, list of arguments) lists the valid forms first, then one error per command with the
+wrong number of arguments; the last arm catches every unknown word, lower-case ones included. The enums \code{Command}
+and \code{Reply} implement \code{Display}, so that a reply is printed by \code{writeln!} as it is, and a command is written back
+as the line it came from: the log of milestone 4 will store commands that way. The unit tests check every command and
+eleven malformed lines, one per error reason, and that printing a thousand random commands and parsing them gives the
+same commands back.
+
+\section{Milestone 2: one client at a time}\label{sec:b2:project-key-value-server:single}
+
+A connection is a stream of bytes. The server reads it through a buffer, up to the next newline, so that a request
+split over two TCP segments, or two requests in one segment, are both handled: the framing is the newline. A line
+longer than the limit, or a stream that ends in the middle of a line, cannot be resynchronised, and the connection is
+closed after one \code{ERR}.
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/server.rs}{15}{46}{One connection: read a line, parse it,
+apply it, answer it}\label{lst:b2:project-key-value-server:handle}
+
+The replies go through a \code{BufWriter} and are flushed when no request is waiting in the reader's buffer: one
+\code{write} for a \omterm{def:b2:link-layer:burst}{burst} of requests, and no reply left waiting while the client waits for it. The simplest server calls
+\code{handle} for each accepted connection in turn:
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/server.rs}{48}{54}{Milestone 2: one connection at a
+time}\label{lst:b2:project-key-value-server:one}
+
+The client of \code{client.rs} connects (retrying while the server starts), sends a line and reads one line back. The
+demonstration program starts the server of the next milestones in a \omterm{def:b2:threads-and-synchronisation:thread}{thread} of its own \omterm{def:b2:processes-and-system-calls:process}{process}, runs a scripted session
+against it, and reads the log back:
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/demo.rs}{21}{29}{The demonstration: open the log, build
+the store from it, serve on port 44310}\label{lst:b2:project-key-value-server:demo}
+
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/demo.txt}{A scripted session, then the log read back:
+four records, one key.}\label{out:b2:project-key-value-server:demo}
+
+Two \code{SET}s, one more that replaces a value, and one \code{DEL} that removes a key: four records, since a \code{DEL}
+of a missing key changes nothing and is not logged. Their \omterm{def:b2:project-key-value-server:log}{replay} leaves one key. With one connection at a time, a
+second client waits until the first sends \code{QUIT}: a client that connects and stays idle stops the server for
+everybody.
+
+\section{Milestone 3: many clients}\label{sec:b2:project-key-value-server:concurrency}
+
+The first remedy gives every connection a \omterm{def:b2:threads-and-synchronisation:thread}{thread} of its own:
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/server.rs}{56}{64}{A \omterm{def:b2:threads-and-synchronisation:thread}{thread} per
+connection}\label{lst:b2:project-key-value-server:per-connection}
+
+The compiler checks the sharing: the closure moves an \code{Arc<Shared>} into the \omterm{def:b2:threads-and-synchronisation:thread}{thread}, and \code{Shared} holds a
+\code{Box<dyn Store>} whose \omterm{def:b2:rust-traits-and-generics:trait}{trait} requires \code{Send + Sync}, so a store that could not be shared safely between
+\omterm{def:b2:threads-and-synchronisation:thread}{threads} would not compile. A \omterm{def:b2:threads-and-synchronisation:thread}{thread} per connection costs a stack and a creation per client, and nothing bounds the
+number of \omterm{def:b2:threads-and-synchronisation:thread}{threads}: ten thousand clients make ten thousand \omterm{def:b2:threads-and-synchronisation:thread}{threads}.
+
+\begin{definition}[Thread pool]\label{def:b2:project-key-value-server:pool}
+A \emph{thread pool}\index{thread pool} is a fixed set of \omterm{def:b2:threads-and-synchronisation:thread}{threads}, the \emph{workers}, that take tasks from a shared
+queue and run them one after another. Submitting a task puts it in the queue; no \omterm{def:b2:threads-and-synchronisation:thread}{thread} is created per task.
+\end{definition}
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/server.rs}{66}{87}{A pool of workers fed by one
+channel}\label{lst:b2:project-key-value-server:pool}
+
+The receiving end of the channel is behind a mutex, since one worker at a time may take from it; the guard is a
+temporary of the statement that calls \code{recv}, so the \omterm{def:b2:threads-and-synchronisation:lock}{lock} is released before the connection is handled, not
+after. Here a task is a whole connection, so a pool of $w$ workers serves $w$ clients at once and the others wait in the
+queue: the pool bounds the resources, at the price of the idle-client problem for the $(w + 1)$-th client. An \omterm{def:b2:sockets:event-loop}{event loop}
+(\cref{def:b2:sockets:event-loop}) serves any number of idle clients with one \omterm{def:b2:threads-and-synchronisation:thread}{thread}; the Year 3 volume returns to it.
+
+The store itself must be shared. The first version puts the whole map behind one \code{Mutex}; every request, from
+every worker, takes that one \omterm{def:b2:threads-and-synchronisation:lock}{lock}.
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/store.rs}{12}{44}{The store's \omterm{def:b2:rust-traits-and-generics:trait}{trait}, and a change made
+under a \omterm{def:b2:threads-and-synchronisation:lock}{lock} the caller holds}\label{lst:b2:project-key-value-server:store}
+
+\begin{definition}[Sharding, lock striping]\label{def:b2:project-key-value-server:shard}
+\emph{Sharding}\index{sharding} splits a map into $N$ parts, the \emph{shards}, and puts each key in the shard numbered
+by a hash of the key modulo $N$. With one \omterm{def:b2:threads-and-synchronisation:lock}{lock} per shard, \emph{lock striping}\index{lock striping}, two requests on keys
+of different shards proceed in parallel.
+\end{definition}
+
+\needspace{16\baselineskip}
+\omcode{code/bachelor-2/31-project-key-value-server/listings/store.rs}{109}{122}{The sharded store: a read \omterm{def:b2:threads-and-synchronisation:lock}{lock} for
+\code{GET}, a write \omterm{def:b2:threads-and-synchronisation:lock}{lock} for \code{SET} and \code{DEL}}\label{lst:b2:project-key-value-server:sharded}
+
+Each shard is behind a reader--writer \omterm{def:b2:threads-and-synchronisation:lock}{lock}, so that many \code{GET}s on one shard also proceed together. \code{COUNT}
+takes the \omterm{def:b2:project-key-value-server:shard}{shards}' read \omterm{def:b2:threads-and-synchronisation:lock}{locks} one at a time; its answer is a sum of counts taken at slightly different instants, which
+is the exact count at no single instant if writes happen meanwhile (\cref{exo:b2:project-key-value-server:5} looks at
+what an unlocked client sees). Compaction, in the next milestone, holds every shard and then the log: several \omterm{def:b2:threads-and-synchronisation:lock}{locks} at
+once.
+
+\begin{proposition}[Lock order]\label{prop:b2:project-key-value-server:lock-order}
+Number the \omterm{def:b2:threads-and-synchronisation:lock}{locks}: shard $i$ is \omterm{def:b2:threads-and-synchronisation:lock}{lock} $i$ for $0 \le i < N$, and the log is \omterm{def:b2:threads-and-synchronisation:lock}{lock} $N$. If every operation that holds several
+of them acquired them in increasing order, as \code{SET}, \code{DEL}, compaction and the \code{MSET} of
+\cref{exo:b2:project-key-value-server:10} do, the server cannot deadlock.
+\end{proposition}
+
+\begin{proof}
+A \code{SET} or \code{DEL} takes one shard \omterm{def:b2:threads-and-synchronisation:lock}{lock}, then the log: increasing. \code{COUNT} holds one \omterm{def:b2:threads-and-synchronisation:lock}{lock} at a time.
+Compaction takes the \omterm{def:b2:project-key-value-server:shard}{shards} in the order $0, 1, \dots, N-1$, then the log. By \cref{prop:b2:threads-and-synchronisation:order},
+a set of \omterm{def:b2:threads-and-synchronisation:thread}{threads} waiting for each other would form a circle, in which each \omterm{def:b2:threads-and-synchronisation:thread}{thread} holds a \omterm{def:b2:threads-and-synchronisation:lock}{lock} with a smaller number than
+the one it waits for; following the circle, the numbers would increase strictly all the way round and come back to the
+first one, which is impossible.
+\end{proof}
+
+\Cref{exo:b2:project-key-value-server:6} shows the deadlock that two \code{MSET}s produce when each takes the \omterm{def:b2:threads-and-synchronisation:lock}{locks} in
+the order of its own keys.
+
+\section{Milestone 4: persistence}\label{sec:b2:project-key-value-server:persistence}
+
+A map in memory disappears with the \omterm{def:b2:processes-and-system-calls:process}{process}. The server writes every change to a file before it applies it, and
+rebuilds the map from that file when it starts.
+
+\begin{definition}[Append-only log, replay, compaction]\label{def:b2:project-key-value-server:log}
+An \emph{append-only log}\index{append-only log} is a file to which records are only ever added at the end. To
+\emph{replay}\index{log replay} a log of changes is to apply its records in order to an empty state. To
+\emph{compact}\index{compaction (log)} it is to replace it by a shorter log whose replay gives the same state.
+\end{definition}
+
+A record must be found again even if the file ends in the middle of one, so it is framed by its length, and checked by
+its CRC-32:
+
+\begin{omfigure}
+\begin{bytefield}[bitwidth=2.1em]{15}
+\bitheader{0,3,4,7,8,14} \\
+\bitbox{4}{\scriptsize length: 7, little-endian} & \bitbox{4}{\scriptsize CRC-32 of the 7 bytes}
+& \bitbox{1}{\scriptsize\code{S}} & \bitbox{1}{\scriptsize\code{E}} & \bitbox{1}{\scriptsize\code{T}}
+& \bitbox{1}{\scriptsize\textvisiblespace} & \bitbox{1}{\scriptsize\code{a}} & \bitbox{1}{\scriptsize\textvisiblespace}
+& \bitbox{1}{\scriptsize\code{1}}
+\end{bytefield}
+\par\smallskip{\small The record of \code{SET a 1}, byte by byte: four bytes of length, four of CRC, then the command as
+it is printed. A record is 8 bytes longer than its command.}
+\end{omfigure}
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/log.rs}{44}{73}{\omterm{def:b2:project-key-value-server:log}{Replay}: apply each complete record, stop
+at the first one that is short, damaged or not a change}\label{lst:b2:project-key-value-server:replay}
+
+The CRC alone would not be enough. A file system may leave zeros at the end of a file after a crash, and four bytes of
+length 0 followed by four bytes of CRC 0 form a valid frame, since the CRC-32 of no bytes is 0. The parser catches it: an
+empty line is not a command.
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/log.rs}{81}{101}{Open: \omterm{def:b2:project-key-value-server:log}{replay}, cut off the torn tail, append
+from there}\label{lst:b2:project-key-value-server:open}
+
+Cutting the tail off matters: without it, the next record would be appended after the torn bytes, and the following
+\omterm{def:b2:project-key-value-server:log}{replay} would stop at the torn bytes and lose the new record too. The policy decides when \code{OK} is sent: after
+\code{sync_data}, the record is on the disk; without it, it is in the operating system's memory and lost if the machine
+loses power, though not if only the server crashes.
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/crash_demo.rs}{30}{55}{Three damaged logs, made by
+hand}\label{lst:b2:project-key-value-server:crash}
+
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/crash_demo.txt}{Each restart keeps the longest prefix of
+complete, undamaged records.}\label{out:b2:project-key-value-server:crash}
+
+\begin{omfigure}
+\begin{tikzpicture}[r/.style={draw, minimum height=6mm, font=\scriptsize\ttfamily, inner sep=1pt},
+  >={Stealth[length=1.6mm]}]
+\node[font=\small, anchor=east] at (-0.2, 0) {before the crash};
+\node[r, minimum width=17mm, fill=omDef!10] (a) at (0.85, 0) {SET a 1};
+\node[r, minimum width=17mm, fill=omDef!10] (b) at (2.55, 0) {SET b 2};
+\node[r, minimum width=17mm, fill=omDef!10] (c) at (4.25, 0) {SET a 3};
+\node[r, minimum width=12mm, fill=omThm!15, dashed] (t) at (5.7, 0) {SET c};
+\node[font=\scriptsize, text=omThm, anchor=west] at (6.4, 0) {11 of 15 bytes written};
+\node[font=\small, anchor=east] at (-0.2, -1.3) {after the restart};
+\node[r, minimum width=17mm, fill=omDef!10] at (0.85, -1.3) {SET a 1};
+\node[r, minimum width=17mm, fill=omDef!10] at (2.55, -1.3) {SET b 2};
+\node[r, minimum width=17mm, fill=omDef!10] (c2) at (4.25, -1.3) {SET a 3};
+\node[r, minimum width=17mm, fill=omMeth!15] at (5.95, -1.3) {SET c 5};
+\node[font=\scriptsize, anchor=west] at (6.9, -1.3) {appended after the cut};
+\draw[omThm, thick] (5.1, 0.55) -- (5.1, -1.85);
+\node[font=\scriptsize, text=omThm] at (5.1, 0.8) {cut};
+\node[font=\small, anchor=west] at (0, -2.4) {replay: $a = 3$, $b = 2$; then $c = 5$; the client never received \code{OK} for
+\code{SET c 4}};
+\end{tikzpicture}
+\par\smallskip{\small A crash in the middle of an append. The restart \omterm{def:b2:project-key-value-server:log}{replays} the three complete records, cuts the file
+after them, and the next change is appended there.}
+\end{omfigure}
+
+\begin{proposition}[Replay]\label{prop:b2:project-key-value-server:replay}
+Let a log hold the records $r_1, \dots, r_n$ followed by any bytes that do not begin with a complete, undamaged record.
+Its \omterm{def:b2:project-key-value-server:log}{replay} is the map obtained by applying $r_1, \dots, r_n$ in order to the empty map, which is the map the server held
+after its $n$-th change.
+\end{proposition}
+
+\begin{proof}
+\Cref{exo:b2:project-key-value-server:8}, by induction on $n$.
+\end{proof}
+
+The proposition assumes that the damage is at the end. A flipped bit in the middle of the log, as in the third case of
+\cref{out:b2:project-key-value-server:crash}, also stops the \omterm{def:b2:project-key-value-server:log}{replay}, and the intact records after it are dropped with it:
+a crash cannot cause that, a failing disk can, and the honest behaviour is to report it. The kill test of the next
+milestone shows why a crash damages only the end: the server appends each record with one \code{write}, and a \omterm{def:b2:processes-and-system-calls:process}{process}
+killed by a signal never leaves a write half done; only the machine stopping, between the operating system's memory and
+the disk, can.
+
+The log grows with every change, even when the map does not: a thousand \code{SET}s of one key leave a thousand
+records for one value. Compaction rewrites it:
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/log.rs}{103}{123}{Compaction: a new file, made durable,
+renamed over the old one}\label{lst:b2:project-key-value-server:compact}
+
+\begin{proposition}[Compaction]\label{prop:b2:project-key-value-server:compaction}
+If no change happens during the rewrite, the compacted \omterm{def:b2:project-key-value-server:log}{log replays} to the same map as the log it replaces.
+\end{proposition}
+
+\begin{proof}
+The compacted log holds one \code{SET k v} for each pair of the map $M$, in sorted order, and no \code{DEL}. Replaying it
+inserts each pair once into an empty map, and no two records have the same key, so the order does not matter and the
+result is $M$. By \cref{prop:b2:project-key-value-server:replay}, the old \omterm{def:b2:project-key-value-server:log}{log replays} to the map held after its last
+change, which is $M$, since no change happens during the rewrite: the store's \code{compact} holds every shard's \omterm{def:b2:threads-and-synchronisation:lock}{lock}
+until the new log is in place.
+\end{proof}
+
+The rename is what makes compaction safe against a crash: \code{rename} replaces the old name by the new file at once,
+so a crash leaves either the old log or the new one, never half of each; syncing the directory makes the rename itself
+durable.
+
+\section{Milestone 5: the load test}\label{sec:b2:project-key-value-server:load}
+
+\begin{definition}[Load test, latency percentile]\label{def:b2:project-key-value-server:load-test}
+A \emph{load test}\index{load test} runs a fixed, reproducible workload of requests against a system and measures its
+\emph{throughput}, the requests completed per second, and the latency of each request. The \emph{$p$-th latency
+percentile}\index{latency percentile} is the latency below which a fraction $p$ of the requests fall: $p_{50}$ is the
+median, $p_{99}$ the latency that one request in a hundred exceeds.
+\end{definition}
+
+The workload is seeded: each client draws its requests from a generator started at its own number, nine \code{GET}s for
+one \code{SET} over a thousand keys. It is run twice, once against the store directly from \omterm{def:b2:threads-and-synchronisation:thread}{threads} of the same \omterm{def:b2:processes-and-system-calls:process}{process},
+to measure the \omterm{def:b2:threads-and-synchronisation:lock}{locks} alone, and once through TCP:
+
+\omcode{code/bachelor-2/31-project-key-value-server/listings/load.rs}{66}{88}{One run over TCP: each client times every
+request; the percentiles come from the sorted times}\label{lst:b2:project-key-value-server:load}
+
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/load.txt}{One run on the author's laptop: in process, over
+TCP, and the cost of syncing the log.}\label{out:b2:project-key-value-server:load}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=0.62\linewidth, height=5cm, xlabel={threads}, ylabel={million operations per second},
+  xtick={1,2,4,8}, xmode=log, log basis x=2, xticklabels={1,2,4,8}, ymin=0, legend pos=north west,
+  legend style={font=\small}]
+\addplot[mark=*, omThm] table[x=threads, y=one] {code/bachelor-2/31-project-key-value-server/figures/load.dat};
+\addplot[mark=square*, omDef] table[x=threads, y=sharded]
+  {code/bachelor-2/31-project-key-value-server/figures/load.dat};
+\legend{one lock, 16 shards}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The in-process part of \cref{out:b2:project-key-value-server:load}, measured on a laptop. With one
+\omterm{def:b2:threads-and-synchronisation:lock}{lock}, more \omterm{def:b2:threads-and-synchronisation:thread}{threads} do less work in all: they spend their time handing the \omterm{def:b2:threads-and-synchronisation:lock}{lock} to each other. With 16 \omterm{def:b2:project-key-value-server:shard}{shards}, the
+throughput grows with the \omterm{def:b2:threads-and-synchronisation:thread}{threads}.}
+\end{omfigure}
+
+Three things stand out. In process, one \omterm{def:b2:threads-and-synchronisation:lock}{lock} gets \emph{slower} as \omterm{def:b2:threads-and-synchronisation:thread}{threads} are added, from about 4.5 million operations
+per second with one \omterm{def:b2:threads-and-synchronisation:thread}{thread} to about 1 million with eight, while the sharded store reaches about 7 million; with a single
+\omterm{def:b2:threads-and-synchronisation:thread}{thread} the \omterm{def:b2:project-key-value-server:shard}{shards} cost something, a hash and a reader--writer \omterm{def:b2:threads-and-synchronisation:lock}{lock} instead of a plain mutex. Over TCP, the difference
+nearly vanishes: a request costs on the order of 100 microseconds of \omterm{def:b2:processes-and-system-calls:syscall}{system calls} and loopback, and a \omterm{def:b2:threads-and-synchronisation:lock}{lock} held for a
+fraction of a microsecond is not the bottleneck; the throughput grows with the clients because each waits for its own
+round trip. And the policy of the log dominates everything when it syncs: a \code{sync_data} per \code{SET} costs
+milliseconds, and the server writes some tens of times fewer \code{SET}s than when it leaves the records to the operating
+system. Measurements on another machine give other numbers; these three shapes are what to look for.
+
+\begin{inpractice}
+A server that must sync can batch the syncs, a technique called \emph{group commit}: the changes that arrive within a
+millisecond share one \code{sync}, and every client in the group receives \code{OK} after it. The latency of a \code{SET} grows a little, and the
+throughput comes back. Clients also send several requests before reading the replies
+(\cref{exo:b2:project-key-value-server:12}).
+\end{inpractice}
+
+\omimg{book4/ai/b2-kv-server-rack.jpg}{0.55\linewidth}{A small machine room. A server like this chapter's runs on one
+of the machines in the rack; the network cables bring the clients' requests, and the disks keep its log.}
+
+\section{Milestone 6: the test suite, and what is left}\label{sec:b2:project-key-value-server:tests}
+
+The tests form a Cargo crate that includes the chapter's modules by their paths, and a small program that starts the
+server on a port and a log given on its command line.
+
+\begin{center}
+\small
+\begin{tabular}{p{0.3\linewidth}p{0.6\linewidth}}
+\hline
+test & what it checks \\
+\hline
+protocol & every command; eleven malformed lines, one per reason; printing then parsing gives the command back \\
+stores & both stores agree with a plain map on 3,000 random requests; 8 \omterm{def:b2:threads-and-synchronisation:thread}{threads} of 1,000 \code{SET}s lose none \\
+\omterm{def:b2:project-key-value-server:log}{replay} & a log cut at every byte \omterm{def:b2:project-key-value-server:log}{replays} to the map after its last complete record
+(\cref{prop:b2:project-key-value-server:replay}); a damaged byte stops the \omterm{def:b2:project-key-value-server:log}{replay} at its record \\
+torn tail & \code{open} cuts it and appends after the last good record \\
+compaction & the compacted \omterm{def:b2:project-key-value-server:log}{log replays} to the same map, is shorter, and takes appends
+(\cref{prop:b2:project-key-value-server:compaction}) \\
+\code{MSET} & \omterm{def:b2:threads-and-synchronisation:atomic}{atomic} under 4 writers and 4 readers (\cref{exo:b2:project-key-value-server:10}) \\
+end to end & a session on port 44311, a request in two writes, a restart that keeps the data \\
+kill & the server killed while a client writes: every acknowledged \code{SET} is replayed \\
+\hline
+\end{tabular}
+\end{center}
+
+The kill test crashes the server on purpose: it starts the server program, lets a client send
+\code{SET}s as fast as the syncs allow, and kills the server after 300 milliseconds with a signal that no program can
+catch. It then \omterm{def:b2:project-key-value-server:log}{replays} the log and checks that it holds exactly the acknowledged \code{SET}s, plus at most the one in
+flight, which was written but whose \code{OK} never left.
+
+What the server does not do: it runs on one machine, so a dead disk or a dead machine loses the data or the service; it
+has no authentication, which is acceptable only because it listens on the \omterm{def:b2:sockets:loopback}{loopback address}; it does not expire keys
+(\cref{exo:b2:project-key-value-server:7}) or take snapshots (\cref{exo:b2:project-key-value-server:9}); and a
+\code{COUNT} is not a snapshot of the map. Replicating the log to other machines, and agreeing on its order when one of
+them fails, is the project of the Year 3 volume.
+
+\section{Exercises}\label{sec:b2:project-key-value-server:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:project-key-value-server:1}
+Predict the server's reply to each line of the session in \code{exo_session.rs}: \code{SET a 1}, \code{SET b 2},
+\code{SET a 3}, \code{GET a}, \code{DEL b}, \code{DEL b}, \code{GET b}, \code{COUNT}, \code{SET c 4 5}, \code{SET c 4}
+written with two spaces before and after the key, \code{GET c}, \code{DEL}, \code{COUNT}. Then run it.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:project-key-value-server:2}
+The server of \code{exo_one_read.rs} treats the bytes returned by one \code{read} as one request. Run it; explain each
+line it prints, and what \cref{lst:b2:project-key-value-server:handle} does instead.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:project-key-value-server:3}
+A visit counter is incremented by \code{GET} and then \code{SET} of the value plus one. Explain the result of the first
+part of \code{exo_incr.rs}, then write an \code{INCR k} that is \omterm{def:b2:threads-and-synchronisation:atomic}{atomic}, and check it with eight clients.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:project-key-value-server:4}
+Keys have 4 characters and values 6. Give the size of the log after $n$ \code{SET}s spread evenly over $k$ keys, before
+and after compaction, as formulas in $n$ and $k$; check them with \code{exo_log_size.rs}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:project-key-value-server:5}
+Two clients run without any \omterm{def:b2:threads-and-synchronisation:lock}{lock}: each reads $x$ and then writes the value it read plus one, starting from $x = 0$. List
+the \omterm{def:b2:threads-and-synchronisation:interleaving}{interleavings} of the four steps, give the final $x$ for each, and check with \code{exo_interleave.rs}. Which outcome
+is the \omterm{def:b2:database-design:anomalies}{lost update} of the previous chapter?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:project-key-value-server:6}
+An \code{MSET a x b y} must change two keys in different \omterm{def:b2:project-key-value-server:shard}{shards} together. A first version \omterm{def:b2:threads-and-synchronisation:lock}{locks} the shard of its first
+key, then the shard of its second. Run \code{exo_mset_deadlock.rs}, explain the first two lines with a wait-for graph,
+and fix the order.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:project-key-value-server:7}
+Add \code{SETEX k s v}, which sets a key that disappears $s$ seconds later. Run \code{exo_setex.rs}, which expires a key
+when it is read and sweeps the others. What must the log record so that a restart does not bring an expired key back?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:project-key-value-server:8}
+Prove \cref{prop:b2:project-key-value-server:replay}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:project-key-value-server:9}
+Instead of compacting, the server can write a \emph{snapshot}, the whole map as a file, and start a new, empty log.
+Run \code{exo_snapshot.rs}. In which order must the snapshot and the new log be made durable, and what does recovery do
+if the server crashes while writing the snapshot?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:project-key-value-server:10}
+Write an \omterm{def:b2:threads-and-synchronisation:atomic}{atomic} \code{MSET} and \code{MGET} for the sharded store, taking the shard \omterm{def:b2:threads-and-synchronisation:lock}{locks} in increasing order, and test
+them under load: four writers set two keys to the same value, half of them naming the keys in the other order, and four
+readers check that they never see two different values. Use \code{exo_mset.rs} and its module \code{mset.rs}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:project-key-value-server:11}
+Model the server as follows: a request costs $s$ microseconds in all, of which a time $h$ is spent holding the
+\omterm{def:b2:threads-and-synchronisation:lock}{lock} of its shard; the store has $N$ \omterm{def:b2:project-key-value-server:shard}{shards} and receives requests from $c$ clients that each wait for the reply before
+sending the next. Give the throughput when the \omterm{def:b2:threads-and-synchronisation:lock}{lock} is not the bottleneck, and the throughput that one \omterm{def:b2:threads-and-synchronisation:lock}{lock} caps, and
+compare with \cref{out:b2:project-key-value-server:load}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:project-key-value-server:12}
+Pipelining: a client sends a batch of $b$ requests in one write, then reads the $b$ replies. Measure the throughput for
+$b = 1, 10, 100, 1000$ with \code{exo_pipeline.rs}, and explain the result. Why did \cref{lst:b2:project-key-value-server:handle}
+need nothing new to support it?
+\end{exercise}

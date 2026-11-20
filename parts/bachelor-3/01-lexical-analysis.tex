@@ -1,0 +1,369 @@
+\chapter{Lexical Analysis}\label{ch:b3:lexical-analysis}
+
+Type \code{if n<=0} into a compiler and it sees nine characters: \code{i}, \code{f}, a space, \code{n}, \code{<}, \code{=}, \code{0}. It does not yet know that \code{if} is a keyword, that \code{<=} is one operator and not two, or that the space mattered only because it kept \code{if} away from \code{n}: \code{ifn<=0} would have been a single name followed by an operator and a number. The first job of a compiler is to cut the characters into words. This chapter builds the part that does it, twice: once by hand, the way production compilers are usually written, and once from regular expressions, the way a \omterm{def:b3:lexical-analysis:generator}{scanner generator} does it, and checks that the two agree on thousands of inputs. On the way it meets the rule that decides where a word ends, a \omterm{def:b3:lexical-analysis:token}{token} set on which that rule makes the \omterm{def:b3:lexical-analysis:scanner}{scanner} read a quadratic number of characters, and a fix.
+
+The whole of Part I builds one compiler, for a small language called Moor (after the town of Brenmoor), in Rust. Each chapter adds one module and never edits the earlier ones: this chapter's files are included unchanged by every later one.
+
+\section{The phases of a compiler}\label{sec:b3:lexical-analysis:phases}
+
+\begin{recall}
+Compiling a C file runs a preprocessor, a compiler proper, an assembler and a linker, each a separate program with its own input and output (Year 1 volume, \emph{From Source Code to a Running Program}). A regular expression denotes a set of strings; Thompson's construction turns it into an automaton with spontaneous transitions, the subset construction makes that automaton deterministic, and Moore's algorithm minimises it (Year 2 volume, \emph{Finite Automata} and \emph{Regular Expressions and the Limits of Regular Languages}).
+\end{recall}
+
+The compiler proper is itself a pipeline. Each stage reads the previous stage's output, checks one kind of correctness, and hands on a form of the program that is a little further from the text and a little closer to the machine.
+
+\begin{definition}[Compiler phases]\label{def:b3:lexical-analysis:phases}
+A \emph{compiler phase}\index{compiler phase} is one stage of a compiler: a function from one representation of the program to the next, which may reject the program with an error. The phases that depend on the source language and not on the target machine (cutting into \omterm{def:b3:lexical-analysis:token}{tokens}, parsing, checking names and types) form the \emph{front end}\index{front end}; those that depend on the target machine and not on the source language (choosing instructions, assigning registers, laying out the stack frame) form the \emph{back end}\index{back end}.
+\end{definition}
+
+Between them, most compilers have a middle: phases that rewrite an intermediate form belonging to neither the language nor the machine, to make the program faster. The split pays for itself as soon as there are two languages or two machines: $m$ \omterm{def:b3:lexical-analysis:phases}{front ends} and $n$ \omterm{def:b3:lexical-analysis:phases}{back ends} that share one intermediate form make $m n$ compilers from $m + n$ parts. The figure below follows one Moor statement through the phases this book writes, with the chapter that writes each.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small,
+  ph/.style={draw, rounded corners=2pt, fill=omDef!8, minimum width=36mm, minimum height=6.5mm, align=center},
+  fm/.style={font=\ttfamily\scriptsize, anchor=west},
+  ar/.style={-{Stealth[length=2mm]}, thick}]
+  \node[fm, anchor=center] (src) at (0,0) {total = price + rate * 60;};
+  \foreach \k/\name in {1/scanner (ch.~1), 2/parser (ch.~2--3), 3/semantic analysis (ch.~4),
+                        4/IR generation (ch.~7), 5/optimiser (ch.~8), 6/code generator (ch.~7--8)}
+    \node[ph] (p\k) at (0,-1.25*\k) {\name};
+  \draw[ar] (src) -- (p1);
+  \foreach \a/\b in {1/2,2/3,3/4,4/5,5/6} \draw[ar] (p\a) -- (p\b);
+  \draw[ar] (p6) -- ++(0,-0.9) node[below, font=\ttfamily\scriptsize] {li t0, 60 \quad mul t0, a1, t0 \quad add a2, a0, t0};
+  \node[fm] at (0.25,-1.875) {ID(total) = ID(price) + ID(rate) * NUM(60) ;};
+  \node[fm] at (0.25,-3.125) {Assign(total, Add(price, Mul(rate, 60)))};
+  \node[fm] at (0.25,-4.375) {the same tree, names resolved, nodes typed int};
+  \node[fm] at (0.25,-5.625) {t1 = rate * 60 \quad t2 = price + t1 \quad total = t2};
+  \node[fm] at (0.25,-6.875) {t1 = rate * 60 \quad total = price + t1};
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}, thick]
+    (-2.1,-0.95) -- node[left=5pt, align=right] {front\\end} (-2.1,-3.95);
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}, thick]
+    (-2.1,-4.55) -- node[left=5pt, align=right] {middle} (-2.1,-6.55);
+  \draw[decorate, decoration={brace, amplitude=4pt, mirror}, thick]
+    (-2.1,-7.15) -- node[left=5pt, align=right] {back\\end} (-2.1,-7.85);
+\end{tikzpicture}
+\par\smallskip{\small The phases of the Moor compiler, with what the statement looks like between two of them (\code{ID} and \code{NUM} stand for an identifier and a number \omterm{def:b3:lexical-analysis:token}{token}). The middle phases work on three-address code, which belongs to neither language; here the optimiser removes a useless copy, and the code generator keeps \code{price}, \code{rate} and \code{total} in registers.}
+\end{omfigure}
+
+Each phase may reject the program, and the kind of error tells which phase found it. The \omterm{def:b3:lexical-analysis:scanner}{scanner} rejects a character that starts no word (\texttt{\#} in Moor). The parser rejects words in an impossible order (\code{total = = 3}). Semantic analysis rejects a well-formed sentence that means nothing (\code{total = true + 1}, or a name declared nowhere). Nothing after it should reject a program that got that far: the \omterm{def:b3:lexical-analysis:phases}{back end} may be slow or clever, but it must not fail.
+
+Moor is small on purpose: every feature is there because a chapter needs it. The program below is the running example of this Part; the rest of the language is in the chapters that compile it.
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/hello.moor}{1}{9}{The running example: a function, a variable, an \texttt{if}, operators of one and two characters.}\label{lst:b3:lexical-analysis:hello}
+
+\section{Tokens, lexemes and spans}\label{sec:b3:lexical-analysis:tokens}
+
+The \omterm{def:b3:lexical-analysis:scanner}{scanner}'s output is a sequence of \omterm{def:b3:lexical-analysis:token}{tokens}. The words need care, because three different things are often all called a ``\omterm{def:b3:lexical-analysis:token}{token}''.
+
+\begin{definition}[Token, lexeme, token class]\label{def:b3:lexical-analysis:token}
+A \emph{token class}\index{token class} is a set of strings, given by a pattern (in practice a regular expression), that the parser treats alike: \emph{identifier}, \emph{number}, the keyword \code{while}, the operator \code{<=}. A \emph{lexeme}\index{lexeme} is one substring of the source that belongs to a token class. A \emph{token}\index{token} is the pair of a token class and the information the later phases need about the lexeme: its value for a number, its spelling for an identifier, nothing more for a keyword or an operator.
+\end{definition}
+
+In \code{var n = 7;} the \omterm{def:b3:lexical-analysis:token}{lexemes} are \code{var}, \code{n}, \code{=}, \code{7} and \code{;}; the \omterm{def:b3:lexical-analysis:token}{tokens} are the keyword \code{var}, an identifier spelled \code{n}, the operator \code{=}, the number 7 and the semicolon. The parser never sees the spaces. A keyword is a \omterm{def:b3:lexical-analysis:token}{token class} of its own, not an identifier with a special spelling: the grammar of the next chapter says ``\code{while}, then an expression, then a block'', and that is easy only if \code{while} arrives as its own kind of \omterm{def:b3:lexical-analysis:token}{token}.
+
+\Cref{lst:b3:lexical-analysis:token} is Moor's \omterm{def:b3:lexical-analysis:token}{token} type. Each variant of \code{TokenKind} is one \omterm{def:b3:lexical-analysis:token}{token class}; two of them carry data. A \omterm{def:b3:lexical-analysis:token}{token} also carries where it came from.
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/token.rs}{5}{37}{The \omterm{def:b3:lexical-analysis:token}{tokens} of Moor. Frozen: every later chapter includes this file.}\label{lst:b3:lexical-analysis:token}
+
+\begin{definition}[Scanner, span]\label{def:b3:lexical-analysis:scanner}
+A \emph{scanner}\index{scanner} (or lexer) is the phase that turns the characters of a source file into a sequence of \omterm{def:b3:lexical-analysis:token}{tokens}, dropping white space and comments. The \emph{span}\index{span} of a \omterm{def:b3:lexical-analysis:token}{token} is where its \omterm{def:b3:lexical-analysis:token}{lexeme} lies in the source: its first and past-the-end byte offsets, and the line and column of its first character, both counted from~1.
+\end{definition}
+
+The \omterm{def:b3:lexical-analysis:scanner}{span} is carried through every later phase, so that a type error found in chapter~4 can still point at a column of the source. Byte offsets let a phase cut the \omterm{def:b3:lexical-analysis:token}{lexeme} out of the source in constant time; line and column are for people. They are computed once, as the \omterm{def:b3:lexical-analysis:scanner}{scanner} moves, rather than recomputed from an offset, which would mean counting newlines from the start of the file at every error.
+
+\section{From regular expressions to a scanner}\label{sec:b3:lexical-analysis:regex}
+
+Every \omterm{def:b3:lexical-analysis:token}{token class} of Moor is a regular language. Identifiers are \code{[A-Za-z_][A-Za-z0-9_]*}, numbers \code{[0-9]+}, each keyword and each operator a fixed string. So the \omterm{def:b3:lexical-analysis:scanner}{scanner} could be generated: write one regular expression per class, build one automaton, run it.
+
+\begin{definition}[Scanner generator]\label{def:b3:lexical-analysis:generator}
+A \emph{scanner generator}\index{scanner generator} is a program that reads an ordered list of rules, each a regular expression with the \omterm{def:b3:lexical-analysis:token}{token class} it denotes, and writes a \omterm{def:b3:lexical-analysis:scanner}{scanner} for them: a deterministic automaton stored as a table, and the code that runs it.
+\end{definition}
+
+The first step is to turn each rule into an automaton. \Cref{lst:b3:lexical-analysis:thompson} is Thompson's construction over a parsed regular expression (the parser is the first ninety lines of the file, a small recursive descent of the kind the next chapter studies). Each case builds a fragment with one entry and one exit.
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/regex_nfa.rs}{150}{189}{Thompson's construction. Concatenation links two fragments with a spontaneous move; every other case adds two states.}\label{lst:b3:lexical-analysis:thompson}
+
+\begin{proposition}[Size of a Thompson automaton]\label{prop:b3:lexical-analysis:thompson-size}
+For a regular expression with $s$ character sets and $o$ operators among \code{|}, \code{*}, \code{+}, \code{?}, the fragment of \cref{lst:b3:lexical-analysis:thompson} has exactly $2(s + o)$ states.
+\end{proposition}
+
+\begin{proof}
+By induction on the expression. A character set (and the empty word) makes two states. An alternation, a star, a plus or an option adds two new states to the states of its operands. A concatenation adds none: it joins the exit of its left fragment to the entry of its right one by a spontaneous move. So each set and each operator other than concatenation contributes exactly two states.
+\end{proof}
+
+A \omterm{def:b3:lexical-analysis:scanner}{scanner} has many rules, and must say which one matched. The construction joins them under a new start state.
+
+\begin{method}[The scanner automaton of a list of rules]\label{met:b3:lexical-analysis:union}
+Given rules $r_0, r_1, \dots, r_{k-1}$ in order: build a fragment for each; add a start state with a spontaneous move into each fragment's entry; mark the exit of fragment $i$ as accepting for rule $i$. Then apply the subset construction, and label each deterministic state with the \emph{smallest} rule index among the accepting states it contains, if any.
+\end{method}
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/regex_nfa.rs}{191}{202}{The union of the rules, with a label on each exit.}\label{lst:b3:lexical-analysis:union}
+
+The figure below is the automaton for two rules, the keyword \code{if} (rule 0) and identifiers \code{[a-z][a-z0-9]*} (rule 1). After reading \code{if} the automaton is in states 4 and 8 at once: both rules have matched. Labelling by the smallest index makes the keyword win.
+
+\begin{omfigure}
+\begin{tikzpicture}[shorten >=1pt, node distance=15mm, on grid, font=\small,
+  every state/.style={minimum size=6.5mm, inner sep=0pt, fill=omDef!6}, >={Stealth[length=2mm]},
+  lab/.style={font=\scriptsize\ttfamily}]
+  \node[state, initial, initial text=] (0) {0};
+  \node[state] (1) [above right=11mm and 16mm of 0] {1};
+  \node[state] (2) [right=of 1] {2};
+  \node[state] (3) [right=of 2] {3};
+  \node[state, accepting, label={[font=\scriptsize]right:accepts rule 0 (\code{if})}] (4) [right=of 3] {4};
+  \node[state] (5) [below right=11mm and 16mm of 0] {5};
+  \node[state] (6) [right=of 5] {6};
+  \node[state] (7) [right=of 6] {7};
+  \node[state] (9) [right=of 7] {9};
+  \node[state] (10) [right=20mm of 9] {10};
+  \node[state, accepting, label={[font=\scriptsize]right:accepts rule 1 (identifier)}] (8) [right=of 10] {8};
+  \path[->]
+    (0) edge node[above left] {$\varepsilon$} (1)
+    (0) edge node[below left] {$\varepsilon$} (5)
+    (1) edge node[above, lab] {i} (2)
+    (2) edge node[above] {$\varepsilon$} (3)
+    (3) edge node[above, lab] {f} (4)
+    (5) edge node[above, lab] {a-z} (6)
+    (6) edge node[above] {$\varepsilon$} (7)
+    (7) edge node[above] {$\varepsilon$} (9)
+    (9) edge node[below, lab] {a-z0-9} (10)
+    (10) edge node[above] {$\varepsilon$} (8)
+    (7) edge[bend right=35] node[below] {$\varepsilon$} (8)
+    (10) edge[bend right=45] node[above] {$\varepsilon$} (9);
+\end{tikzpicture}
+\par\smallskip{\small Thompson's automaton for the rules \code{if} and \code{[a-z][a-z0-9]*}, joined under a new start state~0; the state numbers are the order in which \cref{lst:b3:lexical-analysis:thompson} creates them. Eleven states: one for the union, $2 \times 2$ for \code{if}, $2 \times 3$ for the identifier rule.}
+\end{omfigure}
+
+\Cref{lst:b3:lexical-analysis:subset} is the subset construction with that labelling. It is the Year 2 construction with one line added, the one that computes \code{rule}.
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/scanner_dfa.rs}{27}{64}{The subset construction over the 128 ASCII characters; a state's label is the first rule it accepts.}\label{lst:b3:lexical-analysis:subset}
+
+Minimisation needs the same care. Moore's algorithm starts from a partition into accepting and non-accepting states and refines it. For a \omterm{def:b3:lexical-analysis:scanner}{scanner} the first partition must put two states together only if they accept the \emph{same rule}: a state that accepts \code{if} and one that accepts an identifier recognise the same continuations, but merging them would forget which class was found. The function \code{minimise} in the same file starts from that partition; the rest is Moore's algorithm unchanged.
+
+\Cref{lst:b3:lexical-analysis:table} builds the \omterm{def:b3:lexical-analysis:scanner}{scanner} for four rules and prints its minimal table, each row with the characters that leave it, grouped into ranges.
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/dfa_table.rs}{8}{9}{The four rules of the table (the rest of the file prints it).}\label{lst:b3:lexical-analysis:table}
+\omoutput{code/bachelor-3/01-lexical-analysis/outputs/dfa_table.txt}{The \omterm{def:b3:lexical-analysis:scanner}{scanner} DFA of the four rules: 19 NFA states, 7 subset states, 6 after minimisation.}\label{out:b3:lexical-analysis:table}
+
+Minimisation merged two states: the one reached after a single letter other than \code{i}, and the one reached after two or more characters of an identifier. Both accept an identifier and both stay identifiers on any letter or digit. State 4, reached by \code{i}, is different: an \code{f} from there leads to the keyword. The figure below draws the same table.
+
+\begin{omfigure}
+\begin{tikzpicture}[shorten >=1pt, font=\small,
+  every state/.style={minimum size=7mm, inner sep=0pt, fill=omDef!6}, >={Stealth[length=2mm]},
+  lab/.style={font=\scriptsize\ttfamily}, cls/.style={font=\scriptsize, text=omDef!80!black}]
+  \node[state, initial, initial text=] (0) at (0,0) {0};
+  \node[state, accepting, label={[cls]above:ident}] (4) at (3.2,0) {4};
+  \node[state, accepting, label={[cls]right:\code{if}}] (5) at (6.4,0) {5};
+  \node[state, accepting, label={[cls]below:ident}] (3) at (3.2,-2.4) {3};
+  \node[state, accepting, label={[cls]above:number}] (2) at (3.2,2.1) {2};
+  \node[state, accepting, label={[cls]left:space}] (1) at (0,-2.4) {1};
+  \path[->]
+    (0) edge node[above, lab] {i} (4)
+    (4) edge node[above, lab] {f} (5)
+    (0) edge node[below left, lab, pos=.55] {a-h j-z} (3)
+    (4) edge node[right, font=\scriptsize] {other} (3)
+    (5) edge node[below right, lab] {a-z0-9} (3)
+    (0) edge node[above left, lab] {0-9} (2)
+    (0) edge node[left, lab] {\textvisiblespace\ \textbackslash n} (1)
+    (1) edge[loop right] node[right, lab] {\textvisiblespace\ \textbackslash n} ()
+    (2) edge[loop right] node[right, lab] {0-9} ()
+    (3) edge[loop right] node[right, lab] {a-z0-9} ();
+\end{tikzpicture}
+\par\smallskip{\small The minimal \omterm{def:b3:lexical-analysis:scanner}{scanner} automaton of \cref{out:b3:lexical-analysis:table}. Every accepting state is labelled with its \omterm{def:b3:lexical-analysis:token}{token class}; ``other'' on the edge from 4 is \code{0-9}, \code{a-e} and \code{g-z}, and \textvisiblespace{} is a space.}
+\end{omfigure}
+
+\begin{history}[Thompson, lex and the first compilers]
+The first Fortran compiler was delivered for the IBM 704 in 1957; its authors wrote every part of it by hand, including the part that cut a statement into words. % ledger: b3:fortran-1957, b3:nasa-704-photo
+Ken Thompson published his construction in June 1968, as a regular-expression search that compiled the expression into machine code for an IBM 7094. % ledger: b3:thompson-1968
+Lex, written by Mike Lesk and Eric Schmidt at Bell Laboratories for Unix, turned a table of rules into a deterministic \omterm{def:b3:lexical-analysis:scanner}{scanner} and fixed the two rules this chapter uses: the longest match is preferred, and among matches of the same length the rule given first. % ledger: b3:lex-rules
+\end{history}
+
+\omimg{images/book5/b3-01-ibm704.jpg}{0.72\linewidth}{An IBM 704 at a research laboratory, March 1957: the console in the middle, the open wiring cabinet on the left, a card reader in front.}
+
+\section{The longest match}\label{sec:b3:lexical-analysis:munch}
+
+A table answers ``which class does this string belong to?''. A \omterm{def:b3:lexical-analysis:scanner}{scanner} has a harder question: where does the next \omterm{def:b3:lexical-analysis:token}{token} \emph{end}? In \code{<=} the prefix \code{<} is already a \omterm{def:b3:lexical-analysis:token}{token}; in \code{iffy} the prefix \code{if} is already a keyword. Both times the right answer is the longer one.
+
+\begin{definition}[Maximal munch, priority rule]\label{def:b3:lexical-analysis:munch}
+\emph{Maximal munch}\index{maximal munch} (or the longest match) is the rule that the next \omterm{def:b3:lexical-analysis:token}{token} is the longest prefix of the remaining input that belongs to some \omterm{def:b3:lexical-analysis:token}{token class}. The \emph{priority rule}\index{priority rule} breaks the remaining ties: when that longest prefix belongs to several classes, the class of the rule written first wins.
+\end{definition}
+
+So \code{iffy} is an identifier (four characters beat two), \code{if} is the keyword (a tie of two characters, broken by the rule order), and \code{<=} is one operator. The order of rules matters only for ties: a \omterm{def:b3:lexical-analysis:generator}{scanner generator} that listed the identifier rule before the keywords would never produce a keyword (exercise~\ref{exo:b3:lexical-analysis:7} proves the general statement).
+
+\begin{method}[Maximal munch with a table]\label{met:b3:lexical-analysis:munch}
+From the current position, run the automaton one character at a time, remembering the last position at which it was in an accepting state, and its label. Stop when the automaton has no move or the input ends. If an accepting state was seen, the \omterm{def:b3:lexical-analysis:token}{token} ends at the remembered position and has the remembered class; continue from there. If none was seen, report an error at the current position.
+\end{method}
+
+The automaton may read past the end of the \omterm{def:b3:lexical-analysis:token}{token} it returns: on \code{12:3x} with a rule for times \code{[0-9][0-9]:[0-9][0-9]} it reads five characters hoping for a time, then goes back to \code{12}. \Cref{lst:b3:lexical-analysis:longest} is the method, with a counter of the characters read, backtracked ones included.
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/scanner_dfa.rs}{103}{132}{\omterm{def:b3:lexical-analysis:munch}{Maximal munch}: the longest match from one position, and the scan of a whole input.}\label{lst:b3:lexical-analysis:longest}
+
+Going back is usually cheap: a \omterm{def:b3:lexical-analysis:scanner}{scanner} reads one or two characters too many and backs up. With some \omterm{def:b3:lexical-analysis:token}{token} sets it is not.
+
+\begin{proposition}[Maximal munch can be quadratic]\label{prop:b3:lexical-analysis:quadratic}
+With the two rules \code{a} and \code{a*b}, \omterm{def:b3:lexical-analysis:munch}{maximal munch} reads $n(n+1)/2$ characters to cut $a^n$ into $n$ \omterm{def:b3:lexical-analysis:token}{tokens}. With any \omterm{def:b3:lexical-analysis:token}{token} set, it reads at most $n(n+1)/2 + n$ characters on an input of length $n$.
+\end{proposition}
+
+\begin{proof}
+From position $i$ the automaton can still reach \code{a*b}'s accepting state, so it never stops early: it reads the $n - i$ remaining characters, finds no \code{b}, and returns the one-character \omterm{def:b3:lexical-analysis:token}{token} \code{a} it accepted first. The scan then starts again at $i + 1$. In all it reads $n + (n-1) + \dots + 1 = n(n+1)/2$ characters. For the bound: every scan returns a \omterm{def:b3:lexical-analysis:token}{token} of at least one character, so the scans start at distinct positions $i$, and a scan from $i$ reads at most the $n - i$ remaining characters plus one on which the automaton has no move. The total is at most $\sum_{i=0}^{n-1}(n - i + 1) = n(n+1)/2 + n$.
+\end{proof}
+
+\Cref{lst:b3:lexical-analysis:munch} measures it; the figure after the output shows the first scans of $a^4$.
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/munch.rs}{8}{21}{Counting the characters \omterm{def:b3:lexical-analysis:munch}{maximal munch} reads on $a^n$.}\label{lst:b3:lexical-analysis:munch}
+\omoutput{code/bachelor-3/01-lexical-analysis/outputs/munch.txt}{Exactly $n(n+1)/2$ characters read for $a^n$; one \code{b} at the end makes it linear.}\label{out:b3:lexical-analysis:munch}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, x=9mm, y=7mm]
+  \foreach \i in {0,...,3} \node[draw, minimum size=6mm] at (\i+0.5, 0.9) {\code{a}};
+  \foreach \i in {0,...,4} \node[font=\scriptsize, text=black!60] at (\i, 1.55) {\i};
+  \foreach \st in {0,1,2,3} {
+    \pgfmathsetmacro{\yy}{-\st}
+    \pgfmathtruncatemacro{\rd}{4-\st}
+    \fill[omDef!20] (\st, \yy-0.25) rectangle (\st+1, \yy+0.25);
+    \draw[-{Stealth[length=2mm]}, thick] (\st, \yy) -- (4, \yy);
+    \ifnum\st<3 \draw[-{Stealth[length=2mm]}, omExo, thick] (4, \yy-0.15) to[bend left=20] (\st+1, \yy-0.15);\fi
+    \node[anchor=west, font=\scriptsize] at (4.3, \yy) {scan from \st: reads \rd, keeps \code{a}};
+  }
+  \node[anchor=west, font=\scriptsize] at (4.3, -4) {total $4+3+2+1 = 10 = 4 \cdot 5/2$};
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b3:lexical-analysis:munch}{Maximal munch} on $a^4$ with the rules \code{a} and \code{a*b}. Each scan reads to the end of the input hoping for a \code{b} (black arrow), then backs up to the end of the one-character \omterm{def:b3:lexical-analysis:token}{token} it had already accepted (red arrow, shaded \omterm{def:b3:lexical-analysis:token}{token}).}
+\end{omfigure}
+
+The cure is to remember failure. A scan that ends at position $e$ has visited pairs (state, position) beyond $e$ from which no accepting state was ever reached; reaching the same pair again can only fail the same way. Thomas Reps showed in 1998 that a table of these pairs makes \omterm{def:b3:lexical-analysis:munch}{maximal munch} linear for every \omterm{def:b3:lexical-analysis:token}{token} set; exercise~\ref{exo:b3:lexical-analysis:12} builds it, and the weekend problem measures it. % ledger: b3:reps-1998
+
+Real \omterm{def:b3:lexical-analysis:scanner}{scanners} avoid the question differently. A hand-written \omterm{def:b3:lexical-analysis:scanner}{scanner} knows its \omterm{def:b3:lexical-analysis:token}{token} set and reads ahead by a fixed amount: \cref{lst:b3:lexical-analysis:next} reads an identifier or a number in one loop, and settles a two-character operator by looking one character ahead.
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/lexer.rs}{53}{79}{The hand-written \omterm{def:b3:lexical-analysis:scanner}{scanner}'s main function: an identifier or keyword, a number, or a symbol.}\label{lst:b3:lexical-analysis:next}
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/lexer.rs}{81}{98}{Symbols: the two-character operators are tried first, which is the longest match for this \omterm{def:b3:lexical-analysis:token}{token} set.}\label{lst:b3:lexical-analysis:symbol}
+
+Keywords are not rules of their own in \cref{lst:b3:lexical-analysis:next}. The loop reads the longest identifier, and a lookup in the keyword list (\code{keyword} in \cref{lst:b3:lexical-analysis:token}) turns \code{while} into a keyword and leaves \code{whilst} an identifier. That is \omterm{def:b3:lexical-analysis:munch}{maximal munch} and the \omterm{def:b3:lexical-analysis:munch}{priority rule} again, decided in a different order; it also keeps the automaton small (exercise~\ref{exo:b3:lexical-analysis:9} counts how small).
+
+\begin{remark}[Two scanners, one test]\label{rem:b3:lexical-analysis:agree}
+The chapter's tests build a generated \omterm{def:b3:lexical-analysis:scanner}{scanner} from Moor's 39 rules (eleven keywords first, then identifiers, numbers, twenty-five operators, white space and comments) and compare its \omterm{def:b3:lexical-analysis:token}{tokens} with the hand-written \omterm{def:b3:lexical-analysis:scanner}{scanner}'s on 2,000 generated lines. They agree. A hand-written \omterm{def:b3:lexical-analysis:scanner}{scanner} is faster to run and easier to give good error messages; the generated one is the specification it is tested against.
+\end{remark}
+
+\Cref{out:b3:lexical-analysis:demo} runs the hand-written \omterm{def:b3:lexical-analysis:scanner}{scanner} on \cref{lst:b3:lexical-analysis:hello}, printing each \omterm{def:b3:lexical-analysis:token}{token}'s line, column, class and \omterm{def:b3:lexical-analysis:token}{lexeme}.
+
+\omoutput[1-17,47-51]{code/bachelor-3/01-lexical-analysis/outputs/lex_demo.txt}{The \omterm{def:b3:lexical-analysis:token}{token} stream of \texttt{hello.moor}: the comment and the spaces are gone, \code{->} is one \omterm{def:b3:lexical-analysis:token}{token}.}\label{out:b3:lexical-analysis:demo}
+
+\section{Errors and their positions}\label{sec:b3:lexical-analysis:errors}
+
+A \omterm{def:b3:lexical-analysis:scanner}{scanner} meets three kinds of error in Moor: a character that starts no \omterm{def:b3:lexical-analysis:token}{token} (\texttt{\#}, \code{é}), a character that starts a \omterm{def:b3:lexical-analysis:token}{token} only with a partner it lacks (a single \texttt{\&}), and a \omterm{def:b3:lexical-analysis:token}{lexeme} the class rejects although the pattern matches (a number beyond $2^{31} - 1$). Each is reported at the \omterm{def:b3:lexical-analysis:scanner}{span} of the offending \omterm{def:b3:lexical-analysis:token}{lexeme}, and the report shows the line with a caret under the column.
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/lexer.rs}{160}{170}{The message, the line, and a caret. Tabs before the column are copied, so the caret lines up whatever width the reader's terminal gives a tab.}\label{lst:b3:lexical-analysis:show}
+
+A column counts characters, not bytes, and not screen positions: \code{é} is two bytes and one column, a tab is one column and four or eight positions on a screen. Copying the tabs into the caret line is the trick that makes the two agree without knowing the tab width. Line 2 of the file below starts with a tab, which is column~1.
+
+\begin{method}[Recovery by skipping a character]\label{met:b3:lexical-analysis:recover}
+After an error, skip the offending character (all its bytes) and scan on, collecting errors in a list; report them all at the end. The \omterm{def:b3:lexical-analysis:token}{tokens} produced after an error are kept, so that later phases can still look for errors of their own.
+\end{method}
+
+Skipping one character is the simplest recovery that always makes progress, and for a \omterm{def:b3:lexical-analysis:scanner}{scanner} it is usually enough: a stray character rarely confuses what follows. The parser will need something stronger (chapter~2).
+
+\omcode{code/bachelor-3/01-lexical-analysis/listings/lex_error.rs}{8}{16}{Scanning with recovery, then showing every error.}\label{lst:b3:lexical-analysis:errors}
+\omoutput{code/bachelor-3/01-lexical-analysis/outputs/lex_error.txt}{Three errors in \texttt{bad.moor}, one per kind; the caret of the first sits under the number although the line starts with a tab.}\label{out:b3:lexical-analysis:errors}
+
+\begin{inpractice}[What the scanner leaves to the parser]
+A \omterm{def:b3:lexical-analysis:scanner}{scanner} checks only what a regular language can check. It accepts \code{) ) (}, \code{var var}, and \code{x = = 1}: each \omterm{def:b3:lexical-analysis:token}{lexeme} is fine, the order is wrong, and the order is the parser's business. It cannot match brackets, since balanced brackets are not a regular language (Year 2 volume, the pumping lemma). Where a language has comments that nest, the \omterm{def:b3:lexical-analysis:scanner}{scanner} keeps a counter, which is no longer a finite automaton (exercise~\ref{exo:b3:lexical-analysis:11}).
+\end{inpractice}
+
+\section{Exercises}\label{sec:b3:lexical-analysis:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:lexical-analysis:1}
+Write the \omterm{def:b3:lexical-analysis:token}{token} stream that the \omterm{def:b3:lexical-analysis:scanner}{scanner} of this chapter produces for the line \code{while i<=n{i=i+1;}//done}, as a list of classes with their \omterm{def:b3:lexical-analysis:token}{lexemes}. How many \omterm{def:b3:lexical-analysis:token}{tokens} are there, the end-of-file \omterm{def:b3:lexical-analysis:token}{token} included?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:lexical-analysis:2}
+For each input, say which \omterm{def:b3:lexical-analysis:token}{tokens} the \omterm{def:b3:lexical-analysis:scanner}{scanner} returns and which rule decides: \code{iffy}, \code{if}, \code{if2}, \code{<=}, \code{<==}, \code{1x}, \code{->-}, \code{a--b}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:lexical-analysis:3}
+Write a regular expression, in the syntax of \cref{lst:b3:lexical-analysis:thompson}'s parser, for Moor's comments, from \code{//} to the end of the line. Should the newline belong to the comment? How many states does Thompson's construction give your expression?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:lexical-analysis:4}
+How many states does Thompson's construction, as in \cref{lst:b3:lexical-analysis:thompson}, build for \code{(a|b)*abb}? For \texttt{[0-9]+(\textbackslash.[0-9]+)?}? Check the first against the chapter's tests.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:lexical-analysis:5}
+\Cref{lst:b3:lexical-analysis:wordsbug} is a first attempt at a \omterm{def:b3:lexical-analysis:scanner}{scanner} for words and numbers, and \cref{out:b3:lexical-analysis:wordsbug} what it prints. Find the bug, explain why the first call hides it, and fix it.
+\omcode{code/bachelor-3/01-lexical-analysis/listings/words_bug.rs}{2}{19}{A \omterm{def:b3:lexical-analysis:scanner}{scanner} with a bug.}\label{lst:b3:lexical-analysis:wordsbug}
+\omoutput{code/bachelor-3/01-lexical-analysis/outputs/words_bug.txt}{The same line, with and without its last two characters.}\label{out:b3:lexical-analysis:wordsbug}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:lexical-analysis:6}
+Add hexadecimal literals to Moor's numbers: \code{0xff} and \code{0XFF} are 255. Write a function that reads a number literal at the start of a byte slice and returns its value and length, with an error for \code{0x} alone, for a letter glued to the digits (\code{0x1g}, \code{12ab}), and for a value that does not fit. Which values should a hexadecimal literal accept that a decimal one does not, on a 32-bit machine, and why?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:lexical-analysis:7}
+Prove that the labelling of \cref{met:b3:lexical-analysis:union} is right: for every string $w$, the deterministic state reached on $w$ is labelled $i$ if and only if $w$ matches rule $i$ and no rule before it. Deduce that a rule $r_j$ whose language is included in that of an earlier rule never labels any state.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:lexical-analysis:8}
+A line of a Moor file is a tab, then \texttt{var x = 3 \# 4;}. At which line and column does the \omterm{def:b3:lexical-analysis:scanner}{scanner} report the error? An editor shows tabs as eight spaces: in which screen column does the \texttt{\#} appear? What would a caret line made only of spaces look like there, and why does \cref{lst:b3:lexical-analysis:show} not have that problem?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:lexical-analysis:9}
+Build the minimal \omterm{def:b3:lexical-analysis:scanner}{scanner} automaton (with \cref{lst:b3:lexical-analysis:subset} and \code{minimise}) for Moor's identifiers alone, then for the eleven keywords as rules before the identifier rule. How many states does each have? What does this say about treating keywords as a lookup after the identifier has been read?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:lexical-analysis:10}
+Show that for every \omterm{def:b3:lexical-analysis:token}{token} set \omterm{def:b3:lexical-analysis:munch}{maximal munch} reads $O(n^2)$ characters on an input of length $n$, and that the bound is reached only by \omterm{def:b3:lexical-analysis:token}{token} sets whose automaton can read arbitrarily far past the end of the \omterm{def:b3:lexical-analysis:token}{token} it returns. State that condition precisely in terms of the minimal automaton, and decide it for Moor's \omterm{def:b3:lexical-analysis:token}{token} set and for the rules \code{-} and \code{-+>}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:lexical-analysis:11}
+Some languages have comments that nest: \code{/* a /* b */ c */} is one comment. Use the Myhill--Nerode theorem (Year 2 volume) to show that the set of nested comments is not regular, so no rule of a \omterm{def:b3:lexical-analysis:generator}{scanner generator} can describe it. Then write a function that skips a nested comment with a depth counter and returns its length, and test it.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:lexical-analysis:12}
+Implement \omterm{def:b3:lexical-analysis:munch}{maximal munch} with a table of failed pairs (state, position): after a scan that returns a \omterm{def:b3:lexical-analysis:token}{token} ending at $e$, mark every pair visited at a position beyond $e$; stop a later scan as soon as it reaches a marked pair. Prove that it returns the same \omterm{def:b3:lexical-analysis:token}{tokens} as \cref{lst:b3:lexical-analysis:longest}, that it reads at most $(|Q| + 2)\,n$ characters for an automaton with $|Q|$ states, and that on $a^n$ with the rules \code{a} and \code{a*b} it reads exactly $3n - 3$ for $n \ge 2$.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:lexical-analysis:problem}
+
+\begin{problem}[{Weekend problem --- The town hall's timetable reader}]\label{pb:b3:lexical-analysis:1}
+Brenmoor's town hall publishes its opening hours as plain text files. A line looks like \code{Library 09:45-12:30 room 3}, a row of dashes separates the days, and an arrow \texttt{-{}-{}>} points from a place to a time. The town's programmer writes a \omterm{def:b3:lexical-analysis:scanner}{scanner} for these files with seven rules, in this order:
+\code{time} \code{[0-9][0-9]:[0-9][0-9]}, \code{number} \code{[0-9]+}, \code{name} \code{[A-Z][a-z]*}, \code{word} \code{[a-z]+}, \code{arrow} \code{-+>}, \code{dash} \code{-}, \code{space} \texttt{[\textvisiblespace\textbackslash n]+}.
+The file \code{exercises/pb_timetable.rs} builds this \omterm{def:b3:lexical-analysis:scanner}{scanner} with the chapter's modules; reason each answer out before checking it.
+
+\medskip\noindent\textbf{Part I --- Rules and conflicts.}
+\begin{enumerate}
+\item Write the \omterm{def:b3:lexical-analysis:token}{tokens} of \code{Library 09:45-12:30 room 3}, with their classes.
+\item Which rules match a prefix of \code{09:45}? Which \omterm{def:b3:lexical-analysis:token}{token} does \omterm{def:b3:lexical-analysis:munch}{maximal munch} return, and which for \code{0945}?
+\item Show that no \omterm{def:b3:lexical-analysis:token}{lexeme} matches two rules of this list. What follows for the order of the rules?
+\item The programmer moves \code{number} before \code{time}. Does any \omterm{def:b3:lexical-analysis:token}{token} change? And if \code{dash} moves before \code{arrow}?
+\item On \code{12:3x}, how many characters does the automaton read before it returns its first \omterm{def:b3:lexical-analysis:token}{token}, which \omterm{def:b3:lexical-analysis:token}{token} is it, and where is the error reported?
+\item A clerk writes \code{9:45}. What does the \omterm{def:b3:lexical-analysis:scanner}{scanner} do? Propose a change to one rule that accepts it, and say what it costs for \code{number}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The automaton, by hand and by program.}
+\begin{enumerate}[resume]
+\item Count the states of each rule's Thompson fragment, and of the whole automaton, with \cref{prop:b3:lexical-analysis:thompson-size}.
+\item Follow the subset construction from the start state on the digits: which deterministic states does \code{09:45} visit, and which of them accept?
+\item The construction gives 14 deterministic states and minimisation 13. Which two states merge, and why could no other pair?
+\item How many of the 13 states accept? Which states accept \code{number}, and why are there more than one?
+\item Why must minimisation start from a partition by class? Give two states of this automaton that a partition into ``accepting'' and ``not accepting'' would merge wrongly.
+\item Two characters are equivalent when every state moves on them to the same place. How many classes of characters does the minimal table have? List them.
+\item The table stores one 4-byte entry per state and character. How many bytes does it take with 128 columns, and with one column per class plus a 128-byte map from characters to classes?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- What maximal munch costs.}
+\begin{enumerate}[resume]
+\item How many characters does the \omterm{def:b3:lexical-analysis:scanner}{scanner} read on \texttt{-{}-{}-{}>}, and how many \omterm{def:b3:lexical-analysis:token}{tokens} does it return?
+\item Each day ends with a rule line of $n$ dashes. Show that the \omterm{def:b3:lexical-analysis:scanner}{scanner} returns $n$ \code{dash} \omterm{def:b3:lexical-analysis:token}{tokens} and reads $n(n+1)/2$ characters.
+\item How many characters does it read on a rule line of 80 dashes? The file has 365 such lines and 2,000 other lines of 30 characters: what share of all reads do the rule lines cause?
+\item Show that, whatever the input, the \code{time} rule can make the \omterm{def:b3:lexical-analysis:scanner}{scanner} read at most 3 characters past the end of the \omterm{def:b3:lexical-analysis:token}{token} it returns, the character that fails included.
+\item Deduce a bound on the reads of a \omterm{def:b3:lexical-analysis:scanner}{scanner} with only the rules \code{time}, \code{number}, \code{name}, \code{word} and \code{space}, on any input of length $n$.
+\item Rewrite the \omterm{def:b3:lexical-analysis:token}{token} set so that no rule line costs more than linear time without a memo table, and say what the parser must then do to recognise an arrow.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The memoised scanner.}
+\begin{enumerate}[resume]
+\item Run the memoised \omterm{def:b3:lexical-analysis:scanner}{scanner} of exercise~\ref{exo:b3:lexical-analysis:12} by hand on five dashes: list the pairs it marks and the characters each scan reads.
+\item Prove that on $n \ge 2$ dashes it reads exactly $3n - 3$ characters.
+\item How many pairs does it mark on $n$ dashes? Compare with the $13n$ entries its table can hold.
+\item Check with the program that the two \omterm{def:b3:lexical-analysis:scanner}{scanners} return the same \omterm{def:b3:lexical-analysis:token}{tokens} on 500 random lines built from dashes, arrows, times, numbers and names, and that the memoised one never reads more than $(|Q| + 2)n$ characters.
+\item State the result for the 80-dash rule line: characters read by each \omterm{def:b3:lexical-analysis:scanner}{scanner}, and the factor between them.
+\end{enumerate}
+\end{problem}

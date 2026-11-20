@@ -1,0 +1,195 @@
+% Solutions of Book 4, chapter 16 (sockets).
+\section*{Chapter \ref{ch:b2:sockets} --- Sockets}
+
+\begin{solution}{exo:b2:sockets:1}
+The client receives the bytes \code{abcd} in order, cut anywhere into pieces of at most 3 bytes, each a nonempty
+prefix of what is left. The possible outputs are the compositions of 4 into parts of at most 3: \code{[abc][d]},
+\code{[a][bcd]}, \code{[ab][cd]}, \code{[ab][c][d]}, \code{[a][bc][d]}, \code{[a][b][cd]} and \code{[a][b][c][d]},
+7 outputs. The two sends do not force a cut between \code{b} and \code{c}: \code{[abc][d]} happens if both had
+arrived before the first \code{recv}.
+\end{solution}
+
+\begin{solution}{exo:b2:sockets:2}
+$44164 = \mathtt{0xac84}$. Stored without \code{htons} on this little-endian machine, \code{sin_port} holds the bytes
+\code{84 ac}; the system reads them as a big-endian port, $\mathtt{0x84ac} = 33\,964$, as \code{getsockname}
+reports. \code{bind} succeeded because 33\,964 is an ordinary free port: nothing checks that it is the one meant. On a
+big-endian machine the bug would be invisible, as \code{htons} does nothing there; that is why the conversion must be
+written even where it is not needed.
+\end{solution}
+
+\begin{solution}{exo:b2:sockets:3}
+\omcode{code/bachelor-2/16-sockets/listings/net.c}{44}{54}{Sending everything}
+\code{recv_all} is \cref{lst:b2:sockets:recv-all}, proved by \cref{prop:b2:sockets:recv-all}. \code{send_all}
+loops the same way: \code{send} may accept fewer bytes than given (when the \omterm{def:b2:sockets:socket}{socket}'s send buffer is nearly full), so
+the rest is sent again from where it stopped. \code{MSG_NOSIGNAL} turns the \code{SIGPIPE} of a write to a closed
+connection into an error return. The test sends a frame and lines one byte at a time and checks that they arrive
+whole.
+\end{solution}
+
+\begin{solution}{exo:b2:sockets:4}
+\code{street Mill Lane} has 16 bytes, so the length is \code{00 00 00 10}, followed by \code{73 74 72 65 65 74 20 4d
+69 6c 6c 20 4c 61 6e 65}: 20 bytes in all. \code{recv_msg} reads them in two calls to \code{recv_all}, one for the 4
+bytes of the length and one for the 16 of the message; each of those may make several \code{recv} calls.
+\end{solution}
+
+\begin{solution}{exo:b2:sockets:5}
+\omoutput{code/bachelor-2/16-sockets/outputs/exo_truncate.txt}{The first datagram is cut; the second is whole.}
+A \code{recvfrom} returns one datagram. When it is larger than the buffer, the first 10 bytes are copied and the other
+90 are discarded with the datagram: they are not kept for the next call, which returns the next datagram,
+\code{next}. A program that cares passes \code{MSG_TRUNC}, with which Linux returns the datagram's real length, or
+uses a buffer as large as the largest datagram its protocol allows.
+\end{solution}
+
+\begin{solution}{exo:b2:sockets:6}
+After \code{hello} and its echo, the client closes. Every later \code{recv} returns 0 at once, end of stream, and the loop goes
+round without waiting: 999\,999 calls in a fraction of a second, all returning 0, burning a processor. Without the
+guard it would never stop. The fix is to leave the loop on 0 and on $-1$: \code{while ((n = recv(c, buf, sizeof buf,
+0)) > 0) send_all(c, buf, n);}, then \code{close(c)}. Sending back \code{n} bytes when \code{n} is $-1$ would be a
+second bug, which the guard's \code{n > 0 ? n : 0} hides.
+\end{solution}
+
+\begin{solution}{exo:b2:sockets:7}
+\omcode{code/bachelor-2/16-sockets/exercises/linereader.c}{13}{37}{A line reader over a stream}
+The unread bytes live in \code{buf[start..end)}. If they contain a newline, the line is returned and \code{start}
+moves past it, keeping the bytes after it for the next call: one \code{recv} may bring several lines. Otherwise the
+rest is moved to the front and \code{recv} fills the free space: a line may come in pieces. A line longer than the
+buffer is dropped, and one longer than \code{cap} is cut; a final line without newline is lost at the end of the
+stream, a choice to document. The test sends lines one byte at a time, including an empty line.
+\end{solution}
+
+\begin{solution}{exo:b2:sockets:8}
+By induction on $k$. For $k = 0$, $w$ is empty, and decoding yields nothing and uses all of it. Let $k \ge 1$ and $w =
+f(m_1) w'$, where $f(m_1)$ is 4 bytes holding $n_1 = |m_1|$ followed by $m_1$, and $w'$ is the concatenation of the
+framings of $m_2, \dots, m_k$. Decoding reads the first 4 bytes of $w$, which are those of $f(m_1)$, so it reads
+$n_1$; it then takes the next $n_1$ bytes, which are $m_1$, and starts again at the first byte of $w'$. By the
+induction hypothesis, decoding $w'$ yields $m_2, \dots, m_k$ and uses all of $w'$. So decoding $w$ yields $m_1, \dots,
+m_k$ and uses all of it. The key point is that the decoder never has to guess where a message ends: the length says
+so before any byte of the message is read.
+
+With the newline as delimiter, the single message made of \code{a}, a newline and \code{b}, and the two messages
+\code{a} and \code{b}, are both sent as the four bytes \code{a}, newline, \code{b}, newline: the receiver cannot tell
+them apart.
+\end{solution}
+
+\begin{solution}{exo:b2:sockets:9}
+\omcode{code/bachelor-2/16-sockets/exercises/count_server.c}{16}{32}{One \omterm{def:b2:threads-and-synchronisation:thread}{thread} per client, one shared
+counter}
+The count is shared by every \omterm{def:b2:threads-and-synchronisation:thread}{thread}, so its increment and the read of its new value are one \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical section}; reading
+\code{lines} again after unlocking could return another \omterm{def:b2:threads-and-synchronisation:thread}{thread}'s number. The reply is formatted and sent outside the
+\omterm{def:b2:threads-and-synchronisation:lock}{lock}, so that a slow client does not hold the others up. The line reader of \cref{exo:b2:sockets:7} cuts the stream
+into lines. The test runs 4 clients of 50 lines each and checks that the server counted 200, and that no reply
+exceeds 200.
+\end{solution}
+
+\begin{solution}{exo:b2:sockets:10}
+\omcode{code/bachelor-2/16-sockets/exercises/chat.c}{21}{57}{A chat server: one \code{poll}, one buffer per client}
+Each client has a buffer in which partial lines wait; every complete line is sent to every other client, and removed.
+A client that closes, or fails, is closed and forgotten, its slot taken by the last one (the loop runs downwards so
+that the moved entry has already been handled). The \omterm{def:b2:sockets:listening}{listening socket} is in the set only while clients may still
+come. \code{send_all} may block if a client stops reading; a server for real use would keep an outgoing buffer per
+client and ask \code{poll} for \code{POLLOUT}. The test connects three clients, sends a line from one and checks
+that the two others receive it, then the same from another.
+\end{solution}
+
+\begin{solution}{exo:b2:sockets:11}
+Eight clients keep the server busy, so the time per connection is the inverse of the rate. On the run printed, the
+\omterm{def:b2:sockets:event-loop}{event loop} takes $1/10\,917 \approx 91.6$~µs per connection, which we take as $r$. The \omterm{def:b2:threads-and-synchronisation:thread}{thread} design takes
+$1/7\,331 \approx 136.4$~µs, so $f \approx 45$~µs for a \omterm{def:b2:threads-and-synchronisation:thread}{thread}; the \omterm{def:b2:processes-and-system-calls:process}{process} design $1/3\,662 \approx 273.1$~µs, so
+$f \approx 180$~µs for a \omterm{def:b2:processes-and-system-calls:process}{process}. With $q$ requests per connection, a design serves $q / (f + q r)$ requests per unit
+of time, against $1/r$ for the \omterm{def:b2:sockets:event-loop}{event loop}. The \omterm{def:b2:processes-and-system-calls:process}{process} design reaches 90~\% of it when $q r \ge 0.9 (f + q r)$, that
+is $q \ge 9 f / r \approx 9 \times 180 / 91.6 \approx 18$ requests per connection. The model ignores everything else,
+such as the eight client \omterm{def:b2:threads-and-synchronisation:thread}{threads} competing for the same cores; it says that the fixed cost of a design matters only
+for short connections.
+\end{solution}
+
+\begin{solution}{exo:b2:sockets:12}
+The side that closes a TCP connection first keeps it, after the exchange of closing messages, in the state
+\code{TIME_WAIT} for a while, so that a late packet of the old connection cannot be taken for part of a new one with
+the same addresses and ports. Here the server closed first, so its end, bound to port 44\,169, is in
+\code{TIME_WAIT} after the program has closed every descriptor. A new \code{bind} to that port then fails with
+\code{EADDRINUSE}, unless \code{SO_REUSEADDR} is set, which allows binding an address whose only users are such
+lingering connections (it still refuses while another \omterm{def:b2:sockets:socket}{socket} is listening on it). This is why a server restarted at
+once fails without the option, and why every server of the chapter sets it.
+\end{solution}
+
+\begin{solution}{pb:b2:sockets:1}
+\textbf{1.} \code{00 00 00 05 77 68 6f 20 31}: the length 5, then \code{w}, \code{h}, \code{o}, a space, \code{1}.
+
+\textbf{2.} $2^{32} - 1$ bytes, about 4 GiB. A malicious or broken client could announce that much; the capacity
+bounds what the server agrees to receive, and \code{recv_msg} returns $-1$ for a longer message instead of
+overflowing its buffer.
+
+\textbf{3.} Yes: the stream keeps no boundaries, and the first \code{recv} may return all 18 bytes. Framing makes it
+harmless, because the decoder takes exactly the announced length and leaves the rest for the next message
+(\cref{prop:b2:sockets:prefix-free}).
+
+\textbf{4.} 39 = \code{0x27}: \code{00 00 00 27}.
+
+\textbf{5.} \code{"<I"} is little-endian: \code{05 00 00 00}. The server would read $\mathtt{0x05000000} = 83\,886\,080$
+as the length, more than its capacity, and \code{recv_msg} would return $-1$: the server would close without an
+answer.
+
+\textbf{6.} A closed connection says only that something went wrong; an error message says what, and lets the client
+tell a mistake in its request from a broken server or network.
+
+\textbf{7.} \code{socket} creates a \omterm{def:b2:sockets:kinds}{stream socket}; \code{setsockopt} sets \code{SO_REUSEADDR}; \code{bind} gives it
+the address 127.0.0.1 and the port; \code{listen} makes it a \omterm{def:b2:sockets:listening}{listening socket} with a queue of 128 pending connections.
+
+\textbf{8.} A new descriptor for the one connection with that client. The \omterm{def:b2:sockets:listening}{listening socket} goes on receiving other
+clients' connections; each connection needs its own descriptor to send and receive on.
+
+\textbf{9.} \code{recv_msg} waits for 4 bytes. With a \omterm{def:b2:processes-and-system-calls:process}{process} or a \omterm{def:b2:threads-and-synchronisation:thread}{thread} per connection, only that child or \omterm{def:b2:threads-and-synchronisation:thread}{thread}
+waits, the others go on. In the \omterm{def:b2:sockets:event-loop}{event loop}, \code{poll} never reports the silent connection ready, so the loop goes on
+too; the connection simply stays in the set (until the client leaves).
+
+\textbf{10.} \code{recv_all(fd, len, 4)} returns 4 with the length, or fewer at the end of the stream, and
+\code{recv_msg} returns $-1$ unless it got 4. Then \code{recv_all(fd, buf, n)} returns $n$ with the message, or fewer,
+and again \code{recv_msg} returns $-1$ unless it got $n$. So it returns $n$ with a whole message, or $-1$.
+
+\textbf{11.} A write to a connection the client has closed raises \code{SIGPIPE}, whose default action ends the
+\omterm{def:b2:processes-and-system-calls:process}{process}: the whole server would die because of one client. With \code{MSG_NOSIGNAL}, \code{send} fails with
+\code{EPIPE} and only that connection is closed.
+
+\textbf{12.} It is told to: its third argument is the number of connections to serve, 4 here, one per request of the
+client. A server that never stops would leave the session waiting.
+
+\textbf{13.} The parent's copy keeps the connection open: the client would see end of stream only when both copies
+are closed, and each such connection would hold a descriptor in the parent until it ran out of them.
+
+\textbf{14.} \code{&c} points to a variable that the next turn of the loop overwrites, perhaps before the \omterm{def:b2:threads-and-synchronisation:thread}{thread} has
+read it: two \omterm{def:b2:threads-and-synchronisation:thread}{threads} could serve the same descriptor. The value itself, carried in the pointer, belongs to the
+\omterm{def:b2:threads-and-synchronisation:thread}{thread}.
+
+\textbf{15.} The tables are written once, before the server starts, and only read afterwards. Readers alone do not
+form a \omterm{def:b2:threads-and-synchronisation:data-race}{data race}.
+
+\textbf{16.} The first piece is appended to \code{st[i].buf}; \code{unframe} finds the message incomplete and the
+connection stays in the set. When the second piece arrives, \code{poll} reports it again, and the request is then
+complete.
+
+\textbf{17.} Removing entry $i$ moves the last entry into slot $i$. Walking downwards, that last entry has already been
+handled in this round; walking upwards, it would be skipped or, worse, its \code{revents} would be those of the entry
+removed.
+
+\textbf{18.} The \omterm{def:b2:processes-and-system-calls:process}{process} per connection: a crash kills only that child. A \omterm{def:b2:threads-and-synchronisation:thread}{thread}'s crash kills the whole \omterm{def:b2:processes-and-system-calls:process}{process}, every
+\omterm{def:b2:threads-and-synchronisation:thread}{thread} with it; the \omterm{def:b2:sockets:event-loop}{event loop} is one \omterm{def:b2:threads-and-synchronisation:thread}{thread}, so it dies too.
+
+\textbf{19.} $8 \times 500 = 4000$ connections, from 8 client \omterm{def:b2:threads-and-synchronisation:thread}{threads}.
+
+\textbf{20.} The server must be measured as a separate program, as it would run: in a \omterm{def:b2:processes-and-system-calls:tree}{child process}, its \code{fork}
+copies only the small server, not the client \omterm{def:b2:threads-and-synchronisation:thread}{threads}, and a crash or a stuck \omterm{def:b2:threads-and-synchronisation:thread}{thread} of one side does not take the other
+with it.
+
+\textbf{21.} The clients see the whole service time, from the first connection to the last answer, which is what a
+user experiences; the server cannot know when the clients are done.
+
+\textbf{22.} \omterm{def:b2:sockets:event-loop}{Event loop}, \omterm{def:b2:threads-and-synchronisation:thread}{thread} per connection, \omterm{def:b2:processes-and-system-calls:process}{process} per connection; on the run printed the \omterm{def:b2:sockets:event-loop}{event loop} is about
+$10\,917 / 3\,662 \approx 3.0$ times as fast as the \omterm{def:b2:processes-and-system-calls:process}{process} design.
+
+\textbf{23.} The fixed cost per connection would be paid once for a thousand requests, so the three designs would come
+close (\cref{exo:b2:sockets:11}); the \omterm{def:b2:threads-and-synchronisation:thread}{threads} and processes might even pull ahead, using several cores where the \omterm{def:b2:sockets:event-loop}{event
+loop} uses one.
+
+\textbf{24.} Requests per second on loopback for three server designs, on the laptop: about 12\,000 with a \omterm{def:b2:processes-and-system-calls:process}{process} per
+connection, 27\,000 with a \omterm{def:b2:threads-and-synchronisation:thread}{thread} per connection and 45\,000 with an \omterm{def:b2:sockets:event-loop}{event loop}, in the run printed.
+\end{solution}

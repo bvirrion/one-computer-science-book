@@ -1,0 +1,14 @@
+$ gcc -O3 -fopt-info-vec-optimized -c saxpy.c
+saxpy.c:4:23: optimized: loop vectorized using 16 byte vectors
+saxpy.c:4:23: optimized: loop vectorized using 8 byte vectors
+$ gcc -O3 -fopt-info-vec-missed -c saxpy.c 2>&1 | grep -E '^saxpy.c:1[01]'
+saxpy.c:10:23: missed: couldn't vectorize loop
+saxpy.c:11:24: missed: not vectorized, possible dependence between data-refs *_6 and *_3
+$ gcc -O3 -S -o - saxpy.c | grep -E 'mulps|addps|mulss|addss'
+	mulps	%xmm2, %xmm1
+	addps	%xmm3, %xmm1
+	mulps	%xmm2, %xmm1
+	addps	%xmm2, %xmm1
+	mulss	(%rcx,%rax,4), %xmm0
+	addss	(%rdx), %xmm0
+	addss	(%rax), %xmm0

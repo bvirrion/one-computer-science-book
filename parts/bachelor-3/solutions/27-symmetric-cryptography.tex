@@ -1,0 +1,99 @@
+\section*{Chapter \ref{ch:b3:symmetric-cryptography} --- Symmetric Cryptography and Hash Functions}
+
+\begin{solution}{exo:b3:symmetric-cryptography:1}
+$1011\,0110 \oplus 0110\,1100 = 1101\,1010$. The key that decrypts this ciphertext to $0000\,1111$ is the XOR of the two: $1101\,1010 \oplus 0000\,1111 = 1101\,0101$. Every 8-bit message has such a key, which is why the ciphertext alone says nothing.
+\end{solution}
+
+\begin{solution}{exo:b3:symmetric-cryptography:2}
+Only in ECB: $C_1 = E_k(P_1) = E_k(P_3) = C_3$. In CBC the inputs $P_1 \oplus C_0$ and $P_3 \oplus C_2$ differ unless $C_0 = C_2$, which happens with probability $2^{-128}$; in CTR the \omterm{def:b3:symmetric-cryptography:stream}{keystream} blocks of counters $\mathit{ctr}$ and $\mathit{ctr} + 2$ differ, since $E_k$ is a permutation. Encrypting the same message twice: ECB always gives the same ciphertext; CBC and CTR give different ones with a fresh IV or counter, and the same one when it is reused. In CTR a reused counter is worse than repetition: two different messages then leak their XOR.
+\end{solution}
+
+\begin{solution}{exo:b3:symmetric-cryptography:3}
+With $N = 2^{64}$, \cref{thm:b3:symmetric-cryptography:birthday} gives a collision with probability at least $1/2$ after $\sqrt{2N \ln 2} \approx 5.06 \times 10^9$ digests, and the mean is $\sqrt{\pi N / 2} \approx 5.38 \times 10^9$. At $10^9$ digests per second, about five seconds. A 64-bit digest offers no \omterm{def:b3:symmetric-cryptography:hash}{collision resistance} against a computer.
+\end{solution}
+
+\begin{solution}{exo:b3:symmetric-cryptography:4}
+The line is $m_1 \oplus m_2$, byte by byte. Where both messages have the same letter, the byte is \code{00}: position 2 (E and E) gives the third byte, \code{00}. A space is \code{0x20} and a capital letter lies between \code{0x41} and \code{0x5a}; their XOR flips bit 5 of the letter and lands between \code{0x61} and \code{0x7a}, the lower-case letters: position 3, a T against a space, gives \code{74}, the code of t. This is why crib dragging works: the XOR of two texts is full of such \omterm{def:b3:computability:languages}{recognisable} bytes.
+\end{solution}
+
+\begin{solution}{exo:b3:symmetric-cryptography:5}
+Two messages encrypted from counter 0 use the same \omterm{def:b3:symmetric-cryptography:stream}{keystream}, so $c_1 \oplus c_2 = m_1 \oplus m_2$, as the first line of the program's output shows, and the attack of \cref{out:b3:symmetric-cryptography:otp} applies. The fix puts an 8-byte \omterm{def:b3:symmetric-cryptography:stream}{nonce} in the first half of the counter block and the block number in the second, and sends the \omterm{def:b3:symmetric-cryptography:stream}{nonce} in front of the ciphertext. Two different \omterm{def:b3:symmetric-cryptography:stream}{nonces} give counter blocks that never meet, so no \omterm{def:b3:symmetric-cryptography:stream}{keystream} block repeats. One key then encrypts up to $2^{64}$ messages, each of up to $2^{64}$ blocks, $2^{68}$ bytes, if the \omterm{def:b3:symmetric-cryptography:stream}{nonce} is a counter. A random \omterm{def:b3:symmetric-cryptography:stream}{nonce} collides after about $2^{32}$ messages by the \omterm{thm:b3:symmetric-cryptography:birthday}{birthday bound}, so a counter, or a longer \omterm{def:b3:symmetric-cryptography:stream}{nonce}, is the safer choice.
+\end{solution}
+
+\begin{solution}{exo:b3:symmetric-cryptography:6}
+\code{exercises/ex6_cbc.py}: refuse unless the IV has 16 bytes and the ciphertext is non-empty with a length divisible by 16; then $P_i = D_k(C_i) \oplus C_{i-1}$ with $C_0$ the IV; read $n$ from the last byte, and refuse unless $1 \le n \le 16$ and the last $n$ bytes all equal $n$. The test encrypts the four plaintext blocks of SP 800-38A F.2.1 followed by a full \omterm{def:b3:symmetric-cryptography:modes}{padding} block, decrypts, and gets them back; it checks that the vector's own ciphertext, whose last plaintext byte \code{0x10} would mean sixteen bytes of \omterm{def:b3:symmetric-cryptography:modes}{padding} that are not there, is refused, as are a 15-byte and an empty ciphertext. A real service must give the same answer for every kind of refusal, or this function becomes a \omterm{def:b3:symmetric-cryptography:modes}{padding oracle}.
+\end{solution}
+
+\begin{solution}{exo:b3:symmetric-cryptography:7}
+Facts used: for fixed $m$ and $c$ in $\mathbb{Z}_{26}$, exactly one $k$ satisfies $c = m + k \bmod 26$. For a message of $n$ letters and independent uniform key letters, a ciphertext $c$ arises from $m$ only with the key $k_i = c_i - m_i \bmod 26$, of probability $26^{-n}$, the same for every $m$: \omterm{def:b3:symmetric-cryptography:security}{perfect secrecy}. For Vigenère with a key of length $\ell$, take messages of length $\ell + 1$: letters 1 and $\ell + 1$ use the same key letter, so $c_1 - c_{\ell+1} = m_1 - m_{\ell+1} \bmod 26$. For $m = \mathrm{A}\ldots\mathrm{A}$, every ciphertext has $c_1 = c_{\ell+1}$; for $m = \mathrm{A}\ldots\mathrm{AB}$, none does. So $P(C = c \mid M = m)$ depends on $m$. The converse of \cref{thm:b3:symmetric-cryptography:shannon} gives the same answer by counting: $26^\ell$ keys against $26^{\ell+1}$ messages. A test enumerates both cases for $\ell = 1$.
+\end{solution}
+
+\begin{solution}{exo:b3:symmetric-cryptography:8}
+Facts used: $P(A \cup B) \le P(A) + P(B)$. A collision means $x_i = x_j$ for some pair $i < j$. Each of the $q(q - 1)/2$ pairs collides with probability $1/N$, so $P(\text{collision}) \le q(q - 1)/(2N)$. For $q = \sqrt{N}$ this upper bound is about $1/2$, and the theorem's lower bound $1 - e^{-q(q-1)/(2N)}$ is about $1 - e^{-1/2} \approx 0.39$. So $\sqrt{N}$ draws collide with probability between 0.39 and 0.5: the collision threshold is $\sqrt{N}$, up to a constant factor. A test checks the upper bound by simulation for $N = 1000$, $q = 30$.
+\end{solution}
+
+\begin{solution}{exo:b3:symmetric-cryptography:9}
+Lengths 0, 1, 15, 16, 17, 100 give 1, 1, 1, 2, 2 and 7 blocks, with 16, 15, 1, 16, 15 and 12 \omterm{def:b3:symmetric-cryptography:modes}{padding} bytes: always $16 - (\ell \bmod 16)$ bytes, never 0. A message of 16 bytes ending in \code{01} would otherwise be read, after decryption, as 15 bytes plus one byte of \omterm{def:b3:symmetric-cryptography:modes}{padding}. \omterm{def:b3:symmetric-cryptography:modes}{Padding} must be removable without knowing the length, so every message gets at least one \omterm{def:b3:symmetric-cryptography:modes}{padding} byte, and one already a whole number of blocks gets a full block.
+\end{solution}
+
+\begin{solution}{exo:b3:symmetric-cryptography:10}
+The attacker picks $m_0 = 0^{16}$ and $m_1 = 1^{128}$, one block each. The challenge is $(\mathit{iv}_1, C^*)$ with $C^* = E_k(m_b \oplus \mathit{iv}_1)$. It predicts the next IV, $\mathit{iv}_2 = \mathit{iv}_1 + 1$, and asks for the encryption of $m' = m_0 \oplus \mathit{iv}_1 \oplus \mathit{iv}_2$, which is $E_k(m' \oplus \mathit{iv}_2) = E_k(m_0 \oplus \mathit{iv}_1)$. It answers 0 if this equals $C^*$, and 1 otherwise. If $b = 0$ the two are equal. If $b = 1$, $C^* = E_k(m_1 \oplus \mathit{iv}_1)$, and $m_1 \oplus \mathit{iv}_1 \ne m_0 \oplus \mathit{iv}_1$, so, $E_k$ being a permutation, they differ. The attacker is always right: probability 1, against $1/2$ for guessing. The program wins 200 games out of 200. The proof uses only the predictability of the IV, which is why CBC requires an unpredictable one.
+\end{solution}
+
+\begin{solution}{exo:b3:symmetric-cryptography:11}
+$\mathrm{HMAC}(K, m) = H(K_o \,\|\, d)$ with $K_o = K \oplus \mathit{opad}$ and the inner digest $d = H(K_i \,\|\, m)$, $K_i = K \oplus \mathit{ipad}$. Extending the tag continues the outer chain: it gives $H(K_o \,\|\, d \,\|\, \mathit{pad} \,\|\, m')$, the outer hash of something longer than a key block and one digest. No \omterm{def:b3:symmetric-cryptography:mac}{HMAC} computation ever hashes that, so this value is no tag. A tag for $m \,\|\, \mathit{pad} \,\|\, m'$ is $H(K_o \,\|\, d')$ with $d' = H(K_i \,\|\, m \,\|\, \mathit{pad} \,\|\, m')$. The attacker could compute $d'$ by extending $d$, but $d$ is never published: it only enters the outer hash, and finding it from the tag means inverting $H$ behind the unknown key block $K_o$. And even with $d'$ in hand, the attacker would need $K_o$ to hash it. Length extension works on $H(k \,\|\, m)$ because its output is the whole internal state; \omterm{def:b3:symmetric-cryptography:mac}{HMAC} hides that state behind a second, keyed hash.
+\end{solution}
+
+\begin{solution}{exo:b3:symmetric-cryptography:12}
+\code{exercises/ex12_poly1305.py}: $r$ is the first 16 bytes read little-endian and clamped as section 2.5 prescribes, which clears the top four bits of four of its bytes and the bottom two bits of three others, $s$ the last 16. Each block, at most 16 bytes, is read little-endian with a byte \code{01} appended; $a \leftarrow (a + n) \cdot r \bmod (2^{130} - 5)$; the tag is $(a + s) \bmod 2^{128}$. It gives \code{a8061dc1305136c6c22b8baf0c0127a9} on the vector of section 2.5.2. With two messages under one key, $t_1 - t_2 \equiv P_1(r) - P_2(r)$, up to the reduction modulo $2^{128}$: an attacker who sees both tags gets a polynomial equation in $r$, with few roots, recovers $r$ and then $s$, and forges any tag. That is why the \omterm{def:b3:symmetric-cryptography:mac}{AEAD} derives a fresh Poly1305 key from the first \omterm{def:b3:symmetric-cryptography:stream}{keystream} block of every \omterm{def:b3:symmetric-cryptography:stream}{nonce}.
+\end{solution}
+
+\begin{solution}{pb:b3:symmetric-cryptography:1}
+\textbf{1.} $N = 2^{32} = 4{,}294{,}967{,}296$.
+
+\textbf{2.} $\prod_{i=1}^{q} \bigl(1 - (i - 1)/N\bigr)$.
+
+\textbf{3.} At most $e^{-q(q-1)/(2N)}$: 0.988 for $q = 10{,}000$, so a collision with probability at least 1.2\,\%; 0.312 for $q = 100{,}000$, a collision with probability at least 69\,\%.
+
+\textbf{4.} From $q \approx \sqrt{2N \ln 2} \approx 77{,}163$ records.
+
+\textbf{5.} The danger is in pairs, not records: $q$ records make $q(q - 1)/2$ pairs, each colliding with probability $1/N$, and the expected number of colliding pairs reaches 1 near $q = \sqrt{2N}$.
+
+\textbf{6.} Not collision resistant: 77,000 hashes, a fraction of a second, find a collision. Not preimage resistant either, against a determined attacker: about $2^{32} \approx 4.3$ billion tries find a record with a given checksum, within reach of one computer.
+
+\textbf{7.} $\sqrt{\pi \cdot 2^{32} / 2} \approx 82{,}137$.
+
+\textbf{8.} The time to the first collision is a random variable with a wide distribution: its standard deviation is about $\sqrt{(2 - \pi/2)N} \approx 42{,}900$, half its mean. The fewest and the most hashes in the 200 runs, 1,524 and 205,266, are both possible outcomes of one distribution.
+
+\textbf{9.} $78{,}631$ is $4.3\,\%$ below $82{,}137$.
+
+\textbf{10.} The standard error of a mean shrinks as $1/\sqrt{n}$: about $42{,}900/\sqrt{200} \approx 3{,}000$ for 200 runs, so the measured gap of 3,500 is about one standard error. With 20 runs it would be $\sqrt{10} \approx 3.2$ times larger, about 9,600.
+
+\textbf{11.} About $1 - e^{-q^2/(2N)} \approx 34\,\%$ for $q = 60{,}000$.
+
+\textbf{12.} Two different records are taken for the same: one is merged into the other or dropped, and a book disappears from the catalogue without any error.
+
+\textbf{13.} The two records \code{run 0 record 52355} and \code{run 0 record 53449} both start with the bytes \code{3ae0cfc8}; anyone can check with \code{hashlib.sha256(record).digest()[:4]}, and a test does.
+
+\textbf{14.} So that every run hashes different records: without it all runs would find the same collision, and the 200 runs would be one run repeated.
+
+\textbf{15.} Neither: SHA-256 spreads short and long inputs alike over its outputs, and only the number of records counts.
+
+\textbf{16.} A dictionary of 100,000 entries, each with a 4-byte key and a record of about 20 bytes, takes some megabytes in Python. A cycle-finding method needs almost no memory: iterate $x \mapsto h(x)$ from a start value; the sequence enters a cycle after about $\sqrt{N}$ steps, and where it enters, two different inputs have the same checksum.
+
+\textbf{17.} The bound assumes records independent of the checksum. An attacker who chooses records finds a collision in a fraction of a second, and can even make a new record collide with an existing one, with about $2^{32}$ tries, so as to have it removed as a duplicate.
+
+\textbf{18.} Use the checksum as a filter only: when two checksums agree, compare the full records, or full SHA-256 digests, before deciding that they are duplicates.
+
+\textbf{19.} About $q^2 / 2^{b+1} = 10^{18} / 2^{b+1}$, as long as it is small.
+
+\textbf{20.} $10^{18} / 2^{b+1} \le 10^{-6}$ gives $b \ge \log_2(10^{18} / (2 \cdot 10^{-6})) \approx 78.7$: 79 bits.
+
+\textbf{21.} $10^{18} / 2^{65} \approx 0.027$: a 2.7\,\% chance of a collision in the catalogue.
+
+\textbf{22.} With 128 bits the chance is about $10^{-21}$, the catalogue can grow a million-fold without concern, and an attacker needs about $2^{64}$ work for a collision; 79 bits would give an attacker $2^{40}$, which is easy.
+
+\textbf{23.} 32 bytes per record: 32 GB for $10^9$ records, against 4 GB for 32 bits; 128 bits, 16 GB, is the usual compromise.
+
+\textbf{24.} With 32-bit checksums the first collision comes after $\sqrt{\pi/2 \cdot 2^{32}} \approx 82{,}000$ records on average; 200 seeded runs averaged 78,631, within 5\,\%. A catalogue of $10^9$ records needs at least 79 bits for a one-in-a-million chance of any collision, 64 bits give 2.7\,\%, and 128 bits are the recommended size.
+\end{solution}

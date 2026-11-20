@@ -1,0 +1,103 @@
+\section*{Chapter \ref{ch:b3:top-down-parsing} --- Top-Down Parsing}
+
+\begin{solution}{exo:b3:top-down-parsing:1}
+$A$ and $B$ are \omterm{def:b3:top-down-parsing:first-follow}{nullable} ($A \to \varepsilon$, $B \to \varepsilon$); $S$ is not, since both its productions contain a terminal. $\mathrm{FIRST}(A) = \{a\}$, $\mathrm{FIRST}(B) = \{b\}$. For $S \to A\,B\,c$: $A$ contributes $a$, and since $A$ is \omterm{def:b3:top-down-parsing:first-follow}{nullable} $B$ contributes $b$, and since $B$ is \omterm{def:b3:top-down-parsing:first-follow}{nullable} too, $c$ is in; $S \to d$ adds $d$. So $\mathrm{FIRST}(S) = \{a, b, c, d\}$. The file \code{exercises/ex1.grammar} holds the grammar and \code{tests/grammar_test.rs} checks the sets.
+\end{solution}
+
+\begin{solution}{exo:b3:top-down-parsing:2}
+\texttt{(|| (- a (\% (* (neg b) c) d)) (! e))}. The loosest operator, \code{||}, is the root. Its left side is a difference; the right operand of the minus is \texttt{-b * c \% d}, in which the prefix minus binds tightest, and \code{*} and \texttt{\%} have the same power and group to the left. The test \code{precedence_and_associativity} checks this tree.
+\end{solution}
+
+\begin{solution}{exo:b3:top-down-parsing:3}
+No. $\mathrm{FIRST}(A\,a) = \{a\}$, $\mathrm{FIRST}(b) = \{b\}$: the row of $S$ has no conflict. But $A$ is \omterm{def:b3:top-down-parsing:first-follow}{nullable} and $\mathrm{FOLLOW}(A) = \{a\}$, so cell $[A, a]$ holds both $A \to a$ (by FIRST) and $A \to \varepsilon$ (by FOLLOW). Seeing an \code{a}, the parser cannot tell whether it is $A$'s or the one after $A$. The language is $\{aa, a, b\}$, and $S \to a\,S' \mid b$, $S' \to a \mid \varepsilon$ is an \omterm{def:b3:top-down-parsing:ll1}{LL(1) grammar} for it: after the first \code{a}, the next token is \code{a} or the end.
+\end{solution}
+
+\begin{solution}{exo:b3:top-down-parsing:4}
+$L \to \mathit{id}\,L'$, $L' \to ,\,\mathit{id}\,L' \mid \varepsilon$. The function reads an \code{id}, then loops: while the next token is a comma, it consumes the comma and an \code{id}. The tail recursion of $L'$ becomes the loop; FOLLOW of $L'$ is whatever follows a list, and seeing it ends the loop. The grammar tests of the chapter check that the first grammar has a conflict and the second none.
+\end{solution}
+
+\begin{solution}{exo:b3:top-down-parsing:5}
+The recursive call parses the right operand with minimum power \code{p} instead of \code{p + 1}, so an operator of the same power is allowed inside the right operand, and equal operators group to the right. $8 - 4 - 2$ is computed as $8 - (4 - 2) = 6$, $8/4/2$ as $8/(4/2) = 4$, and $9 - 2 \times 3 - 1$ as $9 - (6 - 1) = 4$. The other two have no two operators of the same power in a row, so the bug cannot show. The fix is \code{expr(toks, pos, p + 1)} (\code{exercises/ex5_minus_fixed.rs}, tested): by \cref{thm:b3:top-down-parsing:climb} the right child then has a strictly higher power.
+\end{solution}
+
+\begin{solution}{exo:b3:top-down-parsing:6}
+The file \code{exercises/ex6_moor_for.grammar} adds an alternative and a nonterminal:
+\begin{center}\texttt{Stmt -> \dots{} | for id = E to E Step Block}\qquad \code{Step -> step E | eps}\end{center}
+and the table still has no conflict (\code{tests/grammar_test.rs}). \code{for} is a new token, so it collides with no other statement, and after the second expression the parser sees \code{step} or \texttt{\{}, neither of which can continue an expression. The parser can build, for \code{for i = a to b step c { body }}, a block containing \code{var i = a;} and \code{while i <= b { body; i = i + c; }}: no new node is needed. The designer must decide whether \code{b} is evaluated once, before the loop (then the desugaring stores it in a hidden variable first), or at every test, as the plain \code{while} does; the two differ when the body changes what \code{b} reads. A negative \code{c} also needs a decision, since \code{<=} is then the wrong test.
+\end{solution}
+
+\begin{solution}{exo:b3:top-down-parsing:7}
+\emph{Termination}: each pass either changes nothing, and the method stops, or adds at least one terminal to some set. There are $|N|$ FOLLOW sets, each a subset of $T \cup \{\$\}$, so at most $|N|(|T| + 1)$ passes add something, and one more pass sees no change. The same argument bounds the FIRST phase with $|N|\,|T| + |N|$ (the nullable flags count too). \emph{Least solution}: call a family of sets a solution if it satisfies all the inclusions. Every solution contains the sets of the iteration at every pass, by induction: initially all are empty (except \$, which every solution contains), and each step adds to a set only what an inclusion forces, given sets that are already inside the solution. So the final sets are below every solution, and they are a solution since a pass changes nothing. \emph{It is FOLLOW}: the true FOLLOW sets satisfy each inclusion (if $A \to \dots X_i \beta$ and $a \in \mathrm{FIRST}(\beta)$, a derivation reaching $A$ continues to $X_i a\dots$; if $\beta$ is nullable, anything after $A$ comes after $X_i$), so they contain the least solution. Conversely, if $a \in \mathrm{FOLLOW}(X)$ by a derivation $S \Rightarrow^* \beta X a \gamma$, an induction on the length of that derivation shows that $a$ enters the computed set: the step that put $X$ next to the symbols that produce $a$ is a production whose inclusion adds it.
+\end{solution}
+
+\begin{solution}{exo:b3:top-down-parsing:8}
+Three messages, which the parser tests check. Line 2, column 16: \code{expected an expression, found '*'}; panic mode skips \code{* 4} and consumes the \code{;}. Line 4, column 5: \code{expected ';', found name 'print'}, because the newline after \code{y - 1} means nothing to the parser and \code{print} is read as the continuation of the assignment; panic mode skips \code{print(y)} and consumes its \code{;}, so the \code{print} is lost from the tree. The \texttt{\}} on line 5 then closes the \code{while}'s block, not \code{main}'s, and line 6, column 1 reports \texttt{expected '\}', found end of file}. The mistake (a missing \code{;} and a missing \texttt{\}}) is on line 3; both messages point later.
+\end{solution}
+
+\begin{solution}{exo:b3:top-down-parsing:9}
+\omterm{def:b3:top-down-parsing:precedence}{Precedence climbing}: on $n$ operands joined by \code{+}, \code{expr_bp} is called once for the whole expression and once for each of the $n - 1$ right operands, $n$ times in all; each of those parses one operand through \code{prefix} and \code{primary}, $n$ times each: $3n$ calls. A chain of products costs the same $3n$: \omterm{def:b3:top-down-parsing:precedence}{precedence climbing} does not care which level an operator has. The layered parser (eight functions as in the figure) calls the functions of \code{||}, \texttt{\&\&}, equality, comparison and sum once each, and product, prefix and primary once per operand: $3n + 5$. For products, the six functions down to the product are called once and prefix and primary once per operand: $2n + 6$. The weekend problem counts the general case.
+\end{solution}
+
+\begin{solution}{exo:b3:top-down-parsing:10}
+Let $G$ be LL(1) and $w \in L(G)$ with two parse trees. They give two different leftmost derivations of $w$. Consider the first step at which they differ: both rewrite the same leftmost nonterminal $A$ in the same sentential form $u A \gamma$, where $u$ is a prefix of $w$, one by $A \to \alpha$ and the other by $A \to \beta$, $\alpha \ne \beta$. Let $a$ be the token of $w$ after $u$ (or \$). As in the proof of \cref{thm:b3:top-down-parsing:ll1}, each derivation puts its production in cell $[A, a]$: if the production derives a word starting with $a$, through FIRST; if it derives $\varepsilon$ in that derivation, through FOLLOW. So the cell holds two productions, a contradiction. The converse is false: $E \to E + T \mid T$, $T \to \mathit{id}$ is unambiguous but left-recursive, hence not LL(1); and some unambiguous languages have no \omterm{def:b3:top-down-parsing:ll1}{LL(1) grammar} at all (exercise~\ref{exo:b3:top-down-parsing:11}).
+\end{solution}
+
+\begin{solution}{exo:b3:top-down-parsing:11}
+The language is $\{a^n c b^n\} \cup \{a^n d b^{2n}\}$. To choose between $S \to A$ and $S \to B$ a top-down parser must predict at the very first token. With $k$ tokens of lookahead it sees at most $a^k$ on the inputs $a^k c b^k$ and $a^k d b^{2k}$, which agree on their first $k$ tokens but need different first predictions; so no LL($k$) table can have a single production in cell $[S, a^k]$. (Every grammar for this language has the same trouble, for the same reason, but that is harder to prove.) A parser that reads the input once can count the \code{a}s, see \code{c} or \code{d}, and then check that $n$ or $2n$ \code{b}s follow: it postpones the choice until it has seen the distinguishing token. That is what a bottom-up parser does in general (chapter~3): it builds the tree from the leaves and decides which production applies only when all of its right side has been read.
+\end{solution}
+
+\begin{solution}{exo:b3:top-down-parsing:12}
+\code{exercises/ex12_userops.rs}. The table maps each operator to its power and associativity. The loop of \omterm{def:b3:top-down-parsing:precedence}{precedence climbing} is unchanged, except for the minimum of the recursive call: $p + 1$ for a left-associative operator, $p$ for a right-associative one (an operator of the same power may then appear in the right operand, so equal operators group to the right). A non-associative operator is parsed as a left-associative one, and the loop remembers that it has just combined a non-associative operator of power $p$; a second operator of the same power in the same loop is an error. The tests check \code{a - b - c}, \texttt{a \textasciicircum{} b \textasciicircum{} c}, \texttt{x ::\ y ::\ z}, mixed powers, parentheses, \code{a == b == c} refused, and two malformed inputs.
+\end{solution}
+
+\begin{solution}{pb:b3:top-down-parsing:1}
+The counts and values below are asserted in \code{tests/pb_test.rs}; the grammar facts are checked on \code{exercises/fines.grammar} by the grammar tests.
+
+\textbf{1.} $E \to E\ \code{or}\ A \mid A$, $A \to A\ \code{and}\ Q \mid Q$, and likewise for equality, comparison, sum and product, each level's operand being the next level; $P \to U\,\textasciicircum\,P \mid U$; $U \to \mathit{num} \mid \mathit{name} \mid \mathit{name}\,(\,\mathit{args}\,) \mid (\,E\,)$. The six left-associative levels are left-recursive: $E \to E\ \code{or}\ A$ makes the left operand the larger tree. The power is right-recursive, so that \texttt{2 \textasciicircum{} 3 \textasciicircum{} 2} is $2^{(3^2)} = 512$.
+
+\textbf{2.} Each left-recursive level $X \to X\,\mathit{op}\,Y \mid Y$ becomes $X \to Y X'$, $X' \to \mathit{op}\,Y X' \mid \varepsilon$: twelve nonterminals for the six levels. With the power (two, after question 3), the primary, and two for calls, the grammar has 17 nonterminals.
+
+\textbf{3.} $P \to U\,P'$, $P' \to \textasciicircum\,P \mid \varepsilon$.
+
+\textbf{4.} $U \to \mathit{num} \mid (\,E\,) \mid \mathit{name}\ \mathit{Call}$, $\mathit{Call} \to (\,E\,\mathit{MoreA}\,) \mid \varepsilon$, $\mathit{MoreA} \to ,\,E\,\mathit{MoreA} \mid \varepsilon$: a name is read first, and the next token decides between a call and a plain name.
+
+\textbf{5.} A product whose left operand is \texttt{(\textasciicircum{} 2 (\textasciicircum{} late 2))} and whose right operand is \code{(> items 3)}; the parentheses leave no node.
+
+\textbf{6.} $\max(0, 6) \times 3 = 18$; $2^{1^2} = 2$ times $(4 > 3) = 1$ gives 2; \code{damaged and items >= 1} is 1, so the \code{or} is 1 and the last term is 10. The fine is $18 + 2 + 10 = 30$.
+
+\textbf{7.} Every level's nonterminal starts with its operand, down to the primary, so all have $\mathrm{FIRST} = \{\mathit{num}, \mathit{name}, (\}$: no level is \omterm{def:b3:top-down-parsing:first-follow}{nullable}, and an expression must start with a primary.
+
+\textbf{8.} $\mathrm{FOLLOW}(U)$ is everything that may follow an operand: every binary operator, \code{)}, the comma of an argument list, and \$. The ``rest of a sum'' $S'$ is followed by what follows a sum: the comparison and equality operators, \code{and}, \code{or}, \code{)}, the comma and \$, eleven terminals.
+
+\textbf{9.} $[S', +]$ and $[S', -]$ hold the productions that continue the sum; the eleven columns of $\mathrm{FOLLOW}(S')$ hold $S' \to \varepsilon$; the others are empty, and an operator such as \code{*} in that row is an error, since a product has already been read in full.
+
+\textbf{10.} \code{grammar.rs} finds no cell with two productions (\code{fines_grammars_are_ll1}).
+
+\textbf{11.} $U \to -\,U \mid \dots$: the unary minus applies to a primary and binds tighter than the power, or $P \to -\,P$ if $-2\textasciicircum2$ should be $-4$, as in mathematics. Either way the new production starts with \code{-}, which is in FIRST of no other production of that nonterminal: the grammar stays LL(1) (\code{exercises/fines_neg.grammar} takes the first choice).
+
+\textbf{12.} It parses, as \code{(a < b) < c}, which compares a truth value 0 or 1 with $c$; for $a = 5$, $b = 3$, $c = 2$ it gives 1, which no clerk means. The grammar should refuse it: make comparison non-associative, $C \to S\,C'$, $C' \to \mathit{cmp}\,S \mid \varepsilon$, which allows at most one comparison.
+
+\textbf{13.} Level $k$ is first called once, for the whole formula. A left-associative level $j$ calls level $j + 1$ once for its first operand and once for each operator of level $j$ it consumes. By induction on $k$, level $k$ is called once more for each operator of any looser level: $1 + \sum_{j<k} o_j$.
+
+\textbf{14.} A chain of $n$ operands by \code{or}: level 0 once, the seven others $n$ times each: $7n + 1$. By \code{+} (level 4): levels 0 to 4 once each, levels 5, 6 and the primary $n$ times: $3n + 5$. By \texttt{\textasciicircum}: levels 0 to 5 once, the power level once plus once per recursion ($n$), the primary $n$: $2n + 6$.
+
+\textbf{15.} The loosest operator: every operand then passes through every level. With $p$ levels, $pn + 1$ calls.
+
+\textbf{16.} A parenthesised expression and each argument of a call start again at level 0: each costs $p + 1$ calls before its first primary, as a whole formula would.
+
+\textbf{17.} 80 calls, for 17 primaries (counting \texttt{max(\dots)} and each parenthesis as one).
+
+\textbf{18.} Most of them. A call finds an operator of its own level only when one follows; the formula has 12 binary operators, and of the 80 calls 17 parse a primary, so at least $80 - 17 - 12 = 51$ calls return having done nothing but call the next level.
+
+\textbf{19.} Power $k + 1$ for level $k$: 1 for \code{or} up to 7 for \texttt{\textasciicircum}. For a left-associative operator of power $p$ the right operand is parsed with minimum $p + 1$; for the power, with minimum $p$, so that another \texttt{\textasciicircum} may appear inside the right operand.
+
+\textbf{20.} Every call of \code{expr} parses one primary first, and every primary is the first primary of exactly one \code{expr} call: the whole formula's, an operator's right operand's, a parenthesised expression's, or an argument's. So there are as many \code{expr} calls as primaries, and with the primary calls, two calls per primary.
+
+\textbf{21.} $2n$ for each of the three chains; 34 for the example formula, $2 \times 17$.
+
+\textbf{22.} That both parsers return the same tree on every formula. Equal trees mean both parsers have read the same structure; the counts then measure the same work, and a bug that built wrong trees would show as a mismatch.
+
+\textbf{23.} One more call per primary for the layered parser in the worst case (one more function to pass through), and one more function to write; nothing for \omterm{def:b3:top-down-parsing:precedence}{precedence climbing}, whose cost does not depend on $p$, only one more row in its table.
+
+\textbf{24.} With $p$ levels and $n$ operands joined by the loosest operator, layered \omterm{def:b3:top-down-parsing:descent}{recursive descent} makes $pn + 1$ calls and \omterm{def:b3:top-down-parsing:precedence}{precedence climbing} $2n$: $7n + 1$ against $2n$ for the library's seven levels. On the fines formula, 80 calls against 34.
+\end{solution}

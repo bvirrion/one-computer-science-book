@@ -1,0 +1,525 @@
+% Book 4, Year 2, chapter 29 -- Learning from examples: decision trees and clustering.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 29.
+\chapter{Learning from Examples: Decision Trees and Clustering}\label{ch:b2:trees-and-clustering}
+
+The library would like to know, when a book goes out, whether it will come back late. Nobody has written down the rule,
+if there is one; there are only past loans, each with a few facts and the answer. A program can look for the rule in
+them:
+
+\omcode{code/bachelor-2/29-trees-and-clustering/listings/id3.py}{74}{78}{Learn a \omterm{def:b2:trees-and-clustering:decision-tree}{decision tree} from 700 past loans and
+test it on 300 others}\label{lst:b2:trees-and-clustering:hook}
+
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/id3.txt}{The tree the program found, and its score on loans it
+never saw.}\label{out:b2:trees-and-clustering:hook}
+
+The program was given five facts per loan: the days lent, the book's pages, the member's age, how many books the member
+has already returned late, and how far from the library the member lives. It kept two of them and found a rule of two
+questions: a member with at least two late returns who lives more than about 2.5 km away brings the book back late. The
+loans were generated, and that is exactly the rule that was planted in them, so the program can be checked. Real data
+are not so kind: labels are noisy, and a program that fits its \omterm{def:b2:trees-and-clustering:examples}{examples} too closely learns the noise. This chapter
+builds the vocabulary and the tools to measure that, then turns to \omterm{def:b2:trees-and-clustering:examples}{examples} with no answer at all, where the task is to
+find groups.
+
+\begin{recall}
+The grade 11 volume: the $k$-nearest-neighbour \omterm{def:b2:trees-and-clustering:learning}{classifier}, distances between points, training and test \omterm{def:b2:trees-and-clustering:examples}{examples}. The
+Year 1 volume: trees and their traversals, Kruskal's algorithm for the minimum spanning tree, with union--find. The
+mathematics books: probability of an event, mean, the logarithm in base 2. Chapter 27: seeded pseudo-random numbers.
+\end{recall}
+
+\section{Learning as an algorithmic problem}\label{sec:b2:trees-and-clustering:learning}
+
+\begin{definition}[Example, feature, class label, training set, test set]\label{def:b2:trees-and-clustering:examples}
+An \emph{example}\index{example (learning)} is a vector of values, its \emph{features}\index{feature}, possibly with a
+\emph{class label}\index{class label}, the answer to be predicted, taken from a finite set. A \emph{training
+set}\index{training set} is a set of labelled examples given to a learning algorithm; a \emph{test set}\index{test set}
+is a set of labelled examples, drawn from the same source, that the algorithm never sees and that serves only to measure
+the result.
+\end{definition}
+
+\begin{definition}[Supervised and unsupervised learning, classifier]\label{def:b2:trees-and-clustering:learning}
+In \emph{supervised learning}\index{supervised learning}, an algorithm receives labelled \omterm{def:b2:trees-and-clustering:examples}{examples} and returns a
+\emph{classifier}\index{classifier}, a function from \omterm{def:b2:trees-and-clustering:examples}{feature} vectors to \omterm{def:b2:trees-and-clustering:examples}{class labels}. In \emph{unsupervised
+learning}\index{unsupervised learning}, the \omterm{def:b2:trees-and-clustering:examples}{examples} have no labels and the algorithm looks for structure in them, such
+as groups.
+\end{definition}
+
+A \omterm{def:b2:trees-and-clustering:learning}{classifier} is useful only on \omterm{def:b2:trees-and-clustering:examples}{examples} it has not seen: a table of the training \omterm{def:b2:trees-and-clustering:examples}{examples} would answer all of them
+correctly and say nothing about the next loan. Hence the \omterm{def:b2:trees-and-clustering:examples}{test set}, kept apart until the end.
+
+\begin{definition}[Confusion matrix, accuracy]\label{def:b2:trees-and-clustering:confusion}
+The \emph{confusion matrix}\index{confusion matrix} of a \omterm{def:b2:trees-and-clustering:learning}{classifier} on a labelled set counts, for each pair of classes
+$(a, b)$, the \omterm{def:b2:trees-and-clustering:examples}{examples} of true class $a$ that it labels $b$. Its \emph{accuracy}\index{accuracy} is the fraction of the
+\omterm{def:b2:trees-and-clustering:examples}{examples} on the diagonal, those labelled correctly.
+\end{definition}
+
+\omcode{code/bachelor-2/29-trees-and-clustering/listings/confusion.py}{5}{16}{The \omterm{def:b2:trees-and-clustering:confusion}{confusion matrix} of a tree of depth 2
+on 300 test loans whose labels are 15~\% noise}\label{lst:b2:trees-and-clustering:confusion}
+
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/confusion.txt}{\omterm{def:b2:trees-and-clustering:confusion}{Accuracy} is one number; the matrix says which
+errors are made.}\label{out:b2:trees-and-clustering:confusion}
+
+\omterm{def:b2:trees-and-clustering:confusion}{Accuracy} alone can mislead when one class is rare: a \omterm{def:b2:trees-and-clustering:learning}{classifier} that always answers ``on time'' scores 0.777 here,
+without learning anything. The matrix shows that the tree catches about half the late loans and raises few false alarms.
+The late loans it misses are mostly noise: their label was flipped at random, and no rule can predict them.
+
+\section{Nearest neighbours and $k$-d trees}\label{sec:b2:trees-and-clustering:knn}
+
+\begin{definition}[$k$-nearest-neighbour classifier]\label{def:b2:trees-and-clustering:knn}
+The \emph{$k$-nearest-neighbour classifier}\index{k-nearest-neighbour classifier@$k$-nearest-neighbour classifier}
+labels a \omterm{def:b2:trees-and-clustering:examples}{feature} vector $q$ with the most frequent label among the $k$ training \omterm{def:b2:trees-and-clustering:examples}{examples} closest to $q$ in Euclidean
+distance, breaking ties by the label of the nearest of them.
+\end{definition}
+
+The grade 11 volume met this \omterm{def:b2:trees-and-clustering:learning}{classifier} on two \omterm{def:b2:trees-and-clustering:examples}{features}; here it runs on five. A distance adds up differences of
+\omterm{def:b2:trees-and-clustering:examples}{features} measured in different units, days, pages and metres, so the \omterm{def:b2:trees-and-clustering:examples}{features} are first rescaled to $[0, 1]$ by their
+range on the \omterm{def:b2:trees-and-clustering:examples}{training set}; without it, the distance in metres would decide alone (\cref{exo:b2:trees-and-clustering:2}).
+
+\omcode{code/bachelor-2/29-trees-and-clustering/listings/knn.py}{8}{30}{The \omterm{def:b2:trees-and-clustering:learning}{classifier}, scaling and evaluation}\label{lst:b2:trees-and-clustering:knn}
+
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/knn.txt}{\omterm{def:b2:trees-and-clustering:confusion}{Accuracy} by $k$, with all five \omterm{def:b2:trees-and-clustering:examples}{features} and with the
+two that matter.}\label{out:b2:trees-and-clustering:knn}
+
+With $k = 1$ the \omterm{def:b2:trees-and-clustering:learning}{classifier} copies the noise of the nearest \omterm{def:b2:trees-and-clustering:examples}{example}; a larger $k$ averages it out. The three \omterm{def:b2:trees-and-clustering:examples}{features}
+that play no part in the rule still enter every distance and blur it: dropping them helps. A \omterm{def:b2:trees-and-clustering:decision-tree}{decision tree}, below,
+chooses its \omterm{def:b2:trees-and-clustering:examples}{features} itself.
+
+\begin{proposition}[Cost of $k$-nearest neighbours]\label{prop:b2:trees-and-clustering:knn-cost}
+With $n$ training \omterm{def:b2:trees-and-clustering:examples}{examples} of $d$ \omterm{def:b2:trees-and-clustering:examples}{features}, the \omterm{def:b2:trees-and-clustering:learning}{classifier} needs no training beyond storing them, in $O(nd)$ memory, and
+labelling one query by computing all distances costs $O(nd + n \log k)$ time.
+\end{proposition}
+
+\begin{proof}
+Each of the $n$ distances costs $O(d)$. The $k$ smallest of $n$ numbers are found by a pass that keeps a heap of the $k$
+best so far, at $O(\log k)$ per number; the vote then costs $O(k)$. (The listing sorts all $n$, at $O(n \log n)$.)
+\end{proof}
+
+Computing every distance is wasteful when the points live in a space of few dimensions: most are obviously far away.
+
+\begin{definition}[$k$-d tree]\label{def:b2:trees-and-clustering:kd-tree}
+A \emph{$k$-d tree}\index{k-d tree@$k$-d tree} of a set of points in $\mathbb{R}^k$ is a binary tree with one point per
+node. A node at depth $i$ splits on coordinate $i \bmod k$: the points of its left subtree have that coordinate at most
+the node's, those of its right subtree at least the node's. Built by medians, it takes the point of median coordinate as
+the node, and so has depth $\lfloor \log_2 n \rfloor$.
+\end{definition}
+
+\omcode{code/bachelor-2/29-trees-and-clustering/listings/kdtree.py}{6}{35}{A $k$-d tree in the plane, and the search for
+the nearest point}\label{lst:b2:trees-and-clustering:kdtree}
+
+\begin{omfigure}
+\begin{tikzpicture}[scale=0.55, split0/.style={omDef, thick}, split1/.style={omThm, thick},
+  root/.style={circle, draw, thick, minimum size=9pt, inner sep=0pt}]
+\draw[black!50] (0, 0) rectangle (10, 10);
+\input{code/bachelor-2/29-trees-and-clustering/figures/kd_partition.tex}
+\end{tikzpicture}
+\par\smallskip{\small A $k$-d tree of 15 points built by medians. The circled point is the root: its vertical line
+splits the square in two. Each half is split by a horizontal line through its median point, and so on, alternating.
+Blue: splits on $x$; red: splits on $y$. Drawn by \code{figs.py} from \code{kdtree.py}.}
+\end{omfigure}
+
+\begin{proposition}[Nearest-neighbour search in a $k$-d tree]\label{prop:b2:trees-and-clustering:kd-correct}
+The function \code{nearest} of \cref{lst:b2:trees-and-clustering:kdtree} returns a point of the tree nearest to $q$.
+\end{proposition}
+
+\begin{proof}
+It visits every node except the subtrees it skips, and keeps the closest point visited; it suffices that no skipped
+subtree holds a point strictly closer than the best at the time of the skip, since the best only improves. Let the node
+be $p$, splitting on axis $a$, and suppose $q_a \leq p_a$: the skipped subtree is the right one, whose points $r$ have
+$r_a \geq p_a$, so $\lVert r - q \rVert^2 \geq (r_a - q_a)^2 \geq (p_a - q_a)^2$. The subtree is skipped only when $(p_a
+- q_a)^2$ is at least the best squared distance, so no point of it is strictly closer. The case $q_a > p_a$ is the same
+with the left subtree, whose points have $r_a \leq p_a < q_a$.
+\end{proof}
+
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/kdtree.txt}{Nodes visited per query, against the $n$ distances
+of the brute-force search, for uniform random points.}\label{out:b2:trees-and-clustering:kdtree}
+
+On uniform random points in the plane, the search visits a few nodes per level of the tree: 23 out of 100,000 on
+average. That is an observation, not a bound: points arranged to be all at nearly the same distance from the query force
+the search to visit every node (\cref{exo:b2:trees-and-clustering:12}), and in many dimensions the pruning test rarely
+succeeds, so $k$-d trees pay off only when the dimension is small.
+
+\begin{history}
+% ledger: b2:bentley-1975
+Jon Bentley published multidimensional binary search trees, the $k$-d trees, in 1975.
+\end{history}
+
+\section{Decision trees}\label{sec:b2:trees-and-clustering:trees}
+
+\begin{definition}[Decision tree]\label{def:b2:trees-and-clustering:decision-tree}
+A \emph{decision tree}\index{decision tree} is a binary tree whose internal nodes carry a test $x_f \leq t$ on a \omterm{def:b2:trees-and-clustering:examples}{feature}
+$f$ with a threshold $t$, and whose leaves carry a \omterm{def:b2:trees-and-clustering:examples}{class label}. It labels an \omterm{def:b2:trees-and-clustering:examples}{example} by following the branch of each
+test, left when the test holds, down to a leaf.
+\end{definition}
+
+To choose the first question, a program needs to measure how mixed the labels are, and how much a question unmixes
+them.
+
+\begin{definition}[Entropy, information gain]\label{def:b2:trees-and-clustering:entropy}
+The \emph{entropy}\index{entropy} of a finite probability distribution $(p_1, \dots, p_m)$ is $H = -\sum_i p_i \log_2
+p_i$, with $0 \log_2 0 = 0$; the entropy of a set of labelled \omterm{def:b2:trees-and-clustering:examples}{examples} is that of the frequencies of its labels. A split
+of a set $S$ into $S_1$ and $S_2$ has \emph{information gain}\index{information gain}
+\[
+G = H(S) - \frac{|S_1|}{|S|} H(S_1) - \frac{|S_2|}{|S|} H(S_2).
+\]
+\end{definition}
+
+The \omterm{def:b2:trees-and-clustering:entropy}{entropy} is $0$ for a set with a single label and $\log_2 m$, its largest value, for $m$ labels in equal numbers: one
+bit for a fair coin. The gain is how much the split lowers the \omterm{def:b2:trees-and-clustering:entropy}{entropy}, on average over the two parts.
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=6.5cm, height=4.6cm, xlabel={$p$, fraction of late loans}, ylabel={$h(p)$ in bits}, xmin=0, xmax=1,
+  ymin=0, ymax=1.1, samples=101, domain=0.0001:0.9999, xtick={0, 0.25, 0.5, 0.75, 1}]
+\addplot[omDef, thick] {-x*log2(x) - (1-x)*log2(1-x)};
+\draw[omThm, thick] (axis cs:0.1, 0.469) -- (axis cs:0.7, 0.881);
+\fill[omThm] (axis cs:0.1, 0.469) circle (1.5pt) (axis cs:0.7, 0.881) circle (1.5pt);
+\fill[black] (axis cs:0.4, 0.971) circle (1.5pt);
+\draw[densely dotted] (axis cs:0.4, 0.675) -- (axis cs:0.4, 0.971);
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b2:trees-and-clustering:entropy}{entropy} of two labels, $h(p) = -p \log_2 p - (1 - p) \log_2(1 - p)$. A set with $40~\%$ late
+loans split into halves with $10~\%$ and $70~\%$: the average \omterm{def:b2:trees-and-clustering:entropy}{entropy} of the parts, on the chord, lies below the
+\omterm{def:b2:trees-and-clustering:entropy}{entropy} of the whole, on the curve. The dotted gap is the gain.}
+\end{omfigure}
+
+\begin{proposition}[Information gain is never negative]\label{prop:b2:trees-and-clustering:gain-nonneg}
+Every split has $G \geq 0$.
+\end{proposition}
+
+\begin{proof}
+For two labels: write $h(p) = -p \log_2 p - (1 - p) \log_2 (1 - p)$ for the \omterm{def:b2:trees-and-clustering:entropy}{entropy} of a set with a fraction $p$ of the
+first label. Its second derivative on $(0, 1)$ is $-1/(p(1 - p) \ln 2) < 0$, so $h$ is concave on $[0, 1]$. If $S_1$ and
+$S_2$ have fractions $p_1$ and $p_2$ and $w = |S_1|/|S|$, then $S$ has fraction $p = w p_1 + (1 - w) p_2$, and concavity
+gives $h(p) \geq w\,h(p_1) + (1 - w)\,h(p_2)$, which is $G \geq 0$. With more labels the same argument applies to the
+\omterm{def:b2:trees-and-clustering:entropy}{entropy} as a function of the vector of frequencies, which is concave too; we admit that case.
+\end{proof}
+
+\begin{method}[ID3 with binary splits]\label{met:b2:trees-and-clustering:id3}\index{ID3}
+To grow a tree on a set $S$ of labelled \omterm{def:b2:trees-and-clustering:examples}{examples}: if no split of $S$ of the form $x_f \leq t$ has positive gain, or the
+depth limit is reached, return a leaf with the majority label of $S$. Otherwise take the split of largest gain, with $t$
+halfway between two consecutive values of $x_f$ in $S$, and grow the two subtrees on the two parts.
+\end{method}
+
+\omcode{code/bachelor-2/29-trees-and-clustering/listings/id3.py}{8}{31}{\omterm{def:b2:trees-and-clustering:entropy}{Entropy}, and the best split by one sweep over
+each sorted \omterm{def:b2:trees-and-clustering:examples}{feature}}\label{lst:b2:trees-and-clustering:best-split}
+
+\needspace{14\baselineskip}
+\omcode{code/bachelor-2/29-trees-and-clustering/listings/id3.py}{34}{44}{ID3}\label{lst:b2:trees-and-clustering:id3}
+
+Sorting the \omterm{def:b2:trees-and-clustering:examples}{examples} on each \omterm{def:b2:trees-and-clustering:examples}{feature} lets the sweep move one \omterm{def:b2:trees-and-clustering:examples}{example} at a time from right to left and update the label
+counts in constant time, so the best split of $n$ \omterm{def:b2:trees-and-clustering:examples}{examples} on $d$ \omterm{def:b2:trees-and-clustering:examples}{features} costs $O(dn \log n)$. A split on a set
+whose \omterm{def:b2:trees-and-clustering:examples}{examples} all carry the same label has no positive gain, so ID3 stops on pure sets; it also stops when no question
+helps, which a depth limit makes earlier.
+
+\begin{omfigure}
+\begin{forest}
+for tree={font=\small, draw, rounded corners, align=center, l sep=12pt, s sep=14pt, inner sep=3pt},
+leaf/.style={draw=none, font=\small\itshape},
+[{late returns $\leq 1.5$?}
+  [{on time\\448 / 0}, leaf, edge label={node[pos=0.8, above left, inner sep=1pt, font=\scriptsize] {yes}}]
+  [{distance $\leq 2490$?}, edge label={node[pos=0.8, above right, inner sep=1pt, font=\scriptsize] {no}}
+    [{on time\\95 / 0}, leaf, edge label={node[pos=0.8, above left, inner sep=1pt, font=\scriptsize] {yes}}]
+    [{late\\0 / 157}, leaf, edge label={node[pos=0.8, above right, inner sep=1pt, font=\scriptsize] {no}}]]]
+\end{forest}
+\par\smallskip{\small The tree of \cref{out:b2:trees-and-clustering:hook}, with the training loans that reach each leaf,
+on time / late. The threshold 2490 lies halfway between the two nearest distances on either side of the planted 2500.}
+\end{omfigure}
+
+\begin{definition}[Overfitting]\label{def:b2:trees-and-clustering:overfitting}
+A \omterm{def:b2:trees-and-clustering:learning}{classifier} \emph{overfits}\index{overfitting} its \omterm{def:b2:trees-and-clustering:examples}{training set} when its \omterm{def:b2:trees-and-clustering:confusion}{accuracy} there is much higher than on new
+\omterm{def:b2:trees-and-clustering:examples}{examples} from the same source, and a simpler \omterm{def:b2:trees-and-clustering:learning}{classifier}, built from the same \omterm{def:b2:trees-and-clustering:examples}{training set}, does better on the new
+\omterm{def:b2:trees-and-clustering:examples}{examples}.
+\end{definition}
+
+On noiseless loans, the tree stopped by itself at depth 2. On loans whose labels are flipped with probability $0.15$,
+every flipped label is an \omterm{def:b2:cpp-classes-raii:exception}{exception} that a deeper tree can isolate with more questions:
+
+\omcode{code/bachelor-2/29-trees-and-clustering/listings/overfit.py}{6}{11}{Trees of growing depth on noisy
+loans}\label{lst:b2:trees-and-clustering:overfit}
+
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/overfit.txt}{Training \omterm{def:b2:trees-and-clustering:confusion}{accuracy} keeps rising; test \omterm{def:b2:trees-and-clustering:confusion}{accuracy} peaks
+at depth 2.}\label{out:b2:trees-and-clustering:overfit}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=0.7\linewidth, height=5.2cm, xlabel={depth limit of the tree}, ylabel={accuracy}, ymin=0.68,
+  ymax=1.02, xmin=-0.5, xmax=16.5, legend pos=north west, legend style={font=\small}, xtick={0,2,4,6,8,10,12,16}]
+\addplot[mark=*, omThm] table[x=depth, y=train] {code/bachelor-2/29-trees-and-clustering/figures/overfit.dat};
+\addplot[mark=square*, omDef] table[x=depth, y=test] {code/bachelor-2/29-trees-and-clustering/figures/overfit.dat};
+\legend{training set, test set}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small \Cref{out:b2:trees-and-clustering:overfit} as a chart. Past depth 2, each extra level fits more of
+the noise in the \omterm{def:b2:trees-and-clustering:examples}{training set}, and the tree does worse on new loans: at depth 16 it labels every training loan correctly
+and is beaten by the rule ``always on time''.}
+\end{omfigure}
+
+The depth limit is not learned from the \omterm{def:b2:trees-and-clustering:examples}{training set}, which always prefers the deepest tree. It is chosen on \omterm{def:b2:trees-and-clustering:examples}{examples}
+held out for that purpose, a validation set, or by cross-validation (\cref{exo:b2:trees-and-clustering:7}); the \omterm{def:b2:trees-and-clustering:examples}{test set}
+is looked at once, at the end.
+
+\begin{history}
+% ledger: b2:quinlan-1986
+Ross Quinlan published ID3, \omterm{def:b2:trees-and-clustering:decision-tree}{decision trees} grown by \omterm{def:b2:trees-and-clustering:entropy}{information gain}, in 1986.
+\end{history}
+
+\section{Clustering by $k$-means}\label{sec:b2:trees-and-clustering:kmeans}
+
+\omimg{book4/ai/b2-trees-and-clustering-returns-desk.jpg}{0.6\linewidth}{A returns desk with its trolley. The loans
+have labels that arrive by themselves, on time or late; the members who \omterm{def:b2:rust-ownership:borrow}{borrow} them do not come sorted into groups, and
+the groups, if any, have to be found.}
+
+\begin{definition}[Clustering, centroid, $k$-means cost]\label{def:b2:trees-and-clustering:clustering}
+A \emph{clustering}\index{clustering} of a finite set of points $P \subset \mathbb{R}^d$ into $k$ \emph{clusters} is a
+partition of $P$ into $k$ parts, given by an assignment $a : P \to \{1, \dots, k\}$. The \emph{centroid}\index{centroid}
+of a non-empty finite set is the mean of its points. Given centres $c_1, \dots, c_k$, the \emph{$k$-means
+cost}\index{k-means cost@$k$-means cost} of an assignment is $\sum_{p \in P} \lVert p - c_{a(p)} \rVert^2$.
+\end{definition}
+
+\begin{lemma}[The centroid minimises the squared distances]\label{lem:b2:trees-and-clustering:centroid}
+For a non-empty finite set $C$ with \omterm{def:b2:trees-and-clustering:clustering}{centroid} $m$ and any point $c$, $\sum_{p \in C} \lVert p - c \rVert^2 = \sum_{p \in C}
+\lVert p - m \rVert^2 + |C|\,\lVert m - c \rVert^2$. In particular $m$ is the unique point that minimises the sum.
+\end{lemma}
+
+\begin{proof}
+Write $p - c = (p - m) + (m - c)$ and expand the square: the cross terms add up to $2 (m - c) \cdot \sum_{p}(p - m)$,
+which is $0$ by the definition of $m$.
+\end{proof}
+
+\begin{method}[Lloyd's algorithm]\label{met:b2:trees-and-clustering:lloyd}\index{Lloyd's algorithm}
+Start from $k$ centres, for \omterm{def:b2:trees-and-clustering:examples}{example} $k$ points of $P$ drawn at random. Repeat: assign each point to its nearest centre
+(the lowest index on a tie); if the assignment has not changed, stop; otherwise move each centre to the \omterm{def:b2:trees-and-clustering:clustering}{centroid} of its
+cluster, or leave it in place if its cluster is empty.
+\end{method}
+
+\omcode{code/bachelor-2/29-trees-and-clustering/listings/kmeans.py}{12}{39}{\omterm{met:b2:trees-and-clustering:lloyd}{Lloyd's algorithm}, recording the cost after
+each assignment}\label{lst:b2:trees-and-clustering:lloyd}
+
+\begin{theorem}[Lloyd's algorithm stops]\label{thm:b2:trees-and-clustering:lloyd-stops}
+The cost never increases from one assignment to the next, and the algorithm stops after finitely many iterations.
+\end{theorem}
+
+\begin{proof}
+\Cref{exo:b2:trees-and-clustering:8}: the assignment step can only lower each point's term, the \omterm{def:b2:trees-and-clustering:clustering}{centroid} step can only
+lower each cluster's sum by \cref{lem:b2:trees-and-clustering:centroid}, and an assignment never comes back.
+\end{proof}
+
+It stops, but not necessarily at the best \omterm{def:b2:trees-and-clustering:clustering}{clustering}: the result depends on the start.
+
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/kmeans.txt}{One run, then the final costs of 20 runs from
+different random starts on the same 150 points.}\label{out:b2:trees-and-clustering:kmeans}
+
+\begin{omfigure}
+\begin{tikzpicture}[scale=0.8,
+  base/.style={inner sep=0pt, minimum size=2.6pt},
+  pt0/.style={base, circle, fill=omDef}, pt1/.style={base, rectangle, fill=omThm},
+  pt2/.style={base, diamond, fill=omProp, minimum size=3.4pt}, pt3/.style={base, circle, fill=omMeth},
+  pt4/.style={base, isosceles triangle, isosceles triangle apex angle=60, shape border rotate=90, fill=black!55,
+    minimum size=3.4pt},
+  centre/.style={draw=black, very thick, cross out, minimum size=7pt, inner sep=0pt}]
+\foreach \k/\t in {0/{start}, 1/{after one step}, 2/{final, cost 625.7}} {
+  \begin{scope}[xshift=\k*6.4cm]
+  \draw[black!40] (-0.7, 0.2) rectangle (5.5, 5.4);
+  \input{code/bachelor-2/29-trees-and-clustering/figures/kmeans_\k.tex}
+  \node[font=\small] at (2.4, -0.2) {\t};
+  \end{scope}}
+\end{tikzpicture}
+\par\smallskip{\small \omterm{met:b2:trees-and-clustering:lloyd}{Lloyd's algorithm} from the start of seed 3, on five planted groups of 30 points. Crosses: the
+centres; colours and shapes: the clusters. Two centres start in the upper right group and never leave it, and one
+centre has to cover the two lower groups: a local minimum at cost 625.7, against 131.2 for the planted grouping. Drawn by \code{figs.py}.}
+\end{omfigure}
+
+Eight starts of twenty find the planted groups; the others stop at costs up to five times higher. The usual remedy is to
+run the algorithm from many starts and keep the best, and to start better. The \emph{$k$-means++}\index{k-means++@$k$-means++}
+seeding chooses the first centre at random and each next one among the points with probability proportional to its
+squared distance to the nearest centre chosen so far, so that far groups are likely to get a centre:
+
+\omcode{code/bachelor-2/29-trees-and-clustering/listings/kmeanspp.py}{8}{15}{The $k$-means++ seeding}\label{lst:b2:trees-and-clustering:kmeanspp}
+
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/kmeanspp.txt}{Twenty runs from each seeding: how often each
+finds the planted groups, and the costs.}\label{out:b2:trees-and-clustering:kmeanspp}
+
+Better starts also need fewer steps. The seeding does not remove local minima, only makes them rarer: over 100 seeds,
+\cref{exo:b2:trees-and-clustering:11} counts them.
+
+\begin{history}
+% ledger: b2:lloyd-1957
+% ledger: b2:lloyd-1982
+Stuart Lloyd proposed the algorithm in 1957, for the quantisation of signals; his work circulated widely but was
+published only in 1982.
+\end{history}
+
+\section{Hierarchical clustering}\label{sec:b2:trees-and-clustering:hac}
+
+$k$-means asks for $k$ in advance. Hierarchical \omterm{def:b2:trees-and-clustering:clustering}{clustering} builds every number of clusters at once.
+
+\begin{definition}[Hierarchical agglomerative clustering, linkage, dendrogram]\label{def:b2:trees-and-clustering:hac}
+\emph{Hierarchical agglomerative clustering}\index{hierarchical agglomerative clustering} starts with each point in a
+cluster of its own and repeatedly merges the two clusters at the least \emph{linkage}\index{linkage} distance, until one
+cluster is left. The \emph{single}, \emph{complete} and \emph{average} linkages of two clusters are the least, the
+largest and the mean distance between a point of one and a point of the other. The merges, drawn as a tree whose leaves
+are the points and whose internal nodes sit at the height of their merge, form the
+\emph{dendrogram}\index{dendrogram}; cutting it after $n - k$ merges gives $k$ clusters.
+\end{definition}
+
+\omcode{code/bachelor-2/29-trees-and-clustering/listings/hac.py}{14}{26}{Agglomerative \omterm{def:b2:trees-and-clustering:clustering}{clustering} with any \omterm{def:b2:trees-and-clustering:hac}{linkage}, by
+brute force}\label{lst:b2:trees-and-clustering:hac}
+
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/hac.txt}{Twelve points, three \omterm{def:b2:trees-and-clustering:hac}{linkages}, and single \omterm{def:b2:trees-and-clustering:hac}{linkage}
+against the spanning tree.}\label{out:b2:trees-and-clustering:hac}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=0.42cm, y=0.42cm]
+\draw[black!50] (-0.6, -0.6) rectangle (9.6, 9.6);
+\foreach \x/\y/\n in {1.0/1.0/A, 2.2/1.4/B, 1.3/2.9/C, 4.6/1.6/D, 6.8/1.1/E, 8.1/2.2/F, 9.0/0.9/G, 7.9/3.9/H,
+  4.2/6.8/I, 5.1/8.9/J, 6.3/7.6/K, 3.0/8.7/L} {
+  \fill (\x, \y) circle (2pt); \node[font=\scriptsize, above right=-1pt] at (\x, \y) {\n};}
+\begin{scope}[xshift=5.4cm, x=0.5cm, y=1.1cm, leaf/.style={font=\small, below}]
+\input{code/bachelor-2/29-trees-and-clustering/figures/dendrogram.tex}
+\draw[->] (-1, 0) -- (-1, 4.4) node[above, font=\scriptsize] {height};
+\foreach \h in {0, 1, 2, 3, 4} \draw (-1.1, \h) -- (-0.9, \h) node[left=2pt, font=\scriptsize] {\h};
+\draw[omThm, dashed] (-0.5, 2.33) -- (11.5, 2.33) node[right, font=\scriptsize] {3 clusters};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Left: the twelve points. Right: their \omterm{def:b2:trees-and-clustering:hac}{single-linkage} \omterm{def:b2:trees-and-clustering:hac}{dendrogram}, drawn by \code{figs.py} from
+\code{hac.py}. Cutting between the heights 2.26 and 2.41 leaves three clusters: D joins E, F, G and H through its
+nearest neighbour, at 2.26, before A, B, C reach them at 2.41. Complete \omterm{def:b2:trees-and-clustering:hac}{linkage} puts D with A, B and C instead.}
+\end{omfigure}
+
+Single \omterm{def:b2:trees-and-clustering:hac}{linkage} follows chains of close points, which finds groups of any shape but may join two groups through a few
+points between them; complete \omterm{def:b2:trees-and-clustering:hac}{linkage} prefers compact groups of small diameter. The brute-force listing recomputes
+every \omterm{def:b2:trees-and-clustering:hac}{linkage} at every merge: each of the $n - 1$ merges looks at every pair of points in different clusters, $O(n^3)$
+distances in all, which is fine for a dozen points only. Single \omterm{def:b2:trees-and-clustering:hac}{linkage} needs no such work: it is already known from the Year 1 volume.
+
+\begin{theorem}[Single linkage and the minimum spanning tree]\label{thm:b2:trees-and-clustering:single-linkage}
+Let the $\binom{n}{2}$ distances between $n$ points be distinct. For each $k$, the $k$ clusters of single \omterm{def:b2:trees-and-clustering:hac}{linkage} are the
+connected components of the minimum spanning tree of the complete graph on the points, weighted by distance, once its
+$k - 1$ heaviest edges are removed; equivalently, the components after Kruskal's algorithm has accepted $n - k$ edges.
+\end{theorem}
+
+\begin{proof}
+\Cref{exo:b2:trees-and-clustering:10}. The idea: the single \omterm{def:b2:trees-and-clustering:hac}{linkage} of two clusters is the shortest edge between them, and
+the shortest edge between two different clusters is exactly the next edge that Kruskal's algorithm accepts.
+\end{proof}
+
+So single \omterm{def:b2:trees-and-clustering:hac}{linkage} costs a sort of the $\binom{n}{2}$ distances and a union--find, $O(n^2 \log n)$ in all, and its
+clusters for every $k$ come out of one spanning tree.
+
+\section{Exercises}\label{sec:b2:trees-and-clustering:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:trees-and-clustering:1}
+From the \omterm{def:b2:trees-and-clustering:confusion}{confusion matrix} of \cref{out:b2:trees-and-clustering:confusion}, compute the \omterm{def:b2:trees-and-clustering:confusion}{accuracy}, the fraction of late
+loans that are caught, and the fraction of ``late'' predictions that are right. Which of the three should the library
+watch if a false alarm costs a polite phone call and a missed late loan costs nothing?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:trees-and-clustering:2}
+Run the $k$-nearest-neighbour \omterm{def:b2:trees-and-clustering:learning}{classifier} on the raw \omterm{def:b2:trees-and-clustering:examples}{features}, without scaling, with \code{exo_scaling.py}. Which
+\omterm{def:b2:trees-and-clustering:examples}{feature} decides the distance, and why does \omterm{def:b2:trees-and-clustering:confusion}{accuracy} drop?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:trees-and-clustering:3}
+Write a search for all the points of a $k$-d tree inside a rectangle, which skips the subtrees that cannot meet it.
+Compare the nodes visited with the points reported, using \code{exo_range.py}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:trees-and-clustering:4}
+A set of 20 loans has 8 late ones. A split sends 10 loans to the left, 7 of them late, and 10 to the right, 1 of them
+late. Compute its \omterm{def:b2:trees-and-clustering:entropy}{information gain} by hand, to three decimals.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:trees-and-clustering:5}
+Run one iteration of \omterm{met:b2:trees-and-clustering:lloyd}{Lloyd's algorithm} by hand on the twelve points of \cref{out:b2:trees-and-clustering:hac}, from the
+centres A, E and I: the assignment, the new centres and the two costs. Check with \code{exo_lloyd_step.py}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:trees-and-clustering:6}
+Some versions of ID3 split a \omterm{def:b2:trees-and-clustering:examples}{feature} with one branch per value. Add the loan's number, different for each loan, as a
+\omterm{def:b2:trees-and-clustering:examples}{feature}, and compute the gain of such a split on it, on the days lent and on the late returns. What goes wrong? Is the
+\emph{gain ratio}, the gain divided by the \omterm{def:b2:trees-and-clustering:entropy}{entropy} of the branch sizes, enough to fix it here? Use
+\code{exo_identifier.py}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:trees-and-clustering:7}
+In \emph{5-fold cross-validation}, the \omterm{def:b2:trees-and-clustering:examples}{training set} is cut into five parts; each part in turn serves as the validation
+set for a tree grown on the other four, and the five accuracies are averaged. Use it to choose the depth of the tree on
+the 700 noisy training loans, with \code{exo_crossval.py}. Compare with \cref{out:b2:trees-and-clustering:overfit}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:trees-and-clustering:8}
+Prove \cref{thm:b2:trees-and-clustering:lloyd-stops}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:trees-and-clustering:9}
+Run complete \omterm{def:b2:trees-and-clustering:hac}{linkage} by hand on the twelve points for the first five merges, then compare the full list of merges with
+\code{exo_complete.py}. Why does D end with A, B and C, while single \omterm{def:b2:trees-and-clustering:hac}{linkage} put it with E, F, G and H?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:trees-and-clustering:10}
+Prove \cref{thm:b2:trees-and-clustering:single-linkage}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:trees-and-clustering:11}
+Compare uniform and $k$-means++ seeding over 100 seeds each with \code{exo_kmeanspp.py}: how often does each find the
+best \omterm{def:b2:trees-and-clustering:clustering}{clustering}, and how many different local minima appear?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:trees-and-clustering:12}
+Build a set of points and a query for which the nearest-neighbour search of \cref{lst:b2:trees-and-clustering:kdtree}
+visits every node, and explain why. Check with \code{exo_kd_worst.py}.
+\end{exercise}
+
+\section{Problem: Which loans come back late?}\label{sec:b2:trees-and-clustering:problem}
+
+\begin{problem}[{Weekend problem --- Which loans come back late?}]\label{pb:b2:trees-and-clustering:1}
+The library has 1,000 past loans, with the same five \omterm{def:b2:trees-and-clustering:examples}{features} and a label that is wrong one time in ten. It wants a
+tree it can trust, and a first look at its members' habits.
+
+\omcode{code/bachelor-2/29-trees-and-clustering/listings/loans_problem.py}{9}{27}{The split, the depth chosen on
+validation, and the test}\label{lst:b2:trees-and-clustering:problem}
+
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/loans_problem.txt}{The data, the tree, its test, and the
+members clustered for $k = 1$ to $6$.}\label{out:b2:trees-and-clustering:problem}
+
+\medskip\noindent\textbf{Part I --- The data and the split.}\par\nopagebreak
+\begin{enumerate}
+\item Why are the loans shuffled before they are split?
+\item What is each of the three parts used for, and why must the \omterm{def:b2:trees-and-clustering:examples}{test set} be used only once?
+\item The \omterm{def:b2:trees-and-clustering:examples}{test set} has 21.7~\% late loans, the \omterm{def:b2:trees-and-clustering:examples}{training set} 30.2~\%. Is that a problem? What would a split that keeps the
+same proportion in every part do?
+\item With labels wrong one time in ten, what is the best \omterm{def:b2:trees-and-clustering:confusion}{accuracy} any \omterm{def:b2:trees-and-clustering:learning}{classifier} can expect on the \omterm{def:b2:trees-and-clustering:examples}{test set}?
+\item What is the majority baseline on the \omterm{def:b2:trees-and-clustering:examples}{test set}, and why is it the first number to compare with?
+\item Which of the five \omterm{def:b2:trees-and-clustering:examples}{features} would you expect to matter, before looking at the tree?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- A tree that finds the planted rule.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Which depth does validation choose, and why the shallowest among the best?
+\item Read the tree: which loans does it call late?
+\item Compare it with the planted rule of \code{dataset.py}. Why does its agreement with the rule reach 1.000?
+\item The left branch splits on the pages, yet both its leaves say ``on time''. Why did ID3 make that split, and what
+does it change?
+\item Compute the \omterm{def:b2:trees-and-clustering:entropy}{information gain} of the root split from the counts in the leaves.
+\item State the problem's result: test \omterm{def:b2:trees-and-clustering:confusion}{accuracy} against the majority baseline.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Overfitting with noise.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Validation \omterm{def:b2:trees-and-clustering:confusion}{accuracy} falls from depth 4 on. Explain it with the noise.
+\item Why is the tree finally grown on the training and validation sets together?
+\item The test \omterm{def:b2:trees-and-clustering:confusion}{accuracy}, 0.923, is above the 0.9 of question 4. Is that possible? What does it say about a single \omterm{def:b2:trees-and-clustering:examples}{test
+set} of 300?
+\item Would $k$-nearest neighbours with all five \omterm{def:b2:trees-and-clustering:examples}{features} do as well? Use \cref{out:b2:trees-and-clustering:knn}.
+\item How would the tree change if the noise were 30~\%?
+\item Propose a check that the tree's rule is stable: what would you rerun, and what would you compare?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The members, clustered.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Each member is a point (loans a year, mean days kept). Why is \omterm{def:b2:trees-and-clustering:clustering}{clustering} here unsupervised?
+\item The cost drops from 10,797 to 2,701 to 810, then slowly. Which $k$ would you choose, and why?
+\item Describe the three groups from their centres.
+\item Why does the program keep the best of 10 starts for each $k$?
+\item Would the two \omterm{def:b2:trees-and-clustering:examples}{features} need scaling here? Compare their ranges.
+\item Which other method of the chapter could find the same groups without choosing $k$ first?
+\end{enumerate}
+\end{problem}

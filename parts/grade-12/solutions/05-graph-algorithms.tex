@@ -1,0 +1,234 @@
+\section*{Chapter \ref{ch:g12:graph-algorithms} --- Graph Traversals and Shortest Paths}
+
+\begin{solution}{exo:g12:graph-algorithms:1}
+D, B, A, C, E, F. From D, the first neighbour is B; from B, A; from A, C (B is visited); from C, E (A and D are
+visited); from E, F.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:2}
+Layer $0$: D. Layer $1$: B, C, F. Layer $2$: A (found from B), E (found from C). The order is D, B, C, F, A, E.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:3}
+Rows and columns in the order $1$ to $4$:
+\[
+\begin{pmatrix} 0 & 1 & 1 & 1 \\ 1 & 0 & 1 & 0 \\ 1 & 1 & 0 & 1 \\ 1 & 0 & 1 & 0 \end{pmatrix}
+\]
+and the lists \code{{1: [2, 3, 4], 2: [1, 3], 3: [1, 2, 4], 4: [1, 3]}}.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:4}
+E $0$; C and F $1$; A and D $2$; B $3$.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:5}
+\smallskip\noindent\hspace*{2em}\code{def count_edges(adj):}
+
+\noindent\hspace*{4em}\code{return sum(len(ns) for ns in adj.values()) // 2}
+
+\smallskip\noindent Each edge appears in the lists of both its ends: $14 / 2 = 7$ for \code{G}.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:6}
+$16$: one call per square, since a square once marked is never entered again. The student's version unmarks a square
+when it returns, so the square can be entered again along another path: it walks every path from the corner that
+never crosses itself. Their number grows very fast with the size of the grid: $7$, $79$ and $2111$ calls for the
+grids of $2 \times 2$, $3 \times 3$ and $4 \times 4$ squares.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:7}
+\smallskip\noindent\hspace*{2em}\code{def has_path(g, a, b):}
+
+\noindent\hspace*{4em}\code{seen, stack = {a}, [a]}
+
+\noindent\hspace*{4em}\code{while stack:}
+
+\noindent\hspace*{6em}\code{v = stack.pop()}
+
+\noindent\hspace*{6em}\code{if v == b:}
+
+\noindent\hspace*{8em}\code{return True}
+
+\noindent\hspace*{6em}\code{for w in g[v]:}
+
+\noindent\hspace*{8em}\code{if w not in seen:}
+
+\noindent\hspace*{10em}\code{seen.add(w)}
+
+\noindent\hspace*{10em}\code{stack.append(w)}
+
+\noindent\hspace*{4em}\code{return False}
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:8}
+Finish A ($0$): S $4$, B $2$, C $5$. Finish B ($2$): S becomes $3$, D $10$. Finish S ($3$): nothing changes. Finish C
+($5$): D becomes $6$, T $8$. Finish D ($6$), then T ($8$). Distances from A: S $3$, B $2$, C $5$, D $6$, T $8$.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:9}
+After S, it finishes B, the last found, at $1$: correct by luck. A drops to $3$ and D gets $9$; it finishes D, the
+last found, although A, at $3$, is closer. From D, C gets $10$ and T $15$. It then finishes T at $15$, while the route
+S, B, A, C, T of length $11$ is not yet known, and C at $10$ instead of $8$. Finishing a vertex declares its distance
+final, which is only safe for the closest unfinished vertex.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:10}
+The lists hold one entry per direction of each road: $52 \times 2 + 1 = 105$ entries, plus the $30$ places. The matrix
+has $30 \times 30 = 900$ cells, of which $795$ are $0$.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:11}
+\smallskip\noindent\hspace*{2em}\code{def bfs_layers(g, s):}
+
+\noindent\hspace*{4em}\code{layers, seen = [[s]], {s}}
+
+\noindent\hspace*{4em}\code{while True:}
+
+\noindent\hspace*{6em}\code{nxt = []}
+
+\noindent\hspace*{6em}\code{for v in layers[-1]:}
+
+\noindent\hspace*{8em}\code{for w in g[v]:}
+
+\noindent\hspace*{10em}\code{if w not in seen:}
+
+\noindent\hspace*{12em}\code{seen.add(w)}
+
+\noindent\hspace*{12em}\code{nxt.append(w)}
+
+\noindent\hspace*{6em}\code{if not nxt:}
+
+\noindent\hspace*{8em}\code{return layers}
+
+\noindent\hspace*{6em}\code{layers.append(nxt)}
+
+\smallskip\noindent No queue is needed: each layer is built from the one before. For \code{G} from D:
+\texttt{[[\textquotesingle{}D\textquotesingle{}], [\textquotesingle{}B\textquotesingle{}, \textquotesingle{}C\textquotesingle{}, \textquotesingle{}F\textquotesingle{}], [\textquotesingle{}A\textquotesingle{}, \textquotesingle{}E\textquotesingle{}]]}.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:12}
+Write $\delta(v)$ for the true distance and $d(v)$ for the number the search records.
+
+First, $d(v) \ge \delta(v)$: following the parents from $v$ gives a real path of $d(v)$ edges.
+
+Next, the queue: we show by induction on the steps that its numbers, from front to back, never decrease and differ by
+at most $1$. A step removes the front vertex $v$, of number $d$, and appends vertices numbered $d + 1$; since every
+number left was between $d$ and $d + 1$, the property is kept. So the vertices leave the queue in increasing order
+of their numbers.
+
+Finally, $d(v) \le \delta(v)$, by induction on $k = \delta(v)$. For $k = 0$, $v = s$. If $\delta(v) = k \ge 1$, let
+$u$ be the vertex before $v$ on a shortest path: $\delta(u) = k - 1$, so $d(u) = k - 1$ by induction, and $u$ goes
+through the queue. When $u$ is removed, $v$ is numbered, either now as $d(u) + 1 = k$, or earlier by a vertex $x$
+removed before $u$, with $d(x) \le d(u)$, so $d(v) = d(x) + 1 \le k$. Hence $d(v) = \delta(v)$.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:13}
+By induction on the steps: assume every vertex finished so far has its true distance, and let $u$ be the next one,
+with tentative distance $d(u)$. Tentative distances are lengths of real paths, so $d(u) \ge \delta(u)$. Take any path
+$P$ from $s$ to $u$. It starts at a finished vertex and ends at an unfinished one: let $y$ be its first unfinished
+vertex, and $x$ the vertex just before it, finished. When $x$ was finished, its edge to $y$ was examined, so
+$d(y) \le \delta(x) + w(x, y)$, which is the length of $P$ up to $y$. Then $d(u) \le d(y)$, since $u$ has the smallest
+tentative distance; and the rest of $P$, from $y$ to $u$, has weights $\ge 0$. So the length of $P$ is at least
+$d(y) \ge d(u)$. This holds for every path: $\delta(u) \ge d(u)$, and $d(u) = \delta(u)$. The step ``rest of $P$ is
+$\ge 0$'' is exactly where negative weights break the proof.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:14}
+\smallskip\noindent\hspace*{2em}\code{def topological_order(g):}
+
+\noindent\hspace*{4em}\code{state, order = {v: 0 for v in g}, []}
+
+\noindent\hspace*{4em}\code{def explore(v):}
+
+\noindent\hspace*{6em}\code{state[v] = 1}
+
+\noindent\hspace*{6em}\code{for w in g[v]:}
+
+\noindent\hspace*{8em}\code{if state[w] == 1:}
+
+\noindent\hspace*{10em}\code{raise ValueError("the graph has a cycle")}
+
+\noindent\hspace*{8em}\code{if state[w] == 0:}
+
+\noindent\hspace*{10em}\code{explore(w)}
+
+\noindent\hspace*{6em}\code{state[v] = 2}
+
+\noindent\hspace*{6em}\code{order.append(v)}
+
+\noindent\hspace*{4em}\code{for v in g:}
+
+\noindent\hspace*{6em}\code{if state[v] == 0:}
+
+\noindent\hspace*{8em}\code{explore(v)}
+
+\noindent\hspace*{4em}\code{return order[::-1]}
+
+\smallskip\noindent The three states are the three colours. A vertex is appended once all its \omterm{def:g12:graph-algorithms:adjacency-list}{successors} are, so in
+the reversed list it comes before them. The tests compare it with every order of small random \omterm{def:g10:graphs-first-look:graph}{graphs}.
+\end{solution}
+
+\begin{solution}{exo:g12:graph-algorithms:15}
+Add $3$: S--A weighs $4$, S--B $6$, B--A $0$. \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} finds S to A $= 4$ by the direct edge, against $6$
+through B; in the original \omterm{def:g10:graphs-first-look:graph}{graph} that direct path costs $1$, but the path through B costs $0$. Adding $3$ to each
+edge adds $3$ times the number of edges to each path: paths with more edges are penalised more, and the order of the
+paths changes.
+\end{solution}
+
+\begin{solution}{pb:g12:graph-algorithms:1}
+\textbf{1.} The vertices are the $8 \times 14 = 112$ squares; an edge joins two squares side by side with no wall
+between them.
+
+\textbf{2.} A tree on $112$ vertices has $111$ edges: $111$ passages. The program counts $119$: of the twelve walls
+picked afterwards, eight were real walls, and four were already open passages, which the test \code{if b not in g[a]}
+skips.
+
+\textbf{3.} A stack: the carving is a depth-first search, which at each step goes to a random unvisited neighbour, and
+backs up from dead ends.
+
+\textbf{4.} The eight extra passages each close a loop in the tree, giving a second route between the squares they
+join.
+
+\textbf{5.} $92$ squares out of $112$. Depth-first search follows its neighbours in a fixed order, deep into whatever
+branch comes first, with no idea where the exit is: it reaches the exit only when that branch's turn comes.
+
+\textbf{6.} Right first: as long as the wall on the right has an opening, the walker turns into it, so its right hand
+never leaves the wall. Ahead if the right is closed, then left, and back only in a dead end.
+
+\textbf{7.} $58$ steps, against $32$: it walks into every dead end that opens on its right side, and back out.
+
+\textbf{8.} The entrance is a corner square, so the walls around it belong to the outer wall and the walls joined to
+it, one connected group of walls; the walker keeps its hand on that group, which runs all the way round the maze
+and past the exit square, also on the outer wall. The loops create walls standing alone inside the maze, and only a
+walker started beside one of them could circle for ever.
+
+\textbf{9.} The wall follower keeps only its square and the direction it faces. A search keeps the set of visited
+squares and its stack or queue, a memory that grows with the maze.
+
+\textbf{10.} $32$ steps: $33$ stars, the entrance and the exit included.
+
+\textbf{11.} Each parent is one step closer to the entrance (exercise \ref{exo:g12:graph-algorithms:12}): following
+them back from the exit takes $32$ steps, the distance.
+
+\textbf{12.} Not necessarily. Counting them layer by layer, each square has as many shortest routes as the sum of
+those of its neighbours one layer closer; the tests run this count on the maze and find $5$ shortest exits.
+
+\textbf{13.} As weights: \code{g[a][b]} is $6$ when the passage between $a$ and $b$ is a door, $1$ otherwise, in both
+directions.
+
+\textbf{14.} It counts edges as if they all cost the same; here a door costs six times an open passage.
+
+\textbf{15.} $32$ steps, $57$ seconds: $57 = 32 + 5 \times 5$, so $5$ doors.
+
+\textbf{16.} $34$ steps, $54$ seconds: $54 = 34 + 4 \times 5$, so $4$ doors. Two more steps avoid one door.
+
+\textbf{17.} All weights, $1$ and $6$, are positive: the theorem applies.
+
+\textbf{18.} $32$ seconds: every step costs $1$, and the fastest exit is the one with fewest steps.
+
+\textbf{19.} $n = 112$: at most $112^2 = 12\,544$ comparisons, nothing for a computer.
+
+\textbf{20.} \textbf{The shortest exit of the maze takes $32$ steps, where the hand on the wall takes $58$ (and the
+depth-first search visits $92$ squares); with doors, the fastest exit takes $54$ seconds in $34$ steps, against $57$
+seconds for the exit with fewest steps.}
+\end{solution}

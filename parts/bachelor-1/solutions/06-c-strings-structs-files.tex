@@ -1,0 +1,171 @@
+% Solutions of 06-c-strings-structs-files.
+\section*{Chapter \ref{ch:b1:c-strings-structs-files} --- Strings, Structures and Files}
+
+\begin{solution}{exo:b1:c-strings-structs-files:1}
+\code{a} is an \omterm{def:b1:pointers-and-arrays:array}{array} sized by its literal: 4 characters, 5 bytes. \code{b} has 20 bytes and holds a string of 4.
+\code{c} is a \omterm{def:b1:pointers-and-arrays:pointer}{pointer}: 8 bytes, whatever it points to. \code{d} is an \omterm{def:b1:pointers-and-arrays:array}{array} of 10 bytes (9 characters and the final
+zero); \code{strlen} stops at the first zero byte, after \code{rain}.
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/exo_lengths.txt}{The output.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-strings-structs-files:2}
+\code{struct a}: \code{c1} at 0, 3 bytes of \omterm{def:b1:c-strings-structs-files:alignment}{padding}, \code{i} at 4, \code{c2} at 8, 1 byte of \omterm{def:b1:c-strings-structs-files:alignment}{padding}, \code{s} at 10,
+size 12. \code{struct b}: \code{i} at 0, \code{s} at 4, \code{c1} at 6, \code{c2} at 7, size 8, no \omterm{def:b1:c-strings-structs-files:alignment}{padding}.
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/exo_sizes.txt}{12 and 8.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-strings-structs-files:3}
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/exo_fscanf.txt}{The output.}
+On the third line, \code{scanf} converts 3, then meets \code{x}, which is not a digit: it returns 1, and the loop,
+which requires 2, stops. The \code{x7} and the fourth line stay unread. With \code{fgets} and a conversion per line,
+the bad line could be reported and the next one read.
+\end{solution}
+
+\begin{solution}{exo:b1:c-strings-structs-files:4}
+\code{78 56 34 12} here, least significant byte first; \code{12 34 56 78} on a \omterm{def:b1:c-strings-structs-files:byte-order}{big-endian} machine.
+\omoutput[3-5]{code/bachelor-1/06-c-strings-structs-files/outputs/exo_fwrite.txt}{The file, dumped.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-strings-structs-files:5}
+\code{greeting} holds \code{"Hello, "}, 7 characters, at offsets 32 to 38 of the frame (its 16 bytes run from 32 to
+47). The first \code{strcat} copies the 12 letters of \code{Christabelle} and the zero byte, 13 bytes, from offset
+39: up to offset 51, four bytes past the \omterm{def:b1:pointers-and-arrays:array}{array}. The sanitizer reports the first byte out of bounds, offset 48. The full
+greeting needs $7 + 12 + 1 = 20$ characters and the zero byte: declare \code{char greeting[21]}, or build it with \code{snprintf} and check its result.
+\end{solution}
+
+\begin{solution}{exo:b1:c-strings-structs-files:6}
+\code{feof} becomes true only after a read has failed at the end of the file, not before. After 30 is read the end is
+not yet detected; the fourth \code{scanf} fails, leaves \code{v} at 30, and the loop adds it a second time and counts
+it: 4 numbers, $10 + 20 + 30 + 30 = 90$. Loop on the result of the read: \texttt{while (scanf(\char34\%d\char34, \&v) == 1)
+\{ total += v; count++; \}}.
+\omoutput{code/bachelor-1/06-c-strings-structs-files/outputs/exo_feof.txt}{The run of the program as printed.}
+\end{solution}
+
+\begin{solution}{exo:b1:c-strings-structs-files:7}
+\omcode{code/bachelor-1/06-c-strings-structs-files/exercises/str_append.c}{4}{17}{A bounded append}
+The first loop finds the end of \code{dst} without reading past \code{cap} bytes; the second copies while there is room
+for the zero byte. The test \code{tests/safe_copy_test.c} covers a buffer filled exactly, a truncation, \code{cap} 0
+and a destination that is not terminated.
+\end{solution}
+
+\begin{solution}{exo:b1:c-strings-structs-files:8}
+\omcode{code/bachelor-1/06-c-strings-structs-files/exercises/keyvalue.c}{4}{26}{Settings, every length checked}
+Both lengths are checked before any copy, so \code{memcpy} and \code{strcpy} cannot overflow. The test
+\code{tests/parse_test.c} reads three settings around a comment and an empty line, and finds the bad line 2 of a
+second file.
+\end{solution}
+
+\begin{solution}{exo:b1:c-strings-structs-files:9}
+Let $A$ be the largest \omterm{def:b1:c-strings-structs-files:alignment}{alignment} and $P$ the sum of the sizes. In any order, the size is at least $P$ and is a multiple
+of $A$: at least $P$ rounded up to a multiple of $A$. Sorted by decreasing \omterm{def:b1:c-strings-structs-files:alignment}{alignment}, each field starts right after the
+previous one with no \omterm{def:b1:c-strings-structs-files:alignment}{padding}: by induction, the offset of a field is a sum of sizes of \omterm{def:b1:c-strings-structs-files:struct}{fields} with \omterm{def:b1:c-strings-structs-files:alignment}{alignments} at least
+its own; each such size is a multiple of that larger \omterm{def:b1:c-strings-structs-files:alignment}{alignment}, hence of its own (a power of two divides a larger power
+of two), so the offset is already aligned. Only the final rounding to a multiple of $A$ remains: the bound is reached.
+The test \code{tests/test_layout_orders.py} compares with every permutation of four sets of \omterm{def:b1:c-strings-structs-files:struct}{fields}.
+\end{solution}
+
+\begin{solution}{exo:b1:c-strings-structs-files:10}
+\omcodes{code/bachelor-1/06-c-strings-structs-files/exercises/record_io.c}{4-30}{Writing a record byte by byte}
+$20\,250\,614 = \code{0x0134FFF6}$, $-35$ is \code{0xFFDD} on 16 bits, $123 = \code{0x007B}$: the bytes are
+\code{f6 ff 34 01 dd ff 7b 00}. Shifts and masks act on values, not on the memory representation, so the same bytes are
+written on any machine. The test \code{tests/record_io_test.c} checks these 8 bytes and a round trip of 100 records
+through a temporary file.
+\end{solution}
+
+\begin{solution}{exo:b1:c-strings-structs-files:11}
+Before call $k$ (from 1), the destination holds $(k-1)(w+1)$ characters; \code{strcat} examines them and the zero byte,
+$(k-1)(w+1) + 1$ bytes, then writes $w + 1$ characters and a zero, $w + 2$ bytes. Summing over $k$:
+$(w+1)\sum_{k=1}^{n}(k-1) + n(w+3) = (w+1)\,n(n-1)/2 + n(w+3)$, quadratic in $n$. Keep a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to the end (or the
+length) and copy each word there: $w + 2$ bytes per word, linear. The test \code{tests/test_layout_orders.py} checks
+the formula.
+\end{solution}
+
+\begin{solution}{exo:b1:c-strings-structs-files:12}
+\omcode{code/bachelor-1/06-c-strings-structs-files/exercises/read_int.c}{8}{23}{A strict conversion}
+\code{strtol} skips leading spaces itself; \code{end == s} catches the empty string, spaces only, and words. The range
+of \code{long} is wider than that of \code{int} here, so both tests are needed. The table of
+\code{tests/parse_test.c} holds 13 cases, among them \code{2147483647} (accepted), \code{2147483648} (rejected),
+\code{4.5} and \code{1 2}.
+\end{solution}
+
+\begin{solution}{pb:b1:c-strings-structs-files:1}
+\textbf{1.} \code{date} 0 (4 bytes), \code{station} 4, 3 bytes of \omterm{def:b1:c-strings-structs-files:alignment}{padding}, \code{temp} 8 (8 bytes), \code{flag} 16,
+3 bytes of \omterm{def:b1:c-strings-structs-files:alignment}{padding}, \code{rain} 20, \code{wind} 24, 4 bytes of \omterm{def:b1:c-strings-structs-files:alignment}{padding} to reach a multiple of 8: 32.
+
+\textbf{2.} \code{temp} 0, \code{date} 8, \code{rain} 12, \code{wind} 16, \code{station} 20, \code{flag} 21, 2 bytes of
+\omterm{def:b1:c-strings-structs-files:alignment}{padding}: 24.
+
+\textbf{3.} $4 + 1 + 8 + 1 + 4 + 4 = 22$ bytes of data, 10 of \omterm{def:b1:c-strings-structs-files:alignment}{padding}: $10/32 \approx 31\,\%$ of \code{first.bin}.
+
+\textbf{4.} The size is a multiple of the largest \omterm{def:b1:c-strings-structs-files:alignment}{alignment}, 8. In an \omterm{def:b1:pointers-and-arrays:array}{array} of 22-byte \omterm{def:b1:c-strings-structs-files:struct}{structures}, the second element
+would start at offset 22 and its \code{double} at 22, not a multiple of 8.
+
+\textbf{5.} From $-32\,768$ to $32\,767$ tenths, $-3276.8$ to $3276.7$ degrees: far more than any air temperature.
+
+\textbf{6.} $-99.0$ is a possible value of the type, so every computation (a mean, a minimum) would have to remember to
+exclude it, and one that forgets gives a wrong result silently. A flag is a separate field that cannot be mistaken for
+a temperature.
+
+\textbf{7.} $730 \times 32 = 23\,360$, $730 \times 24 = 17\,520$, $730 \times 12 = 8760$ bytes, as \code{ls -l} shows.
+
+\textbf{8.} $(24\,358 - 37)/731 \approx 33.3$ bytes per line.
+
+\textbf{9.} \code{f5 fd 34 01} read least significant byte first is \code{0x0134fdf5} $= 20\,250\,101$, the date
+2025-01-01. Byte 4, \code{48}, is \code{H}. Bytes 8 to 15, \code{33 33 33 33 33 33 0f 40}, are the \code{double}
+\code{0x400f333333333333}, 3.9. Bytes 24 to 27, \code{cd cc 74 41}, are the \code{float} \code{0x4174cccd}, 15.3.
+
+\textbf{10.} \omterm{def:b1:c-strings-structs-files:alignment}{Padding}: bytes no field owns, which the compound literal did not set, so they keep what the stack held
+before, here pieces of an address. A program that writes \omterm{def:b1:c-strings-structs-files:struct}{structures} with \code{fwrite} may write fragments of its
+memory, perhaps a password, into a file that leaves the machine.
+
+\textbf{11.} \code{days} is a static \omterm{def:b1:pointers-and-arrays:array}{array}, initialised to zero bytes at the start, \omterm{def:b1:c-strings-structs-files:alignment}{padding} included, and the parser
+only writes \omterm{def:b1:c-strings-structs-files:struct}{fields}.
+
+\textbf{12.} Offset $160 \times 12 = 1920$. In the CSV, lines have different lengths: the position of line 160 is
+known only after reading the 160 lines before it.
+
+\textbf{13.} \code{f5 fd 34 01}: 20250101; \code{48}: \code{H}; \code{00}: no flag; \code{27 00}: 39 tenths, 3.9;
+\code{00 00}: rain 0.0; \code{99 00}: 153 tenths, 15.3. Second: the same date, \code{52} (\code{R}), flag 0,
+\code{2b 00} (4.3), rain 0.0, \code{68 00} (10.4).
+
+\textbf{14.} \code{reading.bin}: each field with its bytes reversed (the \code{double} as \code{40 0f 33 \dots{} 33},
+the date as \code{01 34 fd f5}, and so on), and, with a different \omterm{def:b1:compilation-pipeline:compiler}{compiler}, possibly another layout. \code{packed.bin}:
+exactly the same bytes, since \code{pack_reading} computes each byte with shifts.
+
+\textbf{15.} \code{lround} gives $-35$ as a \code{long}; converting it to \code{int16_t} keeps the value, and converting
+that to \code{uint16_t} gives $65\,536 - 35 = 65\,501 = \code{0xffdd}$, the two's complement bits. Bytes \code{dd ff}.
+Converting a negative \code{long} directly to \code{uint16_t} gives the same bits, but the two steps say what is meant.
+
+\textbf{16.} \code{get} rebuilds \code{0xffdd} as an \code{uint32_t}, 65\,501; the conversion to \code{int16_t} reads
+those 16 bits as two's complement, $-35$ (converting a value out of range to a signed type is
+implementation-defined; this \omterm{def:b1:compilation-pipeline:compiler}{compiler} keeps the low 16 bits). Dividing by \code{10.0} converts $-35$ to \code{double}: the integer is first widened, by \omterm{def:b1:c-strings-structs-files:sign-extension}{sign extension}, to
+\code{int}.
+
+\textbf{17.} Every value of the file has one decimal, so ten times it is an integer up to the rounding error of
+\code{double}, which \code{lround} removes. A temperature to the hundredth would lose its last digit.
+
+\textbf{18.} The order and width of the \omterm{def:b1:c-strings-structs-files:struct}{fields}, the \omterm{def:b1:c-strings-structs-files:byte-order}{byte order} (\omterm{def:b1:c-strings-structs-files:byte-order}{little-endian}), the signedness of each field, the
+units (tenths), and the meaning of each flag bit.
+
+\textbf{19.} Two stations, 365 days: 730 lines. \code{read_weather} compares each line with the one before; the line
+of 2025-06-14 for Riverside appears twice in a row. A duplicate not adjacent to its twin, or one differing by a space,
+would pass.
+
+\textbf{20.} An empty field (\code{f[2][0]} is a comma) sets \code{TEMP_MISSING}; a field equal to $-99.0$ sets
+\code{TEMP_ERROR}; any other number is stored.
+
+\textbf{21.} \code{stop} is the address of the comma after the field: the number must fill the whole field.
+\code{strtod} alone accepts \code{4.1x} or \code{4.1 } and stops before the bad character; \code{field_double} rejects
+them.
+
+\textbf{22.} $-1$: the loop that looks for four commas finds only three, \code{strchr} returns \code{NULL}, and
+\code{parse_reading} returns at once.
+
+\textbf{23.} $24\,358 / 8760 \approx 2.8$ times smaller than the CSV, and $23\,360 / 8760 \approx 2.7$ times smaller
+than \code{first.bin}.
+
+\textbf{24.} \emph{The size of the archive.} For $n$ readings, a binary archive of fixed records of $s$ bytes has
+exactly $ns$ bytes, here $730 \times 32 = 23\,360$ (\omterm{def:b1:c-strings-structs-files:struct}{fields} in file order), $730 \times 24 = 17\,520$ (\omterm{def:b1:c-strings-structs-files:struct}{fields} by
+decreasing \omterm{def:b1:c-strings-structs-files:alignment}{alignment}) and $730 \times 12 = 8760$ (packed, portable), all three equal to the sizes of the files written;
+the \omterm{def:b1:c-strings-structs-files:text-binary}{text file}'s size, 24\,358 bytes, depends on the digits of every value and allows only sequential access.
+\end{solution}

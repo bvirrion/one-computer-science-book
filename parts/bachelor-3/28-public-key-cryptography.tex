@@ -1,0 +1,316 @@
+\chapter{Public-Key Cryptography and Secure Protocols}\label{ch:b3:public-key-cryptography}
+
+The ciphers and MACs of the previous chapter assume that the two parties already share a key. Two strangers on a network do not: the town hall and the library have never met, and every message between them can be read and changed. This chapter shows how they agree on a key in public, with Diffie--Hellman; how one of them can publish a key that encrypts for it and checks its signatures, with \omterm{def:b3:public-key-cryptography:rsa}{RSA} and Schnorr; how a browser knows that a public key belongs to a name, with \omterm{def:b3:public-key-cryptography:certificate}{certificates}; and how TLS 1.3 puts it all together in one handshake. It ends with the problem that every web service has: storing passwords so that a stolen table is of little use. As in the previous chapter, every attack runs against the chapter's own toy code, and every group and key is far too small or too simple for real use.
+
+\begin{recall}
+Computing $a^e \bmod n$ by repeated squaring, Bézout's theorem, inverses modulo $n$, Fermat's little theorem, the Chinese remainder theorem and a miniature \omterm{def:b3:public-key-cryptography:rsa}{RSA} come from the mathematics volumes, which also define groups, the order of an element and Lagrange's theorem: the order of an element divides the order of the group. The Miller--Rabin test declares a number prime with an error probability of at most $4^{-k}$ after $k$ random bases (Year~2 volume), where TLS was also met as the layer that secures HTTP. Hash functions, MACs, \omterm{def:b3:symmetric-cryptography:mac}{HMAC} and \omterm{def:b3:symmetric-cryptography:mac}{authenticated encryption} are from \cref{ch:b3:symmetric-cryptography}.
+\end{recall}
+
+\section{Key exchange}\label{sec:b3:public-key-cryptography:dh}
+
+\begin{definition}[Public-key cryptography, key pair]\label{def:b3:public-key-cryptography:pk}
+\emph{Public-key cryptography}\index{public-key cryptography} uses a \emph{key pair}\index{key pair} for each party: a private key, kept secret, and a public key, computed from it and published, such that computing the private key from the public one is infeasible.
+\end{definition}
+
+Diffie and Hellman published the first public-key method in 1976, a way for two parties to agree on a secret by exchanging only public values. % ledger: b3:diffie-hellman-1976
+It works in a group where exponentiation is easy and its inverse is hard.
+
+\begin{definition}[Diffie--Hellman key exchange, discrete-logarithm problem, man-in-the-middle attack]\label{def:b3:public-key-cryptography:dh}
+Let $p$ be a prime, $q$ a prime dividing $p - 1$, and $g$ an integer of order $q$ modulo $p$, all public. In the \emph{Diffie--Hellman key exchange}\index{Diffie--Hellman key exchange}, one party picks a secret $a$ in $\{1, \ldots, q - 1\}$ and sends $A = g^a \bmod p$; the other picks $b$ and sends $B = g^b \bmod p$; both compute $K = B^a = A^b = g^{ab} \bmod p$, and derive their keys from $K$ with a hash. The \emph{discrete-logarithm problem}\index{discrete-logarithm problem} is to find $x$ from $g^x \bmod p$; the Diffie--Hellman problem is to find $g^{ab}$ from $g^a$ and $g^b$. A \emph{man-in-the-middle attack}\index{man-in-the-middle attack} is one in which the attacker relays, reads and changes the messages between two parties, who each believe they talk to the other.
+\end{definition}
+
+The subgroup has prime order so that every element except 1 generates it, and an eavesdropper who knows the factors of a group's order cannot split the problem into smaller ones. Solving the discrete logarithm solves Diffie--Hellman; no faster way is known in well-chosen groups.
+
+\omcode{code/bachelor-3/28-public-key-cryptography/listings/dh.py}{14}{34}{A \omterm{def:b3:public-key-cryptography:pk}{key pair}, the shared key from the other side's public value, and Eve replacing both public values.}\label{lst:b3:public-key-cryptography:dh}
+
+\omoutput{code/bachelor-3/28-public-key-cryptography/outputs/dh.txt}{A 64-bit subgroup of the integers modulo a 128-bit prime. The two sides agree; with Eve in the middle, each side agrees with Eve.}\label{out:b3:public-key-cryptography:dh}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, x=1cm, y=0.9cm, ar/.style={-{Stealth}, thick}]
+  \node[draw, fill=omDef!10, rounded corners=2pt, minimum width=2.4cm] (t) at (0,0) {town hall, $a$};
+  \node[draw, fill=omThm!12, rounded corners=2pt, minimum width=2.4cm] (e) at (5,0) {Eve, $e_1$, $e_2$};
+  \node[draw, fill=omDef!10, rounded corners=2pt, minimum width=2.4cm] (l) at (10,0) {library, $b$};
+  \draw[ar] ([yshift=-0.6cm]t.south) -- node[above] {$A = g^a$} ([yshift=-0.6cm]e.south);
+  \draw[ar] ([yshift=-0.6cm]e.south) -- node[above] {$E_1 = g^{e_1}$ (``from the town hall'')} ([yshift=-0.6cm]l.south);
+  \draw[ar] ([yshift=-1.5cm]l.south) -- node[above] {$B = g^b$} ([yshift=-1.5cm]e.south);
+  \draw[ar] ([yshift=-1.5cm]e.south) -- node[above] {$E_2 = g^{e_2}$ (``from the library'')} ([yshift=-1.5cm]t.south);
+  \node[below=1.9cm of t, align=center] {key $g^{a e_2}$};
+  \node[below=1.9cm of e, align=center] {knows $g^{a e_2}$ and $g^{b e_1}$};
+  \node[below=1.9cm of l, align=center] {key $g^{b e_1}$};
+\end{tikzpicture}
+\par\smallskip{\small Diffie--Hellman with Eve in the middle. Nothing in the exchange says who sent a public value, so each side runs the protocol correctly with Eve. Eve decrypts each message with one key and re-encrypts it with the other.}
+\end{omfigure}
+
+Diffie--Hellman protects against an eavesdropper, not against an active attacker: the public values must be authenticated, by a signature from a key that the other side already trusts. The rest of the chapter builds that.
+
+How hard is the discrete logarithm? Trying every exponent costs $q$ multiplications. Shanks's \omterm{met:b3:public-key-cryptography:bsgs}{baby-step giant-step} method of 1971 needs only about $2\sqrt{q}$, trading time for memory. % ledger: b3:shanks-1971
+
+\begin{method}[Baby-step giant-step]\label{met:b3:public-key-cryptography:bsgs}
+To find $x$ with $g^x = h$ in a group of order $q$: let $m = \lceil \sqrt{q}\, \rceil$ and write the unknown $x = im + j$ with $0 \le i, j < m$. \emph{Baby steps}: store $g^j \mapsto j$ for $j = 0, \ldots, m - 1$ in a hash table. \emph{Giant steps}: for $i = 0, 1, \ldots$, look up $h \cdot g^{-im}$; when it is $g^j$, answer $x = im + j$. At most $m$ multiplications for the table, and at most $m$ for the giant steps.\index{baby-step giant-step}
+\end{method}
+
+\omcode{code/bachelor-3/28-public-key-cryptography/listings/bsgs.py}{10}{23}{Baby steps into a dictionary, then giant steps of $g^{-m}$ from $h$; the second value returned counts the multiplications.}\label{lst:b3:public-key-cryptography:bsgs}
+
+\omoutput{code/bachelor-3/28-public-key-cryptography/outputs/bsgs.txt}{Five group sizes, 20 logarithms each: never more than $2\sqrt{q}$ steps, about $1.5\sqrt{q}$ on average.}\label{out:b3:public-key-cryptography:bsgs}
+
+So a group of order $q$ gives at most $\frac{1}{2}\log_2 q$ bits of security, and a 64-bit subgroup like the one of \cref{out:b3:public-key-cryptography:dh} gives 32. The weekend problem draws the consequence. Methods specific to the integers modulo $p$, beyond this chapter, also require $p$ itself to be much longer than $q$: NIST pairs a 256-bit $q$ with a 3072-bit $p$. % ledger: b3:sp800-57-table2
+
+\section{RSA and its correct use}\label{sec:b3:public-key-cryptography:rsa}
+
+\begin{definition}[RSA, textbook RSA, OAEP]\label{def:b3:public-key-cryptography:rsa}
+\emph{RSA}\index{RSA} key generation picks two large random primes $p \ne q$, sets $n = pq$ and $\varphi(n) = (p - 1)(q - 1)$, chooses $e$ with $\gcd(e, \varphi(n)) = 1$, commonly $e = 65537$, and computes $d = e^{-1} \bmod \varphi(n)$. The public key is $(n, e)$, the private key $d$. \emph{Textbook RSA}\index{textbook RSA} encrypts a number $0 \le m < n$ as $c = m^e \bmod n$ and decrypts as $m = c^d \bmod n$. \emph{OAEP}\index{OAEP} (optimal asymmetric encryption padding) is a randomised encoding of the message applied before the exponentiation.
+\end{definition}
+
+Rivest, Shamir and Adleman published the method in 1978. % ledger: b3:rsa-1978
+
+\begin{theorem}[Correctness of RSA]\label{thm:b3:public-key-cryptography:rsa}
+For every $m$ with $\gcd(m, n) = 1$, $(m^e)^d \equiv m \pmod{n}$.\index{correctness of RSA}
+\end{theorem}
+
+\begin{proof}
+Facts used: Euler's theorem, $m^{\varphi(n)} \equiv 1 \pmod n$ when $\gcd(m, n) = 1$, which follows from Lagrange's theorem in the group of invertible residues modulo $n$, of order $\varphi(n)$. Since $ed \equiv 1 \pmod{\varphi(n)}$, write $ed = 1 + k\varphi(n)$ with $k \ge 0$. Then $m^{ed} = m \cdot (m^{\varphi(n)})^k \equiv m \cdot 1^k = m \pmod n$.
+\end{proof}
+
+The theorem holds for every $m$, including the rare ones that share a factor with $n$ (exercise~\ref{exo:b3:public-key-cryptography:7}). The primes come from Miller--Rabin on random odd numbers, and Python's integers do the rest.
+
+\omcode{code/bachelor-3/28-public-key-cryptography/listings/rsa.py}{12}{28}{Key generation, encryption and decryption, in textbook form.}\label{lst:b3:public-key-cryptography:rsa}
+
+\omoutput{code/bachelor-3/28-public-key-cryptography/outputs/rsa_demo.txt}{A 2048-bit key from a seeded generator. Decrypting with the Chinese remainder theorem gives the same message for a quarter of the work.}\label{out:b3:public-key-cryptography:rsa}
+
+The private key holder knows $p$ and $q$, so it can decrypt modulo $p$ and modulo $q$ separately, with exponents $d \bmod (p - 1)$ and $d \bmod (q - 1)$ of half the length, and recombine (exercise~\ref{exo:b3:public-key-cryptography:6}). The count of products barely changes, but each is a product of numbers half as long, and a schoolbook product of $b$-bit numbers costs about $(b/64)^2$ word products: four times less work.
+
+\omterm{def:b3:public-key-cryptography:rsa}{Textbook RSA} is a function, not yet a secure cipher. It is deterministic, so anyone can test a guess by encrypting it with the public key; and it is malleable, since $(m^e)(s^e) = (ms)^e$.
+
+\omoutput{code/bachelor-3/28-public-key-cryptography/outputs/rsa_malleable.txt}{A two-letter vote is found by encrypting the two candidates; multiplying a ciphertext by $2^e$ doubles the amount it hides.}\label{out:b3:public-key-cryptography:malleable}
+
+Real systems therefore never encrypt with \omterm{def:b3:public-key-cryptography:rsa}{textbook RSA}. The older PKCS\#1 v1.5 padding was shown insufficient for some messages, and \omterm{def:b3:public-key-cryptography:rsa}{OAEP}, which mixes random bytes into the message through hash functions before exponentiation, is the encoding to use in any new application. % ledger: b3:oaep
+In practice \omterm{def:b3:public-key-cryptography:rsa}{RSA}, or Diffie--Hellman, only carries a fresh symmetric key, and the data goes through the \omterm{def:b3:symmetric-cryptography:mac}{authenticated encryption} of the previous chapter.
+
+\begin{dated}{2026}
+NIST's key-management guide (SP 800-57 Part~1, revision~5, May 2020) compares strengths: 112-bit security needs an \omterm{def:b3:public-key-cryptography:rsa}{RSA} modulus of 2048 bits or a Diffie--Hellman group with $p$ of 2048 bits and $q$ of 224; 128-bit security, as AES-128, needs 3072 bits and $q$ of 256 bits, or an elliptic-curve group of 256 to 383 bits; 256-bit security needs a 15360-bit modulus. The guide counts 112-bit strength acceptable for protecting data through 2030 and disallows it from 2031, and warns that its estimates will change when quantum computing becomes practical. % ledger: b3:sp800-57-table2
+\end{dated}
+
+\section{Elliptic curves}\label{sec:b3:public-key-cryptography:ec}
+
+\begin{definition}[Elliptic curve]\label{def:b3:public-key-cryptography:ec}
+An \emph{elliptic curve}\index{elliptic curve (cryptographic)} over a field $K$, in cryptography, is the set of points $(x, y) \in K^2$ with $y^2 = x^3 + ax + b$, where $4a^3 + 27b^2 \ne 0$, together with a point at infinity $O$. The points form a commutative group, written additively, with $O$ as its neutral element: the line through $P$ and $Q$ (the tangent if $P = Q$) meets the curve in a third point, and $P + Q$ is the mirror image of that point in the $x$-axis.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[width=0.62\linewidth, height=0.5\linewidth, axis lines=middle, xmin=-2, xmax=3.8, ymin=-6.5, ymax=6.5, xtick={1,2,3}, ytick={-4,4}, font=\small, clip=true]
+    \addplot[omDef, very thick, domain=-1.3247:3.4, samples=240, smooth] {sqrt(max(x^3 - x + 1, 0))};
+    \addplot[omDef, very thick, domain=-1.3247:3.4, samples=240, smooth] {-sqrt(max(x^3 - x + 1, 0))};
+    \addplot[black!60, domain=-1.8:3.6] {1 + 4*x/3};
+    \addplot[black!60, dashed] coordinates {(-1.2222,-0.6296) (-1.2222,0.6296)};
+    \addplot[only marks, mark=*, mark size=2pt] coordinates {(0,1) (3,5) (-1.2222,-0.6296)};
+    \addplot[only marks, mark=*, mark size=2.4pt, omThm] coordinates {(-1.2222,0.6296)};
+    \node[anchor=north west, font=\small] at (axis cs:0.05,0.95) {$P$};
+    \node[anchor=south east, font=\small] at (axis cs:2.95,5.05) {$Q$};
+    \node[anchor=north east, font=\small] at (axis cs:-1.27,-0.65) {$R$};
+    \node[anchor=south east, font=\small, omThm] at (axis cs:-1.27,0.7) {$P + Q$};
+  \end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The group law on $y^2 = x^3 - x + 1$ over the reals, with the points computed by \code{ec_add.py}: the chord through $P = (0, 1)$ and $Q = (3, 5)$ meets the curve again at $R = (-11/9, -17/27)$, and $P + Q = (-11/9, 17/27)$.}
+\end{omfigure}
+
+\omcode{code/bachelor-3/28-public-key-cryptography/listings/ec_add.py}{8}{23}{Addition of points with exact fractions, or modulo a prime: the same formulas.}\label{lst:b3:public-key-cryptography:ecadd}
+
+\omoutput{code/bachelor-3/28-public-key-cryptography/outputs/ec_add.txt}{The figure's points, then a curve over the field of 97 elements: 100 points, and an element of order 50.}\label{out:b3:public-key-cryptography:ecadd}
+
+Over a finite field with $q$ elements a curve has $N$ points with $|N - (q + 1)| \le 2\sqrt{q}$, a theorem that Hasse proved in 1933. % ledger: b3:hasse
+Diffie--Hellman works in the group of points just as in the integers modulo $p$, with $kP = P + \cdots + P$ in place of $g^k$. For well-chosen curves no discrete-logarithm method faster than generic ones like \omterm{met:b3:public-key-cryptography:bsgs}{baby-step giant-step} is known, so a group of about $2^{256}$ points gives 128-bit security with 256-bit keys, against 3072 bits for \omterm{def:b3:public-key-cryptography:rsa}{RSA}. % ledger: b3:sp800-57-table2
+RFC 7748 specifies X25519, Diffie--Hellman on a curve over the prime field of $2^{255} - 19$ elements, for the 128-bit level. The chapter does not implement it: its arithmetic must run in constant time, which a library does and toy code does not. % ledger: b3:rfc7748
+
+\section{Signatures and certificates}\label{sec:b3:public-key-cryptography:signatures}
+
+\begin{definition}[Digital signature, hash-then-sign, Schnorr signature]\label{def:b3:public-key-cryptography:signature}
+A \emph{digital signature}\index{digital signature} scheme gives a \omterm{def:b3:public-key-cryptography:pk}{key pair}; signing a message uses the private key, and anyone can check a signature with the public key; no one without the private key can produce a valid signature on a new message, even after seeing signatures on messages of its choice. \emph{Hash-then-sign}\index{hash-then-sign} signs a fixed-length hash of the message instead of the message. A \emph{Schnorr signature}\index{Schnorr signature} works in a group of prime order $q$ generated by $g$, with a hash $H$ into $\{0, \ldots, q - 1\}$; the private key is $x$, the public key $y = g^x$. To sign $m$: pick a fresh random \omterm{def:b3:symmetric-cryptography:stream}{nonce} $k$, set $r = g^k$, $e = H(r \,\|\, m)$, $s = k + ex \bmod q$; the signature is $(r, s)$. To verify: check that $0 \le s < q$ and that $r$ is a group element, then that $g^s = r \cdot y^e$ with $e = H(r \,\|\, m)$.
+\end{definition}
+
+A signature differs from a MAC: a MAC's key is shared, so either party could have produced a tag, while only the private key's holder can sign, and anyone can check. \omterm{def:b3:public-key-cryptography:rsa}{RSA} also signs, with the roles of the exponents exchanged: the full-domain hash method hashes the message to the size of the modulus and raises the result to the power $d$, and PSS, a randomised encoding, is the standard replacement for the older PKCS\#1 v1.5 signatures. % ledger: b3:rsa-signatures
+Schnorr published his scheme in 1991. % ledger: b3:schnorr-1991
+
+\begin{theorem}[Correctness of Schnorr signatures]\label{thm:b3:public-key-cryptography:schnorr}
+A signature produced by the signing algorithm passes verification.\index{correctness of Schnorr signatures}
+\end{theorem}
+
+\begin{proof}
+Facts used: $g^q = 1$, so exponents of $g$ count modulo $q$. The signer returns $s = k + ex \bmod q$, so $0 \le s < q$, and $r = g^k$ is a group element. And $g^s = g^{k + ex} = g^k (g^x)^e = r \cdot y^e$, with the same $e = H(r \,\|\, m)$ that the verifier computes.
+\end{proof}
+
+\omcode{code/bachelor-3/28-public-key-cryptography/listings/schnorr.py}{12}{33}{Signing and verifying in a 160-bit subgroup modulo a 1024-bit prime.}\label{lst:b3:public-key-cryptography:schnorr}
+
+\omoutput{code/bachelor-3/28-public-key-cryptography/outputs/schnorr.txt}{A signature checks for its message and fails for another. A signer whose generator restarts from the same state uses the same \omterm{def:b3:symmetric-cryptography:stream}{nonce} twice, and two signatures give away the private key.}\label{out:b3:public-key-cryptography:schnorr}
+
+The \omterm{def:b3:symmetric-cryptography:stream}{nonce} is as secret as the key: two signatures with one $k$ make two linear equations in the unknowns $k$ and $x$ (exercise~\ref{exo:b3:public-key-cryptography:11}). % ledger: b3:schnorr-1991
+Implementations therefore derive $k$ from the private key and the message, or draw it from the operating system's generator, never from a seeded one.
+
+A public key is only useful if its owner is known. A browser cannot hold the keys of every server, but it can hold a few keys that it trusts, and accept another key when one of them vouches for it.
+
+\begin{definition}[Certificate, certificate chain, trust anchor, revocation]\label{def:b3:public-key-cryptography:certificate}
+A \emph{certificate}\index{certificate} is a signed statement binding a public key to a name, with an issuer, a validity period and the uses allowed, such as whether the key may sign certificates; the issuer of a certificate allowed to sign others is a certification authority (CA). A \emph{certificate chain}\index{certificate chain} is a list of certificates, each signed with the key of the next, up to a \emph{trust anchor}\index{trust anchor}, a public key the verifier holds in advance. \emph{Revocation}\index{revocation} withdraws a certificate before its expiry, for instance after its private key leaks.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, node distance=0.5cm and 1.3cm, c/.style={draw, rounded corners=2pt, align=left, fill=omDef!8, text width=3.6cm, inner sep=4pt}, ar/.style={-{Stealth}, thick}]
+  \node[c, fill=omThm!12] (root) {\textbf{Root CA}\\ key $y_{\text{root}}$\\ in the client's store};
+  \node[c, right=of root] (mid) {\textbf{Regional CA}\\ key $y_{\text{mid}}$, may sign\\ signed by Root CA};
+  \node[c, right=of mid] (leaf) {\textbf{library.example}\\ key $y_{\text{lib}}$, may not sign\\ signed by Regional CA};
+  \draw[ar] (root) -- node[above] {signs} (mid);
+  \draw[ar] (mid) -- node[above] {signs} (leaf);
+  \node[below=0.35cm of root, font=\footnotesize] {trust anchor};
+  \node[below=0.35cm of leaf, font=\footnotesize, align=center] {sent by the server,\\ with the Regional CA's certificate};
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b3:public-key-cryptography:certificate}{certificate chain}. The client checks each signature with the key in the \omterm{def:b3:public-key-cryptography:certificate}{certificate} above it, the validity dates, and that every signer may sign; the chain must end at a key the client already holds.}
+\end{omfigure}
+
+\omcode{code/bachelor-3/28-public-key-cryptography/listings/toy_cert.py}{27}{47}{Checking a chain: dates, issuer names, permission to sign, and each signature.}\label{lst:b3:public-key-cryptography:cert}
+
+\omoutput{code/bachelor-3/28-public-key-cryptography/outputs/toy_cert.txt}{The chain checks today and fails in 2028; a leaf with a substituted key, a chain Eve signed herself, and a leaf acting as a CA are all refused.}\label{out:b3:public-key-cryptography:cert}
+
+Real \omterm{def:b3:public-key-cryptography:certificate}{certificates} have a standard binary format and are checked by a library, along with many more rules. \omterm{def:b3:public-key-cryptography:certificate}{Revocation} is the hard part: a \omterm{def:b3:public-key-cryptography:certificate}{certificate} stays valid in every copy until it expires, so the client must learn from somewhere else, at connection time, that it was withdrawn.
+
+\section{Secure protocols: TLS 1.3 and passwords}\label{sec:b3:public-key-cryptography:tls}
+
+TLS 1.3, specified in RFC 8446 in August 2018, establishes a secure channel in one round trip of handshake messages. The client sends a ClientHello with its Diffie--Hellman share; the server answers with its share, and from then on everything it sends is encrypted under keys derived from the shared secret: its extensions, its \omterm{def:b3:public-key-cryptography:certificate}{certificate chain}, a CertificateVerify that signs the whole handshake so far with the \omterm{def:b3:public-key-cryptography:certificate}{certificate}'s key, and a Finished message, a MAC over the whole handshake. The client checks them and sends its own Finished. Keys come from a key schedule built on HKDF: each secret is bound to a label and to the hash of the messages exchanged so far, so that a change to any message changes every key that follows. TLS 1.3 removed the static \omterm{def:b3:public-key-cryptography:rsa}{RSA} and static \omterm{def:b3:public-key-cryptography:dh}{Diffie--Hellman key exchanges}, so every exchange based on public keys gives \omterm{def:b3:public-key-cryptography:forward-secrecy}{forward secrecy}. % ledger: b3:rfc8446
+
+\begin{definition}[Forward secrecy]\label{def:b3:public-key-cryptography:forward-secrecy}
+A key exchange has \emph{forward secrecy}\index{forward secrecy} if a later compromise of the long-term private keys does not reveal the session keys of earlier sessions.
+\end{definition}
+
+HKDF, from RFC 5869, is the \omterm{def:b3:public-key-cryptography:passwords}{key-derivation function} of TLS 1.3: an extract step that turns the Diffie--Hellman output into a uniform key, and an expand step that derives as many keys as needed from it, each bound to a context string (exercise~\ref{exo:b3:public-key-cryptography:12}). % ledger: b3:rfc5869
+
+\omoutput{code/bachelor-3/28-public-key-cryptography/outputs/hkdf_vector.txt}{Test case 1 of RFC 5869.}\label{out:b3:public-key-cryptography:hkdf}
+
+The next program runs the shape of the TLS 1.3 handshake between two Python objects, with the chapter's group, signatures and \omterm{def:b3:public-key-cryptography:certificate}{certificates}, and HKDF.
+
+\omcode{code/bachelor-3/28-public-key-cryptography/listings/tls13_trace.py}{44}{56}{The server's side: the handshake secret from the Diffie--Hellman value, a traffic secret bound to the transcript, the signature over the transcript, and the Finished MAC.}\label{lst:b3:public-key-cryptography:tls}
+
+\omoutput{code/bachelor-3/28-public-key-cryptography/outputs/tls13_trace.txt}{Seven messages, as in RFC 8446. When Eve replaces the server's key share, the chain still checks, but the signature, made over the transcript the server saw, does not: the client stops.}\label{out:b3:public-key-cryptography:tls}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, y=0.62cm, ar/.style={-{Stealth}, thick}]
+  \node (c) at (0,0.8) {\textbf{client}};
+  \node (s) at (6.4,0.8) {\textbf{server}};
+  \draw[black!40] (0,0.4) -- (0,-8.2);
+  \draw[black!40] (6.4,0.4) -- (6.4,-8.2);
+  \draw[ar] (0,0) -- node[above] {ClientHello + $g^a$} (6.4,-0.5);
+  \draw[ar] (6.4,-1.3) -- node[above] {ServerHello + $g^b$} (0,-1.8);
+  \foreach \y/\m in {-2.8/EncryptedExtensions, -3.8/Certificate, -4.8/CertificateVerify, -5.8/Finished}
+    \draw[ar, omDef] (6.4,\y) -- node[above] {\{\m\}} (0,\y-0.5);
+  \draw[ar, omDef] (0,-7.2) -- node[above] {\{Finished\}} (6.4,-7.7);
+  \node[draw, fill=omThm!10, rounded corners=2pt, align=left, anchor=north west, text width=4.4cm, font=\footnotesize] at (7.2,0.3) {\textbf{key schedule}\\[2pt] early secret\\ $\downarrow$ HKDF-Extract with $g^{ab}$\\ handshake secret\\ \quad$\to$ handshake traffic keys\\ $\downarrow$ HKDF-Extract\\ master secret\\ \quad$\to$ application traffic keys\\[3pt] Each secret is bound to the hash of the messages so far.};
+\end{tikzpicture}
+\par\smallskip{\small The TLS 1.3 full handshake, from RFC 8446, with its key schedule. Messages in braces are encrypted with the handshake traffic keys; CertificateVerify signs the transcript up to the \omterm{def:b3:public-key-cryptography:certificate}{certificate}, and each Finished is a MAC over the transcript.}
+\end{omfigure}
+
+The signature authenticates the Diffie--Hellman exchange, which is what \cref{out:b3:public-key-cryptography:dh} lacked; the ephemeral secrets $a$ and $b$ are erased after the handshake, which is what gives \omterm{def:b3:public-key-cryptography:forward-secrecy}{forward secrecy} (exercise~\ref{exo:b3:public-key-cryptography:10}).
+
+\begin{definition}[Password hashing, salt, key-derivation function]\label{def:b3:public-key-cryptography:passwords}
+\emph{Password hashing}\index{password hashing} stores, for each account, not the password but the output of a deliberately slow function of it, so that a stolen table can only be attacked by guessing, one costly guess at a time. A \emph{salt}\index{salt} is a random value stored with each account and hashed with its password, so that equal passwords give different stored values and no guess can be tested against all accounts at once. A \emph{key-derivation function}\index{key-derivation function} derives keys from a secret: HKDF from a secret that is already random, and PBKDF2 or scrypt from a password, with a cost parameter that sets the work per guess.
+\end{definition}
+
+NIST's guidelines require stored passwords to be salted and hashed with a password-hashing scheme that takes a cost factor, with a \omterm{def:b3:public-key-cryptography:passwords}{salt} of at least 32 bits and a cost factor as high as practical and raised over time. PBKDF2 iterates \omterm{def:b3:symmetric-cryptography:mac}{HMAC} a chosen number of times; scrypt also fills and reads back a table of $128 \cdot r \cdot N$ bytes, so that each guess needs memory as well as time. % ledger: b3:passwords
+
+\omcode{code/bachelor-3/28-public-key-cryptography/listings/passwords.py}{11}{24}{Storing a password with a fresh 16-byte \omterm{def:b3:public-key-cryptography:passwords}{salt} and scrypt, and checking it with a comparison whose time does not depend on where the values differ.}\label{lst:b3:public-key-cryptography:passwords}
+
+\omoutput{code/bachelor-3/28-public-key-cryptography/outputs/passwords.txt}{On the author's laptop, one core, best of three: the slow functions cut an attacker's guessing rate by a factor of tens to hundreds of thousands.}\label{out:b3:public-key-cryptography:passwords}
+
+A fast hash lets a stolen table be tested at millions of guesses per second on one core; scrypt with $N = 2^{14}$ and $r = 8$ costs 16 MiB and tens of milliseconds per guess, which a user logging in does not notice and an attacker trying a billion passwords does.
+
+\section{Exercises}\label{sec:b3:public-key-cryptography:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:public-key-cryptography:1}
+Take $p = 23$ and $g = 4$, of order 11. The town hall picks $a = 3$ and the library $b = 7$. Compute the values they send and the key they share, by hand.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:public-key-cryptography:2}
+With $p = 61$, $q = 53$ and $e = 17$, compute $n$, $\varphi(n)$ and $d$; encrypt $m = 65$ and decrypt the result.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:public-key-cryptography:3}
+The town hall sends the library a budget, signed with its private key. Which of these does the signature guarantee: that no one else read the budget; that it was not changed; that it comes from the town hall; that the town hall cannot later deny sending it to anyone, not just to the library? Which of them would a MAC with a shared key guarantee?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:public-key-cryptography:4}
+Without running \code{bsgs.py}, say how many baby steps it takes for $q = 1{,}000{,}003$, and the largest and smallest numbers of steps it can report.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:public-key-cryptography:5}
+\code{verify_buggy} in \code{exercises/ex5_schnorr_range.py} checks $g^s = r y^e$ but not $0 \le s < q$. Show that it accepts a signature the signer never produced, explain why that matters when signatures are used to identify payments, and fix it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:public-key-cryptography:6}
+Write \code{decrypt_crt(priv, c)}: compute $m_p = c^{d \bmod (p-1)} \bmod p$ and $m_q$ likewise, and recombine them into $m \bmod n$. Prove the recombination formula you use, and test the function against plain decryption.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:public-key-cryptography:7}
+Prove that $(m^e)^d \equiv m \pmod n$ for every $0 \le m < n$, including those with $\gcd(m, n) \ne 1$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:public-key-cryptography:8}
+Prove that \omterm{met:b3:public-key-cryptography:bsgs}{baby-step giant-step} returns the discrete logarithm, and that it uses at most $2\lceil \sqrt{q}\, \rceil$ multiplications. If $x$ is uniform, what is the expected number of giant steps?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:public-key-cryptography:9}
+From \cref{out:b3:public-key-cryptography:passwords}, how long does an attacker with one core need to try a list of $10^9$ common passwords against one stolen SHA-256 hash, and against one scrypt hash? Against a table of a million accounts, with and without \omterm{def:b3:public-key-cryptography:passwords}{salts}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:public-key-cryptography:10}
+In a model where each session uses fresh exponents $a$, $b$, erased at its end, and the long-term keys only sign, argue that an attacker who records a session and later steals both parties' long-term keys learns nothing about the session key beyond what solving Diffie--Hellman on $g^a$, $g^b$ would give. Why does static \omterm{def:b3:public-key-cryptography:rsa}{RSA} key transport, where the client encrypts the session key with the server's long-term \omterm{def:b3:public-key-cryptography:rsa}{RSA} key, lack this property?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:public-key-cryptography:11}
+Two \omterm{def:b3:public-key-cryptography:signature}{Schnorr signatures} $(r, s_1)$ on $m_1$ and $(r, s_2)$ on $m_2$ share the \omterm{def:b3:symmetric-cryptography:stream}{nonce} $k$. Derive $x$ from them, say when the formula fails, and prove that it is correct. Does a \omterm{def:b3:symmetric-cryptography:stream}{nonce} that is merely predictable, say $k_2 = k_1 + 1$, also leak $x$?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:public-key-cryptography:12}
+Implement HKDF from RFC 5869 with HMAC-SHA-256: \code{extract(salt, ikm)}, with an empty \omterm{def:b3:public-key-cryptography:passwords}{salt} replaced by 32 zero bytes, and \code{expand(prk, info, length)}, with $T(i) = \mathrm{HMAC}(\mathit{PRK}, T(i - 1) \,\|\, \mathit{info} \,\|\, i)$. Pass test cases 1 to 3 of the RFC.
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:public-key-cryptography:problem}
+
+\begin{problem}[{Weekend problem --- A shared key for the town hall and the library}]\label{pb:b3:public-key-cryptography:1}
+The town hall and the library want a shared key for their nightly exchange of records. A consultant proposes Diffie--Hellman in a small group, ``since no one is listening''. The problem works through the exchange, the attack that breaks it, and the size the group must have.
+
+\medskip\noindent\textbf{Part I --- Diffie--Hellman in a small group.}
+\begin{enumerate}
+  \item Check that $g = 2$ has order 23 modulo $p = 47$.
+  \item The town hall picks $a = 5$ and the library $b = 9$. What do they send?
+  \item Compute the shared value both ways.
+  \item Why does the protocol use a subgroup of prime order rather than all the residues modulo 47?
+  \item Find $a$ from $A$ by trying exponents. How many tries does it take at most?
+  \item Which of $p$, $g$, $A$, $B$, $a$, $b$ and the shared value are public?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The man in the middle.}
+\begin{enumerate}[resume]
+  \item In \cref{out:b3:public-key-cryptography:dh}, why does each side's key agree with Eve's and not with the other side's?
+  \item What can Eve do with the records that pass that night?
+  \item Would the town hall notice anything in the values it receives?
+  \item The library publishes a \omterm{def:b3:public-key-cryptography:certificate}{certificate} for a signing key, issued by a CA both trust. What must the library sign during the exchange?
+  \item In \cref{out:b3:public-key-cryptography:tls}, which check fails when Eve changes the server's share, and why can Eve not repair it?
+  \item Could Eve instead present a \omterm{def:b3:public-key-cryptography:certificate}{certificate} for her own key? What stops her?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Baby-step giant-step on small groups.}
+\begin{enumerate}[resume]
+  \item From \cref{out:b3:public-key-cryptography:bsgs}, how does the mean number of steps grow when $q$ grows 16 times?
+  \item Check that no run exceeded $2\sqrt{q}$, and say why none can.
+  \item Explain why the mean is close to $1.5\sqrt{q}$.
+  \item How much memory does the table take for $q \approx 2^{36}$, and for $q \approx 2^{64}$?
+  \item The 64-bit subgroup of \cref{out:b3:public-key-cryptography:dh}: how many steps would \omterm{met:b3:public-key-cryptography:bsgs}{baby-step giant-step} take?
+  \item Why can an eavesdropper who records the exchange tonight attack it at leisure later?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- How large q must be.}
+\begin{enumerate}[resume]
+  \item For $b$ bits of security against \omterm{met:b3:public-key-cryptography:bsgs}{baby-step giant-step}, how many bits must $q$ have?
+  \item What does that give for 128-bit security?
+  \item What size of $p$ does NIST's table pair with that $q$, and why must $p$ be longer than $q$?
+  \item What elliptic-curve group gives the same security, and what is gained?
+  \item Why is 112-bit strength not enough for records that must stay secret until 2035?
+  \item Sum up: how does \omterm{met:b3:public-key-cryptography:bsgs}{baby-step giant-step} scale, and what $q$ does 128-bit security need?
+\end{enumerate}
+\end{problem}

@@ -1,0 +1,160 @@
+% Solutions of 04-pointers-and-arrays.
+\section*{Chapter \ref{ch:b1:pointers-and-arrays} --- Pointers and Arrays}
+
+\begin{solution}{exo:b1:pointers-and-arrays:1}
+\code{*p = *q + 10} writes $2 + 10$ into \code{a}; \code{p = q} makes \code{p} point to \code{b}; \code{*p = *p * 3}
+makes \code{b} 6; \code{q = &a}; \code{*q = *q - *p} makes \code{a} $12 - 6 = 6$. Now \code{p} points to \code{b} and
+\code{q} to \code{a}, both holding 6.
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/exo_ptrs.txt}{The output.}
+\end{solution}
+
+\begin{solution}{exo:b1:pointers-and-arrays:2}
+\code{days} holds 31, 28, 30 (the third element was changed through \code{last}). \code{first} points to
+\code{days[0]}. \code{which} points to \code{last}, and \code{*which = first + 1} changed \code{last}, which now
+points to \code{days[1]}. So three arrows: \code{first} to \code{days[0]}, \code{last} to \code{days[1]}, \code{which}
+to \code{last}. \code{main} returns \code{*last}, that is 28.
+\end{solution}
+
+\begin{solution}{exo:b1:pointers-and-arrays:3}
+\code{q - p} $= 5 - 1 = 4$ elements, that is $4 \times 8 = 32$ bytes; \code{*(p + 2)} is \code{t[3]}, 0.5;
+\code{p[-1]} is \code{*(p - 1)}, that is \code{t[0]}, 2.5 (allowed: \code{p - 1} is still inside the \omterm{def:b1:pointers-and-arrays:array}{array}).
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/exo_diff.txt}{The output.}
+\end{solution}
+
+\begin{solution}{exo:b1:pointers-and-arrays:4}
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/exo_sizeof.txt}{10 in \code{main}, 1 in \code{length}.}
+In \code{length}, \code{values} is a \omterm{def:b1:pointers-and-arrays:pointer}{pointer}: $8 / 8 = 1$. Only where the \omterm{def:b1:pointers-and-arrays:array}{array} itself is in scope does \code{sizeof}
+see its 80 bytes. Compute \code{size_t n = sizeof values / sizeof values[0];} in \code{main} and pass \code{n} to every
+function that needs the length.
+\end{solution}
+
+\begin{solution}{exo:b1:pointers-and-arrays:5}
+\code{scanf} expects, for \texttt{\%d}, the \omterm{def:b1:pointers-and-arrays:pointer}{address} of an \code{int}; it received the value of \code{n}, an \code{int},
+which it would take for an \omterm{def:b1:pointers-and-arrays:pointer}{address}: here 0, so it would try to store the number at \omterm{def:b1:pointers-and-arrays:pointer}{address} 0 and the system would stop
+the program. Had \code{n} held another value, \code{scanf} would have written the number at whatever \omterm{def:b1:pointers-and-arrays:pointer}{address} that value
+names: a crash if the \omterm{def:b1:pointers-and-arrays:pointer}{address} is not the program's, a silent corruption if it is. Passing an argument of the wrong
+type to \code{scanf} is \omterm{def:b1:c-types-and-control:ub}{undefined behaviour}; the format check of \code{-Wall} catches it.
+\end{solution}
+
+\begin{solution}{exo:b1:pointers-and-arrays:6}
+The loop runs for $i = 0, \dots, 12$ and reads \code{rain[12]}, one element past the end of the global \omterm{def:b1:pointers-and-arrays:array}{array} of 12
+\code{double} (96 bytes): a global buffer overflow, a read of 8 bytes. The fix is \code{i < n}. Without the
+sanitizer, the program would read whatever follows \code{rain} in memory; in the best case it is the value 0.0, and
+the program prints the right average, $597.5 / 12 \approx 49.79$~mm, hiding the bug until the day the memory after
+\code{rain} holds something else.
+\end{solution}
+
+\begin{solution}{exo:b1:pointers-and-arrays:7}
+\omcode{code/bachelor-1/04-pointers-and-arrays/exercises/minmax.c}{4}{18}{One pass, two results}
+The results go into local variables first and are stored only at the end, so nothing is stored when \code{n} is 0. The
+test is \code{tests/minmax_test.c}.
+\end{solution}
+
+\begin{solution}{exo:b1:pointers-and-arrays:8}
+\omcode{code/bachelor-1/04-pointers-and-arrays/exercises/reverse.c}{4}{19}{Two \omterm{def:b1:pointers-and-arrays:pointer}{pointers} that meet in the middle}
+For $n < 2$ there is nothing to do, and \code{a + n - 1} must not be formed when $n = 0$ (it would point before the
+\omterm{def:b1:pointers-and-arrays:array}{array}). The test \code{tests/reverse_test.c} checks every $n \leq 9$.
+\end{solution}
+
+\begin{solution}{exo:b1:pointers-and-arrays:9}
+\omoutput{code/bachelor-1/04-pointers-and-arrays/outputs/exo_index.txt}{The output.}
+\code{a[2]} is by definition \code{*(a + 2)}, and \code{2[a]} is \code{*(2 + a)}: addition of a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} and an integer
+is commutative, so both are the same element. A string literal is an \omterm{def:b1:pointers-and-arrays:array}{array} of characters, so \code{"pointer"[3]} is its
+fourth character, \code{n}. Nobody should write \code{2[a]}.
+\end{solution}
+
+\begin{solution}{exo:b1:pointers-and-arrays:10}
+Write $L$ = \code{left - a} and $R$ = \code{right - a}. Invariant, at each test of the loop: $L + R = n - 1$; the
+elements at positions $< L$ and $> R$ hold their final values (position $k$ holds the original element $n - 1 - k$);
+the positions from $L$ to $R$ hold their original elements. Initially $L = 0$, $R = n - 1$: true. A turn with
+$L < R$ exchanges positions $L$ and $R = n - 1 - L$, which puts both final values in place, then $L$ grows and $R$
+shrinks by 1: true again. The loop stops when $L \geq R$; then every position except possibly $L = R$, the middle one
+(whose final element is its own), is settled: the \omterm{def:b1:pointers-and-arrays:array}{array} is reversed. The turns are those with $L < n - 1 - L$, that is
+$L = 0, 1, \dots$ while $2L < n - 1$: there are $\lceil (n-1)/2 \rceil = \lfloor n/2 \rfloor$ of them, one swap each.
+\end{solution}
+
+\begin{solution}{exo:b1:pointers-and-arrays:11}
+\omcode{code/bachelor-1/04-pointers-and-arrays/exercises/generic_max.c}{4}{17}{The largest element of any \omterm{def:b1:pointers-and-arrays:array}{array}}
+\omterm{def:b1:pointers-and-arrays:arithmetic}{Pointer arithmetic} is not defined on \code{void *}, since the size of the element is unknown. A \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to
+\code{char} counts in bytes, the size of a \code{char} being 1 by definition, so \code{bytes + i * size} is the \omterm{def:b1:pointers-and-arrays:pointer}{address}
+of element $i$. The test \code{tests/generic_max_test.c} uses it on \code{int}, \code{double} and \omterm{def:b1:pointers-and-arrays:pointer}{pointers} to
+characters.
+\end{solution}
+
+\begin{solution}{exo:b1:pointers-and-arrays:12}
+The valid \omterm{def:b1:pointers-and-arrays:pointer}{pointers} are $n + 1$ positions. Pairs with $p < q$: choose two distinct positions, $\binom{n+1}{2}$ ways;
+pairs with $p = q$: $n + 1$. In all $\binom{n+1}{2} + (n+1) = (n+1)(n+2)/2$. Each pair describes a slice of the \omterm{def:b1:pointers-and-arrays:array}{array},
+the elements from $p$ included to $q$ excluded, with $q - p$ elements; the $n + 1$ pairs with $p = q$ are the empty
+slices. The test \code{tests/test_pointer_pairs.py} counts them for $n < 30$.
+\end{solution}
+
+\begin{solution}{pb:b1:pointers-and-arrays:1}
+\textbf{1.} $f(2, 1) = 9$, $f(3, 3) = 15$.
+
+\textbf{2.} $f(i, j) \geq 0$, and $f(i, j) \leq (h - 1)w + (w - 1) = hw - 1$.
+
+\textbf{3.} If $iw + j = i'w + j'$ with $0 \leq j, j' < w$, both sides have the same remainder when divided by $w$:
+$j = j'$; then $iw = i'w$ and $i = i'$.
+
+\textbf{4.} An injective map from a set of $hw$ elements into a set of $hw$ elements is a bijection. Its inverse is
+$k \mapsto (k / w, k \bmod w)$, written \texttt{(k / w, k \% w)} in C.
+
+\textbf{5.} \omterm{def:b1:pointers-and-arrays:arithmetic}{Pointer arithmetic} counts in elements: \code{g + k} is already $4k$ bytes after \code{g}. Multiplying by
+\code{sizeof(int)} would go four times too far.
+
+\textbf{6.} $50\,000^2 = 2.5 \times 10^9 > 2^{31} - 1$: \code{i * w} overflows \code{int}. The index should be computed
+in \code{size_t} (or another 64-bit type), and so should the sizes.
+
+\textbf{7.} \code{g + i*w} to \code{g + i*w + w - 1}, the $w$ cells of row $i$; the final value \code{g + (i+1)*w} is
+one past the row: the first cell of the next row, or one past the end of the grid for the last row.
+
+\textbf{8.} $w$ elements, that is $4w$ bytes (16 here).
+
+\textbf{9.} \code{p} takes the values \code{g + j + k*w} for $k = 0, 1, \dots$ while $j + kw < hw$. Since $0 \leq j < w$,
+that is $k \leq h - 1$: the cells $f(0, j), \dots, f(h-1, j)$, which are column $j$, each once.
+
+\textbf{10.} For $j > 0$, \code{g + h*w + j} lies beyond the one-past-the-end position \code{g + h*w}: forming it is
+\omterm{def:b1:c-types-and-control:ub}{undefined behaviour}, even unread. With an index: \code{for (int k = 0; k < h; k++) s += g[k * w + j];}.
+
+\textbf{11.} Row 2: $20 + 21 + 22 + 23 = 86$; column 3: $3 + 13 + 23 + 33 = 72$.
+
+\textbf{12.} Row $i$: $\sum_j (10i + j) = 10in + n(n-1)/2$. Column $j$: $\sum_i (10i + j) = 5n(n-1) + nj$.
+
+\textbf{13.} The transpose $T$ has $T(i, j) = G(j, i)$. The cells off the diagonal fall into pairs $\{(i, j), (j, i)\}$
+with $i < j$; one exchange puts both cells of a pair right, the pairs are disjoint, and the diagonal is already right.
+
+\textbf{14.} Each pair would be exchanged twice, once as $(i, j)$ and once as $(j, i)$: the grid would come back
+unchanged.
+
+\textbf{15.} One swap per pair $i < j$ of indices among $n$: $\binom{n}{2} = n(n-1)/2$. Or: row $i$ contributes
+$n - 1 - i$ swaps, and $\sum_{i=0}^{n-1} (n - 1 - i) = n(n-1)/2$.
+
+\textbf{16.} $0, 1, 3, 6, 10, 15, 21, 28$ for $n = 1, \dots, 8$: the printed values.
+
+\textbf{17.} A diagonal cell has $i = j$, and the loop only reaches pairs with $i < j$. An off-diagonal cell $(i, j)$
+belongs to exactly one pair, $\{(\min, \max)\}$, so it moves once.
+
+\textbf{18.} A copy writes $n^2$ cells into a second grid of $n^2$ \code{int}; the transpose in place makes $n(n-1)/2$
+swaps (three assignments each) with one extra \code{int}. For $n = 1000$: 4~MB of extra memory against 4 bytes.
+
+\textbf{19.} $j = 1, 2, 3$: indices $(1, 3)$, $(2, 6)$ and $(3, 9)$.
+
+\textbf{20.} Index 9 does not exist in an \omterm{def:b1:pointers-and-arrays:array}{array} of 9 elements. It lies $9 \times 4 = 36$ bytes after the start of
+\code{g}, at offset $48 + 36 = 84$, the first byte past \code{g}. Line 10 is \code{g[i * n + j] = g[j * n + i];}, which
+reads \code{g[9]}: a read of 4 bytes, reported before any write out of bounds happens.
+
+\textbf{21.} \code{g[i*n + n]}, which is \code{g[(i+1)*n]}, the first cell of row $i + 1$: inside the \omterm{def:b1:pointers-and-arrays:array}{array}, holding a
+value of the grid that the loop should not touch; and \code{g[n*n + i]}, outside the \omterm{def:b1:pointers-and-arrays:array}{array}.
+
+\textbf{22.} For $n = 1$, $i = 0$ and $j = 1$: the loop exchanges \code{g[1]} with \code{g[1]}, a cell outside the \omterm{def:b1:pointers-and-arrays:array}{array},
+with itself. Reading a value and writing it back changes nothing visible, so the $1 \times 1$ grid comes out right and
+the test passes; only the sanitizer would report the access.
+
+\textbf{23.} Frame \texttt{\#0} gives the faulty line, \code{transpose_bug.c:10} in \code{transpose}; frame \texttt{\#1}
+gives the caller, \code{main} at line 18.
+
+\textbf{24.} \emph{The in-place transpose makes exactly $n(n-1)/2$ swaps}: it exchanges \code{g[i*n + j]} and
+\code{g[j*n + i]} for the pairs $0 \leq i < j < n$ only, which moves every off-diagonal cell once and leaves the
+diagonal in place; the run counted $0, 1, 3, 6, 10, 15, 21, 28$ swaps for $n = 1$ to 8, and the colleague's
+\code{j <= n} was caught by the sanitizer at its first access past the grid.
+\end{solution}

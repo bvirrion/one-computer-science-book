@@ -1,0 +1,31 @@
+$ (./store node 1 --nodes 1 > node1.log &)
+$ ./store wait-leader --nodes 1
+leader: node 1
+$ ./store send 1 SET bridge open --nodes 1
+node 1: OK
+$ ./store send 1 SET bridge closed --nodes 1
+node 1: OK
+$ od -A d -t x1 -w16 node1/wal.log | head -n 6
+0000000 0d 00 00 00 24 85 02 85 56 01 00 00 00 00 00 00
+0000016 00 01 00 00 00 15 00 00 00 bb 9f 83 da 45 01 00
+0000032 00 00 00 00 00 00 01 00 00 00 00 00 00 00 4e 4f
+0000048 4f 50 20 00 00 00 eb 27 c7 ed 45 02 00 00 00 00
+0000064 00 00 00 01 00 00 00 00 00 00 00 53 45 54 20 62
+0000080 72 69 64 67 65 20 6f 70 65 6e 22 00 00 00 9b a0
+$ stat -c %s node1/wal.log
+132
+$ kill $(cat node1/pid); sleep 0.2
+$ truncate -s -5 node1/wal.log
+$ (./store node 1 --nodes 1 >> node1.log &)
+$ ./store wait-leader --nodes 1
+leader: node 1
+$ ./store send 1 GET bridge --nodes 1
+node 1: VALUE open
+$ stat -c %s node1/wal.log
+140
+$ cat node1.log
+node 1: up, 0 entries in its log, term 0
+node 1: leader in term 1
+node 1: up, 2 entries in its log, term 1
+node 1: leader in term 2
+$ kill $(cat node1/pid)

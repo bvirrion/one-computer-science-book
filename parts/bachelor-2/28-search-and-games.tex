@@ -1,0 +1,510 @@
+% Book 4, Year 2, chapter 28 -- Search and games.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 28.
+\chapter{Search and Games}\label{ch:b2:search-and-games}
+
+The sliding-tile puzzle has eight numbered tiles in a $3 \times 3$ frame and one empty cell; a move slides a tile into
+the empty cell, and the goal is to put the tiles in order. A program can try every sequence of moves, but how many it
+has to try depends on how it chooses:
+
+\omcode{code/bachelor-2/28-search-and-games/listings/eight_puzzle.py}{38}{47}{Five scrambled puzzles solved three ways,
+counting the states each search expands}\label{lst:b2:search-and-games:hook}
+
+\omoutput{code/bachelor-2/28-search-and-games/outputs/eight_puzzle.txt}{The same shortest solutions, found after very
+different amounts of work.}\label{out:b2:search-and-games:hook}
+
+All three searches return a shortest solution, and the third expands fifty times fewer states than the first on the
+hardest puzzle. The difference is an estimate of the distance left, used carefully enough that the answer stays
+optimal. The second half of the chapter adds an opponent: in noughts and crosses, or in a race between a robot and a
+rival through the town, each player chooses in turn, and a program can still compute who wins, and how.
+
+\begin{recall}
+The Year 1 volume: breadth-first and depth-first search; Dijkstra's algorithm for shortest paths with non-negative
+weights, and its proof; priority queues kept as binary heaps; backtracking. The grade 10 volume: graphs, paths and
+trees.
+\end{recall}
+
+\section{State spaces}\label{sec:b2:search-and-games:state-spaces}
+
+\begin{definition}[State space, search problem, goal test]\label{def:b2:search-and-games:state-space}
+A \emph{search problem}\index{search problem} is given by a set of \emph{states}, a start state, a \emph{goal
+test}\index{goal test} that says whether a state is a goal, and for each state its \emph{successors}, each reached by an
+action of cost $c > 0$. The states and the actions form a directed graph, the \emph{state space}\index{state space}; a
+solution is a path from the start to a goal, and an optimal solution one of least total cost.
+\end{definition}
+
+The \omterm{def:b2:search-and-games:state-space}{state space} is usually never built: the 8-puzzle has $9!/2 = 181{,}440$ reachable states, chess far more than any
+memory holds. The program knows only the start and a function that lists successors; the graph is \emph{implicit}, and
+a search builds the part it visits.
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1cm, y=1cm,
+  pics/puzzle/.style={code={
+    \foreach \v [count=\i from 0] in {#1} {
+      \pgfmathtruncatemacro{\r}{\i/3}\pgfmathtruncatemacro{\c}{mod(\i,3)}
+      \ifnum\v=0 \node[draw, fill=black!12, minimum size=4mm, inner sep=0pt] at (\c*0.4, -\r*0.4) {};
+      \else \node[draw, minimum size=4mm, inner sep=0pt, font=\scriptsize] at (\c*0.4, -\r*0.4) {\v}; \fi}}}]
+\pic at (4.6, 0) {puzzle={1,2,3,4,0,6,7,5,8}};
+\node[font=\small, right] at (5.6, -0.4) {start, $h = 2$};
+\pic at (0, -2.4) {puzzle={1,0,3,4,2,6,7,5,8}};
+\pic at (3, -2.4) {puzzle={1,2,3,0,4,6,7,5,8}};
+\pic at (6.2, -2.4) {puzzle={1,2,3,4,6,0,7,5,8}};
+\pic at (9.2, -2.4) {puzzle={1,2,3,4,5,6,7,0,8}};
+\foreach \x/\h in {0/3, 3/3, 6.2/3, 9.2/1} \node[font=\small] at (\x + 0.4, -3.6) {$h = \h$};
+\pic at (9.2, -4.9) {puzzle={1,2,3,4,5,6,7,8,0}};
+\node[font=\small, right] at (10.2, -5.3) {goal};
+\foreach \x in {0, 3, 6.2} \draw[->, >=Stealth] (5, -0.95) -- (\x + 0.4, -2.2);
+\draw[->, >=Stealth, very thick, omDef] (5, -0.95) -- (9.6, -2.2);
+\draw[->, >=Stealth, very thick, omDef] (9.6, -3.85) -- (9.6, -4.7);
+\end{tikzpicture}
+\par\smallskip{\small Part of the 8-puzzle's \omterm{def:b2:search-and-games:state-space}{state space}. The start has four successors, one per tile that can slide;
+each is labelled with its Manhattan distance $h$, the sum over the tiles of their distances to their places. The
+thick path is the solution of two moves; $h$ points straight at it.}
+\end{omfigure}
+
+\omcode{code/bachelor-2/28-search-and-games/listings/state_space.py}{15}{26}{Breadth-first search in an implicit graph,
+counting the states expanded}\label{lst:b2:search-and-games:bfs}
+
+Breadth-first search expands the states in order of depth, so it finds a solution with fewest actions. If each state has
+at most $b$ successors and the shallowest goal is at depth $d$, it may expand $1 + b + \dots + b^d = O(b^d)$ states, and
+keeps them all in memory. Depth-first search keeps only the current path, but may go down forever, or find a long
+solution first.
+
+\begin{definition}[Iterative deepening]\label{def:b2:search-and-games:iddfs}
+\emph{Iterative deepening}\index{iterative deepening} runs a depth-first search limited to depth $0$, then $1$, then $2$,
+and so on, until a limit at which it finds a goal.
+\end{definition}
+
+It finds a solution with fewest actions, like breadth-first search, while keeping only a path of $d + 1$ states. Repeating
+the shallow levels costs little: with $b \geq 2$ the last level holds at least half of all the states up to it, and the
+total work is $O(b^d)$ again (\cref{exo:b2:search-and-games:3,exo:b2:search-and-games:4}).
+
+\needspace{10\baselineskip}
+\omcode{code/bachelor-2/28-search-and-games/listings/state_space.py}{29}{51}{Depth-limited search, which never revisits a
+state of the current path, and \omterm{def:b2:search-and-games:iddfs}{iterative deepening}}\label{lst:b2:search-and-games:iddfs}
+
+\section{Uniform-cost search}\label{sec:b2:search-and-games:ucs}
+
+When actions have different costs, as roads have different lengths, fewest actions is not cheapest.
+
+\begin{definition}[Uniform-cost search]\label{def:b2:search-and-games:ucs}
+\emph{Uniform-cost search}\index{uniform-cost search} keeps a priority queue of states ordered by $g(s)$, the cost of the
+cheapest path to $s$ found so far. It repeatedly removes a state of smallest $g$, marks it \emph{expanded}, stops if it is
+a goal, and otherwise updates $g$ for its successors not yet expanded.
+\end{definition}
+
+It is Dijkstra's algorithm of the Year 1 volume, run on an implicit graph and stopped at the first goal.
+
+\begin{theorem}[Uniform-cost search]\label{thm:b2:search-and-games:ucs}
+With positive action costs, \omterm{def:b2:search-and-games:ucs}{uniform-cost search} expands states in order of non-decreasing distance from the start; when
+it expands a state $s$, $g(s)$ is the distance to $s$. In particular the first goal expanded is reached by an optimal
+solution.
+\end{theorem}
+
+\begin{proof}
+This is the invariant of Dijkstra's algorithm, proved in the Year 1 volume: if a state $s$ were expanded with $g(s)$
+larger than its distance, the first state $u$ of an optimal path to $s$ that is not yet expanded would have, from its
+expanded predecessor, $g(u)$ equal to its distance, at most the distance of $s$, which is less than $g(s)$, so $u$ would
+have been removed from the queue first. A goal expanded first is at the least distance among the goals: any closer goal
+would have been expanded before.
+\end{proof}
+
+\section{Heuristics and A*}\label{sec:b2:search-and-games:astar}
+
+\omterm{def:b2:search-and-games:ucs}{Uniform-cost search} spreads in every direction. Most problems come with knowledge of the direction to go: the
+straight-line distance to the destination, or how far each tile is from its place.
+
+\begin{definition}[Heuristic, admissible, consistent]\label{def:b2:search-and-games:heuristic}
+A \emph{heuristic}\index{heuristic} is a function $h \geq 0$ on states that estimates the cost of reaching a goal, with
+$h = 0$ on goals. Write $h^*(s)$ for the true least cost from $s$ to a goal. The heuristic is
+\emph{admissible}\index{admissible heuristic} if $h(s) \leq h^*(s)$ for every $s$: it never overestimates. It is
+\emph{consistent}\index{consistent heuristic} if $h(s) \leq c + h(t)$ for every action from $s$ to $t$ of cost $c$.
+\end{definition}
+
+\begin{proposition}[Consistent implies admissible]\label{prop:b2:search-and-games:consistent-admissible}
+A \omterm{def:b2:search-and-games:heuristic}{consistent heuristic} is \omterm{def:b2:search-and-games:heuristic}{admissible}.
+\end{proposition}
+
+\begin{proof}
+\Cref{exo:b2:search-and-games:8}: follow an optimal path from $s$ to a goal and add the inequalities.
+\end{proof}
+
+\begin{method}[A*]\label{met:b2:search-and-games:astar}\index{A* search}
+\omterm{def:b2:search-and-games:ucs}{Uniform-cost search} in which the priority of a state $s$ is $f(s) = g(s) + h(s)$, the cost so far plus the estimate of the
+cost left.
+\end{method}
+
+\omcode{code/bachelor-2/28-search-and-games/listings/state_space.py}{54}{73}{A*: \omterm{def:b2:search-and-games:ucs}{uniform-cost search} when $h = 0$}\label{lst:b2:search-and-games:astar}
+
+\begin{theorem}[Optimality of A*]\label{thm:b2:search-and-games:astar-optimal}
+If $h$ is \omterm{def:b2:search-and-games:heuristic}{consistent}, A* as in \cref{lst:b2:search-and-games:astar}, which never expands a state twice, returns an optimal
+solution, and it expands the states in order of non-decreasing $f$.
+\end{theorem}
+
+\begin{proof}
+Give each action from $s$ to $t$ the new cost $c' = c - h(s) + h(t)$, which is $\geq 0$ by consistency. Along any path from
+the start $s_0$ to a state $t$, the new costs add up to the old cost minus $h(s_0)$ plus $h(t)$: the middle terms cancel.
+So the new distance to $t$ is $g(t) - h(s_0) + h(t)$, the priority of A* minus a constant. A* is therefore \omterm{def:b2:search-and-games:ucs}{uniform-cost
+search} on the new costs, and by \cref{thm:b2:search-and-games:ucs} (whose proof needs only non-negative costs) it
+expands states in order of new distance, that is of $f$, with $g$ exact. On goals $h = 0$, so the order of new distances
+among goals is that of true distances, and the first goal expanded is an optimal one.
+\end{proof}
+
+If $h$ is only \omterm{def:b2:search-and-games:heuristic}{admissible}, A* that may expand a state again, when it finds a cheaper path to it, is still optimal; the
+listing, which never expands a state twice, may then return a longer path. A \omterm{def:b2:search-and-games:heuristic}{heuristic} that overestimates loses the
+guarantee altogether (\cref{exo:b2:search-and-games:2}).
+
+For the 8-puzzle, the number of misplaced tiles and the Manhattan distance are both \omterm{def:b2:search-and-games:heuristic}{consistent}: one move changes one
+tile's position by one cell, so it changes either \omterm{def:b2:search-and-games:heuristic}{heuristic} by at most $1$ (\cref{exo:b2:search-and-games:9}). The
+Manhattan distance is never smaller than the number of misplaced tiles, and \cref{out:b2:search-and-games:hook} shows
+what that buys: the closer $h$ is to $h^*$, the fewer states A* expands.
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{semilogyaxis}[width=0.72\linewidth, height=5.4cm, xlabel={length of the shortest solution (moves)},
+  ylabel={states expanded}, xtick={8,10,16,20,24}, legend pos=outer north east, legend style={font=\small},
+  ymin=8, ymax=300000]
+\addplot[mark=*, black!60] table[x=depth, y=bfs] {code/bachelor-2/28-search-and-games/figures/eight_puzzle.dat};
+\addplot[mark=square*, omThm] table[x=depth, y=misplaced] {code/bachelor-2/28-search-and-games/figures/eight_puzzle.dat};
+\addplot[mark=triangle*, omDef] table[x=depth, y=manhattan] {code/bachelor-2/28-search-and-games/figures/eight_puzzle.dat};
+\legend{breadth-first, A* misplaced, A* Manhattan}
+\end{semilogyaxis}
+\end{tikzpicture}
+\par\smallskip{\small The five puzzles of \cref{out:b2:search-and-games:hook} on a logarithmic scale. All three counts
+grow exponentially with the depth; a better \omterm{def:b2:search-and-games:heuristic}{heuristic} lowers the rate of growth, not only the level.}
+\end{omfigure}
+
+On the town's map, the straight-line distance between two places is \omterm{def:b2:search-and-games:heuristic}{consistent}, by the triangle inequality, and no road
+is shorter than the straight line between its ends.
+
+\omoutput{code/bachelor-2/28-search-and-games/outputs/town_astar.txt}{Three routes on the town map: the same lengths, and
+a third to a half of the expansions.}\label{out:b2:search-and-games:town}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1.45cm, y=1.45cm,
+  base/.style={circle, draw, minimum size=4.6mm, inner sep=0pt, font=\tiny},
+  other/.style={base, draw=black!40, text=black!60},
+  dijkstra/.style={base, fill=black!15},
+  astar/.style={base, fill=omDef!35, thick},
+  road/.style={black!30},
+  route/.style={omDef, very thick}]
+\input{code/bachelor-2/28-search-and-games/figures/town_astar_fig.tex}
+\end{tikzpicture}
+\par\smallskip{\small The town's places at their coordinates, from the Station (2) to the Old Mill (14). \omterm{def:b2:search-and-games:ucs}{Uniform-cost
+search} expands 29 places, shaded grey or coloured, spreading in every direction; A* expands only the 10 coloured ones,
+which lie towards the goal. The thick line is the route both return. Drawn by \code{town_fig.py} from the same search.}
+\end{omfigure}
+
+\begin{history}
+% ledger: b2:hnr-1968
+Peter Hart, Nils Nilsson and Bertram Raphael published A* in 1968, with the proof that an \omterm{def:b2:search-and-games:heuristic}{admissible} estimate keeps the
+answer optimal.
+\end{history}
+
+\section{Two-player reachability games}\label{sec:b2:search-and-games:games}
+
+\omimg{book4/ai/b2-search-and-games-board-game-cafe.jpg}{0.6\linewidth}{Two players at a café table. In a game like
+this one, each move is chosen by the player whose turn it is, and the question is no longer which path exists but which
+outcome a player can force.}
+
+\begin{definition}[Reachability game, position, game graph]\label{def:b2:search-and-games:game}
+A \emph{reachability game}\index{reachability game} is played by two players, $0$ and $1$, on a directed graph, the
+\emph{game graph}\index{game graph}, whose vertices, the \emph{positions}\index{position (game)}, each belong to one
+player, with a set $T$ of target positions. A token starts on a position; the \omterm{def:b2:rust-ownership:ownership}{owner} of the position where the token
+stands moves it along an edge. Player $p$ wins if the token reaches $T$; otherwise, including when the play goes on
+forever or stops at a position with no edge, player $p$ does not win.
+\end{definition}
+
+\begin{definition}[Strategy, winning strategy, winning position]\label{def:b2:search-and-games:strategy}
+A \emph{strategy}\index{strategy (game)} for player $p$ chooses a successor for each position of $p$ given the play so
+far; it is \emph{memoryless}\index{memoryless strategy} if the choice depends only on the current position. It is
+\emph{winning}\index{winning strategy} from a position if every play from there in which $p$ follows it reaches $T$,
+whatever the other player does; that position is then a \emph{winning position}\index{winning position} for $p$.
+\end{definition}
+
+\begin{definition}[Attractor]\label{def:b2:search-and-games:attractor}
+The \emph{attractor}\index{attractor} of $T$ for player $p$ is built in layers: layer $0$ is $T$; a position not yet in
+it joins at layer $i + 1$ if it belongs to $p$ and has a successor in layer $i$ or before, or belongs to the other player
+and all its successors (at least one) are in layers $\leq i$. The attractor is the union of the layers.
+\end{definition}
+
+\omcode{code/bachelor-2/28-search-and-games/listings/games.py}{7}{30}{The \omterm{def:b2:search-and-games:attractor}{attractor} computed backwards, with a counter of
+the successors left for each position of the opponent}\label{lst:b2:search-and-games:attractor}
+
+\begin{theorem}[Attractor]\label{thm:b2:search-and-games:attractor}
+The \omterm{def:b2:search-and-games:attractor}{attractor} of $T$ for player $p$ is exactly the set of \omterm{def:b2:search-and-games:game}{positions} from which $p$ has a \omterm{def:b2:search-and-games:strategy}{winning strategy}. On it, the
+\omterm{def:b2:search-and-games:strategy}{memoryless strategy} that moves from each position of $p$ to a successor of a lower layer is \omterm{def:b2:search-and-games:strategy}{winning}. The listing computes
+the \omterm{def:b2:search-and-games:attractor}{attractor} and this \omterm{def:b2:search-and-games:strategy}{strategy} in time $O(|V| + |E|)$.
+\end{theorem}
+
+\begin{proof}
+From a position of layer $i > 0$, if it belongs to $p$, the \omterm{def:b2:search-and-games:strategy}{strategy} moves to a lower layer; if it belongs to the other
+player, every move leads to a lower layer. So the layer decreases at each move and the token reaches layer $0$, which is
+$T$, within $i$ moves.
+
+Conversely, let $u$ be outside the \omterm{def:b2:search-and-games:attractor}{attractor}. Then $u \notin T$. If $u$ belongs to $p$, all its successors are outside,
+since one inside would have put $u$ in. If $u$ belongs to the other player, it has a successor outside, or no successor at
+all, since otherwise $u$ would have joined. The other player can therefore always keep the token outside the \omterm{def:b2:search-and-games:attractor}{attractor}:
+play never reaches $T$, whatever $p$ does, and $p$ has no \omterm{def:b2:search-and-games:strategy}{winning strategy} from $u$.
+
+The listing processes each position once from the queue and looks at each edge once backwards, decrementing a counter;
+the running time is $O(|V| + |E|)$ (\cref{exo:b2:search-and-games:12}).
+\end{proof}
+
+The theorem also says that memory is useless in \omterm{def:b2:search-and-games:game}{reachability games}: if $p$ can win at all, $p$ can win by looking only at
+the current position. In the game of matches, 21 matches lie on the table, each player takes 1, 2 or 3 in turn, and
+whoever takes the last match wins. A position is the number left and the player to move.
+
+\omcode{code/bachelor-2/28-search-and-games/listings/attractor.py}{4}{16}{The game of matches as a \omterm{def:b2:search-and-games:game}{game graph}; A wins on
+reaching ``no match left, B to move''}\label{lst:b2:search-and-games:matches}
+
+\omoutput{code/bachelor-2/28-search-and-games/outputs/attractor.txt}{The \omterm{def:b2:search-and-games:game}{positions} won by the player to move, the first
+move from 21, and a small game in which some \omterm{def:b2:search-and-games:game}{positions} are won by neither.}\label{out:b2:search-and-games:attractor}
+
+The player to move loses exactly with a multiple of 4: whatever they take, the other takes the complement to 4. From 21,
+take 1. In the small game of the output, each player has a target: player $0$ wants $e$, player $1$ wants $h$. Neither can
+force anything from $d$, $f$ and $g$: from $d$, player $1$ goes to $f$, and $f$ and $g$ send the token back and forth for
+ever. These \omterm{def:b2:search-and-games:game}{positions} are \emph{draws}.
+
+\begin{omfigure}
+\begin{tikzpicture}[x=1.8cm, y=1.3cm, p0/.style={circle, draw, thick, minimum size=7mm, inner sep=0pt},
+  p1/.style={rectangle, draw, thick, minimum size=6.5mm, inner sep=0pt}, e/.style={->, >=Stealth},
+  w0/.style={fill=omDef!30}, w1/.style={fill=omThm!30}, lay/.style={font=\scriptsize, above=3pt}]
+\node[p0, w0] (a) at (0, 1) {$a$}; \node[lay] at (a.north) {2};
+\node[p1, w1] (b) at (0, -0.2) {$b$}; \node[font=\scriptsize, below=3pt] at (b.south) {1};
+\node[p0, w0] (c) at (1.2, 1) {$c$}; \node[lay] at (c.north) {1};
+\node[p1] (d) at (2.4, 1) {$d$};
+\node[p0, w0] (e) at (2.4, 2.1) {$e$}; \node[font=\scriptsize, left=3pt] at (e.west) {0};
+\node[p1] (f) at (3.6, 1) {$f$};
+\node[p0] (g) at (3.6, -0.2) {$g$};
+\node[p1, w1] (h) at (1.2, -0.2) {$h$}; \node[font=\scriptsize, left=3pt] at (h.south west) {0};
+\draw[e] (a) to[bend left=15] (b); \draw[e] (b) to[bend left=15] (a);
+\draw[e, very thick, omDef] (a) -- (c); \draw[e, very thick, omDef] (c) -- (e);
+\draw[e] (c) -- (d); \draw[e] (b) -- (h);
+\draw[e] (d) -- (e); \draw[e] (d) -- (f);
+\draw[e] (f) to[bend left=15] (g); \draw[e] (g) to[bend left=15] (f); \draw[e] (g) -- (h);
+\draw[e] (e) edge[loop right] (e); \draw[e] (h) edge[loop below] (h);
+\end{tikzpicture}
+\par\smallskip{\small The small game of \cref{out:b2:search-and-games:attractor}: circles belong to player $0$, squares
+to player $1$. Blue: the \omterm{def:b2:search-and-games:attractor}{attractor} of $e$ for player $0$, with its layers and the \omterm{def:b2:search-and-games:strategy}{strategy} in thick arrows. Green: the
+\omterm{def:b2:search-and-games:attractor}{attractor} of $h$ for player $1$. From the white \omterm{def:b2:search-and-games:game}{positions} neither player can force a win.}
+\end{omfigure}
+
+\section{Minimax and alpha--beta}\label{sec:b2:search-and-games:minimax}
+
+The \omterm{def:b2:search-and-games:attractor}{attractor} needs the whole \omterm{def:b2:search-and-games:game}{game graph}. For a game whose \omterm{def:b2:search-and-games:game}{positions} are too many, a program looks a few moves ahead and
+estimates the rest.
+
+\begin{definition}[Game tree, minimax value, evaluation function]\label{def:b2:search-and-games:minimax}
+In a game where two players alternate, \textsc{max} and \textsc{min}, the \emph{game tree}\index{game tree} of a position
+has that position at its root and the \omterm{def:b2:search-and-games:game}{positions} after each move as children. The leaves carry a value for \textsc{max}:
+the result of a finished game, or the value of an \emph{evaluation function}\index{evaluation function} at the depth
+where the search stops. The \emph{minimax value}\index{minimax value} of a node is its leaf value, the largest value of
+its children if \textsc{max} is to move, and the smallest if \textsc{min} is.
+\end{definition}
+
+The \omterm{def:b2:search-and-games:minimax}{minimax value} is what \textsc{max} can guarantee against any play of \textsc{min}, and \textsc{min} against any play
+of \textsc{max}, in the tree as given; the move to play is towards a child of the root with the root's value.
+
+\begin{definition}[Alpha--beta pruning]\label{def:b2:search-and-games:alpha-beta}
+\emph{Alpha--beta pruning}\index{alpha--beta pruning} computes the \omterm{def:b2:search-and-games:minimax}{minimax value} with two bounds passed down the tree:
+$\alpha$, the value \textsc{max} is already sure of on the path from the root, and $\beta$, the value \textsc{min} is
+already sure of. As soon as a node's value is known to be outside $(\alpha, \beta)$, its remaining children are skipped:
+the player above has a better choice elsewhere.
+\end{definition}
+
+\omcode{code/bachelor-2/28-search-and-games/listings/alphabeta.py}{15}{35}{Alpha--beta, counting the leaves it
+evaluates}\label{lst:b2:search-and-games:alphabeta}
+
+\omoutput{code/bachelor-2/28-search-and-games/outputs/minimax_demo.txt}{A tree of depth 3 with three moves at the root and
+two below: its \omterm{def:b2:search-and-games:minimax}{minimax values}, and the leaves that alpha--beta evaluates.}\label{out:b2:search-and-games:demo}
+
+\begin{omfigure}
+\begin{forest}
+for tree={font=\small, l sep=10pt, s sep=5pt, inner sep=1.5pt, minimum size=5.5mm},
+mx/.style={draw, regular polygon, regular polygon sides=3, inner sep=0.5pt, minimum size=7mm},
+mn/.style={draw, regular polygon, regular polygon sides=3, shape border rotate=180, inner sep=0.5pt, minimum size=7mm},
+cut/.style={draw=black!30, text=black!35, edge={dashed, black!35}}
+[5, mx
+  [5, mn [5, mx [3] [5]] [{$\geq 6$}, mx [6] [9, cut]]]
+  [{$\leq 2$}, mn [2, mx [1] [2]] [7, mx, cut [0, cut] [7, cut]]]
+  [{$\leq 2$}, mn [2, mx [2] [1]] [8, mx, cut [8, cut] [4, cut]]]
+]
+\end{forest}
+\par\smallskip{\small The tree of \cref{out:b2:search-and-games:demo}: triangles pointing up are \textsc{max} nodes, down
+\textsc{min} nodes. After the first subtree the root is sure of $5$. In the second subtree, \textsc{min} can already force
+$2 < 5$ after two leaves, so its second child is never looked at; the same in the third. Dashed: the 5 leaves skipped.
+The bounds $\geq 6$ and $\leq 2$ are all alpha--beta knows of those nodes.}
+\end{omfigure}
+
+\begin{theorem}[Alpha--beta]\label{thm:b2:search-and-games:alpha-beta}
+Let $v$ be the \omterm{def:b2:search-and-games:minimax}{minimax value} of a node and $r$ the result of alpha--beta on it with bounds $\alpha < \beta$. If $\alpha <
+v < \beta$, then $r = v$; if $v \leq \alpha$, then $r \leq \alpha$; if $v \geq \beta$, then $r \geq \beta$. In particular,
+with $\alpha = -\infty$ and $\beta = +\infty$, alpha--beta returns the \omterm{def:b2:search-and-games:minimax}{minimax value}.
+\end{theorem}
+
+\begin{proof}
+\Cref{exo:b2:search-and-games:10}, by induction on the height of the node.
+\end{proof}
+
+How much is skipped depends on the order of the children: if the best move comes first, its value sets the tightest
+bound at once.
+
+\begin{proposition}[The best case]\label{prop:b2:search-and-games:best-case}
+On a uniform tree of branching $b$ and depth $d$ whose children are always ordered best first, alpha--beta evaluates
+exactly $b^{\lceil d/2 \rceil} + b^{\lfloor d/2 \rfloor} - 1$ of the $b^d$ leaves, when the leaf values are distinct.
+\end{proposition}
+
+\admitted
+
+A leaf is evaluated exactly when, along its path from the root, all the choices at the even depths are first children,
+or all the choices at the odd depths are; the first kind number $b^{\lfloor d/2 \rfloor}$, the second $b^{\lceil d/2
+\rceil}$, and one leaf, the leftmost, is of both kinds. The characterisation is the analysis of Knuth and Moore.
+
+\omoutput{code/bachelor-2/28-search-and-games/outputs/alphabeta.txt}{Random uniform trees: all leaves, alpha--beta in
+random order, and alpha--beta with the children sorted best first.}\label{out:b2:search-and-games:alphabeta}
+
+With perfect ordering the count is exactly the formula, about $2b^{d/2}$: in the same time, alpha--beta searches twice as
+deep as minimax. In random order it still skips most leaves. Real programs approach the best case by trying first the
+moves that were best in a shallower search.
+
+\begin{history}
+% ledger: b2:von-neumann-1928
+% ledger: b2:knuth-moore-1975
+John von Neumann published the theory of games of \omterm{def:b2:search-and-games:strategy}{strategy}, with the minimax theorem, in 1928. Donald Knuth and Ronald
+Moore published their analysis of \omterm{def:b2:search-and-games:alpha-beta}{alpha--beta pruning}, with the best case above, in 1975.
+\end{history}
+
+\section{Noughts and crosses, solved}\label{sec:b2:search-and-games:tictactoe}
+
+Noughts and crosses is small enough to search completely. A position is a string of nine cells; $x$ moves first.
+
+\omcode{code/bachelor-2/28-search-and-games/listings/tictactoe.py}{32}{51}{The value of a position by minimax with
+memoisation, and the size of the full \omterm{def:b2:search-and-games:minimax}{game tree}}\label{lst:b2:search-and-games:tictactoe}
+
+\omoutput{code/bachelor-2/28-search-and-games/outputs/tictactoe.txt}{The game solved: a draw with best play.}\label{out:b2:search-and-games:tictactoe}
+
+The full tree has 549,946 nodes, but only 5,478 distinct \omterm{def:b2:search-and-games:game}{positions}: the same position is reached by many orders of the
+same moves, and the memo computes each once. The value $0$ says that neither player can force a win: the game is a draw
+if both play well. The last line shows a mistake that loses: after a cross in the centre, a nought on an edge lets the
+crosses force a win. With the eight symmetries of the square the \omterm{def:b2:search-and-games:game}{positions} drop to 765
+(\cref{exo:b2:search-and-games:11}).
+
+\section{Exercises}\label{sec:b2:search-and-games:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:search-and-games:1}
+Run breadth-first search on the town's roads from the Bus Depot by hand, taking the neighbours of each place in the order
+of the road table, and list the places by depth. Check with \code{exo_bfs_order.py}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:search-and-games:2}
+Use three times the straight-line distance as the \omterm{def:b2:search-and-games:heuristic}{heuristic} of A* on the town map. Find a pair of places for which the
+route returned is longer than the shortest one, and explain which step of the proof of
+\cref{thm:b2:search-and-games:astar-optimal} fails. Check with \code{exo_inadmissible.py}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:search-and-games:3}
+Compare \omterm{def:b2:search-and-games:iddfs}{iterative deepening} with breadth-first search on scrambled 8-puzzles: states expanded, and states kept in memory.
+Use \code{exo_iddfs.py}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:search-and-games:4}
+A tree in which every node has $b \geq 2$ children has $(b^{d+1} - 1)/(b - 1)$ nodes down to depth $d$. Prove it, and
+deduce that \omterm{def:b2:search-and-games:iddfs}{iterative deepening} expands at most $b/(b - 1)$ times as many nodes as one depth-limited search to depth $d$,
+counting nodes with repetition.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:search-and-games:5}
+Compute the \omterm{def:b2:search-and-games:minimax}{minimax value} of the tree \texttt{[[[4, 8, 2], [7, 1]], [[3], [9, 6], [5, 0]], [[6, 2], [1, 3, 8]]]} with
+\textsc{min} to move at the root, and then with \textsc{max}. Check with \code{exo_minimax.py}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:search-and-games:6}
+The function \code{ab_short} of \code{exo_ab_bug.py} starts every node with $\alpha = -\infty$ and $\beta = +\infty$
+instead of receiving them from its parent. Is its value right? How many leaves does it evaluate, and why?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:search-and-games:7}
+In the subtraction game, a move takes 1, 3 or 4 matches, and whoever takes the last wins. Compute the \omterm{def:b2:search-and-games:attractor}{attractor} for the
+first player from up to 30 matches, guess the losing \omterm{def:b2:search-and-games:game}{positions}, and prove your guess.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:search-and-games:8}
+Prove \cref{prop:b2:search-and-games:consistent-admissible}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:search-and-games:9}
+Prove that the Manhattan distance of the 8-puzzle is \omterm{def:b2:search-and-games:heuristic}{consistent}, and that it is never smaller than the number of
+misplaced tiles. Then compute the true distance of all 181,440 states by one breadth-first search backwards from the
+goal, and check both \omterm{def:b2:search-and-games:heuristic}{heuristics} against it.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:search-and-games:10}
+Prove \cref{thm:b2:search-and-games:alpha-beta}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:search-and-games:11}
+Count the \omterm{def:b2:search-and-games:game}{positions} of noughts and crosses reachable from the empty board, then count them up to the rotations and
+reflections of the square, keeping one representative of each class.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:search-and-games:12}
+Prove that \cref{lst:b2:search-and-games:attractor} runs in time $O(|V| + |E|)$, and that a position of the opponent
+enters the \omterm{def:b2:search-and-games:attractor}{attractor} exactly when its counter reaches $0$.
+\end{exercise}
+
+\section{Problem: The delivery robot and its rival}\label{sec:b2:search-and-games:problem}
+
+\begin{problem}[{Weekend problem --- The delivery robot and its rival}]\label{pb:b2:search-and-games:1}
+A delivery robot leaves the Bus Depot with parcels for the Library (place 3), the Museum (12) and the Hospital (8), in any
+order. Then a rival robot \omterm{def:b2:text-algorithms:trie}{tries} to catch it on its way to the Library. Last, the robots play noughts and crosses.
+
+\omcode{code/bachelor-2/28-search-and-games/listings/robot_problem.py}{8}{28}{The deliveries as a \omterm{def:b2:search-and-games:state-space}{search problem}: a state
+is a place and the deliveries left}\label{lst:b2:search-and-games:problem}
+
+\omoutput{code/bachelor-2/28-search-and-games/outputs/robot_problem.txt}{The best delivery round, the race game solved,
+and alpha--beta on noughts and crosses.}\label{out:b2:search-and-games:problem}
+
+\medskip\noindent\textbf{Part I --- The state space.}\par\nopagebreak
+\begin{enumerate}
+\item How many states does the delivery problem have? Which are goals?
+\item Why must the state contain the deliveries left, and not only the place?
+\item Why does the route of \cref{out:b2:search-and-games:problem} go through the South Bridge twice? Is that allowed in
+the \omterm{def:b2:search-and-games:state-space}{state space}?
+\item How many actions does a state have, and what do they cost?
+\item Would breadth-first search find the same route? Why not?
+\item With $k$ stops instead of 3, how does the number of states grow?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- A* on the town.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Prove that $h$, the straight-line distance to the farthest stop left, is \omterm{def:b2:search-and-games:heuristic}{admissible}.
+\item Prove that it is \omterm{def:b2:search-and-games:heuristic}{consistent}.
+\item Would the sum of the straight-line distances to the stops left be \omterm{def:b2:search-and-games:heuristic}{admissible}? Give a counterexample or a proof.
+\item A* expands 56 states and \omterm{def:b2:search-and-games:ucs}{uniform-cost search} 114. Explain where the saving comes from.
+\item Propose a better \omterm{def:b2:search-and-games:heuristic}{admissible heuristic}, and say why it is \omterm{def:b2:search-and-games:heuristic}{admissible}.
+\item How would A* change if the robot had to return to the depot at the end?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The race, solved backwards.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item \omterm{def:b2:search-and-games:game}{Positions} are (robot's place, rival's place, player to move). Check that there are 1,800.
+\item Which \omterm{def:b2:search-and-games:game}{positions} form the robot's target, and which the rival's? Why do they get a loop?
+\item From the Bus Depot, with the rival at the Station, the robot wins in 3 moves. Describe the play.
+\item From the Bus Depot with the rival at the Town Square, neither wins. What do the robots do for ever?
+\item From the Allotments, with the rival at the Town Hall, the rival wins. Why can it never be a draw there?
+\item The robot wins from 784 \omterm{def:b2:search-and-games:game}{positions} and the rival from 202. Why is the game not symmetric?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Alpha--beta measured.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item On the random tree with $b = 4$ and $d = 8$, compare the leaves evaluated in random order and best first with
+$4^8$ and with the formula of \cref{prop:b2:search-and-games:best-case}.
+\item In the same time, how much deeper does alpha--beta with perfect ordering search than minimax?
+\item On noughts and crosses, alpha--beta finishes 7,330 of the 255,168 games. Why is the saving larger than on the random
+trees?
+\item Why does alpha--beta call the game with $\alpha = -2$ and $\beta = 2$ rather than infinite bounds?
+\item How should a program order the moves of noughts and crosses to approach the best case?
+\item State the problem's result: alpha--beta with good ordering visits $L$ of $N$ leaves, near the $b^{d/2}$ bound, with
+the values of $L$ and $N$ measured here.
+\end{enumerate}
+\end{problem}

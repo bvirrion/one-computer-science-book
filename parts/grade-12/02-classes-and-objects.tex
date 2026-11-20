@@ -1,0 +1,326 @@
+% Provenance (never printed): NSI terminale "Structures de donnees: vocabulaire de la programmation objet (classes,
+% attributs, methodes, objets)"; "Langages et programmation: paradigmes de programmation". See sources/book2/BRIEFS.md.
+\chapter{Classes and Objects}\label{ch:g12:classes-and-objects}
+
+A date is three numbers: a year, a month, a day. But adding one day to 28 February is not adding one to the third
+number: it gives 29 February or 1 March, depending on the year, and 31 December gives a new year. A date is three
+numbers \emph{and} the rules that go with them. If the numbers travel through a program without their rules, sooner
+or later some function forgets one, and the 30th of February appears.
+
+Python lets a program define its own kinds of values, which carry their data and the functions that respect their
+rules together. This chapter defines such classes, protects their rules, gives them the operators of the language,
+derives one \omterm{def:g12:classes-and-objects:class}{class} from another, and closes on the different styles in which the same program can be written.
+
+\begin{recall}
+A module offers an interface and hides its \omterm{def:g11:modules-and-interfaces:interface}{implementation} (chapter \ref{ch:g11:modules-and-interfaces}). A list is
+\omterm{def:g10:tuples-sets-comprehensions:mutable}{mutable}: two names can refer to the same list (chapter \ref{ch:g10:tuples-sets-comprehensions}). The town library's
+loans table (chapter \ref{ch:g10:data-tables}).
+\end{recall}
+
+\section{Grouping data with the functions that act on it}\label{sec:g12:classes-and-objects:classes}
+
+\begin{definition}[Class, instance, attribute, method]\label{def:g12:classes-and-objects:class}
+A \emph{class}\index{class} is a new type of value, defined by the program. A value of that type is an
+\emph{instance}\index{instance (object)} of the class, also called an object. Each instance holds named values, its
+\emph{attributes}\index{attribute}; the functions defined in the class, which act on an instance, are its
+\emph{methods}\index{method}.
+\end{definition}
+
+\begin{definition}[Constructor]\label{def:g12:classes-and-objects:constructor}
+The \emph{constructor}\index{constructor} of a \omterm{def:g12:classes-and-objects:class}{class} is the \omterm{def:g12:classes-and-objects:class}{method} that gives a new \omterm{def:g12:classes-and-objects:class}{instance} its first \omterm{def:g12:classes-and-objects:class}{attributes}.
+In Python it is named \code{__init__}, and it runs when the \omterm{def:g12:classes-and-objects:class}{class} is called: \code{Point(3, 4)}.
+\end{definition}
+
+A \omterm{def:g12:classes-and-objects:class}{method} receives the \omterm{def:g12:classes-and-objects:class}{instance} it acts on as its first parameter, by convention named \code{self}:
+\code{a.distance_to(b)} is the call \code{Point.distance_to(a, b)}.
+
+\omcode{code/grade-12/02-classes-and-objects/listings/point_class.py}{1}{26}{A \omterm{def:g12:classes-and-objects:class}{class} of points, three \omterm{def:g12:classes-and-objects:class}{instances}, and
+two names for one object.}\label{lst:g12:classes-and-objects:point}
+
+\omoutput{code/grade-12/02-classes-and-objects/outputs/point_class.txt}{Moving \code{c} moved \code{b}: they are one
+object. \code{d} has the same coordinates, but is another object.}\label{out:g12:classes-and-objects:point}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, box/.style={draw, rounded corners=2pt, align=left, inner sep=4pt}]
+  \node[box, fill=omDef!10] (cls) at (0,0) {\textbf{class} \code{Point}\\[2pt] \code{__init__(self, x, y)}\\
+    \code{distance_to(self, other)}\\ \code{move(self, dx, dy)}};
+  \node[box, fill=black!5] (a) at (5.2,1.3) {\code{x = 0}\\ \code{y = 0}};
+  \node[box, fill=black!5] (b) at (5.2,-0.1) {\code{x = 4}\\ \code{y = 5}};
+  \node[box, fill=black!5] (d) at (5.2,-1.5) {\code{x = 4}\\ \code{y = 5}};
+  \foreach \o in {a, b, d} \draw[->, dashed, black!50] (\o.west) -- (cls.east);
+  \node[left] (na) at (8.2,1.3) {\code{a}}; \draw[->] (na) -- (a);
+  \node[left] (nb) at (8.2,0.1) {\code{b}}; \node[left] (nc) at (8.2,-0.4) {\code{c}};
+  \draw[->] (nb) -- (b.east); \draw[->] (nc) -- (b.east);
+  \node[left] (nd) at (8.2,-1.5) {\code{d}}; \draw[->] (nd) -- (d);
+  \node[font=\scriptsize, black!60] at (2.9,-2.3) {dashed: ``is an instance of''};
+\end{tikzpicture}
+
+{\small One \omterm{def:g12:classes-and-objects:class}{class}, three objects. The \omterm{def:g12:classes-and-objects:class}{class} holds the \omterm{def:g12:classes-and-objects:class}{methods} once; each object holds its own \omterm{def:g12:classes-and-objects:class}{attributes}. Two names,
+\code{b} and \code{c}, refer to the same object; \code{d} is a different object with equal values.}
+\end{omfigure}
+
+\section{Encapsulation and the interface of a class}\label{sec:g12:classes-and-objects:encapsulation}
+
+\begin{definition}[Encapsulation, class invariant]\label{def:g12:classes-and-objects:encapsulation}
+\emph{Encapsulation}\index{encapsulation} is keeping an object's \omterm{def:g12:classes-and-objects:class}{attributes} behind its \omterm{def:g12:classes-and-objects:class}{methods}: users call the
+\omterm{def:g12:classes-and-objects:class}{methods}, which are the \omterm{def:g12:classes-and-objects:class}{class}'s interface, and leave the \omterm{def:g12:classes-and-objects:class}{attributes} alone. A \emph{class
+invariant}\index{class invariant} is a property of the \omterm{def:g12:classes-and-objects:class}{attributes} that the \omterm{def:g12:classes-and-objects:constructor}{constructor} establishes and every \omterm{def:g12:classes-and-objects:class}{method}
+keeps.
+\end{definition}
+
+A fraction is kept reduced, with a positive denominator: $6/8$ is stored as $3/4$ and $1/(-3)$ as $-1/3$. The
+\omterm{def:g12:classes-and-objects:constructor}{constructor} reduces by the greatest common divisor (the mathematics book), and every operation builds its result
+through the \omterm{def:g12:classes-and-objects:constructor}{constructor}, so the invariant holds for every fraction ever made. The \omterm{def:g12:classes-and-objects:class}{attributes} start with an
+underscore: they are internal, as in a module (chapter \ref{ch:g11:modules-and-interfaces}).
+
+\omcode{code/grade-12/02-classes-and-objects/listings/fraction.py}{1}{20}{Fractions: the \omterm{def:g12:classes-and-objects:constructor}{constructor} establishes the
+invariant.}\label{lst:g12:classes-and-objects:fraction}
+
+The rest of the \omterm{def:g12:classes-and-objects:class}{class} is a set of \omterm{def:g12:classes-and-objects:special-method}{special methods}, explained in the next section.
+
+\omcode{code/grade-12/02-classes-and-objects/listings/fraction.py}{21}{41}{Fractions: printing, comparing, adding,
+multiplying.}\label{lst:g12:classes-and-objects:fraction-ops}
+
+\omoutput{code/grade-12/02-classes-and-objects/outputs/use_fraction.txt}{Every result is reduced; a denominator $0$ is
+refused at once.}\label{out:g12:classes-and-objects:fraction}
+
+The \omterm{def:g12:classes-and-objects:class}{class} \code{Date} keeps a stronger invariant: its three numbers always form a real date. The \omterm{def:g12:classes-and-objects:constructor}{constructor} refuses
+anything else, and \code{next_day} handles the month and year changes in one place.
+
+\omcode{code/grade-12/02-classes-and-objects/listings/date_class.py}{1}{35}{Dates that are always
+valid.}\label{lst:g12:classes-and-objects:date}
+
+\omoutput{code/grade-12/02-classes-and-objects/outputs/use_date.txt}{The day after four dates, two comparisons, and
+three dates refused.}\label{out:g12:classes-and-objects:date}
+
+Python does not lock the \omterm{def:g12:classes-and-objects:class}{attributes}. A program that writes into \code{_num} breaks the invariant, and with it the
+\omterm{def:g12:classes-and-objects:class}{methods} that rely on it.
+
+\omcode{code/grade-12/02-classes-and-objects/listings/bad_mutation.py}{1}{6}{Reaching inside an
+object.}\label{lst:g12:classes-and-objects:bad}
+
+\omoutput{code/grade-12/02-classes-and-objects/outputs/bad_mutation.txt}{A ``fraction'' $2/2$, not equal to $1$:
+\code{__eq__} assumed the invariant.}\label{out:g12:classes-and-objects:bad}
+
+\begin{remark}
+Python also offers \emph{properties}: an \omterm{def:g12:classes-and-objects:class}{attribute} that is read like \code{f.numerator} but computed by a \omterm{def:g12:classes-and-objects:class}{method},
+which can refuse to be written. They let a \omterm{def:g12:classes-and-objects:class}{class} change how it stores its data without changing how users read it.
+\end{remark}
+
+\section{Special methods}\label{sec:g12:classes-and-objects:special}
+
+\begin{definition}[Special method]\label{def:g12:classes-and-objects:special-method}
+A \emph{special method}\index{special method} is a \omterm{def:g12:classes-and-objects:class}{method} with a name of the form \code{__name__} that Python calls
+by itself for an operation of the language: \code{__add__} for \code{+}, \code{__eq__} for \code{==}, \code{__lt__}
+for \code{<}, \code{__len__} for \code{len}, \code{__str__} for \code{str} and \code{print}, \code{__repr__} for the
+form shown in lists and for programmers.
+\end{definition}
+
+\omcode{code/grade-12/02-classes-and-objects/listings/special_methods.py}{1}{35}{Durations that print, compare, sort
+and add.}\label{lst:g12:classes-and-objects:special}
+
+\omoutput{code/grade-12/02-classes-and-objects/outputs/special_methods.txt}{A list shows \code{repr}, \code{print}
+shows \code{str}; \code{sorted} and \code{max} use \code{<}; \code{sum} uses \code{+}.}%
+\label{out:g12:classes-and-objects:special}
+
+\section{Inheritance, a first look}\label{sec:g12:classes-and-objects:inheritance}
+
+\begin{definition}[Inheritance, subclass, overriding]\label{def:g12:classes-and-objects:inheritance}
+A \emph{subclass}\index{subclass} is a \omterm{def:g12:classes-and-objects:class}{class} defined from another, its base \omterm{def:g12:classes-and-objects:class}{class}, by \emph{inheritance}\index{inheritance}:
+it has all the base \omterm{def:g12:classes-and-objects:class}{class}'s \omterm{def:g12:classes-and-objects:class}{methods}, and may add others. A \omterm{def:g12:classes-and-objects:class}{method} of the subclass with the same name as one of the
+base \omterm{def:g12:classes-and-objects:class}{class} \emph{overrides}\index{overriding} it: it replaces it for the \omterm{def:g12:classes-and-objects:class}{instances} of the subclass.
+\end{definition}
+
+\omcode{code/grade-12/02-classes-and-objects/listings/shapes.py}{1}{34}{A base \omterm{def:g12:classes-and-objects:class}{class}, three subclasses, and
+\code{super()}.}\label{lst:g12:classes-and-objects:shapes}
+
+\omoutput{code/grade-12/02-classes-and-objects/outputs/shapes.txt}{\code{describe} is written once and calls the
+right \code{area} for each shape; a square is a rectangle.}\label{out:g12:classes-and-objects:shapes}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, box/.style={draw, rounded corners=2pt, align=left, fill=omDef!8,
+    inner sep=4pt}, -{Stealth[open, length=3mm]}]
+  \node[box] (s) at (0,0) {\textbf{Shape}\\ \code{area()}: raises\\ \code{describe()}};
+  \node[box] (r) at (-2.6,-2.2) {\textbf{Rectangle}\\ \code{__init__(w, h)}\\ \code{area()} \textcolor{omThm}{overrides}};
+  \node[box] (c) at (2.6,-2.2) {\textbf{Circle}\\ \code{__init__(r)}\\ \code{area()} \textcolor{omThm}{overrides}};
+  \node[box] (q) at (-2.6,-4.4) {\textbf{Square}\\ \code{__init__(side)}: \code{super()}};
+  \draw (r) -- (s); \draw (c) -- (s); \draw (q) -- (r);
+\end{tikzpicture}
+
+{\small The classes of \code{shapes.py}. An arrow goes from a \omterm{def:g12:classes-and-objects:inheritance}{subclass} to its base \omterm{def:g12:classes-and-objects:class}{class}. \code{describe} is
+inherited by all; \code{area} is overridden; \code{Square} only changes the \omterm{def:g12:classes-and-objects:constructor}{constructor}, through \code{super()}.}
+\end{omfigure}
+
+\omterm{def:g12:classes-and-objects:inheritance}{Inheritance} suits an ``is a'' relation: a square is a rectangle. It is a poor tool for sharing code between classes
+that are not of the same kind; then an object that holds another (a playlist holds durations) is clearer.
+
+\section{Programming paradigms}\label{sec:g12:classes-and-objects:paradigms}
+
+\begin{definition}[Programming paradigm]\label{def:g12:classes-and-objects:paradigm}
+A \emph{programming paradigm}\index{programming paradigm} is a style of writing programs. In the \emph{imperative}
+style, a program is a sequence of instructions that change variables. In the \emph{functional} style, it is built
+from functions applied to values, without changing variables. In the \emph{object} style, it is organised around
+objects that hold data and the \omterm{def:g12:classes-and-objects:class}{methods} acting on it.
+\end{definition}
+
+\begin{definition}[Pure function]\label{def:g12:classes-and-objects:pure-function}
+A \emph{pure function}\index{pure function} is a function whose result depends only on its arguments and which
+changes nothing outside itself: no global variable, no \omterm{def:g12:classes-and-objects:class}{attribute}, no printing, no file.
+\end{definition}
+
+The town library wants the total number of days late over the loans returned after their due date. The same program
+three times:
+
+\omcode{code/grade-12/02-classes-and-objects/listings/paradigms.py}{1}{40}{Days late, imperative, functional and
+object.}\label{lst:g12:classes-and-objects:paradigms}
+
+\omoutput{code/grade-12/02-classes-and-objects/outputs/paradigms.txt}{Three styles, one
+answer.}\label{out:g12:classes-and-objects:paradigms}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, col/.style={draw, rounded corners=2pt, text width=40mm, align=flush left,
+    inner sep=4pt, minimum height=27mm, anchor=north}]
+  \node[col, fill=omDef!8] at (0,0) {\textbf{imperative}\\[2pt] \code{total = 0}\\ for each loan:\\ \quad if late:
+    add its days\\[2pt] \emph{state changed in steps}};
+  \node[col, fill=omMeth!10] at (4.6,0) {\textbf{functional}\\[2pt] \code{filter(is_late, LOANS)}\\
+    \code{map(days late, ...)}\\ \code{sum(...)}\\[2pt] \emph{whole sequences}};
+  \node[col, fill=omThm!8] at (9.2,0) {\textbf{object}\\[2pt] class \code{Loan}\\ method \code{days_late()}\\
+    \code{sum(...)} over the loans\\[2pt] \emph{objects answer}};
+\end{tikzpicture}
+
+{\small The same computation in three styles. Real programs mix them: the object version uses a functional
+\code{sum}, and the \omterm{def:g12:classes-and-objects:class}{methods} of a \omterm{def:g12:classes-and-objects:class}{class} are often written imperatively.}
+\end{omfigure}
+
+Each style has its field. The functional style makes programs easy to test and to run in parallel, since \omterm{def:g12:classes-and-objects:pure-function}{pure
+functions} cannot disturb one another. The object style suits programs with many kinds of things, each with its own
+rules: windows and buttons, accounts, the pieces of a game. The imperative style is the closest to the machine, and
+often the most direct for a short computation.
+
+\section{Exercises}\label{sec:g12:classes-and-objects:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g12:classes-and-objects:1}
+What does \code{print(Point(1, 2))} show, with the \omterm{def:g12:classes-and-objects:class}{class} of the chapter? How can it be made to show \code{(1, 2)}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:classes-and-objects:2}
+After \code{a = Fraction(1, 2)}, \code{b = a + Fraction(1, 4)} and \code{c = b * Fraction(2, 3)}, what do
+\code{print(b, c)} and \code{print(repr(c))} show?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:classes-and-objects:3}
+Write a \omterm{def:g12:classes-and-objects:class}{class} \code{Tally} with a \omterm{def:g12:classes-and-objects:class}{method} \code{add(k=1)}, which adds \code{k} to a count starting at $0$, and a \omterm{def:g12:classes-and-objects:class}{method}
+\code{value()}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:classes-and-objects:4}
+\code{p = Point(1, 2)}, \code{q = p}, \code{q.move(2, 0)}, \code{r = Point(p.x, p.y)}, \code{r.move(0, 1)}. Give the
+coordinates of \code{p}, \code{q} and \code{r}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:classes-and-objects:5}
+A student writes \code{def move(dx, dy):} in the \omterm{def:g12:classes-and-objects:class}{class} \code{Point}. The call \code{p.move(1, 1)} raises
+\code{TypeError: Point.move() takes 2 positional arguments but 3 were given}. Explain the three.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:classes-and-objects:6}
+Write \code{sub(a, b)}, the difference of two fractions, using only the interface of \code{Fraction}. Why is the result
+reduced without any work of yours?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:classes-and-objects:7}
+\code{{Fraction(1, 2)}} raises \texttt{TypeError: unhashable type: \textquotesingle{}Fraction\textquotesingle{}}. Why can an object with \code{__eq__}
+not go into a set, until the \omterm{def:g12:classes-and-objects:class}{class} also defines \code{__hash__}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:classes-and-objects:8}
+\code{A.__init__} prints \code{A}. \code{B(A)} has an \code{__init__} that prints \code{B in}, calls
+\code{super().__init__()}, then prints \code{B out}. What does \code{B()} print? And without the call to
+\code{super()}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:classes-and-objects:9}
+Write a \omterm{def:g12:classes-and-objects:class}{method} \code{previous_day} for the \omterm{def:g12:classes-and-objects:class}{class} \code{Date}, and check it on 1 March 2028 and 1 January 2027.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:classes-and-objects:10}
+Prove that every \code{Fraction}, including the results of \code{+} and \code{*}, has a positive denominator and a
+numerator and denominator with no common divisor other than $1$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:classes-and-objects:11}
+Rewrite in the functional style, with \code{filter}, \code{map} and \code{sum}: \code{total = 0}, then
+\code{for x in t:}, \texttt{if x \% 2 == 0:}, \code{total += x * x}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:classes-and-objects:12}
+Write a \omterm{def:g12:classes-and-objects:class}{class} \code{Stack} with \code{push}, \code{pop}, \code{peek}, \code{is_empty} and \code{len}, where
+\code{pop} and \code{peek} raise \code{IndexError} on an empty stack, and tests for it.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:classes-and-objects:13}
+How many \code{Fraction} objects does this program create? \code{total = Fraction(0)}, then for $k$ from $1$ to $4$,
+\code{total = total + Fraction(1, k)}. How many are still reachable at the end?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:classes-and-objects:14}
+A \omterm{def:g12:classes-and-objects:class}{class} \code{Basket} has the line \code{items = []} in its body, outside any \omterm{def:g12:classes-and-objects:class}{method}, and a \omterm{def:g12:classes-and-objects:class}{method} \code{add} that
+appends to \code{self.items}. After \code{a.add("pear")}, the basket \code{b} also holds a pear. Explain and correct.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:classes-and-objects:15}
+Write a \omterm{def:g12:classes-and-objects:class}{class} \code{Polynomial} built from its list of coefficients $[a_0, a_1, \dots]$, with \code{__add__},
+\code{__mul__}, and \code{__call__} so that \code{p(x)} computes the value at \code{x}.
+\end{exercise}
+
+\section{Problem: Exact Fractions}\label{sec:g12:classes-and-objects:problem}
+
+\begin{problem}[{Weekend problem --- the harmonic sums, exactly}]\label{pb:g12:classes-and-objects:1}
+The harmonic sums are $H_n = 1 + \frac12 + \frac13 + \dots + \frac1n$. With the \omterm{def:g12:classes-and-objects:class}{class} \code{Fraction}, a program
+computes them exactly, compares their denominators with the least common multiple of $1, \dots, n$, and measures the
+error of the same sums in floating point.
+
+\omcode{code/grade-12/02-classes-and-objects/listings/harmonic.py}{1}{17}{Harmonic sums exact and in floating
+point.}\label{lst:g12:classes-and-objects:harmonic}
+
+\omoutput{code/grade-12/02-classes-and-objects/outputs/harmonic.txt}{The exact sums, their denominators, and three
+comparisons with floating point.}\label{out:g12:classes-and-objects:harmonic}
+
+\medskip\noindent\textbf{Part I --- A class of fractions.}
+\begin{enumerate}
+  \item Which \omterm{def:g12:classes-and-objects:class}{attributes} does a \code{Fraction} have, and why do their names start with an underscore?
+  \item What does \code{Fraction(10, -4)} store?
+  \item Which \omterm{def:g12:classes-and-objects:special-method}{special method} does \code{exact + Fraction(1, n)} call, and with which arguments?
+  \item Why does \code{Fraction(1, 2) == Fraction(2, 4)} hold, although $2/4$ was written?
+  \item Why does the \omterm{def:g12:classes-and-objects:class}{class} define \code{numerator()} and \code{denominator()} rather than letting users read
+    \code{_num} and \code{_den}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The invariant.}
+\begin{enumerate}[resume]
+  \item State the invariant of \code{Fraction}.
+  \item Prove that the \omterm{def:g12:classes-and-objects:constructor}{constructor} establishes it, whatever the signs of its arguments (the denominator not $0$).
+  \item Show that \code{__eq__} is right because of the invariant: two fractions are equal numbers exactly when their
+    reduced forms are equal.
+  \item What does \code{bad_mutation.py} show about Python's protection of \omterm{def:g12:classes-and-objects:class}{attributes}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The harmonic sums exactly.}
+\begin{enumerate}[resume]
+  \item Compute $H_4$ by hand, and check the output.
+  \item From the output, give $H_9$ and $H_{10}$. Check $H_{10} = H_9 + \frac{1}{10}$.
+  \item How many digits has the numerator of $H_{1000}$? Why could no type of fixed size hold it?
+  \item Why can no \omterm{def:g10:floating-point:float}{floating-point number} hold $H_3 = 11/6$ exactly?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Denominators and floating point.}
+\begin{enumerate}[resume]
+  \item Why is $\operatorname{lcm}(1, \dots, n)$ always a common denominator of the terms of $H_n$?
+  \item For which $n$ of the output is the reduced denominator smaller than that common multiple? By how much?
+  \item For $n = 6$, write $H_6$ over $60$ and explain why it reduces by $3$.
+  \item At $n = 10$ and $n = 100$, how large is the floating-point error printed? And at $n = 1000$?
+  \item Where does that error come from? Recall chapter \ref{ch:g10:floating-point}.
+  \item Why is the error at $n = 1000$ so small compared with the value?
+  \item State the result: $H_{10}$ exactly, and the error of the floating-point sum up to $1000$.
+\end{enumerate}
+\end{problem}

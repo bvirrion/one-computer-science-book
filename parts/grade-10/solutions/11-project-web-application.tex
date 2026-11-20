@@ -1,0 +1,99 @@
+\section*{Chapter \ref{ch:g10:project-web-application} --- Project: A Small Web Application}
+
+\begin{solution}{exo:g10:project-web-application:1}
+\code{/}: \code{home(request)}. \code{/book/12} and \code{/book/12/}: \code{book(request, "12")}, since the slashes at
+both ends are stripped before splitting. \code{/book/12/loans}: three parts, one too many, so
+\code{not_found(request)}. \code{/books/12}: no \omterm{def:g10:project-web-application:route}{route} \code{books}, so \code{not_found(request)}.
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:2}
+The title is \textit{Not found} and the paragraph is
+
+\smallskip\noindent\hspace*{2em}\code{<p class="error">No page at /a&amp;b&lt;i&gt;</p>}
+
+\smallskip\noindent The browser displays \textit{No page at /a\&b<i>}, as
+typed, in the colour of the class \code{error}; no italic starts, since \code{<i>} was escaped.
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:3}
+A function \code{about(request)} that returns \code{app_m2.page("About", "<p>...</p>")}, and an entry
+\code{"about": (about, 0)} in the \omterm{def:g10:project-web-application:route}{route} table (\code{exercises/app_ex.py}).
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:4}
+One for the home page, one for the book, four for the missing pages, one for the style sheet, one for the search,
+two for the reservation (the \omterm{def:g10:http-clients-servers:methods}{POST}, then the \omterm{def:g10:http-clients-servers:methods}{GET} that follows the 303) and two refused reservations: $12$ requests.
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:5}
+\code{book} returns \code{None}, and so does \code{dispatch}. In the server, the line
+\code{status, kind, text, headers = app.dispatch(request)} raises a \code{TypeError}: the server prints the
+traceback, closes the connection without any answer, and goes on serving the other requests. The client sees the
+connection closed without a response (\code{RemoteDisconnected} with \code{http.client}).
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:6}
+\code{author(request, name)} keeps the books whose \code{author} is \code{name}, and returns
+\code{not_found(request)} if there are none; the \omterm{def:g10:project-web-application:route}{route} is \code{"author": (author, 1)}. The space in the name
+arrives as \texttt{\%20} and the server decodes it. Zoe Stoneton has $7$ books, the most of any author
+(\code{exercises/app_ex.py}).
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:7}
+The form's fields travel in the body of the \omterm{def:g10:http-clients-servers:methods}{POST}, not in the \omterm{def:g10:http-clients-servers:url}{query string}, so \code{request["query"]} is empty: the
+book number is \code{""}, and every reservation gets \code{400} with the page \textit{No such book}. The test
+\code{test_reserve_then_redirect} fails, since it expects the book's page after the redirection.
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:8}
+Read \code{key = request["query"].get("sort", "title")}, answer 400 if it is not one of the three, and list the books
+in the order \code{sorted(BOOKS, key=lambda n: (BOOKS[n][key], n))}; the number \code{n} breaks ties, so the order
+is the same at every request (\code{exercises/app_ex.py}).
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:9}
+The home page, the style sheet, one page per book and one \omterm{def:g10:data-tables:json}{JSON} answer per book: $2n + 2$. For $80$ books, $162$
+addresses (with \omterm{def:g10:http-clients-servers:methods}{GET}, \code{/reserve} answers 400, not 200).
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:10}
+The failing test raises an exception, the last line is never reached, and the server keeps running after the tests.
+The next run cannot open the same port, and its server stops at once, while the tests talk to the old server, which
+runs the old code. The fix is to stop the server in a \code{finally} block, or in \code{tearDownClass} as in
+milestone~4, which \code{unittest} calls whatever the tests did.
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:11}
+A dictionary \texttt{METHODS = \{"reserve": \{"POST"\}\}}, with \texttt{\{"GET"\}} for every other \omterm{def:g10:project-web-application:route}{route}; before calling
+the \omterm{def:g10:project-web-application:route}{route}'s function, \code{dispatch} compares \code{request["method"]} with the allowed set and otherwise answers
+405 with the header \code{Allow}, which a 405 answer must carry, listing the allowed methods
+(\code{exercises/app_ex.py}).
+% ledger: g10:http-405-allow
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:12}
+With $80$ books and $20$ per page there are $\lceil 80/20 \rceil = 4$ pages. The page $p$ shows the books at
+positions $20(p-1)$ to $20p - 1$ of the sorted list, the slice \code{order[(p - 1) * 20:p * 20]}. Pages $0$ and
+$5$, and a page that is not a number, get a 404. The test requests pages $0$ to $5$, checks the statuses
+$404, 200, 200, 200, 200, 404$, and counts $80$ links over the four pages (\code{tests/test_web_app.py}).
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:13}
+If the \omterm{def:g10:http-clients-servers:methods}{POST} is answered with a page, reloading repeats the \omterm{def:g10:http-clients-servers:methods}{POST}: $1 + 3 = 4$ reservations of the same book by the
+same member. With a 303, the page shown is the answer to a \omterm{def:g10:http-clients-servers:methods}{GET}, and reloading repeats the \omterm{def:g10:http-clients-servers:methods}{GET}: $1$ reservation.
+Browsers warn before repeating a \omterm{def:g10:http-clients-servers:methods}{POST} because a \omterm{def:g10:http-clients-servers:methods}{POST} may change data on the server, while a \omterm{def:g10:http-clients-servers:methods}{GET} must not.
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:14}
+Before recording, count the member's reservations over all the books, and answer 409 if there are already three. The
+test sends four reservations for member $5$ and expects $303, 303, 303, 409$ (\code{exercises/app_ex.py}).
+\end{solution}
+
+\begin{solution}{exo:g10:project-web-application:15}
+Thread A counts member $5$'s reservations: $2$, fewer than $3$. Thread B counts them too: still $2$. A records its
+reservation ($3$), then B records its own ($4$). Each check was right when it was made, but the data changed between
+the check and the recording. The fix is to make the check and the recording one step that no other thread can
+interrupt: a lock (\code{threading.Lock}) that a thread holds from the count to the recording
+(\code{exercises/app_ex.py}). If several server programs share the data, a lock inside one of them is not enough;
+the database that holds the data must provide it, as a later chapter shows.
+\end{solution}

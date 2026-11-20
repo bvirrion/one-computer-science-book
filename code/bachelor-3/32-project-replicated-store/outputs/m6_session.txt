@@ -1,0 +1,15 @@
+$ for n in 1 2 3; do (./store node $n --stagger > node$n.log &); done
+$ ./store wait-leader
+leader: node 1
+$ (./store load history.txt --clients 4 --ops 150 > load.log &)
+$ sleep 0.4; kill -9 $(cat node1/pid)
+$ while ! [ -s load.log ]; do sleep 0.1; done
+$ cat load.log
+600 operations by 4 clients on 3 keys recorded in history.txt
+$ ./store wait-leader
+leader: node 2
+$ ./store check history.txt
+600 operations on 3 keys: linearisable: yes
+$ wc -l < history.txt
+600
+$ kill $(cat node2/pid node3/pid)

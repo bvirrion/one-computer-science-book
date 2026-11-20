@@ -1,0 +1,365 @@
+% Provenance (never printed): NSI terminale "Structures de donnees: arbres, arbres binaires, arbres binaires de
+% recherche; algorithmique: parcours d'arbres, recherche et insertion dans un ABR". See sources/book2/BRIEFS.md.
+\chapter{Trees and Binary Search Trees}\label{ch:g12:trees}
+
+``I am thinking of a number between $1$ and $100$.'' The best first guess is $50$; after ``smaller'', $25$; after
+``larger'', $37$. Every game follows one path through a fixed set of questions: $50$ at the top, $25$ and $75$ below
+it, then $12$, $37$, $62$, $87$, and so on. Drawn out, these questions form a \omterm{def:g12:trees:tree}{tree}, and the length of the longest
+path is the number of guesses the game can need.
+
+This chapter names the parts of a \omterm{def:g12:trees:tree}{tree}, builds \omterm{def:g12:trees:binary-tree}{binary trees} with a class, visits their \omterm{def:g12:trees:tree}{nodes} in four orders, and
+stores keys in \omterm{def:g12:trees:bst}{binary search trees}, where finding a key costs as many steps as the \omterm{def:g12:trees:tree}{tree} is tall. Then it asks how
+tall such a \omterm{def:g12:trees:tree}{tree} grows, and measures it.
+
+\begin{recall}
+A \omterm{def:g12:recursion:recursion}{recursive function} calls itself on smaller inputs, and is proved by induction (chapter \ref{ch:g12:recursion}). A
+queue gives back its elements in the order they came (chapter \ref{ch:g12:lists-stacks-queues}). Folders inside
+folders (Book 1, grade 3) and the nested elements of a web page (Book 1, grade 9) are \omterm{def:g12:trees:tree}{trees}.
+\end{recall}
+
+\section{Vocabulary}\label{sec:g12:trees:vocabulary}
+
+\begin{definition}[Tree, node, root, leaf, parent, child, subtree]\label{def:g12:trees:tree}
+A \emph{tree}\index{tree} is a set of \emph{nodes}\index{node} linked so that one node, the
+\emph{root}\index{root}, has no parent, and every other node has exactly one \emph{parent}\index{parent}; a node is a
+\emph{child}\index{child} of its parent. A node with no child is a \emph{leaf}\index{leaf}. A node together with all
+the nodes below it forms a \emph{subtree}\index{subtree}.
+\end{definition}
+
+\begin{definition}[Depth, height, size]\label{def:g12:trees:height}
+The \emph{depth}\index{depth} of a \omterm{def:g12:trees:tree}{node} is the number of links from the \omterm{def:g12:trees:tree}{root} to it: the \omterm{def:g12:trees:tree}{root} has depth $0$. The
+\emph{height}\index{height} of a \omterm{def:g12:trees:tree}{tree} is the largest depth of its \omterm{def:g12:trees:tree}{nodes}; a \omterm{def:g12:trees:tree}{tree} of one \omterm{def:g12:trees:tree}{node} has height $0$, and by
+convention the empty \omterm{def:g12:trees:tree}{tree} has height $-1$. The \emph{size}\index{size} of a \omterm{def:g12:trees:tree}{tree} is its number of \omterm{def:g12:trees:tree}{nodes}.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, nd/.style={draw, circle, minimum size=6mm, inner sep=0pt, fill=omDef!10},
+    lf/.style={nd, fill=omMeth!15}, level distance=11mm, level 1/.style={sibling distance=30mm},
+    level 2/.style={sibling distance=15mm}]
+  \node[nd] (A) {A}
+    child {node[nd] (B) {B} child {node[lf] (D) {D}} child {node[nd] (E) {E} child {node[lf] (G) {G}}
+      child[missing]}}
+    child {node[nd] (C) {C} child[missing] child {node[lf] (F) {F}}};
+  \draw[dashed, omThm, rounded corners=8pt] ($(B)+(-0.45,0.5)$) -- ($(B)+(0.45,0.5)$) -- ($(E)+(0.55,0.1)$)
+    -- ($(G)+(0.45,-0.45)$) -- ($(G)+(-0.45,-0.45)$) -- ($(D)+(-0.5,-0.4)$) -- ($(D)+(-0.5,0.3)$) -- cycle;
+  \node[omThm, font=\scriptsize] at ($(D)+(-1.3,0.6)$) {subtree B};
+  \foreach \d/\y in {0/0, 1/-1.1, 2/-2.2, 3/-3.3} \node[font=\scriptsize, black!60] at (4.2,\y) {depth $\d$};
+  \node[font=\scriptsize, right] at ($(A)+(0.4,0)$) {root};
+\end{tikzpicture}
+
+{\small A \omterm{def:g12:trees:tree}{tree} of \omterm{def:g12:trees:height}{size} $7$ and \omterm{def:g12:trees:height}{height} $3$. A is the \omterm{def:g12:trees:tree}{root}; D, G and F are the leaves (shaded); B is the \omterm{def:g12:trees:tree}{parent} of D and
+E. The dashed line surrounds the \omterm{def:g12:trees:tree}{subtree} of \omterm{def:g12:trees:tree}{root} B: \omterm{def:g12:trees:height}{size} $4$, \omterm{def:g12:trees:height}{height} $2$.}
+\end{omfigure}
+
+\section{Binary trees}\label{sec:g12:trees:binary}
+
+\begin{definition}[Binary tree]\label{def:g12:trees:binary-tree}
+A \emph{binary tree}\index{binary tree} is either empty, or a \omterm{def:g12:trees:tree}{node} holding a value and two binary \omterm{def:g12:trees:tree}{trees}, its left
+\omterm{def:g12:trees:tree}{subtree} and its right \omterm{def:g12:trees:tree}{subtree}.
+\end{definition}
+
+The definition is recursive, and so are the functions on \omterm{def:g12:trees:binary-tree}{binary trees}: each one says what to do with the empty \omterm{def:g12:trees:tree}{tree},
+and how to combine the answers of the two \omterm{def:g12:trees:tree}{subtrees}. In Python the empty \omterm{def:g12:trees:tree}{tree} is \code{None}.
+
+\omcode{code/grade-12/04-trees/listings/node.py}{1}{28}{\omterm{def:g12:trees:binary-tree}{Binary trees}: a class of \omterm{def:g12:trees:tree}{nodes}, and three recursive
+measures.}\label{lst:g12:trees:node}
+
+\omcode{code/grade-12/04-trees/listings/size_height.py}{1}{13}{The \omterm{def:g12:trees:tree}{tree} of the figure.}\label{lst:g12:trees:size}
+
+\omoutput{code/grade-12/04-trees/outputs/size_height.txt}{The numbers read on the figure, and the two conventions for
+small \omterm{def:g12:trees:tree}{trees}.}\label{out:g12:trees:size}
+
+\begin{theorem}[Size and height]\label{thm:g12:trees:bounds}
+A \omterm{def:g12:trees:binary-tree}{binary tree} of \omterm{def:g12:trees:height}{height} $h \ge 0$ has a \omterm{def:g12:trees:height}{size} $n$ with $h + 1 \le n \le 2^{h+1} - 1$.
+\end{theorem}
+
+The lower bound holds because a path from the \omterm{def:g12:trees:tree}{root} to the deepest \omterm{def:g12:trees:tree}{node} already holds $h + 1$ \omterm{def:g12:trees:tree}{nodes}. For the upper
+bound, \omterm{def:g12:trees:height}{depth} $d$ holds at most $2^d$ \omterm{def:g12:trees:tree}{nodes}, since each \omterm{def:g12:trees:tree}{node} has at most two children, and
+$1 + 2 + 4 + \dots + 2^h = 2^{h+1} - 1$. Exercise \ref{exo:g12:trees:12} proves it again, by induction on the
+recursive definition. Turned around: a \omterm{def:g12:trees:binary-tree}{binary tree} of $n$ \omterm{def:g12:trees:tree}{nodes} has a \omterm{def:g12:trees:height}{height} of at least the number of times $n + 1$
+can be halved, minus one; $1023$ \omterm{def:g12:trees:tree}{nodes} need a \omterm{def:g12:trees:height}{height} of at least $9$.
+
+\section{Traversals}\label{sec:g12:trees:traversals}
+
+\begin{definition}[Traversal, preorder, inorder, postorder, breadth-first order]\label{def:g12:trees:traversal}
+A \emph{traversal}\index{traversal} of a \omterm{def:g12:trees:tree}{tree} visits each \omterm{def:g12:trees:tree}{node} once. In \emph{preorder}\index{preorder}, a \omterm{def:g12:trees:tree}{node} is
+visited before its left and right \omterm{def:g12:trees:tree}{subtrees}; in \emph{inorder}\index{inorder}, between them; in
+\emph{postorder}\index{postorder}, after them. In \emph{breadth-first order}\index{breadth-first order}, \omterm{def:g12:trees:tree}{nodes} are
+visited level by level, from the \omterm{def:g12:trees:tree}{root} down, from left to right in each level.
+\end{definition}
+
+\omcode{code/grade-12/04-trees/listings/traversals.py}{1}{32}{Four \omterm{def:g12:trees:traversal}{traversals}; the first three recursive, the last with
+a queue.}\label{lst:g12:trees:traversals}
+
+\omoutput{code/grade-12/04-trees/outputs/traversals.txt}{The seven \omterm{def:g12:trees:tree}{nodes} of the figure, in four
+orders.}\label{out:g12:trees:traversals}
+
+\omterm{def:g12:trees:traversal}{Breadth-first order} cannot be written as ``a \omterm{def:g12:trees:tree}{node}, then its \omterm{def:g12:trees:tree}{subtrees}'': the children of B must wait while C is
+visited. A queue holds the \omterm{def:g12:trees:tree}{nodes} found but not yet visited, and gives them back in the order they were found, level
+after level.
+
+An arithmetic expression is a \omterm{def:g12:trees:tree}{tree}: each operator is a \omterm{def:g12:trees:tree}{node} whose \omterm{def:g12:trees:tree}{subtrees} are its operands, and the numbers are the
+leaves. Its value is computed in \omterm{def:g12:trees:traversal}{postorder}, operands before operator; \omterm{def:g12:trees:traversal}{postorder} writes the \omterm{def:g12:lists-stacks-queues:postfix}{postfix notation} of the
+last chapter, and \omterm{def:g12:trees:traversal}{inorder}, with brackets, the usual one.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, nd/.style={draw, circle, minimum size=6mm, inner sep=0pt, fill=omDef!10},
+    lf/.style={nd, fill=omMeth!15}, level distance=11mm, level 1/.style={sibling distance=30mm},
+    level 2/.style={sibling distance=14mm}]
+  \node[nd] (m) {$\times$}
+    child {node[nd] (p) {$+$} child {node[lf] {$3$}} child {node[lf] {$4$}}}
+    child {node[nd] (s) {$-$} child {node[lf] {$5$}} child {node[lf] {$2$}}};
+  \node[omThm, right, font=\scriptsize] at ($(m)+(0.35,0)$) {$21$};
+  \node[omThm, left, font=\scriptsize] at ($(p)+(-0.35,0)$) {$7$};
+  \node[omThm, right, font=\scriptsize] at ($(s)+(0.35,0)$) {$3$};
+  \node[align=left, font=\scriptsize, right] at (3.3,-1.2) {preorder: $\times$ $+$ $3$ $4$ $-$ $5$ $2$\\
+    inorder: $3$ $+$ $4$ $\times$ $5$ $-$ $2$\\ postorder: $3$ $4$ $+$ $5$ $2$ $-$ $\times$\\
+    breadth-first: $\times$ $+$ $-$ $3$ $4$ $5$ $2$};
+\end{tikzpicture}
+
+{\small The expression $(3 + 4) \times (5 - 2)$ as a \omterm{def:g12:trees:tree}{tree}, with its four \omterm{def:g12:trees:traversal}{traversals}. In \omterm{def:g12:trees:traversal}{postorder} each operator comes
+after its operands; the values computed at each \omterm{def:g12:trees:tree}{node} are written beside it.}
+\end{omfigure}
+
+\omcode{code/grade-12/04-trees/listings/expression_tree.py}{1}{26}{Evaluating and writing an expression
+\omterm{def:g12:trees:tree}{tree}.}\label{lst:g12:trees:expression}
+
+\omoutput{code/grade-12/04-trees/outputs/expression_tree.txt}{The value, and the postfix form read in
+\omterm{def:g12:trees:traversal}{postorder}.}\label{out:g12:trees:expression}
+
+\section{Binary search trees}\label{sec:g12:trees:bst}
+
+\begin{definition}[Binary search tree]\label{def:g12:trees:bst}
+A \emph{binary search tree}\index{binary search tree} is a \omterm{def:g12:trees:binary-tree}{binary tree} of keys in which, at every \omterm{def:g12:trees:tree}{node}, the keys of
+the left \omterm{def:g12:trees:tree}{subtree} are smaller than the \omterm{def:g12:trees:tree}{node}'s key and the keys of the right \omterm{def:g12:trees:tree}{subtree} are larger.
+\end{definition}
+
+To find a key, compare it with the \omterm{def:g12:trees:tree}{root}: equal, found; smaller, go on in the left \omterm{def:g12:trees:tree}{subtree}; larger, in the right. To
+insert a key, search for it; where the search falls off the \omterm{def:g12:trees:tree}{tree}, hang a new \omterm{def:g12:trees:tree}{leaf}. Both follow one path from the \omterm{def:g12:trees:tree}{root},
+so they visit at most $h + 1$ \omterm{def:g12:trees:tree}{nodes} in a \omterm{def:g12:trees:tree}{tree} of \omterm{def:g12:trees:height}{height} $h$. The functions below loop instead of recursing, for a
+reason the end of the chapter shows.
+
+\omcode{code/grade-12/04-trees/listings/bst.py}{1}{37}{Insertion and search in a \omterm{def:g12:trees:bst}{binary search
+tree}.}\label{lst:g12:trees:bst}
+
+The town library's first ten titles, inserted in the order of its table:
+
+\omcode{code/grade-12/04-trees/listings/bst_demo.py}{1}{17}{A search \omterm{def:g12:trees:tree}{tree} of book titles.}\label{lst:g12:trees:demo}
+
+\omoutput{code/grade-12/04-trees/outputs/bst_demo.txt}{Titles compare alphabetically; the \omterm{def:g12:trees:traversal}{inorder} \omterm{def:g12:trees:traversal}{traversal} lists them
+sorted.}\label{out:g12:trees:demo}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, nd/.style={draw, rounded corners=2pt, fill=omDef!10, inner sep=2pt,
+    align=center}, level distance=10mm, level 1/.style={sibling distance=50mm},
+    level 2/.style={sibling distance=40mm}, level 3/.style={sibling distance=44mm},
+    level 4/.style={sibling distance=26mm}]
+  \node[nd] {The Silent Code}
+    child {node[nd] {The Paper Forest}
+      child {node[nd] {A Year by the Island}
+        child {node[nd] {A Map of\\ the Lighthouse} child[missing] child {node[nd] {A Year by\\ the Bridge}}}
+        child {node[nd] {Seven Library} child {node[nd] {Seven Code}}
+          child {node[nd] {The Lost Forest} child {node[nd, fill=omThm!12] {The Clockwork\\ Harbour}}
+            child[missing]}}}
+      child[missing]}
+    child {node[nd] {The Silent Kingdom}};
+\end{tikzpicture}
+
+{\small The search \omterm{def:g12:trees:tree}{tree} of \code{bst_demo.py}. Every title on the left of a \omterm{def:g12:trees:tree}{node} comes before it in alphabetical
+order, every title on the right after it. The deepest \omterm{def:g12:trees:tree}{node}, shaded, has \omterm{def:g12:trees:height}{depth} $5$: the \omterm{def:g12:trees:height}{height} of the \omterm{def:g12:trees:tree}{tree}.}
+\end{omfigure}
+
+\begin{remark}
+Alphabetical order here is Python's order on strings: character by character, by \omterm{def:g10:text-encodings:code-point}{code point}. Every capital letter comes
+before every small one: \code{"Zoe"} comes before \code{"apple"}.
+\end{remark}
+
+\section{Balanced and degenerate trees}\label{sec:g12:trees:balance}
+
+\begin{definition}[Balanced tree, degenerate tree]\label{def:g12:trees:balanced}
+A \omterm{def:g12:trees:binary-tree}{binary tree} is \emph{balanced}\index{balanced tree} when its \omterm{def:g12:trees:height}{height} is close to the smallest possible for its \omterm{def:g12:trees:height}{size},
+about the \omterm{def:g11:cost-of-an-algorithm:halvings}{number of halvings} of $n$. It is \emph{degenerate}\index{degenerate tree} when every \omterm{def:g12:trees:tree}{node} has at most one
+\omterm{def:g12:trees:tree}{child}: it is then a list, of \omterm{def:g12:trees:height}{height} $n - 1$.
+\end{definition}
+
+The shape of a search \omterm{def:g12:trees:tree}{tree} depends only on the order of insertion. Keys inserted in increasing order each go to the
+right of all the others: a \omterm{def:g12:trees:balanced}{degenerate tree}.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, nd/.style={draw, circle, minimum size=5.5mm, inner sep=0pt, fill=omDef!10},
+    level distance=8mm]
+  \begin{scope}[level 1/.style={sibling distance=7mm}]
+  \node[nd] {1} child[missing] child {node[nd] {2} child[missing] child {node[nd] {3} child[missing]
+    child {node[nd] {4} child[missing] child {node[nd] {5} child[missing] child {node[nd] {6} child[missing]
+    child {node[nd] {7}}}}}}};
+  \node[font=\scriptsize] at (2.4,-5.4) {inserted $1, 2, \dots, 7$: height $6$};
+  \end{scope}
+  \begin{scope}[xshift=8cm, level 1/.style={sibling distance=24mm}, level 2/.style={sibling distance=12mm},
+      level distance=11mm]
+  \node[nd] {4} child {node[nd] {2} child {node[nd] {1}} child {node[nd] {3}}}
+    child {node[nd] {6} child {node[nd] {5}} child {node[nd] {7}}};
+  \node[font=\scriptsize] at (0,-3.2) {inserted $4, 2, 6, 1, 3, 5, 7$: height $2$};
+  \end{scope}
+\end{tikzpicture}
+
+{\small The same seven keys, two orders of insertion. Finding $7$ visits seven \omterm{def:g12:trees:tree}{nodes} on the left, three on the right.}
+\end{omfigure}
+
+\omcode{code/grade-12/04-trees/listings/degenerate.py}{1}{20}{\omterm{def:g12:trees:height}{Heights} after three orders of seven keys, then $1023$
+keys sorted and shuffled.}\label{lst:g12:trees:degenerate}
+
+\omoutput{code/grade-12/04-trees/outputs/degenerate.txt}{The sorted \omterm{def:g12:trees:tree}{tree} of $1023$ keys is so deep that the recursive
+\code{height} fails.}\label{out:g12:trees:degenerate}
+
+The recursive \code{height} calls itself once per level: on a list of $1023$ \omterm{def:g12:trees:tree}{nodes}, that is beyond Python's limit of
+$1000$ frames (chapter \ref{ch:g12:recursion}). This is why \code{insert} and \code{search} loop. \omterm{def:g12:trees:tree}{Trees} that keep
+themselves \omterm{def:g12:trees:balanced}{balanced} whatever the order, by reshaping themselves at each insertion, exist: they guarantee a \omterm{def:g12:trees:height}{height} in
+proportion to the \omterm{def:g11:cost-of-an-algorithm:halvings}{number of halvings} of $n$, and belong to a later volume.
+
+\section{Exercises}\label{sec:g12:trees:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g12:trees:1}
+Give the \omterm{def:g12:trees:height}{size}, \omterm{def:g12:trees:height}{height} and number of leaves of
+\code{Node(1, Node(2, Node(4), Node(5, Node(7), Node(8))), Node(3, Node(6)))}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:trees:2}
+Give the \omterm{def:g12:trees:traversal}{preorder} of the \omterm{def:g12:trees:tree}{tree} of exercise \ref{exo:g12:trees:1}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:trees:3}
+Give its \omterm{def:g12:trees:traversal}{inorder} and its \omterm{def:g12:trees:traversal}{postorder}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:trees:4}
+Draw the search \omterm{def:g12:trees:tree}{tree} obtained by inserting $50$, $30$, $70$, $20$, $40$, $60$, $80$, $35$, in that order. What is its
+\omterm{def:g12:trees:height}{height}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:trees:5}
+Write \code{count_at_depth(t, d)}, the number of \omterm{def:g12:trees:tree}{nodes} of \omterm{def:g12:trees:height}{depth} \code{d} in the \omterm{def:g12:trees:tree}{tree} \code{t}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:trees:6}
+A student writes \code{height} with \code{return 0} for the empty \omterm{def:g12:trees:tree}{tree}. What does it return for a single \omterm{def:g12:trees:tree}{node}, and
+for the \omterm{def:g12:trees:tree}{tree} of the first figure? How must the bounds of the theorem be rewritten for that function?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:trees:7}
+Write \code{bst_min(t)}, the smallest key of a non-empty search \omterm{def:g12:trees:tree}{tree}, without visiting more than one path.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:trees:8}
+What is the smallest possible \omterm{def:g12:trees:height}{height} of a \omterm{def:g12:trees:binary-tree}{binary tree} of $100$ \omterm{def:g12:trees:tree}{nodes}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:trees:9}
+Give the \omterm{def:g12:trees:traversal}{breadth-first order} of the \omterm{def:g12:trees:tree}{tree} of exercise \ref{exo:g12:trees:4}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:trees:10}
+This recursive insertion is called as \code{t = insert(t, k)}. Inserting $50$, $30$, $70$ leaves a \omterm{def:g12:trees:tree}{tree} of one \omterm{def:g12:trees:tree}{node}.
+Why? Correct it.
+
+\smallskip\noindent\hspace*{2em}\code{def insert(t, key):}
+
+\noindent\hspace*{4em}\code{if t is None:}
+
+\noindent\hspace*{6em}\code{return Node(key)}
+
+\noindent\hspace*{4em}\code{if key < t.value:}
+
+\noindent\hspace*{6em}\code{insert(t.left, key)}
+
+\noindent\hspace*{4em}\code{else:}
+
+\noindent\hspace*{6em}\code{insert(t.right, key)}
+
+\noindent\hspace*{4em}\code{return t}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:trees:11}
+Write \code{is_bst(t)}. Show that checking, at each \omterm{def:g12:trees:tree}{node}, only that the left \omterm{def:g12:trees:tree}{child} is smaller and the right \omterm{def:g12:trees:tree}{child}
+larger is not enough.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:trees:12}
+Prove, by induction on the recursive definition, that a \omterm{def:g12:trees:binary-tree}{binary tree} of \omterm{def:g12:trees:height}{height} $h$ and \omterm{def:g12:trees:height}{size} $n$ satisfies
+$n \le 2^{h+1} - 1$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:trees:13}
+Prove that the \omterm{def:g12:trees:traversal}{inorder} \omterm{def:g12:trees:traversal}{traversal} of a \omterm{def:g12:trees:bst}{binary search tree} lists its keys in increasing order.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:trees:14}
+A \omterm{def:g12:trees:tree}{tree} has distinct values. Write \code{rebuild(pre, ino)}, which rebuilds it from its \omterm{def:g12:trees:traversal}{preorder} and its \omterm{def:g12:trees:traversal}{inorder}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:trees:15}
+How many \omterm{def:g12:trees:binary-tree}{binary trees} of \omterm{def:g12:trees:height}{size} $3$ are there, counting shapes only? Of \omterm{def:g12:trees:height}{size} $4$? Write a \omterm{def:g12:recursion:recursion}{recursive function} that counts
+those of \omterm{def:g12:trees:height}{size} $n$.
+\end{exercise}
+
+\section{Problem: How Tall Is a Search Tree?}\label{sec:g12:trees:problem}
+
+\begin{problem}[{Weekend problem --- the height of a search tree}]\label{pb:g12:trees:1}
+The keys $1, 2, \dots, 1023$ are inserted into a search \omterm{def:g12:trees:tree}{tree}, in an order that decides its \omterm{def:g12:trees:height}{height}. The program below
+builds $1000$ \omterm{def:g12:trees:tree}{trees} from $1000$ random orders of the same keys, and counts the \omterm{def:g12:trees:height}{heights}; the chart draws the counts.
+
+\omcode{code/grade-12/04-trees/listings/random_heights.py}{1}{23}{\omterm{def:g12:trees:height}{Heights} of $1000$ random search
+\omterm{def:g12:trees:tree}{trees}.}\label{lst:g12:trees:random}
+
+\omoutput{code/grade-12/04-trees/outputs/random_heights.txt}{The smallest, largest and mean \omterm{def:g12:trees:height}{heights}, then how many
+\omterm{def:g12:trees:tree}{trees} had each \omterm{def:g12:trees:height}{height}.}\label{out:g12:trees:random}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, ybar, width=12cm, height=5cm, bar width=4mm, xlabel={height}, ylabel={trees}, ymin=0,
+    xtick={16,18,...,30}]
+  \addplot[fill=omDef!40, draw=omDef] table[x=height, y=count]{code/grade-12/04-trees/figures/heights_hist.dat};
+\end{axis}
+\end{tikzpicture}
+
+{\small \omterm{def:g12:trees:height}{Heights} of the $1000$ search \omterm{def:g12:trees:tree}{trees} of $1023$ keys, from \code{figures/heights_hist.py}. None comes near the
+worst case of $1022$; none reaches the best case of $9$ either.}
+\end{omfigure}
+
+\medskip\noindent\textbf{Part I --- A search tree of $n$ keys.}
+\begin{enumerate}
+  \item Why does finding a key in a search \omterm{def:g12:trees:tree}{tree} of \omterm{def:g12:trees:height}{height} $h$ visit at most $h + 1$ \omterm{def:g12:trees:tree}{nodes}?
+  \item Does the same hold for a key that is absent?
+  \item Why is the \omterm{def:g12:trees:traversal}{inorder} \omterm{def:g12:trees:traversal}{traversal} of every one of the $1000$ \omterm{def:g12:trees:tree}{trees} the same?
+  \item Which key is at the \omterm{def:g12:trees:tree}{root} of each \omterm{def:g12:trees:tree}{tree}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The worst case.}
+\begin{enumerate}[resume]
+  \item Show that inserting $1, 2, \dots, n$ in increasing order gives a \omterm{def:g12:trees:tree}{tree} of \omterm{def:g12:trees:height}{height} $n - 1$.
+  \item Give another order of $1, \dots, 7$ that gives \omterm{def:g12:trees:height}{height} $6$, other than increasing and decreasing.
+  \item Why does the recursive \code{height} fail on the sorted \omterm{def:g12:trees:tree}{tree} of $1023$ keys, while \code{search} works?
+  \item How many \omterm{def:g12:trees:tree}{nodes} does finding $1023$ visit in the sorted \omterm{def:g12:trees:tree}{tree}, and why?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The best case.}
+\begin{enumerate}[resume]
+  \item From the theorem, what is the smallest \omterm{def:g12:trees:height}{height} of a \omterm{def:g12:trees:tree}{tree} of $1023$ \omterm{def:g12:trees:tree}{nodes}?
+  \item Describe an order of insertion of $1, \dots, 1023$ that reaches it.
+  \item In that \omterm{def:g12:trees:tree}{tree}, how many \omterm{def:g12:trees:tree}{nodes} does any search visit at most?
+  \item Write that order for $1, \dots, 7$, and check it against the output of \code{degenerate.py}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Random orders.}
+\begin{enumerate}[resume]
+  \item Read the smallest, largest and mean \omterm{def:g12:trees:height}{heights} of the $1000$ random \omterm{def:g12:trees:tree}{trees}.
+  \item Which \omterm{def:g12:trees:height}{height} is the most frequent? How many \omterm{def:g12:trees:tree}{trees} out of $1000$ had a \omterm{def:g12:trees:height}{height} of $25$ or more?
+  \item Compare the mean with the best \omterm{def:g12:trees:height}{height} $9$ and the worst $1022$: how many times larger than the best, and how
+    many times smaller than the worst?
+  \item Why is a \omterm{def:g12:trees:height}{height} of $1022$ possible, but never seen?
+  \item Searching a random \omterm{def:g12:trees:tree}{tree} visits at most how many \omterm{def:g12:trees:tree}{nodes}, in the tallest of the $1000$?
+  \item Why is the experiment built from a fixed seed?
+  \item The library inserts its titles in the order of its table. Is that order random with respect to the titles?
+    What would happen if the table were sorted by title?
+  \item State the result: the best \omterm{def:g12:trees:height}{height}, the worst \omterm{def:g12:trees:height}{height}, and the measured \omterm{def:g12:trees:height}{heights}.
+\end{enumerate}
+\end{problem}

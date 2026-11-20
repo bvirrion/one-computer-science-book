@@ -1,0 +1,9 @@
+def count_above(values, limit):
+    count = 0
+    for value in values:
+        if value > limit:
+            count = count + 1
+    return count
+
+
+print(count_above([3, 9, 7], 5))

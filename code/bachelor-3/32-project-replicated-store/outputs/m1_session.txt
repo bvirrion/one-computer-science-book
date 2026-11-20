@@ -1,0 +1,20 @@
+$ (./store node 1 --nodes 1 > node1.log &)
+$ ./store wait-leader --nodes 1
+leader: node 1
+$ exec 3<>/dev/tcp/127.0.0.1/24321
+$ printf 'SET colour red\nGET colour\nDEL colour\nGET colour\nPUT colour blue\nSET colour\n' >&3
+$ head -n 6 <&3
+OK
+VALUE red
+OK
+NOTFOUND
+ERR unknown command PUT
+ERR SET takes a key and a value
+$ ./store send 1 SET town Kelsford --nodes 1
+node 1: OK
+$ ./store send 1 GET town --nodes 1
+node 1: VALUE Kelsford
+$ cat node1.log
+node 1: up, 0 entries in its log, term 0
+node 1: leader in term 1
+$ kill $(cat node1/pid)

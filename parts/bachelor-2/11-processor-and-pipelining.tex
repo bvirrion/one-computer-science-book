@@ -1,0 +1,540 @@
+% Book 4, Year 2, chapter 11 -- The processor: datapath, control and pipelining.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 11.
+\chapter{The Processor: Datapath, Control and Pipelining}\label{ch:b2:processor-and-pipelining}
+
+A laundry has a washer, a dryer and a folding table, each taking half an hour. Done one at a time, four loads take
+six hours. But as soon as the first load leaves the washer, the second can go in: with the three machines busy at
+once, the four loads are done in three hours, and each extra load adds only half an hour. A processor does the same
+with instructions. Here are five instructions going through a five-step processor, one row per instruction and one
+column per clock cycle:
+
+\omoutput[1-8]{code/bachelor-2/11-processor-and-pipelining/outputs/run_pipeline.txt}{Five instructions in 9
+cycles instead of 25: F fetch, D decode, X execute, M memory, W write back.}\label{out:b2:processor-and-pipelining:hook}
+
+No instruction finishes sooner than before; more of them finish per second. This chapter builds the processor that
+runs the instructions of \cref{ch:b2:assembly-and-calling-convention}, first as one large circuit that does a whole
+instruction in one clock cycle, then cut into five stages that work at once, and measures, on real programs run by
+\code{rv}, what the overlap costs when instructions depend on one another.
+
+\begin{recall}
+Book 3: a multiplexer selects one of its inputs by a control value; a decoder turns a number into one active line;
+an ALU computes an arithmetic or logic function chosen by its control inputs; every gate has a propagation delay.
+A register holds its value until the clock edge; a clock paces a synchronous circuit; a finite-state machine changes
+state on each edge. A processor is a datapath, which moves and transforms data, and a control unit, which drives it.
+\cref{ch:b2:assembly-and-calling-convention}: the RV32I formats, the immediates, and branch offsets.
+\end{recall}
+
+\section{A single-cycle datapath}\label{sec:b2:processor-and-pipelining:datapath}
+
+\begin{definition}[Single-cycle processor]\label{def:b2:processor-and-pipelining:datapath}
+A \emph{single-cycle processor}\index{single-cycle processor} executes each instruction completely in one clock
+cycle: in that cycle the instruction is fetched, its registers read, the ALU used, memory accessed and the result
+written back, and the next clock edge stores the new program counter and the result.
+\end{definition}
+
+Its datapath, for a subset of RV32I (the register and immediate arithmetic, \code{lw}, \code{sw} and the six
+conditional branches), needs these parts:
+\begin{itemize}
+\item the program counter (PC), a 32-bit register, and an instruction memory read at the PC;
+\item the \omterm{def:b2:assembly-and-calling-convention:register}{register file}, with two read ports (\code{rs1}, \code{rs2}) and one write port (\code{rd});
+\item the immediate generator, which gathers the scattered immediate bits of the I, S and B formats and sign-extends
+them;
+\item the ALU, and a data memory read or written at the address the ALU computes;
+\item two adders for the next PC, $\mathit{pc} + 4$ and $\mathit{pc} + \mathit{imm}$;
+\item multiplexers wherever two sources compete for one input.
+\end{itemize}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=0.93cm, y=0.93cm,
+  b/.style={draw, fill=omDef!8, align=center, inner sep=2pt},
+  mx/.style={draw, fill=omProp!15, rounded corners=3pt, minimum width=3.2mm, minimum height=10mm, inner sep=0pt},
+  sig/.style={text=omThm, font=\tiny}, w/.style={-{Stealth[length=1.6mm]}}]
+\node[b, minimum width=7mm, minimum height=11mm] (pc) at (0,0) {PC};
+\node[b, minimum width=15mm, minimum height=20mm] (im) at (2.0,0) {instruction\\ memory};
+\node[b, minimum width=17mm, minimum height=24mm] (rf) at (5.2,0) {register\\ file};
+\node[b, ellipse, inner sep=1pt] (ig) at (5.2,-2.3) {imm gen};
+\node[mx] (m1) at (7.1,-0.3) {};
+\node[b, minimum width=8mm, minimum height=17mm, fill=omThm!10] (alu) at (8.4,0.2) {ALU};
+\node[b, minimum width=15mm, minimum height=20mm] (dm) at (10.4,-0.2) {data\\ memory};
+\node[mx] (m2) at (12.2,-0.2) {};
+\node[b] (a4) at (2.0,1.9) {$+4$};
+\node[b] (ab) at (8.4,2.8) {$+$};
+\node[mx] (m3) at (10.6,2.6) {};
+\node[sig, above=0pt of m1] {ALUSrc}; \node[sig, above=0pt of m2] {MemtoReg};
+\node[sig] at (10.6,3.45) {PCSrc $=$ Branch $\wedge$ taken}; \node[sig, above=0pt of rf] {RegWrite};
+\node[sig, above=0pt of dm] {MemRead, MemWrite}; \node[sig] at (8.3,-0.95) {ALU control};
+\draw[w] (pc.east) -- (im.west);
+\draw (im.east) -- (3.5,0); \draw (3.5,1.1) -- (3.5,-2.3);
+\draw[w] (3.5,0.8) -- node[above, font=\tiny] {rs1} (4.35,0.8);
+\draw[w] (3.5,0.2) -- node[above, font=\tiny] {rs2} (4.35,0.2);
+\draw[w] (3.5,-0.4) -- node[above, font=\tiny] {rd} (4.35,-0.4);
+\draw[w] (3.5,-2.3) -- (ig.west);
+\draw[w] (rf.east |- 0,0.7) -- (alu.west |- 0,0.7);
+\draw (rf.east |- 0,-0.1) -- (6.6,-0.1); \draw[w] (6.6,-0.1) -- (m1.west |- 0,-0.1);
+\draw (ig.east) -- (6.5,-2.3); \draw[w] (6.5,-2.3) -- (6.5,-0.55) -- (m1.west |- 0,-0.55);
+\draw[w] (m1.east) -- (alu.west |- m1.east);
+\draw[w] (alu.east |- 0,0.2) -- (dm.west |- 0,0.2);
+\draw (6.6,-0.1) -- (6.6,-1.3); \draw[w] (6.6,-1.3) -- (9.4,-1.3) -- (9.4,-0.8) -- (dm.west |- 0,-0.8);
+\draw (9.1,0.2) -- (9.1,-1.7) -- (11.8,-1.7); \draw[w] (11.8,-1.7) -- (11.8,-0.45) -- (m2.west |- 0,-0.45);
+\draw[w] (dm.east |- 0,0.05) -- (m2.west |- 0,0.05);
+\draw (m2.east) -- (12.6,-0.2) -- (12.6,-3.2) -- (3.9,-3.2) -- (3.9,-0.95); \draw[w] (3.9,-0.95) -- (4.35,-0.95);
+\node[font=\tiny, anchor=north] at (8,-3.2) {write-back: the value written to \texttt{rd}};
+\draw (pc.north) -- (0,3.1); \draw[w] (0,1.9) -- (a4.west); \draw[w] (0,3.1) -- (ab.west |- 0,3.1);
+\draw[w] (6.5,-0.55) -- (6.5,2.6) -- (ab.west |- 0,2.6);
+\draw (a4.east) -- (10.1,1.9); \draw[w] (10.1,1.9) -- (10.1,2.3) -- (m3.west |- 0,2.3);
+\draw[w] (ab.east) -- (m3.west |- ab.east);
+\draw (m3.east) -- (12.0,2.6) -- (12.0,4.0) -- (-0.8,4.0) -- (-0.8,0); \draw[w] (-0.8,0) -- (pc.west);
+\end{tikzpicture}
+\par\smallskip{\small The single-cycle datapath of \code{datapath.py}. Data flows left to right; the write-back and
+the next PC return to the left. The three multiplexers choose the ALU's second input (register or immediate), the
+value written back (ALU result or loaded word) and the next PC ($\mathit{pc} + 4$ or the branch target). The \omterm{def:b2:processor-and-pipelining:control}{control
+signals}, in colour, come from the control unit; a comparator beside the ALU (not drawn) decides \emph{taken}.}
+\end{omfigure}
+
+The model \code{datapath.py} computes, for one instruction word and the current state of an \code{rv} machine,
+what this circuit does in one clock cycle, without changing the machine; the caller then lets \code{rv} execute the
+instruction and compares the two.
+
+\omcode{code/bachelor-2/11-processor-and-pipelining/listings/datapath.py}{89}{108}{One cycle of the
+datapath}\label{lst:b2:processor-and-pipelining:cycle}
+
+\omcode{code/bachelor-2/11-processor-and-pipelining/listings/datapath.py}{40}{50}{The immediate generator: the
+layouts of \cref{ch:b2:assembly-and-calling-convention} read backwards}
+
+Each line of \code{cycle} is a wire or a box of the figure. Tracing four instructions is a matter of following the
+values: \code{add t2, t0, t1} reads two registers, the ALU adds, the multiplexer passes the ALU result to the write
+port. \code{sw t2, 12(sp)} reads \code{sp} and \code{t2}, the ALU adds 12 to \code{sp} as an address, and the data
+memory stores \code{t2} there; nothing is written to a register. \code{lw t3, 12(sp)} computes the same address,
+reads memory, and writes the loaded word, through the second multiplexer, to \code{t3}. \code{beq t2, t3, same}
+compares the two registers; when they are equal, the PC multiplexer takes $\mathit{pc} + \mathit{imm}$.
+
+\section{Control}\label{sec:b2:processor-and-pipelining:control}
+
+\begin{definition}[Control signal]\label{def:b2:processor-and-pipelining:control}
+A \emph{control signal}\index{control signal} is a wire from the control unit that selects a multiplexer's input,
+enables a write, or chooses an ALU operation. In a \omterm{def:b2:processor-and-pipelining:datapath}{single-cycle processor} the control unit is a combinational
+circuit whose input is the instruction's \omterm{def:b2:assembly-and-calling-convention:format}{opcode} (with \code{funct3} and \code{funct7} for the ALU).
+\end{definition}
+
+\begin{method}[Deriving the control table]\label{met:b2:processor-and-pipelining:control-table}
+For each class of instruction, follow the path its data must take through the datapath, then set each signal:
+\begin{enumerate}
+\item RegWrite is 1 when the instruction has a destination register, else 0 (stores, branches);
+\item ALUSrc is 1 when the ALU's second operand is the immediate (I-type, loads, stores), 0 for a register;
+\item MemRead and MemWrite are 1 only for loads and stores respectively;
+\item MemtoReg is 1 when the written value comes from memory (loads); when RegWrite is 0 it does not matter;
+\item Branch is 1 for the conditional branches; the PC multiplexer takes the target when Branch is 1 and the
+comparison holds;
+\item the ALU operation is ``add'' for addresses, ``compare'' for branches, and read from the funct fields otherwise.
+\end{enumerate}
+A signal that does not matter for an instruction may be set either way; setting it to 0 makes the table simpler,
+never a signal that writes something.
+\end{method}
+
+\omcode{code/bachelor-2/11-processor-and-pipelining/listings/datapath.py}{23}{29}{The control table, one row per
+\omterm{def:b2:assembly-and-calling-convention:format}{opcode}}\label{lst:b2:processor-and-pipelining:control}
+
+\code{alu_control} then picks the operation from \code{funct3}, and \code{funct7} separates \code{add} from
+\code{sub} and \code{srl} from \code{sra}; an \code{addi} has no \code{funct7}, its bit 30 being part of the
+immediate, which is why \code{subi} does not exist. The model's check runs \code{four.S} and compares every
+instruction it covers with \code{rv}:
+
+\omoutput{code/bachelor-2/11-processor-and-pipelining/outputs/run_datapath.txt}{The \omterm{def:b2:processor-and-pipelining:control}{control signals} of each
+instruction, and the agreement with \code{rv}.}\label{out:b2:processor-and-pipelining:datapath}
+
+The chapter's test runs the same check on every program of the chapter: the datapath and \code{rv} agree on every
+instruction of the subset. The \code{ret} that ends \code{four.S} is a \code{jalr}, which needs one more path,
+$\mathit{pc} + 4$ into the \omterm{def:b2:assembly-and-calling-convention:register}{register file}: \cref{exo:b2:processor-and-pipelining:12} adds it.
+
+The trouble with this design is its clock. The cycle must be long enough for the slowest instruction, the load,
+which goes through instruction memory, \omterm{def:b2:assembly-and-calling-convention:register}{register file}, ALU, data memory and back to the \omterm{def:b2:assembly-and-calling-convention:register}{register file}. Suppose those
+take 200, 100, 200, 200 and 100\,ps: the clock period is at least 800\,ps, and an \code{add}, which does not need data
+memory, waits for nothing while its 600\,ps of work end.
+
+\section{The five-stage pipeline}\label{sec:b2:processor-and-pipelining:pipeline}
+
+\begin{definition}[Instruction pipeline, pipeline stage, pipeline register]\label{def:b2:processor-and-pipelining:pipeline}
+An \emph{instruction pipeline}\index{instruction pipeline} splits the execution of an instruction into steps, the
+\emph{pipeline stages}\index{pipeline stage}, each taking one clock cycle, so that several instructions are in
+progress at once, one per stage. Between two stages a \emph{pipeline register}\index{pipeline register} holds what
+the next stage needs: the values computed so far and the \omterm{def:b2:processor-and-pipelining:control}{control signals} of the instruction.
+\end{definition}
+
+The classic RISC pipeline has five stages, cut where the single-cycle datapath has its large blocks: IF (fetch from
+instruction memory), ID (decode and read the registers), EX (the ALU), MEM (data memory) and WB (write the
+register). Its \omterm{def:b2:processor-and-pipelining:pipeline}{pipeline registers} are named after the stages they separate: IF/ID, ID/EX, EX/MEM, MEM/WB. With the
+delays above, the clock period becomes that of the slowest stage, 200\,ps.
+
+\begin{definition}[Latency, throughput]\label{def:b2:processor-and-pipelining:throughput}
+The \emph{latency}\index{latency (of an instruction)} of an instruction is the time from its fetch to its
+completion. The \emph{throughput}\index{throughput} of a processor is the number of instructions it completes per
+unit of time, or per cycle.
+\end{definition}
+
+The pipeline does not lower the \omterm{def:b2:processor-and-pipelining:throughput}{latency}: in five stages of 200\,ps an instruction takes 1000\,ps, more than the
+800\,ps of the single cycle. It raises the \omterm{def:b2:processor-and-pipelining:throughput}{throughput}: in the steady state, one instruction completes every cycle.
+
+\begin{proposition}[Ideal gain of a pipeline]\label{prop:b2:processor-and-pipelining:speedup}
+On a $k$-stage pipeline with no \omterm{def:b2:processor-and-pipelining:hazard}{hazard}, $n$ instructions take $k + n - 1$ cycles. With a cycle $k$ times shorter than
+the unpipelined one, the time of the unpipelined machine divided by that of the pipeline is
+\[
+\frac{nk}{k + n - 1},
+\]
+which tends to $k$ as $n$ grows.
+\end{proposition}
+
+\begin{proof}
+The first instruction leaves the last stage at the end of cycle $k$. Each later one enters the pipeline one cycle
+after the one before it and so leaves one cycle after it: the $n$-th leaves at the end of cycle $k + n - 1$. The
+unpipelined machine takes $n$ cycles of length $k$ (in units of the short cycle), so $nk$. Dividing,
+$nk/(k + n - 1) = k / (1 + (k - 1)/n) \to k$.
+\end{proof}
+
+The hook's five instructions took $5 + 5 - 1 = 9$ cycles. In practice the stages are never perfectly balanced and
+the \omterm{def:b2:processor-and-pipelining:pipeline}{pipeline registers} add their own delay, so the gain stays below $k$ even before the next section's \omterm{def:b2:processor-and-pipelining:hazard}{hazards}.
+
+The chapter's timing model \code{pipeline.py} does not simulate wires: it takes the stream of instructions that
+\code{rv} executed (one \code{Step} per instruction, with the registers it read and wrote) and computes the cycle in
+which each enters each stage, with these rules: an instruction enters ID when the one before it leaves ID, and enters
+EX when its operands are ready.
+
+\omcode{code/bachelor-2/11-processor-and-pipelining/listings/pipeline.py}{36}{55}{The timing model, first part: when
+each instruction reaches each stage}\label{lst:b2:processor-and-pipelining:schedule}
+
+\section{Hazards}\label{sec:b2:processor-and-pipelining:hazards}
+
+\begin{definition}[Hazard: structural, data, control]\label{def:b2:processor-and-pipelining:hazard}
+A \emph{hazard}\index{hazard (pipeline)} is a situation in which the next instruction cannot enter its next stage in
+the next cycle. It is \emph{structural} when two instructions need the same hardware in the same cycle; a \emph{data
+hazard} when an instruction needs a value that an earlier instruction has not yet written; a \emph{control hazard}
+when the processor does not yet know which instruction comes next, after a branch or a jump.
+\end{definition}
+
+Separate instruction and data memories remove the structural \omterm{def:b2:processor-and-pipelining:hazard}{hazard} between IF and MEM, and the \omterm{def:b2:assembly-and-calling-convention:register}{register file} is
+written in the first half of a cycle and read in the second, so WB and ID can share a cycle. Data \omterm{def:b2:processor-and-pipelining:hazard}{hazards} are
+everywhere: \code{add t0, a1, a2} followed by \code{sub t1, t0, a2} reads \code{t0} in ID while \code{add} is still
+in EX. Without any help, \code{sub} must wait in ID until \code{add} has written \code{t0} in WB, two cycles later.
+
+\begin{definition}[Stall, bubble, load-use hazard]\label{def:b2:processor-and-pipelining:stall}
+A \emph{stall}\index{stall} holds an instruction in its stage for a cycle; the stage after it receives a
+\emph{bubble}\index{bubble (pipeline)}, an empty slot that does nothing. A \emph{load-use hazard}\index{load-use
+hazard} is a data \omterm{def:b2:processor-and-pipelining:hazard}{hazard} in which an instruction uses the register that the instruction just before it loads from
+memory.
+\end{definition}
+
+\begin{definition}[Forwarding]\label{def:b2:processor-and-pipelining:forwarding}
+\emph{Forwarding}\index{forwarding} (or \emph{bypassing}\index{bypassing}) sends a result to the ALU's input
+directly from a \omterm{def:b2:processor-and-pipelining:pipeline}{pipeline register}, EX/MEM or MEM/WB, as soon as it has been computed, instead of waiting for it to be
+written to the \omterm{def:b2:assembly-and-calling-convention:register}{register file} and read again.
+\end{definition}
+
+The value \code{add} computes is in EX/MEM at the end of its EX cycle, just in time for \code{sub}'s EX in the next
+one. The \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} unit compares the source registers of the instruction in EX with the destinations of the two
+instructions ahead of it:
+
+\omcode{code/bachelor-2/11-processor-and-pipelining/listings/forwarding.py}{11}{16}{The \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} unit for one
+source register}\label{lst:b2:processor-and-pipelining:forward}
+
+\omoutput[1-8]{code/bachelor-2/11-processor-and-pipelining/outputs/run_forwarding.txt}{Where each operand comes
+from, in a stream where each instruction uses the last
+ones.}\label{out:b2:processor-and-pipelining:forwarding}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, st/.style={draw, fill=omDef!8, minimum width=14mm, minimum height=9mm},
+  pr/.style={draw, fill=black!15, minimum width=2.5mm, minimum height=24mm, inner sep=0pt},
+  fw/.style={-{Stealth[length=1.8mm]}, thick, omThm}]
+\node[st] (if) at (0,0) {IF}; \node[pr] (r1) at (1.15,0) {}; \node[st] (id) at (2.3,0) {ID};
+\node[pr] (r2) at (3.45,0) {}; \node[st, fill=omThm!10, minimum height=14mm] (ex) at (5.0,0) {ALU};
+\node[pr] (r3) at (6.55,0) {}; \node[st] (mem) at (7.7,0) {MEM}; \node[pr] (r4) at (8.85,0) {};
+\node[st] (wb) at (10.0,0) {WB};
+\node[draw, fill=omProp!15, rounded corners=2pt, minimum width=3mm, minimum height=7mm] (ma) at (4.0,0.45) {};
+\node[draw, fill=omProp!15, rounded corners=2pt, minimum width=3mm, minimum height=7mm] (mb) at (4.0,-0.45) {};
+\foreach \r/\n in {r1/{IF/ID}, r2/{ID/EX}, r3/{EX/MEM}, r4/{MEM/WB}} \node[font=\tiny, rotate=90] at (\r) {\n};
+\draw[->] (if) -- (r1); \draw[->] (r1) -- (id); \draw[->] (id) -- (r2);
+\draw[->] (r2.east |- ma) -- (ma); \draw[->] (r2.east |- mb) -- (mb);
+\draw[->] (ma.east) -- (ex.west |- ma.east); \draw[->] (mb.east) -- (ex.west |- mb.east);
+\draw[->] (ex) -- (r3); \draw[->] (r3) -- (mem); \draw[->] (mem) -- (r4); \draw[->] (r4) -- (wb);
+\draw[fw] (r3.north) -- ++(0,0.4) -| ([xshift=-0.6mm]ma.north);
+\draw[fw, dashed] (r4.north) -- ++(0,0.7) -| ([xshift=0.6mm]ma.north);
+\draw[fw] (r3.south) -- ++(0,-0.4) -| ([xshift=-0.6mm]mb.south);
+\draw[fw, dashed] (r4.south) -- ++(0,-0.7) -| ([xshift=0.6mm]mb.south);
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} paths. Each ALU input gets a multiplexer with three sources: the register value
+read in ID, the result in EX/MEM (solid: one instruction ahead), or the result in MEM/WB (dashed: two ahead). The \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} unit drives them with the rule of
+\cref{lst:b2:processor-and-pipelining:forward}.}
+\end{omfigure}
+
+\omterm{def:b2:processor-and-pipelining:forwarding}{Forwarding} cannot help a load: its value comes out of data memory at the end of MEM, one cycle later than an ALU
+result. The model encodes these delays in three numbers: an instruction may be in EX one cycle after an ALU producer,
+two after a load, and three after any producer when there is no \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} (it reads in ID, during the producer's
+WB).
+
+\begin{proposition}[One stall per load-use]\label{prop:b2:processor-and-pipelining:load-use}
+With \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} from EX/MEM and MEM/WB, an instruction that uses the result of a load immediately before it is
+stalled exactly one cycle, and an instruction that uses it two or more instructions later is not stalled by it.
+\end{proposition}
+
+The proof is \cref{exo:b2:processor-and-pipelining:8}. Here are both effects on \code{load_use.S}:
+
+\omoutput[21-31]{code/bachelor-2/11-processor-and-pipelining/outputs/run_pipeline.txt}{With \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding}: two \omterm{def:b2:processor-and-pipelining:stall}{stalls}
+(*), one per load-use, and the stores and adds forwarded. A dot is an instruction waiting in IF because the stage
+ahead is held.}\label{out:b2:processor-and-pipelining:load-use}
+
+\omoutput[9-20]{code/bachelor-2/11-processor-and-pipelining/outputs/run_pipeline.txt}{The same program without
+\omterm{def:b2:processor-and-pipelining:forwarding}{forwarding}: every dependence costs up to two cycles, 23 cycles
+in all.}\label{out:b2:processor-and-pipelining:no-forwarding}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=6.2mm, y=5mm]
+\foreach \c in {1,...,15} \node[text=black!60] at (\c,0.9) {\c};
+\foreach \r/\t in {0/auipc a0, 1/addi a0, 2/lw t0, 3/add t1, 4/lw t2, 5/add t3, 6/sw t3, 7/addi a0, 8/jalr}
+  \node[anchor=east, font=\scriptsize\ttfamily] at (0.4,-\r) {\t};
+\foreach \r/\c/\s in {0/1/F,0/2/D,0/3/X,0/4/M,0/5/W, 1/2/F,1/3/D,1/4/X,1/5/M,1/6/W, 2/3/F,2/4/D,2/5/X,2/6/M,2/7/W,
+  3/4/F,3/5/D,3/7/X,3/8/M,3/9/W, 4/5/F,4/7/D,4/8/X,4/9/M,4/10/W, 5/7/F,5/8/D,5/10/X,5/11/M,5/12/W,
+  6/8/F,6/10/D,6/11/X,6/12/M,6/13/W, 7/10/F,7/11/D,7/12/X,7/13/M,7/14/W, 8/11/F,8/12/D,8/13/X,8/14/M,8/15/W}
+  \node[draw, fill=omDef!10, minimum width=5.6mm, minimum height=4.2mm, inner sep=0pt] at (\c,-\r) {\s};
+\foreach \r/\c in {3/6, 5/9} \node[draw, fill=omThm!25, minimum width=5.6mm, minimum height=4.2mm, inner sep=0pt] at (\c,-\r) {*};
+\foreach \r/\c in {4/6, 6/9} \node[text=black!50] at (\c,-\r) {.};
+\draw[-{Stealth[length=1.6mm]}, thick, omThm] (6,-2.3) -- (7,-2.7);
+\draw[-{Stealth[length=1.6mm]}, thick, omThm] (9,-4.3) -- (10,-4.7);
+\draw[-{Stealth[length=1.6mm]}, thick, omThm] (10.25,-5.3) -- (10.85,-5.75);
+\end{tikzpicture}
+\par\smallskip{\small The diagram of \cref{out:b2:processor-and-pipelining:load-use} drawn from the model's output.
+The arrows are the forwarded values: from MEM/WB to an EX one cycle later (the two loads), and from EX/MEM (the
+\code{add} to the \code{sw}). Each \omterm{def:b2:processor-and-pipelining:stall}{stall} slides every later instruction one column to the right.}
+\end{omfigure}
+
+The second half of the model handles control \omterm{def:b2:processor-and-pipelining:hazard}{hazards}. A conditional branch is resolved in EX, so when the processor
+guesses wrong about it, the two instructions fetched after it are thrown away and fetching restarts after its EX:
+two cycles lost. A \code{jal} knows its target in ID (it is $\mathit{pc} + \mathit{imm}$), one cycle lost; a
+\code{jalr} needs a register, so EX, two cycles.
+
+\omcode{code/bachelor-2/11-processor-and-pipelining/listings/pipeline.py}{56}{69}{The timing model, second part:
+fetching again after a branch or a jump}
+
+\section{Branch prediction}\label{sec:b2:processor-and-pipelining:prediction}
+
+\begin{definition}[Branch prediction, predictor, misprediction penalty]\label{def:b2:processor-and-pipelining:prediction}
+\emph{Branch prediction}\index{branch prediction} lets the processor fetch past a conditional branch before it is
+resolved, along the direction a \emph{branch predictor}\index{branch predictor} guesses. When the guess is wrong,
+the instructions fetched since are discarded (\emph{flushed}); the cycles lost are the \emph{misprediction
+penalty}\index{misprediction penalty}, here 2.
+\end{definition}
+
+The simplest predictor says ``not taken'' for every branch, and is right whenever the branch falls through. Loops
+defeat it: the branch that closes a loop is taken at every turn but the last. A dynamic predictor remembers what
+each branch did. A one-bit predictor predicts that a branch does what it did last time; it is wrong twice per run of
+a loop, at the last turn and again at the first turn of the next run.
+
+\begin{definition}[Saturating counter]\label{def:b2:processor-and-pipelining:counter}
+A two-bit \emph{saturating counter}\index{saturating counter} is a number from 0 to 3, incremented when the branch is
+taken and decremented when it is not, without going past 0 or 3; it predicts ``taken'' when it is 2 or 3.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, s/.style={draw, circle, minimum size=12mm, align=center, fill=omDef!8},
+  t/.style={-{Stealth[length=1.8mm]}, bend left=30}]
+\node[s] (0) at (0,0) {0\\ \tiny not taken}; \node[s] (1) at (2.6,0) {1\\ \tiny not taken};
+\node[s, fill=omThm!12] (2) at (5.2,0) {2\\ \tiny taken}; \node[s, fill=omThm!12] (3) at (7.8,0) {3\\ \tiny taken};
+\draw[t] (0) to node[above] {T} (1); \draw[t] (1) to node[above] {T} (2); \draw[t] (2) to node[above] {T} (3);
+\draw[t] (3) to node[below] {N} (2); \draw[t] (2) to node[below] {N} (1); \draw[t] (1) to node[below] {N} (0);
+\draw[-{Stealth[length=1.8mm]}] (0) edge[loop left] node {N} (0);
+\draw[-{Stealth[length=1.8mm]}] (3) edge[loop right] node {T} (3);
+\end{tikzpicture}
+\par\smallskip{\small The two-bit predictor of one branch as a finite-state machine: T when the branch is taken, N when
+it is not. A single surprise in state 3 or 0 moves the state but not the prediction.}
+\end{omfigure}
+
+\omcode{code/bachelor-2/11-processor-and-pipelining/listings/predictor.py}{29}{42}{A two-bit counter per branch,
+kept by the address of the branch}\label{lst:b2:processor-and-pipelining:two-bit}
+
+\begin{proposition}[Two bits for a loop]\label{prop:b2:processor-and-pipelining:two-bit}
+Let the branch that closes an inner loop of $m \ge 2$ turns be taken $m - 1$ times and then not taken, at each
+execution of the inner loop. Once its counter has reached 3 during one execution, a two-bit counter mispredicts it
+exactly once per later execution of the inner loop; a one-bit predictor mispredicts it twice per execution.
+\end{proposition}
+
+The proof is \cref{exo:b2:processor-and-pipelining:11}. On the branch traces of three programs, the three predictors
+give:
+
+\omoutput[1-5]{code/bachelor-2/11-processor-and-pipelining/outputs/run_branches.txt}{Mispredicted branches out of
+all conditional branches executed.}\label{out:b2:processor-and-pipelining:branches}
+
+On \code{loop_sum.S} the two-bit counter is wrong twice: once at the first turn, while it warms up, once at the exit.
+\code{collatz.S} is harder: its branch on the parity of $n$ follows the data, and there a one-bit predictor does
+worse than predicting ``not taken'' at all, because each change of direction costs it two mistakes in a row. Real
+processors keep thousands of counters, indexed by the address and by the outcomes of the last branches, and predict
+far better than these three; the principle is the same.
+
+\section{The performance equation}\label{sec:b2:processor-and-pipelining:performance}
+
+\begin{definition}[Cycles per instruction, performance equation]\label{def:b2:processor-and-pipelining:cpi}
+The \emph{cycles per instruction}\index{cycles per instruction} (CPI) of a run is its number of cycles divided by its
+number of instructions. The \emph{performance equation}\index{performance equation} gives the time of a run:
+\[
+\text{time} = \text{instructions} \times \text{CPI} \times \text{cycle time}.
+\]
+\end{definition}
+
+Each factor belongs to someone. The number of instructions depends on the program, the compiler and the instruction
+set; the CPI on the pipeline's handling of \omterm{def:b2:processor-and-pipelining:hazard}{hazards} and on how often the program triggers them; the cycle time on the
+circuit. A \omterm{def:b2:processor-and-pipelining:datapath}{single-cycle processor} has a CPI of 1 and a long cycle; the pipeline has a short cycle and a CPI above 1,
+which \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} and prediction bring closer to 1. In the model, for $n$ instructions,
+\[
+\text{cycles} = n + 4 + \text{stall cycles} + \text{cycles lost to branches and jumps},
+\]
+an identity the chapter's test checks on every program and every configuration.
+
+\omoutput[6-10]{code/bachelor-2/11-processor-and-pipelining/outputs/run_branches.txt}{The CPI of three programs in
+three configurations of the pipeline.}\label{out:b2:processor-and-pipelining:cpi}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, ybar, width=0.9\linewidth, height=5.4cm, bar width=10pt, ymin=0, ymax=2.9,
+    symbolic x coords={loop-sum, bubble-sort, collatz}, xtick=data, enlarge x limits=0.25,
+    xticklabels={\texttt{loop\_sum}, \texttt{bubble\_sort}, \texttt{collatz}},
+    ylabel={CPI}, legend style={font=\scriptsize, at={(0.5,1.03)}, anchor=south, legend columns=3},
+    nodes near coords, every node near coord/.append style={font=\tiny, rotate=90, anchor=west}]
+  \addplot[fill=black!25] table[x=program, y=nofwd] {code/bachelor-2/11-processor-and-pipelining/figures/cpi.dat};
+  \addlegendentry{no forwarding}
+  \addplot[fill=omDef!40] table[x=program, y=fwd] {code/bachelor-2/11-processor-and-pipelining/figures/cpi.dat};
+  \addlegendentry{forwarding}
+  \addplot[fill=omThm!50] table[x=program, y=fwdpred] {code/bachelor-2/11-processor-and-pipelining/figures/cpi.dat};
+  \addlegendentry{forwarding + two-bit}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The CPI of \cref{out:b2:processor-and-pipelining:cpi}. \omterm{def:b2:processor-and-pipelining:forwarding}{Forwarding} helps every program; the
+predictor helps the two loops, and hardly \code{collatz.S}, whose branches follow the data.}
+\end{omfigure}
+
+\omimg{book4/mips-r3000a-die.jpg}{0.5\linewidth}{The die of a MIPS R3000A, a 32-bit RISC processor, photographed on its
+wafer. The squares along the edges are the pads wired to the package; the regular blocks are arrays of identical
+cells, and the irregular regions are logic. Photograph: Pauli Rautakorpi, CC BY 3.0.}
+
+\begin{inpractice}[Pipelines today]
+Processors in desktops and phones have much longer pipelines than five stages, issue several instructions per cycle,
+and execute them out of order when their operands are ready; the \omterm{def:b2:processor-and-pipelining:hazard}{hazards} of this chapter remain, handled by more
+\omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} paths, deeper buffers and better predictors. The \omterm{def:b2:processor-and-pipelining:cpi}{performance equation} still decides: a longer pipeline
+shortens the cycle but raises the \omterm{def:b2:processor-and-pipelining:prediction}{misprediction penalty}. When code is slow on a modern machine, the usual suspects
+are mispredicted branches on unpredictable data and loads that miss in the caches, the subject of
+\cref{ch:b2:caches}.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b2:processor-and-pipelining:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:processor-and-pipelining:1}
+How many cycles does the five-stage pipeline take for 8 independent instructions? For $n$? What fraction of the
+stage slots are used in the first case?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:processor-and-pipelining:2}
+A designer copies the row of \code{lw} for \code{sw} and only clears MemRead and MemtoReg, leaving RegWrite at 1.
+What does \code{sw t2, 12(sp)} then do besides storing? (Look at what bits 11 to 7 of an S-type word hold.)
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:processor-and-pipelining:3}
+Give the \omterm{def:b2:processor-and-pipelining:control}{control signals} for \code{lui} and the change it needs in the datapath. Add it to the model and check it
+against \code{rv}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:processor-and-pipelining:4}
+Compute the ratio of \cref{prop:b2:processor-and-pipelining:speedup} for $k = 5$ and $n = 10$, $100$ and
+$1000$, and for $k = 10$, $n = 10$. How many instructions are needed for a five-stage pipeline to reach 90\,\% of
+its limit?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:processor-and-pipelining:5}
+Draw the timing diagram, with \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding}, of \code{exo_diagram.S}, and give its number of cycles.
+\omcode{code/bachelor-2/11-processor-and-pipelining/listings/exo_diagram.S}{2}{6}{One load, used at once}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:processor-and-pipelining:6}
+A \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} unit tests only \code{reg_write and rd == rs}, without \code{rd != 0}. Find a short program whose result
+is then wrong, and say what it computes.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:processor-and-pipelining:7}
+Add to the model a static predictor, ``backward taken, forward not taken'': a branch whose target lies before it is
+predicted taken. Measure it on the three programs against the two-bit counter.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:processor-and-pipelining:8}
+Prove \cref{prop:b2:processor-and-pipelining:load-use} from the model's rules.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:processor-and-pipelining:9}
+Reorder the loop of \code{loop_sum.S} so that no instruction \omterm{def:b2:processor-and-pipelining:stall}{stalls} with \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding}, without changing what it
+computes, and measure the gain in cycles in the model.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:processor-and-pipelining:10}
+In a program, 20\,\% of the instructions are conditional branches, mispredicted 10\,\% of the time with a penalty of 2
+cycles; 25\,\% are loads, 40\,\% of which are followed at once by a user of the loaded value; there are no other
+\omterm{def:b2:processor-and-pipelining:hazard}{hazards}. Compute the CPI. Which improvement is worth more: halving the misprediction rate, or reordering so that half
+of the load-uses disappear?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:processor-and-pipelining:11}
+Prove \cref{prop:b2:processor-and-pipelining:two-bit}. Does it hold for $m = 1$?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:processor-and-pipelining:12}
+Add \code{jal} and \code{jalr} to the single-cycle datapath: the new paths, the new \omterm{def:b2:processor-and-pipelining:control}{control signals}, and the model,
+checked against \code{rv} on a program that calls and returns.
+\end{exercise}
+
+\section{Problem: Making the sort run faster}\label{sec:b2:processor-and-pipelining:problem}
+
+\begin{problem}[{Weekend problem --- Making the sort run faster}]\label{pb:b2:processor-and-pipelining:1}
+A \omterm{def:b2:processor-and-pipelining:stall}{bubble} sort of 16 page counts is run through the pipeline model in its three configurations. The problem counts its
+instructions, then its cycles, and reads the gain of each improvement in the \omterm{def:b2:processor-and-pipelining:cpi}{performance equation}.
+
+\medskip\noindent\textbf{Part I --- Counting instructions.}\par\nopagebreak
+\omcode{code/bachelor-2/11-processor-and-pipelining/listings/bubble_sort.S}{25}{40}{The sort, a leaf}
+\begin{enumerate}
+\item How many instructions does one turn of the inner loop execute, without and with a swap?
+\item How many does one turn of the outer loop execute outside the inner loop?
+\item Prove that \code{sort} executes $\frac{5}{2}n(n-1) + 6(n-1) + 2S + 3$ instructions on $n \ge 1$ values, where
+$S$ is the number of swaps.
+\item Prove that $S$ is the number of inversions of the array, the pairs $i < j$ with $a_i > a_j$.
+\item The array has 65 inversions and \code{main} executes 141 instructions. Check the total against the model's
+count of 964.
+\item How many loads and stores does the run execute?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Without forwarding.}\par\nopagebreak
+\omoutput{code/bachelor-2/11-processor-and-pipelining/outputs/bubble_sort.txt}{The program's output.}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Which instructions of the inner loop depend on the instruction just before them?
+\item Show that without \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding} an instruction one place after its producer waits two cycles, and one two places
+after waits one.
+\item The model counts 552 \omterm{def:b2:processor-and-pipelining:stall}{stall} cycles. Account for them: 120 turns of the inner loop, 16 of the printing loop, 15
+outer turns, and 5 single \omterm{def:b2:processor-and-pipelining:stall}{stalls} of two cycles each.
+\item Under ``not taken'', which branches cost cycles, and how many cycles do they and the jumps lose in all?
+\item Compute the cycles and the CPI, and check them against \cref{out:b2:processor-and-pipelining:cpi}.
+\item Which costs more here, the data \omterm{def:b2:processor-and-pipelining:hazard}{hazards} or the control \omterm{def:b2:processor-and-pipelining:hazard}{hazards}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Forwarding and prediction.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item With \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding}, which dependences still \omterm{def:b2:processor-and-pipelining:stall}{stall}, and how many cycles do they cost?
+\item Propose a change of the inner loop that removes them, and say what else it saves.
+\item The two-bit counters mispredict 60 branches: 41 of \code{bge t4, t3, keep}, 16 of the inner loop's
+\code{bltu}, 2 of the printing loop's, 1 of the outer test. Explain each number.
+\item Why is the swap test the hardest to predict?
+\item How many cycles do branches and jumps now lose?
+\item Compute the cycles and the CPI.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The performance equation.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item With the stage delays of this chapter, the single-cycle clock is 800\,ps and the pipeline's 200\,ps. Compute the
+time of the run on the \omterm{def:b2:processor-and-pipelining:datapath}{single-cycle processor} and on the pipeline in its three configurations.
+\item How many times faster than the \omterm{def:b2:processor-and-pipelining:datapath}{single-cycle processor} is the best pipeline? Why not 4?
+\item Which factor of the \omterm{def:b2:processor-and-pipelining:cpi}{performance equation} does each of the three improvements (pipelining, \omterm{def:b2:processor-and-pipelining:forwarding}{forwarding},
+prediction) act on?
+\item What would the CPI be with a perfect predictor?
+\item And with a perfect predictor and the change of question 14?
+\item State the result of the problem.
+\end{enumerate}
+\end{problem}

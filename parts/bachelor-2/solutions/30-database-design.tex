@@ -1,0 +1,195 @@
+\section*{Chapter \ref{ch:b2:database-design} --- Database Design: Dependencies, Normal Forms and Transactions}
+
+\begin{solution}{exo:b2:database-design:1}
+From $\{a\}$: $a \to b$ adds $b$; no other left side is contained in $\{a, b\}$, so $\{a\}^+ = \{a, b\}$. From $\{b, c\}$:
+$bc \to d$ adds $d$, then $d \to e$ adds $e$; $ea \to c$ needs $a$, so $\{b, c\}^+ = \{b, c, d, e\}$. From $\{c, e\}$ no
+left side applies. For $\{a, d\}$: $a \to b$, $d \to e$, $ea \to c$ give $\{a, b, c, d, e\}$, so it is a superkey; neither
+$\{a\}^+$ nor $\{d\}^+ = \{d, e\}$ is everything, so it is even a candidate key.
+
+\omoutput{code/bachelor-2/30-database-design/outputs/exo_closure.txt}{The three closures.}
+\end{solution}
+
+\begin{solution}{exo:b2:database-design:2}
+\omoutput{code/bachelor-2/30-database-design/outputs/exo_bcnf_step.txt}{A step that splits off too little, and one that
+splits off the closure.}
+The part \{book, title\} is fine, but the other part keeps \emph{book} together with \emph{author}, \emph{genre} and
+\emph{pages}: \emph{book} $\to$ \emph{author genre pages} still violates BCNF there, and a second and third step will be
+needed for the same left side. Splitting off $X^+$ removes every attribute that $X$ determines in one step; what remains
+in the other part are other violations, such as the member's.
+\end{solution}
+
+\begin{solution}{exo:b2:database-design:3}
+\emph{day} and \emph{slot} appear on no right side, so every key contains them; \emph{desk} appears on no left side and is
+determined by \emph{seat}, so no key needs it. \{day, slot\} alone determines nothing more.
+Adding \emph{seat}: \emph{seat day slot} $\to$ \emph{member}, \emph{seat} $\to$ \emph{desk}: everything. Adding
+\emph{member}: \emph{member day slot} $\to$ \emph{seat}, then the rest. Both are minimal, since \{day, slot\} is not a key,
+and any other key would have to contain \emph{seat} or \emph{member}, hence one of these.
+
+\omoutput{code/bachelor-2/30-database-design/outputs/exo_keys.txt}{The two candidate keys.}
+\end{solution}
+
+\begin{solution}{exo:b2:database-design:4}
+Let $K$ be the key. A set $S$ is a superkey exactly when $S \supseteq K$: if $S \supseteq K$, then $S^+ \supseteq K^+ = R$;
+conversely, a superkey contains a candidate key, obtained by removing attributes while it stays a superkey, and $K$ is the
+only one. The supersets of $K$ are $K \cup T$ for the $2^{n-k}$ subsets $T$ of the other $n - k$ attributes.
+\end{solution}
+
+\begin{solution}{exo:b2:database-design:5}
+\omoutput{code/bachelor-2/30-database-design/outputs/exo_heath.txt}{Only the split that keeps the member in both parts is
+\omterm{def:b2:database-design:decomposition}{lossless}.}
+Keeping \emph{member} in both parts: the common attribute determines the whole member part, \emph{member} $\to$
+\emph{first last street postcode}, so Heath's theorem applies. Keeping \emph{street}: the street determines only the
+postcode, not the member, and two members on the same street become interchangeable; the join pairs each loan with
+every member of its borrower's street, inventing rows. Keeping \emph{last}: a last name determines nothing, and the join
+pairs a loan with every member of that name. In the chase, the row of the second part never gets $a$ on the loan's
+attributes, nor the first row on the member's.
+\end{solution}
+
+\begin{solution}{exo:b2:database-design:6}
+As a \omterm{def:b2:database-design:schedule}{schedule}: $r_A(\mathit{available}) = 3$, $r_B(\mathit{available}) = 3$, $w_A(2)$, $w_B(2)$, each statement
+committed on its own. $B$'s write is computed from a value that $A$'s write made stale: a \omterm{def:b2:database-design:anomalies}{lost update}. With
+\code{BEGIN IMMEDIATE}, the read and the write are in one \omterm{def:b2:database-design:transaction}{transaction} that holds the right to write from its start, so
+$B$'s \omterm{def:b2:database-design:transaction}{transaction} cannot begin between $A$'s read and $A$'s write: the \omterm{def:b2:database-design:schedule}{schedule} becomes serial. With
+\code{available = available - 1}, the read and the write are one statement, executed by the database as a whole. To
+check that a copy is available first, the check and the change must be in one unit: either the \omterm{def:b2:database-design:transaction}{transaction} with
+\code{BEGIN IMMEDIATE}, or the condition inside the statement, \code{UPDATE shelf SET available = available - 1 WHERE
+book_id = 7 AND available > 0}, whose count of changed rows says whether the copy was lent.
+\end{solution}
+
+\begin{solution}{exo:b2:database-design:7}
+Split the right sides: \emph{seat day slot} $\to$ \emph{member}, \emph{seat day slot} $\to$ \emph{desk}, \emph{member
+day slot} $\to$ \emph{seat}, \emph{seat} $\to$ \emph{desk}, \emph{member} $\to$ \emph{name}. No left side has an
+extraneous attribute: \{day, slot\} determines nothing, and neither \{seat, day\} nor \{seat, slot\} determines the
+member. The dependency \emph{seat day slot} $\to$ \emph{desk} is redundant, implied by \emph{seat} $\to$ \emph{desk}:
+remove it. The synthesis makes one table per left side: (seat, desk), (seat, day, slot, member), (member, day, slot,
+seat), the same set as the previous one, so kept once, and (member, name). The second contains a key, so no table is
+added.
+
+\omoutput{code/bachelor-2/30-database-design/outputs/exo_synthesis.txt}{The cover, the three tables, and the checks.}
+\end{solution}
+
+\begin{solution}{exo:b2:database-design:8}
+Union: from $X \to Y$, augmentation with $X$ gives $X \to XY$; from $X \to Z$, augmentation with $Y$ gives $XY \to YZ$;
+transitivity gives $X \to YZ$. \omterm{def:b2:database-design:decomposition}{Decomposition}: $YZ \to Y$ by reflexivity, and transitivity with $X \to YZ$ gives $X \to Y$.
+\end{solution}
+
+\begin{solution}{exo:b2:database-design:9}
+\omoutput{code/bachelor-2/30-database-design/outputs/exo_extra_fds.txt}{Dependencies of the data that are not rules.}
+\emph{out} $\to$ \emph{due} is a rule of the library, every loan being due 21 days later: it could be added, and then
+\emph{due} is better not stored at all but computed, since a table (\emph{out}, \emph{due}) would only store the rule.
+\emph{due} $\to$ \emph{out} follows from the same rule. \emph{title} $\to$ \emph{book} is an accident of 80 titles that
+happen to differ; making it a rule would forbid a second copy of a book with another number, or two books with the same
+title, and should not be added.
+\end{solution}
+
+\begin{solution}{exo:b2:database-design:10}
+Let $T$ satisfy $X \to Y$. Every row of $T$ is in the join, since its projections on $XY$ and $XZ$ are in the two
+projections and agree on $X$. Conversely, let $(x, y, z)$ be in the join: there are rows $(x, y, z_1)$ and $(x, y_1, z)$
+in $T$, the first giving the part on $XY$, the second the part on $XZ$. They agree on $X$, so by $X \to Y$ they agree on
+$Y$: $y_1 = y$, and the second row is $(x, y, z)$, which is therefore in $T$.
+\end{solution}
+
+\begin{solution}{exo:b2:database-design:11}
+Let $S_0 = X$ and $S_i$ the set after the $i$-th addition. \emph{Every attribute added is in $X^+$}: by induction,
+$F \vdash X \to S_i$; an addition uses some $V \to W$ of $F$ with $V \subseteq S_i$, so $X \to V$ by \omterm{def:b2:database-design:decomposition}{decomposition},
+$X \to W$ by transitivity, and $X \to S_i W$ by union. By soundness, $S_i \subseteq X^+$. \emph{At the end, $X^+ \subseteq
+S$}: when the loop stops, $S$ contains $X$ and, for every $V \to W$ in $F$ with $V \subseteq S$, also $W$. The two-row table
+of the proof of \cref{thm:b2:database-design:armstrong}, equal on $S$ and different elsewhere, then satisfies $F$; it
+satisfies $X \to A$ for every $A \in X^+$, its rows agree on $X \subseteq S$, so they agree on $A$, and $A \in S$.
+\emph{Time}: a pass that adds nothing ends the loop; every other pass applies at least one dependency, whose right side then
+stays in the set for good, so that it is never applied again; so there are at most $|F| + 1$ passes, each of
+$|F|$ dependencies tested in $O(|R|)$.
+\end{solution}
+
+\begin{solution}{exo:b2:database-design:12}
+\omoutput{code/bachelor-2/30-database-design/outputs/exo_selectivity.txt}{Range queries on 400,000 rows on the author's
+laptop: best of three runs, in milliseconds.}
+The scan reads the whole table in order, at a nearly fixed cost, a little more as more rows are summed. The \omterm{def:b2:database-design:index}{index} finds
+the first matching entry quickly and then, for each matching entry, fetches its row from the table, at a place that has
+nothing to do with the order of \code{out_day}: one random access per row. Its cost grows in proportion to the number of
+rows selected, about 4 ms per 1~\% here, while the scan's grows by less than 20 ms from one end to the other. On this laptop the two meet between 5~\% and 10~\% of the table; beyond, the
+\omterm{def:b2:database-design:index}{index} loses, by a factor of more than ten when everything is selected. A query planner estimates the fraction from
+statistics on the column and chooses the scan for large ranges.
+\end{solution}
+
+\begin{solution}{pb:b2:database-design:1}
+\textbf{1.} Loans: \emph{loan} $\to$ \emph{book member out due ret}. Books: \emph{book} $\to$ \emph{title author genre
+pages}. Members: \emph{member} $\to$ \emph{first last street}. Streets: \emph{street} $\to$ \emph{postcode}.
+
+\textbf{2.} Each of the 400 lines carries its book's title, author, genre and pages: the facts of 80 books are written
+400 times, 320 times more than needed.
+
+\textbf{3.} Update: member 55's move must change 12 lines, as in the hook. Insertion: a new member, or a newly bought
+book, cannot be recorded before a first loan, since every line is a loan. Deletion: removing the loans of a book, say to
+forget old loans, removes the book's title and author with them.
+
+\textbf{4.} The data satisfy it because the 80 titles happen to be different. The library could buy a second book with
+the same title, by another author, and the rule would then be false; a rule describes what must always hold.
+
+\textbf{5.} It holds in the data, and it is a rule of the library: every loan is due 21 days after it goes out. Then
+\emph{due} need not be stored; if it is, a table (\emph{out}, \emph{due}) would be the BCNF answer, which only stores the
+rule. Most designs compute it instead.
+
+\textbf{6.} $\{\mathit{member}\}^+ = \{\mathit{member}, \mathit{first}, \mathit{last}, \mathit{street}, \mathit{postcode}\}$;
+$\{\mathit{street}\}^+ = \{\mathit{street}, \mathit{postcode}\}$.
+
+\textbf{7.} $\{\mathit{loan}\}^+$ contains the book and the member, hence their closures, hence all fourteen attributes.
+\emph{loan} appears on no right side, so every key contains it, and every set containing it is a superkey: \{loan\} is the
+only candidate key.
+
+\textbf{8.} The dependencies with left side \emph{book}, \emph{member} or \emph{street}: those are the three left sides of
+the cover besides \emph{loan}, and none of them is a key.
+
+\textbf{9.} No: \emph{member} $\to$ \emph{street} has a left side that is not a superkey, and \emph{street} is in no
+candidate key, the only one being \{loan\}.
+
+\textbf{10.} Yes for both: in (\emph{member}, \emph{first}, \emph{last}, \emph{street}) the only \omterm{def:b2:database-design:fd}{non-trivial} dependencies
+have \emph{member}, a key, on the left; in (\emph{street}, \emph{postcode}), \emph{street} is the key.
+
+\textbf{11.} \emph{street} $\to$ \emph{postcode} with \emph{street} not a key of that table, whose key is \emph{member}:
+BCNF, and 3NF too since \emph{postcode} is in no key. A move would again have to change two attributes.
+
+\textbf{12.} Three violating left sides before, none after.
+
+\textbf{13.} On \emph{book}: \{book, title, author, genre, pages\} and the rest; the rest on \emph{member}: \{member, first,
+last, street, postcode\} and the loans; the member part on \emph{street}: \{street, postcode\} and \{member, first, last,
+street\}. This is the \omterm{def:b2:database-design:decomposition}{decomposition} tree of the chapter.
+
+\textbf{14.} At each split on $X \to Y$, the part $XY$ and the rest share exactly $X$, and $X \to Y$ holds: Heath's
+theorem applies, with $Z$ the rest minus $X$. The composition of \omterm{def:b2:database-design:decomposition}{lossless} splits is \omterm{def:b2:database-design:decomposition}{lossless}, as in
+\cref{thm:b2:database-design:bcnf-lossless}.
+
+\textbf{15.} Yes: each rule lies inside one table, \emph{loan} $\to \dots$ in the loans, \emph{book} $\to \dots$ in the
+books, \emph{member} $\to$ \emph{first last street} in the members, \emph{street} $\to$ \emph{postcode} in the streets.
+
+\textbf{16.} That the join of the four tables gives back exactly the 400 lines: no line of the wide table is missing
+(\code{lost}) and no line appears that was not there (\code{invented}). A join always contains the original, so the
+second count is the one that tests losslessness; the first guards against an error in the SQL. It also checked that each
+table's key is unique in the data.
+
+\textbf{17.} The streets table is built from the wide table, which only knows the streets of members; one street has no
+member living on it. A real design would load the streets from their own source.
+
+\textbf{18.} From one wide table with three violating dependencies, and 320, 340 and 377 extra copies of facts, to four
+BCNF tables with none; the \omterm{def:b2:database-design:decomposition}{decomposition} is \omterm{def:b2:database-design:decomposition}{lossless} and preserves every rule.
+
+\textbf{19.} Twelve lines in the wide table, one row in the members table. The street is stored once per member, so
+there is nothing to forget.
+
+\textbf{20.} If the program stops between the two writes, the loan is marked returned and the fine is missing, or the
+reverse: \omterm{def:b2:database-design:acid}{atomicity} makes the pair all or nothing, as in \cref{out:b2:database-design:rollback}.
+
+\textbf{21.} A \omterm{def:b2:database-design:anomalies}{lost update}: both desks read one copy available and both lend it. In SQLite, take the write right at the
+start with \code{BEGIN IMMEDIATE}, or make the check part of the update, \code{SET available = available - 1 WHERE
+available > 0}, and look at the count of changed rows.
+
+\textbf{22.} An \omterm{def:b2:database-design:index}{index} on \code{loans(member_id)}. Before it, the plan says \code{SCAN loans}, every row read; after it,
+\code{SEARCH loans USING INDEX loans_member (member_id=?)}.
+
+\textbf{23.} On the laptop of \cref{out:b2:database-design:index-timing}, about a thousand times faster on a million rows.
+It costs the time to build it, close to a second there, the space of a second sorted structure, and some work on each
+insertion or update of a loan.
+
+\textbf{24.} From one wide table with three violating dependencies to four BCNF tables with none, and an \omterm{def:b2:database-design:index}{index} about a
+thousand times faster than a scan on a million loans, as measured on that laptop.
+\end{solution}

@@ -1,0 +1,31 @@
+$ python sqlrun.py explain.sql
+sql> EXPLAIN QUERY PLAN
+...> SELECT loan_id, out_date FROM loans WHERE member_id = 55;
++----+--------+---------+------------+
+| id | parent | notused | detail     |
++----+--------+---------+------------+
+| 2  | 0      | 0       | SCAN loans |
++----+--------+---------+------------+
+(1 row)
+
+sql> CREATE INDEX loans_member ON loans (member_id);
+OK
+
+sql> EXPLAIN QUERY PLAN
+...> SELECT loan_id, out_date FROM loans WHERE member_id = 55;
++----+--------+---------+-----------------------------------------------------+
+| id | parent | notused | detail                                              |
++----+--------+---------+-----------------------------------------------------+
+| 3  | 0      | 0       | SEARCH loans USING INDEX loans_member (member_id=?) |
++----+--------+---------+-----------------------------------------------------+
+(1 row)
+
+sql> EXPLAIN QUERY PLAN
+...> SELECT loan_id, out_date FROM loans WHERE member_id + 0 = 55;
++----+--------+---------+------------+
+| id | parent | notused | detail     |
++----+--------+---------+------------+
+| 2  | 0      | 0       | SCAN loans |
++----+--------+---------+------------+
+(1 row)
+

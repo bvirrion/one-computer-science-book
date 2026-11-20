@@ -1,0 +1,127 @@
+\section*{Chapter \ref{ch:b3:computer-graphics} --- Computer Graphics: From Triangles to Pixels}
+
+\begin{solution}{exo:b3:computer-graphics:1}
+$T(2, 0, 0)(1, 1, 1, 1) = (3, 1, 1, 1)$: the point moves by 2 along $x$. $T(2, 0, 0)(1, 1, 1, 0) = (1, 1, 1, 0)$: the last column is multiplied by $w = 0$, and the direction is unchanged. $R_y(\pi/2)(1, 0, 0, 1) = (\cos\frac\pi2, 0, -\sin\frac\pi2, 1) = (0, 0, -1, 1)$: the $x$ axis turns to the $-z$ axis, which, seen from above with $y$ towards the viewer, is a quarter turn counterclockwise. A test checks the three products.
+\end{solution}
+
+\begin{solution}{exo:b3:computer-graphics:2}
+With $\theta = 60^\circ$, $c = 1/\tan 30^\circ = \sqrt3$. Both points have $y/d = 1/2$, so $y_{\mathrm{NDC}} = \sqrt3/2 \approx 0.866$ for both, and the viewport puts them on the row $(1 - 0.866)/2 \times 240 = 16.1$, inside row 16. They lie on the same line of sight from the camera, the second twice as far and twice as high: the camera cannot tell them apart, only the depth can, and it is $1/19$ for the first and $(21 - 10)/19 = 11/19$ for the second. A test checks both NDC heights.
+\end{solution}
+
+\begin{solution}{exo:b3:computer-graphics:3}
+$E_{ab}(c) = (8 - 0)(8 - 0) - (0 - 0)(0 - 0) = 64 > 0$: clockwise on a screen whose $y$ points down. At $p = (2, 3)$: $E_{ab} = 8 \cdot 3 - 0 = 24$, $E_{bc} = (0 - 8)(3 - 0) - (8 - 0)(2 - 8) = -24 + 48 = 24$, $E_{ca} = (0 - 0)(3 - 8) - (0 - 8)(2 - 0) = 16$. The sum is $64 = E_{ab}(c)$. Each \omterm{def:b3:computer-graphics:raster}{edge function}, divided by 64, is the barycentric coordinate of the vertex opposite its edge: $\lambda_c = 24/64$, $\lambda_a = 24/64$, $\lambda_b = 16/64$, and indeed $\frac38 a + \frac14 b + \frac38 c = (2, 3)$. Each $E$ is affine in $p$; in the sum, the coefficient of $p_x$ is $-(b_y - a_y) - (c_y - b_y) - (a_y - c_y) = 0$, and that of $p_y$ is 0 the same way, so the sum is a constant, its value at $p = c$, where two of the terms vanish: $E_{ab}(c)$. A test checks the four values.
+\end{solution}
+
+\begin{solution}{exo:b3:computer-graphics:4}
+$E_{ab}(c) = 6 \cdot 5 - 1 \cdot 1 = 29$: the triangle is clockwise, with area 14.5. Testing the 56 centres $(i + \frac12, j + \frac12)$ gives
+\begin{center}
+\texttt{.{}.{}.{}.{}.{}.{}.{}.{}}\\ \texttt{.{}\#\#\#.{}.{}.{}.{}}\\ \texttt{.{}\#\#\#\#\#.{}.{}}\\ \texttt{.{}\#\#\#\#.{}.{}.{}}\\ \texttt{.{}.{}\#\#.{}.{}.{}.{}}\\ \texttt{.{}.{}\#.{}.{}.{}.{}.{}}\\ \texttt{.{}.{}.{}.{}.{}.{}.{}.{}}
+\end{center}
+15 pixels for an area of 14.5. The centre $(1.5, 3.5)$ of pixel $(1, 3)$ is on the edge from $c = (2, 6)$ to $a = (1, 1)$, at its middle. That edge runs up the screen, so it is a left edge, and the centre is drawn. A test checks the count, the area and the decision.
+\end{solution}
+
+\begin{solution}{exo:b3:computer-graphics:5}
+$R_y(a)\,T(0, 0, -6)$ moves the cube 6 units away first, then turns it about the camera's vertical axis. Its centre $(0, 0, -6)$ becomes $(-6\sin a, 0, -6\cos a)$: $(0, 0, -6)$ at $a = 0$, $(-4.24, 0, -4.24)$ at $\pi/4$, $(-6, 0, 0)$ at $\pi/2$, level with the camera, and $(0, 0, 6)$ at $\pi$, behind it. The viewer sees the cube swing off to the left and disappear, coming back a turn later. With $T(0, 0, -6)\,R_y(a)$ the centre stays at $(0, 0, -6)$ and the cube spins in place. The rule: the factor written last acts first, so an object is turned about its own centre, then placed, $M = T R$. \code{exercises/ex5_drift.c} prints both centres for five angles, and a test checks the one at $\pi/4$.
+\end{solution}
+
+\begin{solution}{exo:b3:computer-graphics:6}
+\code{exercises/ex6_cull.c} lists the six faces by their corners, splits each into two triangles, and keeps a triangle when its projected \omterm{def:b3:computer-graphics:raster}{edge function} is negative. A face turned towards the camera is seen from outside, counterclockwise, which on a screen whose $y$ points down gives $E < 0$; a back face is seen from inside, clockwise. Of the 12 triangles, 6 are kept: three faces. A test checks, for 24 orientations of the cube, that the kept triangles are exactly those of the faces whose outward normal points towards the camera. For one convex object culling is enough: a line of sight from the eye enters a convex body once, through one front face, so the front faces never cover each other and can be drawn in any order. With two objects, a front face of the nearer one can hide a front face of the other, and the order matters again: the \omterm{def:b3:computer-graphics:visibility}{depth buffer} is still needed. It is also needed for one object that is not convex, such as a torus, whose front faces can hide each other.
+\end{solution}
+
+\begin{solution}{exo:b3:computer-graphics:7}
+With $n = 1$ and $f = 20$ the NDC depth is $(21 - 40/d)/19$: $-1$ at $d = 1$, $1/19 \approx 0.053$ at $d = 2$, $17/19 \approx 0.895$ at $d = 10$ and $1$ at $d = 20$. The far half of the frustum keeps only $1 - 17/19 = 2/19$ of the range of length 2, that is $1/19 \approx 5.3\,\%$, while the distances from 1 to 2 use more than half of it. The depth changes at the rate $40/(19 d^2)$, so a buffer with a fixed number of levels separates surfaces finely near the camera and coarsely far away: one unit of distance at $d = 15$ moves the depth 100 times less than at $d = 1.5$, and two surfaces close together far away can round to the same stored depth and flicker in front of each other. The rate is proportional to $n$ for $n$ small against $f$: bringing the near plane from 1 to 0.1 divides the precision near the far plane by about ten. The near plane should be as far as the scene allows. A test checks the four depths.
+\end{solution}
+
+\begin{solution}{exo:b3:computer-graphics:8}
+Facts used: $\mathbf r = 2(\mathbf n \cdot \mathbf L)\mathbf n - \mathbf L$, the specular term is largest when $\mathbf r = \mathbf V$. If $\mathbf r = \mathbf V$ then $\mathbf L + \mathbf V = 2(\mathbf n \cdot \mathbf L)\mathbf n$, so $\mathbf n$ is the unit vector $\mathbf h$ of $\mathbf L + \mathbf V$: the normal must bisect the light and the view. Here $\mathbf L = (-1, 1, 1)/\sqrt3$, $\mathbf L + \mathbf V = (-0.577, 0.577, 1.577)$ of length 1.776, and $\mathbf h = (-0.3251, 0.3251, 0.8881)$. On a sphere of radius 70 centred at $(240, 80)$ the point of normal $\mathbf h$ is at $x = 240 - 70 \times 0.3251 = 217.25$ and $y = 80 - 22.75 = 57.25$, with $y$ downwards; a pixel's centre is its index plus $\frac12$, so the pixel is $(216.75, 56.75)$, which the program prints rounded as $(216.7, 56.7)$, and its brightest pixel is $(217, 57)$. The Gouraud half computes the light only at its vertices, at multiples of $22.5^\circ$ of longitude and latitude, while $\mathbf h$ is at about $-20^\circ$ of longitude and $19^\circ$ of latitude: no vertex is at the highlight, and with the shininess 40 the specular term falls fast away from it, so the interpolated colours stay lower, 0.806 at best, and the peak is spread along the triangles' edges. A test checks $\mathbf h$ and the pixel.
+\end{solution}
+
+\begin{solution}{exo:b3:computer-graphics:9}
+Facts used: $|\mathbf d| = 1$. $|o + t\mathbf d - c|^2 = |\mathbf v + t\mathbf d|^2 = t^2 + 2t\,\mathbf v \cdot \mathbf d + |\mathbf v|^2$, with $\mathbf v = o - c$; equal to $r^2$, this is $t^2 + 2bt + (|\mathbf v|^2 - r^2) = 0$. For the first ray, $\mathbf v = (0, 0, 5)$, $b = -5$, $|\mathbf v|^2 - r^2 = 24$, and $t = 5 \pm \sqrt{25 - 24} = 4$ or 6: the ray enters at $t = 4$, the front of the sphere, and leaves at 6. From the centre, $\mathbf v = 0$, $b = 0$, and $t = \pm1$: the only positive root, 1, is where the ray leaves the sphere, which is why \code{hit_sphere} tries the larger root when the smaller is not positive. A ray from the origin at the angle $\alpha$ from the $-z$ axis passes at the distance $5\sin\alpha$ from the centre; it stops meeting the sphere when that distance exceeds the radius, at $\sin\alpha = 1/5$, $\alpha \approx 11.54^\circ$. A test checks the two roots and that rays just inside and just outside that angle hit and miss.
+\end{solution}
+
+\begin{solution}{exo:b3:computer-graphics:10}
+Facts used: $E_{ba} = -E_{ab}$; a triangle $(a, b, c)$ is clockwise when $E_{ab}(c) > 0$; \code{top_left}$(a, b)$ holds when $a_y = b_y$ and $b_x > a_x$, or when $b_y < a_y$.
+
+Let the triangles be $(p, q, r)$ and $(q, p, s)$ with $r$ and $s$ on opposite sides of the line $pq$, $E_{pq}(r) > 0 > E_{pq}(s)$. The first is clockwise as written. For the second, $E_{qp}(s) = -E_{pq}(s) > 0$, so it is clockwise as $(q, p, s)$: the two triangles run along the shared edge in opposite directions. Let $x$ be a centre on $pq$ strictly between $p$ and $q$. Then $E_{pq}(x) = E_{qp}(x) = 0$. The two other edges of the first triangle meet the line $pq$ only at $p$ and at $q$, so their \omterm{def:b3:computer-graphics:raster}{edge functions} are not zero at $x$; since $x$ is on the closed triangle, they are positive. The same holds for the second triangle. So the first triangle draws $x$ exactly when \code{top_left}$(p, q)$, and the second exactly when \code{top_left}$(q, p)$. If $p_y \neq q_y$, exactly one of $q_y < p_y$ and $p_y < q_y$ holds, and the horizontal clause is false for both. If $p_y = q_y$, the clause $b_y < a_y$ is false for both, and exactly one of $q_x > p_x$ and $p_x > q_x$ holds, since $p \neq q$. In every case exactly one of the two tests is true, and $x$ is drawn exactly once. \qed
+\end{solution}
+
+\begin{solution}{exo:b3:computer-graphics:11}
+Facts used: \omterm{def:b3:computer-graphics:projection}{perspective projection} gives $x = k_x x_c/d$ and $y = k_y y_c/d$ with $d = -z_c$; the NDC depth is $A - B/d$ with constants $A$, $B$.
+
+A flat triangle lies in a plane $\alpha x_c + \beta y_c + \gamma z_c = \delta$ of camera coordinates; if the plane does not pass through the eye, $\delta \neq 0$. Dividing by $d$ and writing $x_c/d = x/k_x$, $y_c/d = y/k_y$, $z_c/d = -1$ gives
+\[
+\frac{\alpha}{k_x}\,x + \frac{\beta}{k_y}\,y - \gamma = \frac{\delta}{d},
+\]
+so $1/d$ is an affine function of the screen position $(x, y)$ over the triangle. The NDC depth $A - B/d$ is then affine in $(x, y)$ too, and an affine function is reproduced exactly by barycentric interpolation of its values at the corners: the \omterm{def:b3:computer-graphics:visibility}{depth buffer} of \code{zbuffer.c}, which interpolates in screen space, computes the exact depth. The distance $d = \delta/(\text{affine})$ is not affine unless the affine function is constant, that is unless the triangle faces the camera squarely ($\alpha = \beta = 0$). A colour or a texture coordinate given at the corners varies linearly in camera space, so like $d$ it is not affine on the screen: interpolated there it bends a slanted checkerboard. The fix is to interpolate $u/d$ and $1/d$, both affine on the screen, and divide one by the other at each pixel, which is called perspective-correct interpolation. In \code{shade.c} the mesh is projected straight, without perspective, so its interpolation is exact.
+\end{solution}
+
+\begin{solution}{exo:b3:computer-graphics:12}
+\code{exercises/ex12_reflect.c} traces the scene with each depth limit, and a test checks every count:
+\begin{center}
+\begin{tabular}{rrrrr}
+\hline
+limit & primary & reflected & shadow & total \\
+\hline
+0 & 76{,}800 & 0 & 45{,}170 & 121{,}970 \\
+1 & 76{,}800 & 12{,}421 & 50{,}881 & 140{,}102 \\
+2 & 76{,}800 & 13{,}333 & 51{,}343 & 141{,}476 \\
+3 & 76{,}800 & 13{,}478 & 51{,}422 & 141{,}700 \\
+4 & 76{,}800 & 13{,}498 & 51{,}435 & 141{,}733 \\
+\hline
+\end{tabular}
+\end{center}
+At limit 1 every \omterm{def:b3:computer-graphics:rays}{primary ray} that ends on a sphere is reflected once: $3{,}686 + 2{,}661 + 6{,}074 = 12{,}421$, the floor being no mirror. Of these reflected rays, $50{,}881 - 45{,}170 = 5{,}711$ meet a surface and send a \omterm{def:b3:computer-graphics:rays}{shadow ray}; the other 6,710 go to the sky. Each further level adds only the rays that meet a sphere again: 912, then 145, then 20. Three spheres apart from each other face each other over small solid angles, so a reflected ray rarely meets another one. Each bounce also weighs its colour by the mirror factor 0.3, so the fourth level changes a pixel by at most $0.3^4 < 1\,\%$. A limit is needed because nothing else stops the recursion: two mirrors facing each other send a ray along the line through their centres back and forth for ever.
+
+\omimg{book5/b3-31-reflect.png}{0.6\linewidth}{The scene traced with the depth limit 3: each sphere shows its neighbours and the floor.}
+\end{solution}
+
+\begin{solution}{pb:b3:computer-graphics:1}
+\textbf{1.} A pixel is drawn when its centre is in the triangle; the centres form a grid with one point per unit of area, so the count is the area plus an error from the pixels that the boundary cuts, each wrong by less than one pixel. For this triangle, whose perimeter is about 70 pixels, the error can reach the order of the perimeter in the worst case, but errors of opposite signs along the boundary cancel, and here the count, 226, is within 0.26 of the area.
+
+\textbf{2.} So that every \omterm{def:b3:computer-graphics:raster}{edge function} is computed exactly: a centre is then exactly on an edge, or exactly on one side. With floating-point numbers, the two triangles of a shared edge compute the \omterm{def:b3:computer-graphics:raster}{edge function} with their vertices in another order, and rounding can put a centre on the edge inside both, or inside neither, which leaves a doubled pixel or a hole.
+
+\textbf{3.} The diagonal runs from centre $(1, 1)$ to centre $(10, 7)$, a step of $(9, 6) = 3 \times (3, 2)$: it passes through the centres of pixels $(1, 1)$, $(4, 3)$, $(7, 5)$ and $(10, 7)$, and through no other. The naive test draws a centre with $E = 0$ in both triangles.
+
+\textbf{4.} The column $i = 10$ and the row $j = 7$: 7 plus 9, 16 pixels, since the naive test draws the square's right and bottom edges, which go through centres. In a mesh of such squares, the square to the right draws the column again on its left edge, and the square below draws the row on its top edge.
+
+\textbf{5.} With $p = (1, 1)$, $q = (10, 1)$, $r = (10, 7)$, $s = (1, 7)$ in pixel centres and $y$ down, both triangles $(p, q, r)$ and $(p, r, s)$ are clockwise, with $E = 54$. In the first, $p \to q$ runs right, horizontal: top; $q \to r$ runs down: neither; $r \to p$ runs up: left. In the second, $p \to r$ runs down: neither; $r \to s$ runs left, horizontal: neither; $s \to p$ runs up: left. So the diagonal belongs to triangle 1, as the grid shows at $(4, 3)$ and $(7, 5)$; the top row and the left column are drawn, the bottom row and the right column are not.
+
+\textbf{6.} $I = 8 \times 5 = 40$ centres strictly inside, $B = 2(9 + 6) = 30$ on the boundary, and $I + B/2 - 1 = 40 + 15 - 1 = 54 = 9 \times 6$. A test checks it.
+
+\textbf{7.} $26 + 4/2 - 1 = 27$, the area.
+
+\textbf{8.} The naive test draws the centres of the closed triangle: the $I$ inside and the $B$ on the boundary. Fourth row: $74 + 24 = 98$.
+
+\textbf{9.} The triangle $(12, 10)$, $(22, 13)$, $(3, 13)$ is clockwise. Its bottom edge, from $(22, 13)$ to $(3, 13)$, carries 20 centres, its two ends included; its edge from $(3, 13)$ to $(12, 10)$, a step of $3 \times (3, -1)$, carries 2 more strictly between its ends; the corner $(12, 10)$ is the 23rd. The bottom edge runs left: it is not a top edge, and its 20 centres are refused. The edge from $(3, 13)$ up to $(12, 10)$ is a left edge, and its 2 inner centres are kept. The corner $(12, 10)$ is also on the edge to $(22, 13)$, which runs down, and is refused. So $18 + 2 = 20$. A test checks the split.
+
+\textbf{10.} The \omterm{def:b3:computer-graphics:raster}{top-left rule} draws every centre strictly inside, all with $E > 0$, and some of those on the boundary, so its count is between $I$ and $I + B$. The area $I + B/2 - 1$ is between them as well, and the count can fall on either side: the third and fifth rows are above, 40 against 39.5 and 60 against 58; the second, fourth and sixth are below.
+
+\textbf{11.} $B = 3$ gives $A = I + 1/2$: 39.5. A corner is drawn only if both edges through it are top or left, and at most one corner of a triangle is, the one where its two top-left edges meet; so the count is $I$ or $I + 1$, here 40, half a pixel from the area.
+
+\textbf{12.} A single triangle may legitimately draw anything between $I$ and $I + B$; what makes a rule right is a property of a mesh: every pixel of the covered region drawn exactly once. Only the count over a mesh, compared with the region, tests that.
+
+\textbf{13.} A grid of $(4 + s) \times (3 + s)$ cells for the seed $s$, whose outer vertices lie on the image's border; each inner vertex is either moved by up to 2.5 pixels in each direction or, one time in three, put exactly on a pixel centre; each cell is cut along one of its two diagonals at random. The vertices on centres make many edges pass exactly through centres, and some centres be vertices, the cases where a rule can fail: random vertices alone would almost never put a centre on an edge.
+
+\textbf{14.} The triangles cover the rectangle $[0, 64] \times [0, 48]$ without overlapping, and no centre lies on the outer border, which runs along pixel boundaries. By Questions 19 to 21, each of the 3,072 centres is drawn by exactly one triangle.
+
+\textbf{15.} A centre on a shared edge is drawn twice, but a centre on a vertex is drawn by every triangle that has that vertex as a corner, often four to six. The $87$ extra draws are $66$ pixels drawn twice or more, plus $21$ more draws on pixels drawn three times or more.
+
+\textbf{16.} The closed triangles cover the whole rectangle, and the naive test draws every centre of its closed triangle: each centre is in at least one.
+
+\textbf{17.} Such a rule draws no centre on an edge: every centre on a shared edge or a vertex would be drawn by nobody, leaving lines of background pixels along the edges that pass through centres, cracks in the surface.
+
+\textbf{18.} With blending, the colour of a half-transparent surface is mixed with what is behind it once per draw. A pixel drawn twice is mixed twice, and shows as a darker or more opaque seam along the edges. An opaque surface drawn twice at the same depth gives the same colour twice, and the error does not show.
+
+\textbf{19.} This is Exercise~\ref{exo:b3:computer-graphics:10}: the two triangles run along the edge in opposite directions, and \code{top_left} is true for exactly one direction. The other two \omterm{def:b3:computer-graphics:raster}{edge functions} of each triangle are positive there.
+
+\textbf{20.} A centre strictly inside a triangle $T$ has its three \omterm{def:b3:computer-graphics:raster}{edge functions} positive, and $T$ draws it. Another triangle $T'$ of the mesh cannot contain it even in its closure: a small disc around the centre lies inside $T$, and if the centre were in the closed $T'$, the disc would contain inner points of $T'$, so the two triangles would overlap.
+
+\textbf{21.} The table shows no pixel drawn twice and none missed in five meshes where a third of the inner vertices are centres: the rule works at vertices too. A proof: the test of \code{inside} is the same as asking whether the point moved by $(\varepsilon, \varepsilon^2)$, for a small enough $\varepsilon > 0$, is strictly inside. On an edge with $E = 0$, the move changes $E$ by $(b_x - a_x)\varepsilon^2 - (b_y - a_y)\varepsilon$; if $b_y \neq a_y$, the first-order term decides, and it is positive when $b_y < a_y$, a left edge; if $b_y = a_y$, it is positive when $b_x > a_x$, a top edge. The moved point lies on none of the finitely many edges, so it is strictly inside exactly one triangle, the one that draws the centre.
+
+\textbf{22.} On a line, cut the pixels at the points $x_0 < x_1 < x_2$: the piece $[x_0, x_1)$ takes its left end and not its right one, and the next piece $[x_1, x_2)$ takes $x_1$. Every point belongs to exactly one piece. The \omterm{def:b3:computer-graphics:raster}{top-left rule} is the same choice in the plane: each triangle owns its top and left boundary, and leaves its bottom and right boundary to its neighbours.
+
+\textbf{23.} So that the result does not depend on the order of drawing: each pixel is decided by its own centre and the triangle's edges only, so the triangles can be drawn in any order, and the pixels tested all at once, as Pineda's parallel test does.
+
+\textbf{24.} One triangle covers its centres strictly inside and part of its boundary: between $I$ and $I + B$, close to the area but off by up to the boundary's share, 20 against 28.5 in the worst row. A mesh that covers the image draws exactly the $3{,}072$ pixels of the image under the \omterm{def:b3:computer-graphics:raster}{top-left rule}, with no overlap and no gap, in all five meshes; the naive rule never leaves a gap but draws from 3,139 to 3,270 pixels, with 32 to 112 pixels drawn more than once.
+\end{solution}

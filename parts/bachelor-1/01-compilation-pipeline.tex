@@ -1,0 +1,495 @@
+% Book 3, Year 1, chapter 1 -- the compilation pipeline (C17, gcc).
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 1.
+\chapter{From Source Code to a Running Program}\label{ch:b1:compilation-pipeline}
+
+Type a short program into a file and run it with Python: the command \code{python hello_python.py} runs it
+at once. Type the same program in C into \code{hello.c}, and nothing runs until another command,
+\code{gcc hello.c -o hello}, has turned the text into a new file; only that file can be run. Between the text
+you write and the program that runs there are four separate tools, three kinds of file and one layout of
+memory. This chapter opens each of them, on this year's working language, C, and its \omterm{def:b1:compilation-pipeline:compiler}{compiler}, \code{gcc}.
+
+\begin{recall}
+A program is a text in a programming language, and the operating system starts it, gives it memory and
+stops it. The processor only executes \emph{machine language}: numbered instructions stored in memory, as
+the toy machine of the school volumes showed. An \emph{assembly language} names those instructions with
+words and labels. You have also written Python: an \omterm{def:b1:compilation-pipeline:interpreter}{interpreter} reads the text and carries it out.
+\end{recall}
+
+\section{The four stages}\label{sec:b1:compilation-pipeline:stages}
+
+Here is the C program we follow through every stage. It prints one line, using two \emph{\omterm{def:b1:compilation-pipeline:source-file}{macros}} written with
+\texttt{\#define}.
+
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/hello.c}{2}{12}{A first C program}\label{lst:b1:compilation-pipeline:hello}
+
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/hello.txt}{One command builds the program, a second runs it.}
+
+\begin{definition}[Source file, preprocessor]\label{def:b1:compilation-pipeline:source-file}\label{def:b1:compilation-pipeline:preprocessor}
+A \emph{source file}\index{source file} is a text file written in a programming language, here a \code{.c} file
+of C. The \emph{preprocessor}\index{preprocessor} is the first tool of a C build: it copies the source file,
+replacing every \texttt{\#include} line by the text of the file it names, every use of a \emph{macro}\index{macro
+(C)} (a name defined by \texttt{\#define}) by the text it stands for, and deleting comments. Its output is still C,
+with no \texttt{\#} line left except line markers.
+\end{definition}
+
+\begin{definition}[Compiler, object file, linker, executable]\label{def:b1:compilation-pipeline:compiler}\label{def:b1:compilation-pipeline:object-file}\label{def:b1:compilation-pipeline:linker}\label{def:b1:compilation-pipeline:executable}
+A \emph{compiler}\index{compiler} translates a program from one language into another, here from C into the
+assembly language of the processor; the translation is called \emph{compilation}\index{compilation}. The
+\emph{assembler} then encodes the assembly as machine code in an \emph{object file}\index{object file}: machine
+code with holes, together with a table of the names it defines and the names it uses. Each name in that table
+is a \emph{symbol}\index{symbol (of an object file)}. The \emph{linker}\index{linker} combines object files and
+libraries into one \emph{executable file}\index{executable file}, a file the operating system can load and
+start; this step is \emph{linking}\index{linking}, and a used symbol that no input defines is an
+\emph{undefined reference}\index{undefined reference}.
+\end{definition}
+
+The command \code{gcc} runs all four tools in turn and deletes the intermediate files. Three options stop it
+early and keep them: \code{-E} after preprocessing, \code{-S} after compiling, \code{-c} after assembling. The
+session below takes \cref{lst:b1:compilation-pipeline:hello} through each stage by hand.
+
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/stages.txt}{The four stages, one at a
+time.}\label{out:b1:compilation-pipeline:stages}
+
+Read it from the top. The twelve lines of \code{hello.c} became 750 after preprocessing: \texttt{\#include
+<stdio.h>} pulled in the declarations of the standard input--output library, and the line that interests us is
+now line 748, with \code{GREETING} replaced by the string and \code{SQUARE(n)} by \code{((n) * (n))}. The
+\omterm{def:b1:compilation-pipeline:compiler}{compiler}, asked for optimised code (\code{-O2}), then went further than the text: there is no multiplication in
+the assembly, only an instruction \code{movl} that loads the constant 49 into a register, because \code{n} is always 7.
+On this system \code{printf} also became \code{__printf_chk}, a checking variant that the system's \omterm{def:b1:compilation-pipeline:compiler}{compiler}
+substitutes when it can see the format string; the first instruction, \code{endbr64}, marks a legal target for
+indirect jumps. You will not write x86-64 assembly in this book (the Year 2 volume writes RISC-V assembly), but
+reading the \omterm{def:b1:compilation-pipeline:compiler}{compiler}'s output is a skill: it tells you what your program really asks the machine to do.
+
+The \omterm{def:b1:compilation-pipeline:compiler}{object file} \code{hello.o} is in the ELF format (Executable and Linkable Format), the format of \omterm{def:b1:compilation-pipeline:compiler}{object files}
+and executables on Linux. Its \omterm{def:b1:compilation-pipeline:compiler}{symbol} table, printed by \code{nm}, shows a \code{T} for \code{main} (code,
+\emph{text} in the old vocabulary, defined here), two \code{r} for the two strings (read-only data, local to
+the file), and a \code{U} for \code{__printf_chk}: used, but defined somewhere else. Only after \omterm{def:b1:compilation-pipeline:compiler}{linking} with the
+C library does \code{./hello} run.
+
+\begin{omfigure}
+\begin{tikzpicture}[
+  file/.style={draw, rounded corners=2pt, fill=omCode!8, minimum width=16mm, minimum height=8mm,
+               font=\small\ttfamily, align=center},
+  tool/.style={font=\scriptsize\itshape},
+  what/.style={font=\scriptsize, align=center, anchor=north},
+  >={Stealth[length=2mm]}]
+\foreach \n/\t/\x in {c/hello.c/0, i/hello.i/3.2, s/hello.s/6.4, o/hello.o/9.6, x/hello/12.8}
+  \node[file] (\n) at (\x,0) {\t};
+\draw[->] (c) -- node[below=1pt, font=\scriptsize\ttfamily] {-E} (i);
+\draw[->] (i) -- node[below=1pt, font=\scriptsize\ttfamily] {-S} (s);
+\draw[->] (s) -- node[below=1pt, font=\scriptsize\ttfamily] {-c} (o);
+\draw[->] (o) -- (x);
+\node[tool] at (1.6,0.65) {preprocessor};
+\node[tool] at (4.8,0.65) {compiler};
+\node[tool] at (8.0,0.65) {assembler};
+\node[tool] at (11.2,0.65) {linker};
+\node[what] at (0,-0.55) {C text};
+\node[what] at (3.2,-0.55) {C text,\\expanded};
+\node[what] at (6.4,-0.55) {assembly};
+\node[what] at (9.6,-0.55) {machine code\\with holes};
+\node[file, fill=white] (lib) at (8.0,-2.3) {C library};
+\draw[->] (lib.east) -- (11.2,-2.3) -- (11.2,-0.08);
+\node[draw, rounded corners=6pt, fill=omThm!10, minimum width=19mm, minimum height=8mm,
+      font=\small, align=center] (p) at (12.8,-2.3) {running\\[-2pt]program};
+\draw[->] (x) -- node[right, tool] {loaded} (p);
+\end{tikzpicture}
+\par\smallskip{\small The four stages of a C build. Each arrow is a separate program; \code{gcc} runs them in
+turn, and the options \code{-E}, \code{-S} and \code{-c} stop it after the first, second or third. The
+\omterm{def:b1:compilation-pipeline:compiler}{linker} fills the holes left in the \omterm{def:b1:compilation-pipeline:compiler}{object file} with the addresses of the library's code.}
+\end{omfigure}
+
+\begin{history}[C and Unix]
+% ledger: b1:c-years, b1:c-bcpl, b1:c-unix-1973, b1:c17
+C came into being between 1969 and 1973 at Bell Labs, alongside the first versions of the Unix operating system,
+its most creative year being 1972. It descends from a language called B, itself derived from BCPL, and by early
+1973 it was strong enough for the Unix kernel to be rewritten in C, for the PDP-11 minicomputer, during that
+summer. An operating system written in a language that a \omterm{def:b1:compilation-pipeline:compiler}{compiler} could carry to other processors was new, and
+it is why C and Unix spread together. The language is now an international standard; this book follows the
+2018 edition, C17 (ISO/IEC 9899:2018), which the \code{-std=c17} option asks for.
+\end{history}
+
+\omimg{book3/pdp-11-40.jpg}{0.26\linewidth}{A PDP-11/40 minicomputer in the Technisches Museum Wien: the processor,
+its front panel of switches and lights, and its tape drives in one cabinet. Photograph: Jeff Keyzer, CC BY-SA 2.0.}
+
+\section{Object files, symbols and the linker}\label{sec:b1:compilation-pipeline:linker}
+
+A program of a few thousand lines is never one file. It is split into \emph{modules}: a module is a pair of
+files, a \emph{header} (\code{.h}) that declares what the module offers, and a \code{.c} file that defines it.
+\cref{ch:b1:c-modules-make-tests} develops the method; here is the smallest example, a module that
+squares numbers and counts how often it was asked.
+
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/square.h}{2}{8}{The module's header: what it offers}\label{lst:b1:compilation-pipeline:square-h}
+
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/square.c}{2}{10}{The module's implementation}\label{lst:b1:compilation-pipeline:square-c}
+
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/main.c}{2}{13}{A program that uses the module}\label{lst:b1:compilation-pipeline:main}
+
+The header says that a function \code{square} exists and takes and returns a \code{long}; it says that an
+\code{int} called \code{square_calls} exists somewhere (\code{extern}). That is all \code{main.c} needs to be
+compiled on its own: the \omterm{def:b1:compilation-pipeline:compiler}{compiler} checks every call against the declaration and leaves a hole where the
+address of \code{square} will go. Each \code{.c} file is compiled separately into its \omterm{def:b1:compilation-pipeline:compiler}{object file}, and the
+\omterm{def:b1:compilation-pipeline:compiler}{linker} then matches every \code{U} of one file with a \code{T} (code) or \code{B}, \code{D} (data) of another.
+
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/linking.txt}{Separate \omterm{def:b1:compilation-pipeline:compiler}{compilation}, a successful link and
+two failed ones.}\label{out:b1:compilation-pipeline:linking}
+
+\begin{example}[Two link errors]\label{ex:b1:compilation-pipeline:link-errors}
+In the session, \code{gcc main.o -o broken} forgets \code{square.o}: \code{main.o} uses \code{square} and
+\code{square_calls} and nobody defines them, so the \omterm{def:b1:compilation-pipeline:compiler}{linker} reports two \omterm{def:b1:compilation-pipeline:compiler}{undefined references} (and two warnings
+that follow from the same missing data \omterm{def:b1:compilation-pipeline:compiler}{symbol}). The last command links \code{twice.o}, which defines a second
+\code{square}: now the \omterm{def:b1:compilation-pipeline:compiler}{symbol} is defined twice and the \omterm{def:b1:compilation-pipeline:compiler}{linker} cannot choose. Note that the \omterm{def:b1:compilation-pipeline:compiler}{compiler} accepted
+every file: each error belongs to the link, where the files meet.
+\end{example}
+
+\begin{proposition}[When a link succeeds]\label{prop:b1:compilation-pipeline:link}
+Consider \omterm{def:b1:compilation-pipeline:compiler}{object files} in which every \omterm{def:b1:compilation-pipeline:compiler}{symbol} is either defined (\code{T}, \code{D}, \code{B}, \code{R}) or used
+(\code{U}), and ignore libraries. \omterm{def:b1:compilation-pipeline:compiler}{Linking} them succeeds if and only if every \omterm{def:b1:compilation-pipeline:compiler}{symbol} used by one of the files is
+defined by exactly one of them, and no \omterm{def:b1:compilation-pipeline:compiler}{symbol} is defined by two of them.
+\end{proposition}
+
+\begin{proof}
+The \omterm{def:b1:compilation-pipeline:compiler}{linker} builds one table from all the definitions. If a name is defined twice, it reports a multiple
+definition; if a used name is in no definition, it reports an \omterm{def:b1:compilation-pipeline:compiler}{undefined reference}; these are its only two ways
+to fail in this model. Conversely, when every used name has exactly one definition, each hole is filled with
+the address of that definition, and the executable is complete.
+\end{proof}
+
+\begin{remark}[Local symbols and libraries]\label{rem:b1:compilation-pipeline:local}
+A lower-case letter in \code{nm} (\code{t}, \code{b}, \code{r}) marks a \emph{local} \omterm{def:b1:compilation-pipeline:compiler}{symbol}: a function or
+variable declared \code{static} at file level, invisible to the \omterm{def:b1:compilation-pipeline:compiler}{linker}'s matching, so two files may each have
+their own. Libraries add one rule: the \omterm{def:b1:compilation-pipeline:compiler}{linker} takes from a library only the \omterm{def:b1:compilation-pipeline:compiler}{object files} that define
+something still undefined. The C library is linked by default, which is why \code{printf} resolved silently.
+A library can be copied into the executable (static \omterm{def:b1:compilation-pipeline:compiler}{linking}) or loaded when the program starts (a shared
+library, the default for the C library on Linux).
+\end{remark}
+
+\begin{omfigure}
+\begin{tikzpicture}[
+  sym/.style={font=\footnotesize\ttfamily, anchor=west, inner sep=1pt},
+  obj/.style={draw, rounded corners=2pt, fill=omCode!6, minimum width=40mm, minimum height=21mm},
+  >={Stealth[length=2mm]}]
+\node[obj] (m) at (0,0) {};
+\node[font=\small\bfseries, anchor=south] at (m.north) {main.o};
+\node[sym] (m1) at (-1.8,0.55) {T main};
+\node[sym] (m3) at (-1.8,0.05) {U square};
+\node[sym] (m4) at (-1.8,-0.45) {U square\_calls};
+\node[sym] (m2) at (-1.8,-0.95) {U printf};
+\node[obj] (s) at (6.5,0) {};
+\node[font=\small\bfseries, anchor=south] at (s.north) {square.o};
+\node[sym] (s1) at (4.7,0.05) {T square};
+\node[sym] (s2) at (4.7,-0.45) {B square\_calls};
+\node[obj, minimum height=10mm] (l) at (6.5,-3) {};
+\node[font=\small\bfseries, anchor=north] at (l.south) {C library};
+\node[sym] (l1) at (4.7,-3) {T printf};
+\draw[->, omDef, thick] (m.east |- m3) -- (s1.west);
+\draw[->, omDef, thick] (m.east |- m4) -- (s2.west);
+\draw[->, omDef, thick] (m.east |- m2) to[out=0, in=180] (l1.west);
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b1:compilation-pipeline:compiler}{linker}'s work in the session above: each \omterm{def:b1:compilation-pipeline:compiler}{symbol} that \code{main.o} uses (\code{U}) is
+matched with the one file that defines it. A \code{U} with no arrow is an \omterm{def:b1:compilation-pipeline:compiler}{undefined reference}; a name with two
+definitions has two possible arrows, and the link fails.}
+\end{omfigure}
+
+\section{Warnings are a tool}\label{sec:b1:compilation-pipeline:warnings}
+
+C lets many mistakes through: the language trusts the programmer. The \omterm{def:b1:compilation-pipeline:compiler}{compiler}, though, notices a great deal,
+and says so when it is asked. Every program in this book is compiled with \code{-Wall -Wextra}, which turn on
+most of its checks.
+
+\begin{definition}[Compiler warning]\label{def:b1:compilation-pipeline:warning}
+A \emph{compiler warning}\index{compiler warning} is a message about a construct that is legal but probably
+wrong. Unlike an error, it does not stop the build; the option \code{-Werror} turns every warning into an error,
+and the tests of this book are built that way.
+\end{definition}
+
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/warnings.c}{2}{17}{Three bugs, all of them legal C}\label{lst:b1:compilation-pipeline:warnings}
+
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/warnings.txt}{The \omterm{def:b1:compilation-pipeline:compiler}{compiler} finds all three, and the
+program still runs.}\label{out:b1:compilation-pipeline:warnings}
+
+Each warning gives the file, the line and the column, quotes the line, and names the option that enabled it in
+square brackets. The first says that \code{if (x = 0)} assigns 0 to \code{x} and tests the result, which is
+always false; the comparison is \code{x == 0}. The second says that \texttt{\%d} expects an \code{int} while
+\code{big} is a \code{long}: \code{printf} read the wrong number of bytes, and printed $-1294967296$ instead of
+three billion. The third says that \code{count} is used before any value was stored in it. Its printed value, 3,
+is luck: an uninitialised variable may hold anything, and the next \omterm{def:b1:compilation-pipeline:compiler}{compiler} version may print something else.
+The fixed version (\code{warnings_fixed.c} in the chapter's code) compiles without a message and prints
+
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/warnings_fixed.txt}{The corrected program, built with no
+warning.}
+
+\begin{inpractice}[Read the first message first]
+A single mistake can produce a cascade of messages. Fix the first one, rebuild, and read again; later messages
+are often consequences. A build that prints nothing is the goal of every program in this book.
+\end{inpractice}
+
+\section{The memory of a running program}\label{sec:b1:compilation-pipeline:memory}
+
+When the operating system starts an executable, it gives the running program its own memory, laid out in
+regions. The program below creates one object of each kind, sorts their addresses and prints which comes first.
+It never prints an address itself: the numbers change from machine to machine, the order does not.
+
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/regions.c}{2}{40}{Which object lies below which?}\label{lst:b1:compilation-pipeline:regions}
+
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/regions.txt}{The order of the regions on this
+machine.}\label{out:b1:compilation-pipeline:regions}
+
+\begin{definition}[Memory layout of a process]\label{def:b1:compilation-pipeline:layout}
+The \emph{memory layout of a process}\index{memory layout of a process} is the arrangement of a running
+program's memory in regions. The \emph{code segment}\index{code segment} holds the machine code and, next to it,
+read-only data such as string literals; the \emph{data segment}\index{data segment} holds the variables that
+exist for the whole run, the initialised ones first and then the zero-initialised ones (traditionally called
+\emph{bss}). Above them grows the \emph{heap}, from which the program requests blocks while it runs
+(\cref{ch:b1:dynamic-memory}); near the top of the address space is the \emph{call stack}, which holds the
+local variables of the functions being executed (\cref{ch:b1:c-functions-and-stack}).
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[
+  seg/.style={draw, minimum width=46mm, align=center, font=\small},
+  life/.style={font=\footnotesize, anchor=west, align=left},
+  >={Stealth[length=2mm]}]
+\node[seg, minimum height=9mm, fill=omCode!10] (code) at (0,0) {code and read-only data};
+\node[seg, minimum height=8mm, fill=omDef!10, anchor=south] (data) at (code.north) {initialised data};
+\node[seg, minimum height=8mm, fill=omDef!5, anchor=south] (bss) at (data.north) {zero-initialised data};
+\node[seg, minimum height=11mm, fill=omProp!10, anchor=south] (heap) at (bss.north) {heap};
+\node[seg, minimum height=16mm, anchor=south, draw=black!40, dashed] (gap) at (heap.north) {};
+\node[seg, minimum height=11mm, fill=omThm!10, anchor=south] (stack) at (gap.north) {call stack};
+\draw[->, thick] ([xshift=12mm]heap.north) -- ++(0,0.6) node[left, font=\scriptsize] {grows up};
+\draw[->, thick] ([xshift=-12mm]stack.south) -- ++(0,-0.6) node[right, font=\scriptsize] {grows down};
+\node[life] at (2.6,3.9) {unused};
+\node[life] at (2.6,0) {whole run, read-only};
+\node[life] at (2.6,0.85) {whole run};
+\node[life] at (2.6,1.65) {whole run, starts at zero};
+\node[life] at (2.6,2.6) {from \code{malloc} to \code{free}};
+\node[life] at (2.6,5.3) {one function call};
+\draw[->] (-3.2,-0.4) -- (-3.2,5.8) node[above, font=\scriptsize] {higher addresses};
+\end{tikzpicture}
+\par\smallskip{\small The regions of a running program, in the order \cref{out:b1:compilation-pipeline:regions}
+found them, with how long an object in each region lives. The sizes are not to scale: the gap between the heap
+and the stack is by far the largest part of the address space.}
+\end{omfigure}
+
+The lifetimes on the right of the figure are the real lesson. A global variable exists from the start of the run
+to its end; a local variable exists only while its function runs, and its memory is reused by the next call; a
+heap block lives exactly as long as the program decides. Most of the bugs of the next four chapters are a
+pointer that outlives the object it points to.
+
+\section{Interpreted and compiled}\label{sec:b1:compilation-pipeline:interpreted}
+
+Here is the program of the opening, in Python. One command, and it runs.
+
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/hello_python.py}{2}{10}{The opening program in Python}
+
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/hello_python.txt}{No separate build step.}
+
+Python does not skip the translation: it does it differently, and out of sight.
+
+\begin{definition}[Interpreter, bytecode]\label{def:b1:compilation-pipeline:interpreter}
+An \emph{interpreter}\index{interpreter} is a program that carries out another program by reading it, rather
+than translating it in advance into machine code. CPython, the usual Python, first compiles each function into
+\emph{bytecode}\index{bytecode}: instructions for an imaginary machine, which a loop written in C fetches one by
+one and executes.
+\end{definition}
+
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/bytecode.py}{2}{10}{Asking Python for its \omterm{def:b1:compilation-pipeline:interpreter}{bytecode}}
+
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/bytecode.txt}{The six \omterm{def:b1:compilation-pipeline:interpreter}{bytecode} instructions of
+\code{square_plus}.}\label{out:b1:compilation-pipeline:bytecode}
+
+The function became a stack machine program: push \code{x}, push \code{x}, multiply, push \code{y}, add, return.
+Each instruction is decoded by the \omterm{def:b1:compilation-pipeline:interpreter}{interpreter}'s loop at every execution, and the loop checks the types of
+\code{x} and \code{y} each time, since they could be integers, floats or lists. The C \omterm{def:b1:compilation-pipeline:compiler}{compiler} made those
+decisions once, before the program ran. The price of the \omterm{def:b1:compilation-pipeline:interpreter}{interpreter}'s flexibility can be measured. Here is the
+sieve of Eratosthenes, written the same way in both languages.
+
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/sieve.c}{2}{27}{The sieve in C, timed}\label{lst:b1:compilation-pipeline:sieve}
+
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/pysieve.py}{2}{24}{The same sieve in Python}
+
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/sieve.txt}{The C sieve, one run on the author's
+laptop.}
+
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/pysieve.txt}{The Python sieve, one run on the author's
+laptop.}
+
+Both print the same count, and the compiled program is more than ten times faster here. That is not a verdict on
+the languages. Python started at once, found its errors with readable messages, and its own library offers
+faster routes (a slice assignment instead of the inner loop). C asked for a build, would have printed nonsense
+for an out-of-range index instead of an error, and gave speed in return. The rest of this volume uses both,
+each where it fits: C where the machine is the subject, Python where the algorithm is.
+
+\begin{omfigure}
+\begin{tikzpicture}[
+  box/.style={draw, rounded corners=2pt, minimum height=8mm, align=center, font=\small},
+  >={Stealth[length=2mm]}]
+\node[box, fill=omCode!8, minimum width=24mm] (src) at (0,0) {\code{square_plus}\\[-2pt]source};
+\node[box, fill=omCode!8, minimum width=24mm] (bc) at (3.8,0) {bytecode};
+\node[box, fill=omThm!10, align=left, font=\footnotesize, inner sep=4pt] (loop) at (8.6,0)
+  {\textbf{interpreter loop}\\fetch the next instruction\\check the operands' types\\do the operation};
+\draw[->] (src) -- node[above, font=\scriptsize] {compile} (bc);
+\draw[->] (bc) -- (loop);
+\draw[->, thick] ([yshift=3mm]loop.east) arc[start angle=90, end angle=-90, radius=3mm];
+\node[box, fill=omCode!8, minimum width=24mm] (csrc) at (0,-2.6) {\code{hello.c}\\[-2pt]source};
+\node[box, fill=omCode!8, minimum width=24mm] (exe) at (3.8,-2.6) {machine code};
+\node[box, fill=omThm!10, minimum width=34mm] (cpu) at (8.6,-2.6) {processor};
+\draw[->] (csrc) -- node[above, font=\scriptsize] {gcc} (exe);
+\draw[->] (exe) -- node[above, font=\scriptsize] {executed} (cpu);
+\end{tikzpicture}
+\par\smallskip{\small Two routes from source to execution. Above, Python compiles to \omterm{def:b1:compilation-pipeline:interpreter}{bytecode} and a loop
+interprets it, deciding types at each step. Below, \code{gcc} produces machine code that the processor executes
+directly, with every decision taken before the run.}
+\end{omfigure}
+
+\section{Exercises}\label{sec:b1:compilation-pipeline:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:compilation-pipeline:1}
+Which stage of a build, or the running program, reports each problem?
+(a) \texttt{\#include "sqare.h"}, misspelt, when only \code{square.h} exists;
+(b) a missing semicolon at the end of a statement;
+(c) \code{undefined reference to `cube'};
+(d) a division by zero whose divisor is read from the keyboard.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:compilation-pipeline:2}
+A module \code{geometry.c} was compiled with \code{gcc -c}, and \code{nm} printed its \omterm{def:b1:compilation-pipeline:compiler}{symbols}:
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/exo_nm.txt}{The \omterm{def:b1:compilation-pipeline:compiler}{symbols} of an unseen \omterm{def:b1:compilation-pipeline:compiler}{object file}.}
+For each of the five lines, say whether the name is a function or a variable, defined here or elsewhere, visible to
+other files or not, and for the variables whether they start at zero. Then guess the declarations.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:compilation-pipeline:3}
+In which region of the running program does each object (a) to (f) of the program below live, and how long?
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/where.c}{2}{15}{Six objects to place}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:compilation-pipeline:4}
+Write out what the \omterm{def:b1:compilation-pipeline:source-file}{preprocessor} makes of the two \code{printf} lines of the program below, and predict what it
+prints.
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/macro_trap.c}{2}{12}{A \omterm{def:b1:compilation-pipeline:source-file}{macro} and its careful twin}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:compilation-pipeline:5}
+The files \code{users.c} and \code{admin.c} both include the header \code{limits_bad.h}, which holds the single
+line \code{int max_users = 100;}. Each file compiles, but the link fails:
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/exo_header.txt}{The build of a two-file program.}
+Explain the message, and change the header and one \omterm{def:b1:compilation-pipeline:source-file}{source file} so that the program builds, with one variable
+shared by both files.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:compilation-pipeline:6}
+The program below always finds no negative reading. Read its warning, then fix the program.
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/negatives.c}{2}{13}{Counting negative readings}
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/negatives.txt}{Its build and run.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:compilation-pipeline:7}
+A one-file program computes the mean and the maximum of an array of \code{double} with two functions
+\code{mean(const double *x, size_t n)} and \code{maximum(const double *x, size_t n)}, and prints them from
+\code{main}. Split it into a module \code{stats} (a header with include guards and a \code{.c} file) and a file
+\code{stats_main.c}; give the commands that build it in separate steps.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:compilation-pipeline:8}
+A header \code{point.h} contains only \code{struct point { int x, y; };}, with no include guard. The headers
+\code{shapes.h} and \code{draw.h} both include it, and \code{main.c} includes \code{shapes.h} then \code{draw.h}.
+How many copies of \code{point.h} does the \omterm{def:b1:compilation-pipeline:source-file}{preprocessor} put into \code{main.c}, what happens next, and what do
+include guards change? With $k$ headers each including \code{point.h}, all included by \code{main.c}, how many
+copies are there with and without guards?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:compilation-pipeline:9}
+Predict the three lines printed by this program.
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/calls.c}{2}{19}{A static and an automatic local}
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:compilation-pipeline:10}
+A program has $k = 40$ \omterm{def:b1:compilation-pipeline:source-file}{source files} of about $L = 500$ lines each, and one header included by $m = 12$ of them.
+(a) After an edit to one \omterm{def:b1:compilation-pipeline:source-file}{source file}, how many lines does a rebuild compile with separate \omterm{def:b1:compilation-pipeline:compiler}{compilation}, and how
+many if the program were one file? (b) Same question after an edit to the header. (c) A day of work makes 30
+edits to \omterm{def:b1:compilation-pipeline:source-file}{source files} and 4 to the header. Count the lines compiled in each organisation, and the ratio.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:compilation-pipeline:11}
+Write a function \code{const char *region_of(const void *p, const void *stack_marker)} that returns
+\code{"code"}, \code{"static data"}, \code{"heap"} or \code{"stack"} for a pointer into the corresponding region
+of the running program, given the address of any local variable of the caller as \code{stack_marker}. Explain
+why such a function can only work on a known layout, and why the C language does not promise it.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:compilation-pipeline:12}
+Three \omterm{def:b1:compilation-pipeline:compiler}{object files} have these \omterm{def:b1:compilation-pipeline:compiler}{symbols}. \code{a.o}: \code{T main}, \code{U parse}, \code{U total}.
+\code{b.o}: \code{T parse}, \code{D total}, \code{U emit}. \code{c.o}: \code{T emit}, \code{T parse}.
+(a) Which of the links \code{a.o b.o}, \code{a.o b.o c.o}, \code{a.o c.o} succeed, and why do the others fail?
+(b) Using \cref{prop:b1:compilation-pipeline:link}, count the subsets of $\{\code{a.o}, \code{b.o},
+\code{c.o}\}$ containing \code{a.o} that link successfully.
+(c) If \code{parse} were declared \code{static} in \code{c.o}, what would change?
+\end{exercise}
+
+\section{Problem: One program, four files, one process}\label{sec:b1:compilation-pipeline:problem}
+
+\begin{problem}[{Weekend problem --- One program, four files, one process}]\label{pb:b1:compilation-pipeline:1}
+A small word counter is split into four files: a header \code{count.h}, a module \code{count.c} that counts
+lines and words one character at a time, a module \code{report.c} that prints the counts, and \code{wcmain.c},
+which reads the standard input.
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/count.h}{2}{11}{The shared header}
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/count.c}{2}{18}{Counting lines and words}
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/report.c}{2}{15}{Printing a report}
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/wcmain.c}{2}{16}{The main program}
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/problem.txt}{Building and running the word
+counter.}\label{out:b1:compilation-pipeline:problem}
+
+\medskip\noindent\textbf{Part I --- Preprocessing.}
+\begin{enumerate}
+\item Which files does the \omterm{def:b1:compilation-pipeline:source-file}{preprocessor} read to produce the expanded \code{count.c}? Why is the expansion more
+than 300 lines long when \code{count.c} has 18?
+\item What does the \omterm{def:b1:compilation-pipeline:source-file}{preprocessor} put in place of \code{MAX_REPORTS} in \code{report.c}? Does the \omterm{def:b1:compilation-pipeline:compiler}{compiler} ever
+see the name \code{MAX_REPORTS}?
+\item Does \code{count.c} see the declaration of \code{report}? Does that matter?
+\item If the include guard of \code{count.h} were removed, would any of the three files fail to compile? Justify
+from what the header contains.
+\item Someone writes \texttt{\#define MAX\_REPORTS 3;} with a semicolon. Write the line of \code{report.c} that the
+\omterm{def:b1:compilation-pipeline:compiler}{compiler} would receive and say whether it still compiles.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Object files.}
+\begin{enumerate}[resume]
+\item List the \omterm{def:b1:compilation-pipeline:compiler}{symbols} that \code{count.o} defines and the one it uses. Where does the used one come from?
+\item Why is \code{in_word} printed with a lower-case \code{b} and \code{lines} with an upper-case \code{B}?
+\item Why is \code{reports} printed as \code{reports.0}, with a lower-case letter?
+\item The variable \code{unit} is a \code{D} \omterm{def:b1:compilation-pipeline:compiler}{symbol} of 8 bytes in \code{report.o}. What are those 8 bytes, and
+where are the six bytes of \code{"words"} stored?
+\item Explain the \code{bss} column of \code{size}: 20 bytes for \code{count.o}, 4 for \code{report.o}. Why does
+\code{in_word}, initialised to 0, count as bss?
+\item The file \code{wcmain.o} defines one \omterm{def:b1:compilation-pipeline:compiler}{symbol} and uses six. Classify the six into those another file of the
+program defines and those the C library defines.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Linking.}
+\begin{enumerate}[resume]
+\item Check \cref{prop:b1:compilation-pipeline:link} on the three \omterm{def:b1:compilation-pipeline:compiler}{object files}, ignoring the C library: list
+each used \omterm{def:b1:compilation-pipeline:compiler}{symbol} and its unique definition.
+\item What would the link print without \code{report.o}? Name every \omterm{def:b1:compilation-pipeline:compiler}{undefined reference}.
+\item A colleague adds \code{long words;} to \code{wcmain.c} at file level. What happens at the link? And with
+\code{static long words;}?
+\item Why could the link succeed even though the three \omterm{def:b1:compilation-pipeline:compiler}{object files} were compiled at different times?
+\item Could \code{count.c} and \code{report.c} each contain a \code{static int} called \code{in_word}? Two
+non-static ones?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The running program.}
+\begin{enumerate}[resume]
+\item The program printed \code{2 lines, 5 words}. Trace \code{feed} on the input to check the 5.
+\item Ten objects take part in a run: the code of \code{feed}, the code of \code{main}, \code{lines},
+\code{words}, \code{in_word}, \code{unit}, the characters of \code{"words"}, \code{reports}, the local \code{c} of
+\code{main}, and the 16 bytes that \code{title} points to. Place each in its region.
+\item For each of the ten, say when its lifetime starts and ends.
+\item Which of the ten exist before \code{main} starts, and with which values?
+\item If \code{report} were called four times, what would the fourth call print, and why does
+\code{reports} remember the earlier calls while a local variable of \code{report} could not?
+\item The pointer \code{title} itself is a local variable. In which region is it, and in which region is what it
+points to?
+\item After \code{free(title)}, which of the ten objects no longer exist, and which still do?
+\item Count the objects of the placement table in each region and state the result.
+\end{enumerate}
+\end{problem}

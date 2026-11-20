@@ -1,0 +1,541 @@
+% Book 4, Year 2, chapter 10 -- Assembly language and the calling convention.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 10.
+\chapter{Assembly Language and the Calling Convention}\label{ch:b2:assembly-and-calling-convention}
+
+What does the C statement \code{x = a[i] + 1;} become inside the processor? Four instructions, each doing one small
+thing, traced here one line per instruction as the series' RISC-V machine runs them.
+
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/hook.S}{6}{11}{\code{x = a[i] + 1} in
+RISC-V}\label{lst:b2:assembly-and-calling-convention:hook}
+
+\omoutput[1-2,6-9]{code/bachelor-2/10-assembly-and-calling-convention/outputs/hook.txt}{Shift, add, load, add: the
+address of \code{a[i]} is computed, then the value fetched.}\label{out:b2:assembly-and-calling-convention:hook}
+
+The C line hid an address computation, a memory access, and the fact that arithmetic happens only between
+registers. This chapter reads and writes such code: the instructions of a real instruction set, how they are
+encoded in 32-bit words, how C's \code{if}, loops, arrays and structures become them, and the convention that lets
+functions compiled separately call one another.
+
+\begin{recall}
+Book 2: the toy machine has registers, flags, jumps, and \code{CALL}/\code{RET} through a stack. Book 3: a program
+becomes object files, then a process whose memory holds text, data, heap and stack; each call pushes a stack frame;
+values are aligned to their size; Book 3 also covers byte order, sign extension and the return address. Two's
+complement represents negative integers.
+\end{recall}
+
+\section{The machine and its instructions}\label{sec:b2:assembly-and-calling-convention:isa}
+
+\begin{definition}[Instruction set architecture]\label{def:b2:assembly-and-calling-convention:isa}
+An \emph{instruction set architecture}\index{instruction set architecture} (ISA) is the contract between a processor
+and its programs: the registers, the instructions with their encodings and effects, the memory model, and what
+happens on an error. Every processor that implements the ISA runs the same programs, however it is built
+(\cref{ch:b2:processor-and-pipelining}).
+\end{definition}
+
+This book uses RISC-V, an open ISA whose specification is public, small and regular. The series' machine
+\code{rv} implements the base integer set RV32I with the multiply-and-divide extension M, on 32-bit words.
+
+% ledger: b2:rv-origin
+\begin{history}[An open instruction set]
+RISC-V began in May 2010 as a research project on instruction sets in a university laboratory, meant at first for
+teaching and experiments. Its authors published the specification openly; a foundation took it over in 2015, and an
+international association has maintained it since 2020. Anyone may build a RISC-V processor without a licence, which
+is why it is found today in microcontrollers, storage controllers and research chips.
+\end{history}
+
+\begin{definition}[General-purpose register, register file]\label{def:b2:assembly-and-calling-convention:register}
+A \emph{general-purpose register}\index{general-purpose register} is a storage cell inside the processor, holding one
+word, that instructions name directly as operands. The \emph{register file}\index{register file} is the set of them:
+in RV32, 32 registers \code{x0} to \code{x31} of 32 bits, where \code{x0} always reads 0 and ignores writes.
+\end{definition}
+
+\begin{definition}[Immediate]\label{def:b2:assembly-and-calling-convention:immediate}
+An \emph{immediate}\index{immediate} is a constant operand stored inside the instruction word itself, such as the
+\code{1} of \code{addi a2, t1, 1}. In RV32I most immediates have 12 bits, read signed: $-2048$ to $2047$.
+\end{definition}
+
+% ledger: b2:rv-abi-names
+% ledger: b2:rv-cc-saved
+\begin{omfigure}
+\centering\footnotesize
+\begin{tabular}{@{}llll@{}}
+\hline
+register & ABI name & role & preserved across calls \\
+\hline
+\code{x0} & \code{zero} & always 0 & --- \\
+\code{x1} & \code{ra} & return address & no \\
+\code{x2} & \code{sp} & stack pointer & yes \\
+\code{x3}, \code{x4} & \code{gp}, \code{tp} & global and thread pointers & not allocated \\
+\code{x5}--\code{x7}, \code{x28}--\code{x31} & \code{t0}--\code{t6} & temporaries & no (caller-saved) \\
+\code{x8}, \code{x9}, \code{x18}--\code{x27} & \code{s0}--\code{s11} & saved registers & yes (callee-saved) \\
+\code{x10}--\code{x17} & \code{a0}--\code{a7} & arguments; \code{a0}, \code{a1} results & no (caller-saved) \\
+\hline
+\end{tabular}
+\par\smallskip{\small The \omterm{def:b2:assembly-and-calling-convention:register}{register file} under its ABI names, the names programs use. The last column is the
+\omterm{def:b2:assembly-and-calling-convention:convention}{calling convention} of \cref{sec:b2:assembly-and-calling-convention:convention}.}
+\end{omfigure}
+
+The arithmetic and logic instructions take two registers, or a register and an \omterm{def:b2:assembly-and-calling-convention:immediate}{immediate}, and write a third:
+\code{add}, \code{sub}, \code{and}, \code{or}, \code{xor}, the shifts \code{sll}, \code{srl} (logical, zeros in) and
+\code{sra} (arithmetic, copies of the sign bit in), the comparisons \code{slt} and \code{sltu} (set to 1 if less,
+signed or unsigned), and \code{mul}, \code{div}, \code{rem} from the M extension; each has an \omterm{def:b2:assembly-and-calling-convention:immediate}{immediate} form with an
+\code{i} suffix. A first program sums $1$ to $100$:
+
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/first.S}{3}{15}{The sum of the first hundred
+integers}\label{lst:b2:assembly-and-calling-convention:first}
+
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/first.txt}{$100 \cdot 101 / 2$.}
+
+\begin{definition}[Assembler directive, label, pseudo-instruction]\label{def:b2:assembly-and-calling-convention:directive}
+An assembly source line holds at most one statement. An \emph{assembler directive}\index{assembler directive}, a
+word starting with a dot (\code{.text}, \code{.data}, \code{.word}, \code{.asciz}), tells the assembler where to put
+what follows or which bytes to emit. A \emph{label}\index{label (assembly)}, \code{loop:}, names the address of the
+next statement. A \emph{pseudo-instruction}\index{pseudo-instruction} (\code{li}, \code{la}, \code{mv}, \code{j},
+\code{ret}, \code{call}) is a convenient name that the assembler expands into one or two real instructions.
+\end{definition}
+
+\code{ecall} asks the environment for a service: the number in \code{a7} selects it (1 prints an integer, 11 a
+character, 93 exits), \code{a0} carries the argument. \code{li} loads any 32-bit constant; how is the subject of
+the encoding section.
+
+\section{Memory}\label{sec:b2:assembly-and-calling-convention:memory}
+
+\begin{definition}[Load--store architecture, base-plus-offset addressing]\label{def:b2:assembly-and-calling-convention:load-store}
+In a \emph{load--store architecture}\index{load--store architecture} only loads and stores access memory; every other
+instruction works on registers. RISC-V addresses memory by \emph{base plus offset}\index{base-plus-offset
+addressing}: \code{lw t1, 8(t0)} loads the word at the address $\code{t0} + 8$, the offset a 12-bit signed \omterm{def:b2:assembly-and-calling-convention:immediate}{immediate}.
+\end{definition}
+
+Loads come in three sizes: \code{lw} a word, \code{lh} a half (16 bits) and \code{lb} a byte, the last two
+sign-extended to 32 bits, with \code{lhu} and \code{lbu} zero-extending; stores are \code{sw}, \code{sh},
+\code{sb}. RISC-V is little-endian, and \code{rv} requires a word access to be at a multiple of 4 and a half at a
+multiple of 2.
+
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/memory.S}{2}{20}{Bytes of a word, signed and
+unsigned}\label{lst:b2:assembly-and-calling-convention:memory}
+
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/memory.txt}{The lowest byte comes first; the
+same byte \code{0xff} is $-1$ or 255.}\label{out:b2:assembly-and-calling-convention:memory}
+
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/misaligned.txt}{\code{misaligned.S} loads a word
+at an address $\equiv 2 \pmod 4$.}\label{out:b2:assembly-and-calling-convention:misaligned}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, r/.style={draw, minimum width=50mm, align=center}]
+\node[r, minimum height=11mm, fill=omThm!10] (s) at (0,0) {stack, 8 MiB below \texttt{0x80000000}\\ grows down from \texttt{sp = 0x7ffffff0}};
+\node[r, minimum height=8mm] (g) at (0,-0.95) {(not mapped)};
+\node[r, minimum height=8mm, fill=omDef!10] (h) at (0,-1.75) {heap, grows up (\texttt{sbrk})};
+\node[r, minimum height=6mm, fill=omDef!20] (d) at (0,-2.45) {\texttt{.data}};
+\node[r, minimum height=8mm] (g2) at (0,-3.15) {(not mapped)};
+\node[r, minimum height=7mm, fill=omProp!15] (t) at (0,-3.9) {\texttt{.text}: instructions, read-only};
+\node[r, minimum height=6mm, fill=black!8] (z) at (0,-4.55) {not mapped (a null pointer faults)};
+\foreach \n/\a in {s.north west/0x80000000, d.south west/0x10000000, t.south west/0x00010000, z.south west/0x00000000}
+  \node[anchor=east, font=\scriptsize\ttfamily] at ([xshift=-2mm]\n) {\a};
+\draw[ptr] ([xshift=-12mm]g.north) -- ++(0,-0.3);
+\draw[ptr] ([xshift=12mm]g.south) -- ++(0,0.3);
+\end{tikzpicture}
+\par\smallskip{\small The memory of an \code{rv} program, addresses growing upwards. Every address outside the shaded
+regions faults.}
+\end{omfigure}
+
+Arrays and strings are walked with a pointer that a loop advances by the element size; a structure is a base
+address and fixed offsets, padding included.
+
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/array_sum.S}{6}{17}{A pointer walk: the loop
+ends when the pointer reaches the end}\label{lst:b2:assembly-and-calling-convention:array}
+
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/array_sum.txt}{The sum of the six page
+counts.}
+
+A C string has no length stored anywhere: the code walks bytes until it meets the NUL, and the length is the
+difference of two pointers.
+
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/strlen.S}{5}{11}{\code{strlen}: one byte per
+turn, \code{lbu} because a byte above 127 is not negative text}\label{lst:b2:assembly-and-calling-convention:strlen}
+
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/strlen.txt}{The length of the street
+name.}
+
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/struct_access.S}{1}{24}{Fields at offsets 0, 4
+and 6 of an 8-byte struct}\label{lst:b2:assembly-and-calling-convention:struct}
+
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/struct_access.txt}{The pages of the two books on
+shelf B, $65 + 412$.}
+
+\section{Control flow}\label{sec:b2:assembly-and-calling-convention:control}
+
+There are no structured statements in assembly: only conditional branches (\code{beq}, \code{bne}, \code{blt},
+\code{bge}, and \code{bltu}, \code{bgeu} for unsigned comparisons), which jump to a \omterm{def:b2:assembly-and-calling-convention:directive}{label} if their two registers
+compare as asked, and unconditional jumps, \code{jal} and \code{jalr}. Compiling a statement is a method.
+
+\begin{method}[Compiling an if]\label{met:b2:assembly-and-calling-convention:compile-if}
+For \code{if (c) A else B}: evaluate the operands of \code{c}; branch on the \emph{opposite} condition to a \omterm{def:b2:assembly-and-calling-convention:directive}{label}
+\code{else}; write \code{A}, then \code{j end}; write \code{else:} and \code{B}; write \code{end:}. Without an
+\code{else}, the branch goes directly to \code{end}.
+\end{method}
+
+\begin{method}[Compiling a loop]\label{met:b2:assembly-and-calling-convention:compile-loop}
+For \code{while (c) B}: write a \omterm{def:b2:assembly-and-calling-convention:directive}{label} \code{test:}, branch on the opposite of \code{c} to \code{out}, write \code{B},
+\code{j test}, and \code{out:}. When the body is known to run at least once (\code{do B while (c)}), put the test at
+the bottom: \code{loop:}, \code{B}, branch on \code{c} to \code{loop}, one branch per turn instead of two. A
+\code{for} loop is its initialisation followed by a \code{while}.
+\end{method}
+
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/if_while.S}{3}{27}{An absolute value, and the
+$3n + 1$ walk from 27}\label{lst:b2:assembly-and-calling-convention:if-while}
+
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/if_while.txt}{$|-42|$, and the 111 steps of the walk from 27 down to 1.}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, b/.style={draw, rounded corners=2pt, fill=omDef!10, align=left, minimum width=30mm}]
+\node[b] (t) at (0,0) {\texttt{test:} \texttt{beq t0, t2, out}};
+\node[b] (p) at (0,-1.2) {\texttt{andi t1, t0, 1}\\ \texttt{bnez t1, odd}};
+\node[b] (e) at (-2.6,-2.6) {\texttt{srli t0, t0, 1}\\ \texttt{j step}};
+\node[b] (o) at (2.6,-2.6) {\texttt{odd:} \texttt{slli}, \texttt{add},\\ \texttt{addi}: $3n + 1$};
+\node[b] (s) at (0,-3.9) {\texttt{step:} \texttt{addi a0, a0, 1}\\ \texttt{j test}};
+\node[b, fill=omThm!10] (x) at (4.6,0) {\texttt{out:} print \texttt{a0}};
+\draw[ptr] (t) -- node[left] {$n \ne 1$} (p);
+\draw[ptr] (t) -- node[above] {$n = 1$} (x);
+\draw[ptr] (p) -- node[left, xshift=-1mm] {even} (e);
+\draw[ptr] (p) -- node[right, xshift=1mm] {odd} (o);
+\draw[ptr] (e) -- (s); \draw[ptr] (o) -- (s);
+\draw[ptr] (s.west) -- ++(-3.6,0) |- (t.west);
+\end{tikzpicture}
+\par\smallskip{\small The control-flow graph of the \code{while} loop of \cref{lst:b2:assembly-and-calling-convention:if-while}:
+each box is a straight run of instructions entered only at its top, each arrow a branch or a fall-through.}
+\end{omfigure}
+
+A \code{switch} on a dense range of values compiles to a table of addresses.
+
+\begin{definition}[Jump table]\label{def:b2:assembly-and-calling-convention:jump-table}
+A \emph{jump table}\index{jump table} is an array of code addresses, one per case value; a \code{switch} on $v$
+checks that $v$ is in range, loads the entry at index $v$, and jumps to it with \code{jr}: one indirect jump,
+whatever the number of cases.
+\end{definition}
+
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/switch_table.S}{2}{19}{A table of four case
+addresses, and the bounds check}\label{lst:b2:assembly-and-calling-convention:switch}
+
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/switch_table.txt}{The kinds 1, 0, 3, 7 and 2;
+kind 7 fails the bounds check.}\label{out:b2:assembly-and-calling-convention:switch}
+
+\section{Encoding}\label{sec:b2:assembly-and-calling-convention:encoding}
+
+\begin{definition}[Instruction format, opcode]\label{def:b2:assembly-and-calling-convention:format}
+Every RV32I instruction is one 32-bit word. Its \emph{opcode}\index{opcode}, the low 7 bits, with the fields
+\code{funct3} and \code{funct7}, selects the operation. An \emph{instruction format}\index{instruction format} is
+the layout of the other fields; RV32I has six, named by letter.
+\end{definition}
+
+% ledger: b2:rv-formats
+% ledger: b2:rv-encodings
+\begin{omfigure}
+\begin{tikzpicture}[font=\tiny, x=3.5mm, y=6mm]
+\def\fld#1#2#3#4{\draw[fill=#4] (#1,0) rectangle (#2,1); \node at ({(#1+#2)/2},0.5) {#3};}
+\foreach \y/\name in {0/R, -1/I, -2/S, -3/B, -4/U, -5/J} \node[anchor=east, font=\scriptsize\bfseries] at (-0.4,\y+0.5) {\name};
+\begin{scope}[yshift=0cm]
+\fld{0}{7}{funct7}{black!8}\fld{7}{12}{rs2}{omDef!10}\fld{12}{17}{rs1}{omDef!10}\fld{17}{20}{f3}{black!8}\fld{20}{25}{rd}{omThm!10}\fld{25}{32}{opcode}{black!8}
+\end{scope}
+\begin{scope}[yshift=-6mm]
+\fld{0}{12}{imm[11:0]}{omProp!15}\fld{12}{17}{rs1}{omDef!10}\fld{17}{20}{f3}{black!8}\fld{20}{25}{rd}{omThm!10}\fld{25}{32}{opcode}{black!8}
+\end{scope}
+\begin{scope}[yshift=-12mm]
+\fld{0}{7}{imm[11:5]}{omProp!15}\fld{7}{12}{rs2}{omDef!10}\fld{12}{17}{rs1}{omDef!10}\fld{17}{20}{f3}{black!8}\fld{20}{25}{imm[4:0]}{omProp!15}\fld{25}{32}{opcode}{black!8}
+\end{scope}
+\begin{scope}[yshift=-18mm]
+\fld{0}{7}{imm[12|10:5]}{omProp!15}\fld{7}{12}{rs2}{omDef!10}\fld{12}{17}{rs1}{omDef!10}\fld{17}{20}{f3}{black!8}\fld{20}{25}{imm[4:1|11]}{omProp!15}\fld{25}{32}{opcode}{black!8}
+\end{scope}
+\begin{scope}[yshift=-24mm]
+\fld{0}{20}{imm[31:12]}{omProp!15}\fld{20}{25}{rd}{omThm!10}\fld{25}{32}{opcode}{black!8}
+\end{scope}
+\begin{scope}[yshift=-30mm]
+\fld{0}{20}{imm[20|10:1|11|19:12]}{omProp!15}\fld{20}{25}{rd}{omThm!10}\fld{25}{32}{opcode}{black!8}
+\end{scope}
+\foreach \b/\x in {31/0.5, 25/6.5, 20/11.5, 15/16.5, 12/19.5, 7/24.5, 0/31.5}
+  \node[font=\tiny, text=black!60] at (\x, 1.3) {\b};
+\end{tikzpicture}
+\par\smallskip{\small The six formats, bit 31 on the left. The register fields stay in the same place in every format,
+so the processor can read the registers before it knows the instruction; the \omterm{def:b2:assembly-and-calling-convention:immediate}{immediates} are scattered to make that
+possible. B and J store an even offset without its bit 0.}
+\end{omfigure}
+
+The assembler's listing shows each word next to its source. Here \code{li} at work:
+
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/constants.txt}{\code{constants.S} assembled:
+address, word, disassembly, source.}\label{out:b2:assembly-and-calling-convention:constants}
+
+% ledger: b2:rv-lui
+\begin{proposition}[Building a 32-bit constant]\label{prop:b2:assembly-and-calling-convention:li}
+Let $c$ be a 32-bit word. Let $\mathit{hi} = \lfloor (c + 2^{11}) / 2^{12} \rfloor \bmod 2^{20}$ and let
+$\mathit{lo}$ be the low 12 bits of $c$ read as a signed number, in $[-2048, 2047]$. Then \code{lui rd, hi}
+followed by \code{addi rd, rd, lo} leaves $c$ in \code{rd} (modulo $2^{32}$).
+\end{proposition}
+
+\begin{proof}
+\code{lui} places $\mathit{hi} \cdot 2^{12}$ in \code{rd}; \code{addi} adds $\mathit{lo}$, sign-extended. Write $c = 2^{12} q
++ r$ with $0 \le r < 2^{12}$. If $r < 2^{11}$, then $c + 2^{11} = 2^{12} q + (r + 2^{11})$ with $r + 2^{11} < 2^{12}$,
+so $\mathit{hi} = q$; bit 11 of $c$ is 0, so $\mathit{lo} = r$, and $2^{12} q + r = c$. If $r \ge 2^{11}$, then $c +
+2^{11} = 2^{12} (q + 1) + (r - 2^{11})$, so $\mathit{hi} = q + 1$; bit 11 is 1, so $\mathit{lo} = r - 2^{12}$, negative,
+and $2^{12}(q + 1) + r - 2^{12} = c$. All sums are taken modulo $2^{32}$, which \code{lui} and \code{addi} also do.
+\end{proof}
+
+The term $2^{11}$ is the rounding: when the low part will be read as negative, the high part must be one larger.
+\code{0x12345fff} becomes \code{lui 0x12346} and \code{addi -1} in \cref{out:b2:assembly-and-calling-convention:constants}.
+The scattered B and J \omterm{def:b2:assembly-and-calling-convention:immediate}{immediates} also fix how far control can go.
+
+\begin{proposition}[Reach of branches and jumps]\label{prop:b2:assembly-and-calling-convention:ranges}
+A conditional branch reaches the addresses $\mathit{pc} - 4096$ to $\mathit{pc} + 4094$, and \code{jal} the
+addresses $\mathit{pc} - 2^{20}$ to $\mathit{pc} + 2^{20} - 2$: about $\pm 4$\,KiB and $\pm 1$\,MiB.
+\end{proposition}
+
+\begin{proof}
+A B \omterm{def:b2:assembly-and-calling-convention:immediate}{immediate} has 12 stored bits, bits 12 to 1 of an even offset, whose bit 0 is 0: a 13-bit two's-complement
+number, from $-2^{12}$ to $2^{12} - 2$. A J \omterm{def:b2:assembly-and-calling-convention:immediate}{immediate} stores bits 20 to 1: a 21-bit even number, from $-2^{20}$ to
+$2^{20} - 2$. The target is $\mathit{pc}$ plus the offset.
+\end{proof}
+
+Decoding reverses the process: read the \omterm{def:b2:assembly-and-calling-convention:format}{opcode}, pick the format, extract the fields. \code{rv dis} does it for a file of
+words, as a debugger does for a memory dump:
+
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/decode.txt}{Five words of
+\code{words.hex}, disassembled.}\label{out:b2:assembly-and-calling-convention:decode}
+
+\section{The calling convention}\label{sec:b2:assembly-and-calling-convention:convention}
+
+A function compiled today must be callable from code compiled years ago, by another compiler. They agree on a
+contract.
+
+% ledger: b2:rv-cc-args
+\begin{definition}[Calling convention, argument register, return-value register]\label{def:b2:assembly-and-calling-convention:convention}
+A \emph{calling convention}\index{calling convention} fixes how functions pass arguments and results, which
+registers a call may change, and how the stack is used. In RISC-V the integer arguments go in the \emph{argument
+registers}\index{argument register} \code{a0} to \code{a7}, in order (more on the stack), and the result comes back in
+the \emph{return-value registers}\index{return-value register} \code{a0} and \code{a1}. \code{jal ra, f}
+(\code{call f}) jumps and leaves the return address in \code{ra}; \code{jalr zero, 0(ra)} (\code{ret}) goes back.
+\end{definition}
+
+\begin{definition}[Caller-saved register, callee-saved register]\label{def:b2:assembly-and-calling-convention:saved}
+A \emph{caller-saved register}\index{caller-saved register} (\code{t0}--\code{t6}, \code{a0}--\code{a7},
+\code{ra}) may be changed by any call: a caller that needs its value after the call must save it first. A
+\emph{callee-saved register}\index{callee-saved register} (\code{s0}--\code{s11}, \code{sp}) must have the same
+value after the call as before: a function that uses one saves it on entry and restores it before returning.
+\end{definition}
+
+\begin{definition}[Leaf function, prologue, epilogue]\label{def:b2:assembly-and-calling-convention:prologue}
+A \emph{leaf function}\index{leaf function} calls no other function. A non-leaf function, or one that uses
+\omterm{def:b2:assembly-and-calling-convention:saved}{callee-saved registers}, opens with a \emph{prologue}\index{prologue}, which allocates its stack frame and saves
+\code{ra} and the \omterm{def:b2:assembly-and-calling-convention:saved}{callee-saved registers} it will use, and ends with an \emph{epilogue}\index{epilogue}, which
+restores them, frees the frame and returns.
+\end{definition}
+
+% ledger: b2:rv-sp-align
+\begin{method}[Writing a prologue and an epilogue]\label{met:b2:assembly-and-calling-convention:frame}
+\begin{enumerate}
+\item List what must survive a call: \code{ra} if the function calls; each value used after a call, to be kept in
+an \code{s} register.
+\item Frame size: 4 bytes per saved register plus locals, rounded up to a multiple of 16 (the stack pointer stays
+16-byte aligned at every call).
+\item \omterm{def:b2:assembly-and-calling-convention:prologue}{Prologue}: \code{addi sp, sp, -size}; \code{sw ra, size-4(sp)}; \code{sw s0, size-8(sp)}, and so on.
+\item \omterm{def:b2:assembly-and-calling-convention:prologue}{Epilogue}, in reverse: the loads, then \code{addi sp, sp, size}, then \code{ret}. Every path out of the
+function goes through it.
+\end{enumerate}
+\end{method}
+
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/factorial.S}{14}{28}{A recursive function under the
+convention}\label{lst:b2:assembly-and-calling-convention:fact}
+
+\omoutput[1-2,5-13,26-30,33-39]{code/bachelor-2/10-assembly-and-calling-convention/outputs/factorial.txt}{The trace
+of \code{fact(3)}: the first call, the deepest one, and the first return.}\label{out:b2:assembly-and-calling-convention:fact}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, w/.style={draw, minimum width=34mm, anchor=north west, inner sep=1pt}]
+\foreach \i/\who/\ra/\so/\a in {0/main/{ra = 0xffff0000}/{(unused)}/0x7fffffe0,
+    1/{fact(3)}/{ra = 0x00010010}/{s0 = 0 (main's)}/0x7fffffd0, 2/{fact(2)}/{ra = 0x0001004c}/{s0 = 3}/0x7fffffc0,
+    3/{fact(1)}/{ra = 0x0001004c}/{s0 = 2}/0x7fffffb0, 4/{fact(0)}/{ra = 0x0001004c}/{s0 = 1}/0x7fffffa0} {
+  \node[w, minimum height=4.5mm, fill=omDef!10] at (0,-1.3*\i) {\texttt{\ra}};
+  \node[w, minimum height=4.5mm, fill=omThm!10] at (0,-1.3*\i-0.45) {\texttt{\so}};
+  \node[w, minimum height=4mm, text=black!50] at (0,-1.3*\i-0.9) {8 bytes unused};
+  \node[anchor=west] at (4.3,-1.3*\i-0.65) {\who};
+  \node[anchor=east, font=\scriptsize\ttfamily] at (-0.15,-1.3*\i-1.3) {\a};
+  \node[anchor=west, font=\tiny, text=black!60] at (3.5,-1.3*\i-0.22) {+12};
+  \node[anchor=west, font=\tiny, text=black!60] at (3.5,-1.3*\i-0.67) {+8};
+}
+\draw[ptr] (6.0,-6.5) node[anchor=west, text=black!70] {\texttt{sp} at step 28} -- (3.5,-6.5);
+\end{tikzpicture}
+\par\smallskip{\small The stack when \code{fact(0)} has saved its registers (step 28), drawn from the trace: five
+16-byte frames, each with the saved \code{ra} at offset 12 and the saved \code{s0} at offset 8 (the other 8 bytes
+unused). Each \code{fact(n)} saved its caller's \code{n}, which it restores on the way back.}
+\end{omfigure}
+
+The convention is a promise each function makes to its callers; breaking it breaks code far away. Here a helper
+uses \code{s0} without saving it:
+
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/clobber_bug.S}{5}{30}{A callee that clobbers
+\code{s0}}\label{lst:b2:assembly-and-calling-convention:clobber}
+
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/clobber_bug.txt}{61 instead of
+130.}\label{out:b2:assembly-and-calling-convention:clobber}
+
+\code{fine} sets \code{s0} to 21 at each call, so the caller's running total restarts from 21: $21 + 0$, then $21 +
+40 = 61$. Nothing in either function alone is wrong for its own purpose; the bug is the broken contract, which is why
+it is so hard to find in a large program. \code{fine} should use \code{t0}, which it may change freely.
+
+\section{Reading a compiler's output}\label{sec:b2:assembly-and-calling-convention:compiler}
+
+A compiler does the same work. \code{gcc -O1 -S} writes the assembly of a C file for the machine at hand, here
+x86-64, an older and larger ISA with 16 registers, two-operand instructions, and memory operands inside arithmetic.
+
+\omoutput[3-21]{code/bachelor-2/10-assembly-and-calling-convention/outputs/compiled.txt}{\code{sum(a, n)} compiled
+by gcc for x86-64, directives removed (\code{compiled.sh}).}\label{out:b2:assembly-and-calling-convention:gcc-sum}
+
+% ledger: b2:x86-64-args
+The ideas are the same. The x86-64 convention passes the first integer arguments in \code{rdi}, \code{rsi},
+\code{rdx}, \code{rcx}, \code{r8}, \code{r9} and returns in \code{rax} (\code{eax} is its low half): here \code{a} in
+\code{rdi}, \code{n} in \code{esi}. The loop is a pointer walk like \cref{lst:b2:assembly-and-calling-convention:array},
+with the end pointer computed once (\code{leaq}) and the test at the bottom; the case $n \le 0$ is handled by a
+branch around the loop. The first instruction, \code{endbr64}, only marks a legal target for indirect jumps, a
+protection of recent x86-64 processors. And the \code{switch} of five cases became a \omterm{def:b2:assembly-and-calling-convention:jump-table}{jump table}:
+
+\omoutput[22-36]{code/bachelor-2/10-assembly-and-calling-convention/outputs/compiled.txt}{\code{fine_per_day}: one
+unsigned comparison (\code{ja}), then an indirect jump through \code{.L9}.}\label{out:b2:assembly-and-calling-convention:gcc-switch}
+
+\begin{inpractice}[Reading assembly]
+Read compiler output to check what the optimiser did, not to write it: compile with \code{-O1} or \code{-O2} and
+\code{-S}, or use \code{objdump -d} on an object file. Find the arguments in their registers first, then the loop
+(a backward branch), then the stores. When a program fails under a debugger, the disassembly and the registers are
+the ground truth; the convention tells you which values the caller can still trust.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b2:assembly-and-calling-convention:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:assembly-and-calling-convention:1}
+Predict, in decimal, the values of \code{a1} to \code{a5} after these instructions, then check with the register
+dump in the solution.
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/exo_regs.S}{3}{8}{Shifts, comparisons and
+\code{xori}}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:assembly-and-calling-convention:2}
+This program prints 1. Explain why with \cref{met:b2:assembly-and-calling-convention:compile-loop}, and fix the
+branch.
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/exo_bge.S}{2}{10}{A loop that runs once}
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:assembly-and-calling-convention:3}
+Write \code{max(a0 = address, a1 = n)}, a leaf that returns the largest of $n \ge 1$ signed words, and test it on
+the temperatures $-12, 4, -3, 19, 7, -40$. Which branch would be wrong for unsigned words?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:assembly-and-calling-convention:4}
+Encode by hand, in hexadecimal, using the formats of this chapter: \code{addi a0, a0, -1}; \code{sw ra, 12(sp)};
+and \code{beq a0, zero, main} placed 8 bytes after \code{main}. (\code{a0} is \code{x10}, \code{ra} \code{x1},
+\code{sp} \code{x2}; the \omterm{def:b2:assembly-and-calling-convention:format}{opcodes} are \code{0010011}, \code{0100011} and \code{1100011}; \code{funct3} is 0, 2 and 0.)
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:assembly-and-calling-convention:5}
+Decode by hand the five words \code{00b50633}, \code{00452283}, \code{fe0518e3}, \code{00c000ef} and
+\code{0005a503}, as if they started at address \code{0x00010000}. For the branch and the jump, give the target.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:assembly-and-calling-convention:6}
+This program never ends; \code{rv} stops it at the step limit. Explain, following \code{ra}, where each \code{ret}
+goes, and fix \code{double_plus_two}.
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/exo_ra.S}{12}{18}{A non-leaf function}
+\omoutput[2]{code/bachelor-2/10-assembly-and-calling-convention/outputs/exo_ra.txt}{The step limit.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:assembly-and-calling-convention:7}
+Write \code{strcmp(a0, a1)} under the convention: negative, zero or positive as the first string is smaller, equal or
+larger, comparing bytes as unsigned. Test it on \code{Mill Lane} against \code{Mill Row}, a string against itself,
+and \code{Mill} against \code{Mill Lane}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:assembly-and-calling-convention:8}
+(a) Show that the pair $(\mathit{hi}, \mathit{lo})$ of \cref{prop:b2:assembly-and-calling-convention:li} is the only
+one with $\mathit{lo} \in [-2048, 2047]$ and $\mathit{hi} \in [0, 2^{20})$. (b) For which constants does \code{li}
+need only one instruction, \code{addi} or \code{lui}? (c) Compute $\mathit{hi}$ for \code{0x7ffff800} and check,
+modulo $2^{32}$, that the pair still works.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:assembly-and-calling-convention:9}
+Compile by hand \code{int fine(const struct loan *l)}, where \code{struct loan { int days; short rate; char lost; }},
+which returns 2000 if \code{lost}, else $(\mathit{days} - 21) \cdot \mathit{rate}$ when positive, else 0. Give the
+offsets and the size of the structure first.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:assembly-and-calling-convention:10}
+Write a recursive binary search \code{find(a0 = array, a1 = lo, a2 = hi, a3 = key)} that returns the index of
+\code{key} in the sorted range \code{a[lo..hi)}, or $-1$, under the convention, and test it on the seven sorted page
+counts for keys present, absent, smaller than all and larger than all. Which registers must it save, and why are its
+recursive calls \omterm{def:b2:functional-programming:tail}{tail calls} in disguise?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:assembly-and-calling-convention:11}
+A naive recursive \code{fib(n)} saves \code{ra}, \code{s0} and \code{s1} in a 16-byte frame, and returns at once,
+with no frame, for $n < 2$. (a) Prove that it makes $C(n) = 2F_{n+1} - 1$ calls, where $F$ is the Fibonacci sequence.
+(b) What is the deepest stack, in frames and in bytes? (c) The test of the solution counts the \code{jal} and
+\code{jalr} executed: what number should it expect?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:assembly-and-calling-convention:12}
+Compile with a \omterm{def:b2:assembly-and-calling-convention:jump-table}{jump table} \code{switch (shelf) { case 3: 'A'; case 4: case 5: 'B'; case 7: 'D'; default: '?' }}.
+Use one unsigned comparison for the bounds check, and explain why it also rejects values below 3 and negative ones.
+\end{exercise}
+
+\section{Problem: Hand-compiling the library's check digit}\label{sec:b2:assembly-and-calling-convention:problem}
+
+\begin{problem}[{Weekend problem --- Hand-compiling the library's check digit}]\label{pb:b2:assembly-and-calling-convention:1}
+The library's book codes end with a check digit computed from the other digits, so that a mistyped digit is caught at
+the desk. This problem compiles the function by hand, calls a helper under the convention, and proves exactly how many
+instructions it executes.
+
+\medskip\noindent\textbf{Part I --- The C function.}\par\nopagebreak
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/check_digit.c}{4}{18}{The check digit in C}
+\begin{enumerate}[beginpenalty=10000]
+\item Compute by hand the check digit of 4006, and compare with the output in the solution.
+\item Why a \code{do}--\code{while} rather than a \code{while}? What would \code{check_digit(0)} return?
+\item Show that changing one digit of a code always changes the check digit. (Consider the weights 1 and 3
+modulo 10.)
+\item Swapping two adjacent digits $x$ and $y$ changes the weighted sum by $\pm 2(x - y)$. When is the swap not
+caught?
+\item Which values live across the call to \code{weigh}? Which may be lost?
+\item How large a code fits in a 32-bit unsigned word, in digits?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Compiled by hand.}\par\nopagebreak
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/count.S}{5}{22}{The \omterm{def:b2:assembly-and-calling-convention:prologue}{prologue} and the loop}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Which registers hold \code{code}, \code{i} and \code{sum}, and why \code{s} registers?
+\item The frame is 16 bytes for four saved registers. Write the \omterm{def:b2:assembly-and-calling-convention:prologue}{epilogue}, and check it against \code{count.S}.
+\item Which instructions compute \code{code} modulo 10 and \code{code / 10}? Why the unsigned forms?
+\item Where is the loop's test, and which method of this chapter was applied?
+\item Rewrite the loop to keep \code{sum} in \code{a2} instead of \code{s2}. What breaks?
+\item The final expression uses \code{remu} twice. Could the first be avoided?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- A helper under the convention.}\par\nopagebreak
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/count.S}{40}{46}{\code{weigh}, a leaf}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Why does \code{weigh} need no \omterm{def:b2:assembly-and-calling-convention:prologue}{prologue} at all?
+\item \code{weigh} computes the weight without a branch. Prove that \code{3 - 2 * (i & 1)} is 3 for even $i$ and 1
+for odd $i$.
+\item \code{weigh} changes \code{t0} and \code{t1}. Is that allowed? Which caller would it break, and how is that
+caller's bug avoided?
+\item Inline \code{weigh} into the loop. How many instructions per digit are saved?
+\item A real assembler emits \code{call} as two instructions, \code{auipc} and \code{jalr}, for a target that may be far.
+How would that change the count?
+\item The chapter's test also runs the codes 12, 123456789 and 100000000. Predict their instruction counts.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Every instruction counted.}\par\nopagebreak
+\omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/run_count.txt}{\code{rv --stats} on codes of
+1, 4 and 9 digits.}
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Count the instructions executed per digit, from \code{digit:} through \code{bnez}, including \code{weigh}.
+\item Count the instructions executed once, before and after the loop.
+\item Prove that a code of $n$ digits executes exactly $an + b$ instructions, and give $a$ and $b$.
+\item Check the formula against the three counts of the output.
+\item Why does the count depend only on $n$, not on the digits themselves?
+\item State the result of the problem.
+\end{enumerate}
+\end{problem}

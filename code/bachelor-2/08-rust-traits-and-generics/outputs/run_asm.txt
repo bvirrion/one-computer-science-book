@@ -1,0 +1,13 @@
+$ rustc --edition 2021 --crate-type lib -C opt-level=3 --emit obj units_asm.rs
+$ objdump -t units_asm.o | grep -o 'F .text.trip.*'
+F .text.trip_speed_raw	00000000000000bd trip_speed_raw
+F .text.trip_speed_raw	00000000000000bd trip_speed_typed
+$ objdump -d --no-show-raw-insn -M intel --disassemble=trip_speed_raw units_asm.o | grep -P '^ +[0-9a-f]+:' | cut -f2- > body.txt
+$ wc -l < body.txt
+53
+$ grep -c addpd body.txt
+9
+$ tail -3 body.txt
+unpckhpd xmm1,xmm0
+divsd  xmm0,xmm1
+ret    

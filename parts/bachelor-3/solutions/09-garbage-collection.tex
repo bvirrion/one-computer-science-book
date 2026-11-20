@@ -1,0 +1,103 @@
+\section*{Chapter \ref{ch:b3:garbage-collection} --- Memory Management and Garbage Collection}
+
+\begin{solution}{exo:b3:garbage-collection:1}
+The requests need blocks of 64, 48, 160 and 96 bytes. \omterm{def:b3:garbage-collection:allocator}{First fit}: 64 from the block of 96, which is split into 64 and a free 32; 48 in the block of 48; 160 in the block of 160; and 96 finds only the free 32, the 64 and the large block, so it cuts into the large block. \omterm{def:b3:garbage-collection:allocator}{Best fit}: 64 in the block of 64, 48 in the 48, 160 in the 160, and 96 in the block of 96, every one an exact fit. \omterm{def:b3:garbage-collection:allocator}{Best fit} leaves the large block whole; \omterm{def:b3:garbage-collection:allocator}{first fit} leaves a sliver of 32 bytes and a hole of 64 (\code{arena_test.c} checks the four offsets of each policy).
+\end{solution}
+
+\begin{solution}{exo:b3:garbage-collection:2}
+Three: the list \code{c} holds it three times, and the names \code{a}, \code{b} and the dictionary no longer refer to it. \code{sys.getrefcount} prints 4, one more for its own argument.
+\end{solution}
+
+\begin{solution}{exo:b3:garbage-collection:3}
+A, B and C are \omterm{def:b3:garbage-collection:reachability}{reachable} from $r_1$, and D from $r_2$. E, F and G are \omterm{def:b3:garbage-collection:reachability}{garbage}. \omterm{def:b3:garbage-collection:refcount}{Reference counting} frees G, whose count is 0 (D's count then falls from 2 to 1, and D stays). E and F keep each other's count at 1 and are never freed.
+\end{solution}
+
+\begin{solution}{exo:b3:garbage-collection:4}
+\texttt{strong cycle:}, \texttt{counts 1 2}, \texttt{drop Ann}, \texttt{drop Bob}, then the line that now lies, \texttt{(end of scope: nothing dropped)}. Ann's only strong reference is the local \code{ann}; Bob has two, the local and Ann's \code{friend}. When the scope ends, both locals go: whichever goes first, Ann's count reaches 0, Ann is dropped, and dropping her \code{friend} field removes Bob's last count.
+\end{solution}
+
+\begin{solution}{exo:b3:garbage-collection:5}
+The missing line is \code{heap[c].meta = WHITE;} in \code{sweep}: marked cells keep their marks. At the next collection, the first loop of \code{mark} skips every root already marked, and the stack never reaches past a marked cell, so only the cells allocated since are examined, and the marked count falls at each collection. Sweep frees only white cells, so every cell that was live at some collection stays allocated forever, even after it dies: a leak that grows at each collection, the swept count falls with it, and the heap is full during request 367, after 17 collections (\code{sweep_bug_test.c}). The bug can do worse: a new white cell \omterm{def:b3:garbage-collection:reachability}{reachable} only through an old marked one is never marked, and the sweep frees a cell the program still uses.
+\end{solution}
+
+\begin{solution}{exo:b3:garbage-collection:6}
+\code{exercises/ex6_next_fit.c} keeps the block where the last search succeeded, starts there, and wraps round at the epilogue. Freeing can merge the block at that position into the free block before it, or merge it into the freed block as its successor; the position then points into the middle of a block, where the walk would read payload as tags. \code{next_fit_free} moves it to the start of the merged block before freeing. \code{nextfit_test.c} checks after each of 20,000 random operations that the position is the start of a block, and that a request after a free goes on past the last block used instead of reusing the freed one.
+\end{solution}
+
+\begin{solution}{exo:b3:garbage-collection:7}
+By \cref{thm:b3:garbage-collection:tricolour}, after \code{mark} the marked cells are exactly the \omterm{def:b3:garbage-collection:reachability}{reachable} ones; free cells are never marked, since no reference to them exists. \code{sweep} visits every cell once: a marked cell becomes white, a white one (allocated, not \omterm{def:b3:garbage-collection:reachability}{reachable}: \omterm{def:b3:garbage-collection:reachability}{garbage}) is pushed on the \omterm{def:b3:garbage-collection:allocator}{free list}, and a free one is left on the \omterm{def:b3:garbage-collection:allocator}{free list} where it already is. So the \omterm{def:b3:garbage-collection:allocator}{free list} ends with the free cells and the \omterm{def:b3:garbage-collection:reachability}{garbage}, and no cell is marked.
+\end{solution}
+
+\begin{solution}{exo:b3:garbage-collection:8}
+A is copied to cell 0. Scanning A forwards B (copied to 1) and C (copied to 2). Scanning B forwards D (copied to 3) and A, which already has a \omterm{def:b3:garbage-collection:copying}{forwarding pointer}, to 0. Scanning C forwards D to 3; scanning D finds nothing. Four cells are copied, A, B, C, D in that order, and the references become $0 \to 1, 2$; $1 \to 3, 0$; $2 \to 3$. E is never examined (\code{cheney_test.c}).
+\end{solution}
+
+\begin{solution}{exo:b3:garbage-collection:9}
+Requests for blocks of 1,408, 1,504 and 592 bytes. \omterm{def:b3:garbage-collection:allocator}{First fit} takes 1,408 from the block of 2,000, leaving 592, puts 1,504 in the block of 1,504 and 592 in what was left: all served. \omterm{def:b3:garbage-collection:allocator}{Best fit} puts 1,408 in the smaller block, 1,504, leaving 96 bytes nobody can use; 1,504 then goes in the 2,000, leaving 496; the request of 592 is refused, with 592 bytes free in two pieces (\code{arena_test.c}).
+\end{solution}
+
+\begin{solution}{exo:b3:garbage-collection:10}
+After a collection from-space holds exactly the $L$ live cells, copied together, so $H/2 - L$ cells are free and the program allocates that many before the next collection. That collection copies the $L$ cells live then, by \cref{thm:b3:garbage-collection:cheney}, and the cycle repeats. Per cell allocated: $L/(H/2 - L)$. For \omterm{def:b3:garbage-collection:marksweep}{mark and sweep}, after a collection the $H - L$ cells not live are free, the next collection comes after $H - L$ allocations, and it marks $L$ cells and sweeps $H$: $(L + H)/(H - L)$ units per cell allocated.
+\end{solution}
+
+\begin{solution}{exo:b3:garbage-collection:11}
+\code{exercises/ex11_barrier.c}: if the cell written into is old, the value is a young cell, and the old cell is not yet in the set, it is added; then the store is done. \code{gen.c}'s minor collection already forwards the references of the remembered cells first, and empties the set. \code{gen_test.c} promotes a cell, stores into it a reference to a new young cell, then allocates past the nursery: with the barrier the young cell is promoted and the reference still finds its value 42; without it the minor collection does not see the reference, the young cell is not copied, and the reference points into a nursery that has been reused.
+\end{solution}
+
+\begin{solution}{exo:b3:garbage-collection:12}
+The count of an object is the number of references to it from roots and from objects not yet freed. A \omterm{def:b3:garbage-collection:reachability}{reachable object} never refers to \omterm{def:b3:garbage-collection:reachability}{garbage}, otherwise the \omterm{def:b3:garbage-collection:reachability}{garbage} would be \omterm{def:b3:garbage-collection:reachability}{reachable}; so the count of a \omterm{def:b3:garbage-collection:reachability}{garbage} object counts only references from other \omterm{def:b3:garbage-collection:reachability}{garbage} objects.
+
+Let $x$ be \omterm{def:b3:garbage-collection:reachability}{garbage} and not \omterm{def:b3:garbage-collection:reachability}{reachable} from any \omterm{def:b3:garbage-collection:reachability}{garbage} cycle. The \omterm{def:b3:garbage-collection:reachability}{garbage} objects from which $x$ can be reached form a finite graph with no cycle, otherwise $x$ would be \omterm{def:b3:garbage-collection:reachability}{reachable} from that cycle. By induction on the length of the longest path to $x$ in it: if there is none, $x$'s count is 0 and $x$ is freed; otherwise all the objects that refer to $x$ are freed, by induction, each decrementing $x$'s count, which reaches 0, and $x$ is freed.
+
+Conversely, suppose an object on a \omterm{def:b3:garbage-collection:reachability}{garbage} cycle, or \omterm{def:b3:garbage-collection:reachability}{reachable} from one, is freed, and take the first such object to be freed. If it is on the cycle, its predecessor on the cycle is not yet freed and refers to it; otherwise the object before it on a path from the cycle is not yet freed and refers to it. Either way its count is at least 1 when it is freed, which is impossible. \omterm{def:b3:garbage-collection:reachability}{Reachable objects} are never freed for the same reason: the root or object before them on a path keeps their count at least 1.
+\end{solution}
+
+\begin{solution}{pb:b3:garbage-collection:1}
+\textbf{1.} $500 \times 4 = 2{,}000$ cells, so $L = 2{,}000$. While a request runs, at most 12 more: the work list as it is built; by the time the new session is built, the work list is already \omterm{def:b3:garbage-collection:reachability}{garbage}, and the 4 session cells replace the work list's.
+
+\textbf{2.} $12 + 4 = 16$ cells; the 12 cells of work, 75~\%, are \omterm{def:b3:garbage-collection:reachability}{garbage} once the request ends.
+
+\textbf{3.} $2{,}000 \times 16 = 32{,}000$ bytes live; $20{,}000 \times 16 = 320{,}000$ cells allocated, $5{,}120{,}000$ bytes.
+
+\textbf{4.} A collection may come in the middle of a request, when up to 12 more cells are live, and during the first 500 requests fewer than 500 sessions exist.
+
+\textbf{5.} 75~\% die within the 16 allocations of their own request; the other 25~\% after 500 requests, about 8,000 allocations. The hypothesis holds for three cells out of four.
+
+\textbf{6.} Every allocation may collect. A reference held only in a C variable would not be seen by the collector: the list's cells would be \omterm{def:b3:garbage-collection:reachability}{garbage} to it, freed or, under copying, left behind while the variable still points at the old place.
+
+\textbf{7.} $H/2 - L$.
+
+\textbf{8.} Each collection copies $L$ cells and is followed by $H/2 - L$ allocations: $L/(H/2 - L)$ per cell allocated (exercise~\ref{exo:b3:garbage-collection:10}).
+
+\textbf{9.} It grows without bound: each collection frees almost nothing. Half the heap must hold the live data and a request in progress, $2{,}012$ cells, so $H \ge 4{,}026$ at the very least.
+
+\textbf{10.} $L/(H/2 - L) = 2L/(H - 2L)$, which is close to $2L/H$ when $H$ is much larger than $2L$; that is halved when $H$ doubles.
+
+\textbf{11.} $L/(H/2 - L) = 1$ gives $H = 4L = 8{,}000$ cells, 128~KB; the measurement gives 0.984.
+
+\textbf{12.} A quarter: half of the heap is to-space, empty, and from-space is half live data just after a collection.
+
+\textbf{13.} At $2.5L$: 3.960 measured, 3.989 by the model; at $8L$: 0.325 and 0.333. Both within 3~\%.
+
+\textbf{14.} The cells allocated after the last collection are counted in the allocations but have not paid for a collection yet. At $16L$: 22 collections pay for $22 \times 14{,}000 = 308{,}000$ allocations, and 12,000 more are free riders. The larger the heap, the larger that last partial cycle, relative to the run.
+
+\textbf{15.} $H/2 - L = 30{,}000$, so a collection every 30,000 allocations after the first, which comes at 32,000: 10 collections in 320,000 allocations.
+
+\textbf{16.} $0.984/0.325 \approx 3.0$, then $0.325/0.138 \approx 2.4$: a doubling divides the work by more than 2, and the factor tends to 2 as $H$ grows.
+
+\textbf{17.} A collection comes when from-space is full: the first after 16,000 allocations, which is 1,000 requests, the next every $16{,}000 - 2{,}000 = 14{,}000$ allocations, which is 875 requests. Every collection falls exactly between two requests, when exactly 2,000 cells are live.
+
+\textbf{18.} $1{,}267{,}304 \times 20$~ns $\approx 25$~ms at $2.5L$; $157{,}504 \times 20$~ns $\approx 3.2$~ms at $6L$.
+
+\textbf{19.} After a collection, the $H - L$ cells not live are free; the program allocates them; the next collection marks $L$ and sweeps $H$. Per cell allocated, $(L + H)/(H - L)$.
+
+\textbf{20.} Copying: 0.984 copies per cell allocated; \omterm{def:b3:garbage-collection:marksweep}{mark and sweep}: 1.625 units (model $5/3$). Counted alike, copying does less work, because it never visits the \omterm{def:b3:garbage-collection:reachability}{garbage}.
+
+\textbf{21.} The sweep visits every cell of the heap, and each collection frees at most $H - L$ of them: at least $H/(H - L) > 1$ sweep steps per cell allocated.
+
+\textbf{22.} With a sweep step at a quarter of a copy and a mark at a copy, \omterm{def:b3:garbage-collection:marksweep}{mark and sweep} costs $(L + H/4)/(H - L)$: at $4L$, $2L/3L = 0.67$, less than copying's 1; at $16L$, $5L/15L = 0.33$, more than copying's $L/7L = 0.14$. \omterm{def:b3:garbage-collection:marksweep}{Mark and sweep} wins on a tight heap, copying on a large one.
+
+\textbf{23.} Compaction: the live cells end up together and the free memory is one block, so allocation is a pointer increment and there is no \omterm{def:b3:garbage-collection:fragmentation}{external fragmentation}; the copies also sit near each other in breadth-first order.
+
+\textbf{24.} With copying, the work per cell allocated is $L/(H/2 - L)$, measured within 3~\%; it is 1 at $4L$, and each doubling of the heap beyond that divides it by 3, then by 2.4, then by nearly 2. $8L$ = 16,000 cells (256~KB) costs one copy for every three cells allocated, about 2~ms of collection for 20,000 requests at 20~ns a copy; going to $16L$ saves about 1.2~ms more for twice the memory. For a server with this much live data, $6L$ to $8L$ is the sensible choice; below $4L$ the collector's work grows quickly.
+\end{solution}

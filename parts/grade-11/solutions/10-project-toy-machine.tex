@@ -1,0 +1,190 @@
+\section*{Chapter \ref{ch:g11:project-toy-machine} --- Project: An Assembler and Simulator for the Toy Machine}
+
+\begin{solution}{exo:g11:project-toy-machine:1}
+Six instructions of two bytes: \code{loop} is at $12$; three more: \code{done} at $18$. The table is
+\texttt{\{\textquotesingle{}loop\textquotesingle{}: 12, \textquotesingle{}done\textquotesingle{}: 18\}}.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:2}
+Three bytes, $1$, $2$ and $3$, one per number: \code{DATA} has no operation code.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:3}
+A \code{ValueError} with the message \texttt{line 1: label \textquotesingle{}finish\textquotesingle{} is used but not defined}, raised by the second
+pass when it looks the label up.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:4}
+\code{0x51} $= 81 = 4 \times 20 + 1$: operation code $20$, \code{OUT}, register R1. The instruction is
+\code{OUT R1}.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:5}
+\smallskip\noindent\hspace*{2em}\code{def parse_number(tok):}
+
+\noindent\hspace*{4em}\code{tok = tok.strip()}
+
+\noindent\hspace*{4em}\texttt{if len(tok) == 3 and tok[0] == tok[2] == "\textquotesingle{}":}
+
+\noindent\hspace*{6em}\code{value = ord(tok[1])}
+
+\noindent\hspace*{4em}\code{elif tok.lower().startswith(("0x", "-0x")):}
+
+\noindent\hspace*{6em}\code{value = int(tok, 16)}
+
+\noindent\hspace*{4em}\code{elif tok.lower().startswith(("0b", "-0b")):}
+
+\noindent\hspace*{6em}\code{value = int(tok, 2)}
+
+\noindent\hspace*{4em}\code{else:}
+
+\noindent\hspace*{6em}\code{value = int(tok)}
+
+\noindent\hspace*{4em}\code{if not -128 <= value <= 255:}
+
+\noindent\hspace*{6em}\code{raise ValueError(f"{value} does not fit in one byte")}
+
+\noindent\hspace*{4em}\texttt{return value \% 256}
+
+\smallskip\noindent \code{int} accepts the prefixes \code{0x} and \code{0b} with base $16$ or $2$; \texttt{value \% 256}
+turns $-3$ into $253$, its \omterm{def:g10:machine-integers:twos-complement}{two's complement} on eight bits. The module of milestone~1 writes the same with
+\code{int(tok, 0)}, which reads the prefix itself.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:6}
+In \code{count_down.toy} the only label, \code{loop}, is defined before the jump that uses it. In
+\code{multiply.toy}, \code{JZ done} comes before \code{done:}: when the one-pass \omterm{def:g11:von-neumann-machine:assembly}{assembler} encodes it, the address of
+\code{done} is not known yet. Two repairs: two passes, as in milestone~2; or one pass that leaves a hole, notes the
+address of the hole and the label, and fills every hole at the end, when all labels are known.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:7}
+\smallskip\noindent\hspace*{2em}\code{def not_(m, r, b):}
+
+\noindent\hspace*{4em}\code{m["reg"][r] = set_flags(m, 255 - m["reg"][r])}
+
+\smallskip\noindent\hspace*{2em}\code{def shr(m, r, b):}
+
+\noindent\hspace*{4em}\code{v = m["reg"][r]}
+
+\noindent\hspace*{4em}\texttt{m["reg"][r] = set\_flags(m, v // 2, v \% 2)}
+
+\smallskip\noindent Flipping every bit of $v$ gives $255 - v$, since $v$ plus its flipped bits is $11111111$. Halving
+drops bit $0$, which is $v \bmod 2$ and goes to C. The tests compare both with the shared \omterm{def:g11:project-toy-machine:simulator}{simulator} on all $256$
+values.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:8}
+Only \code{max2.toy}: it prints $57$ instead of $201$. \code{CMP R0, R1} with $57 < 201$ must set C, and \code{JC}
+jumps to print R1; with the inverted carry C is $0$, so it prints R0. The other programs test Z or N after their
+subtractions, never C, and are not affected: a \omterm{def:g10:specifications-and-tests:test-suite}{test suite} must include a program that reads each flag.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:9}
+The program and its data take addresses $0$ to $26$; the stack starts at $255$ and grows down: $256 - 27 = 229$
+cells. \code{sum_array.toy} pushes nothing. A chain of more than $229$ pushes or calls would write over the data,
+then the instructions: nothing in the machine prevents it, which is why the \omterm{def:g11:project-toy-machine:simulator}{simulator} stops after a number of steps,
+and a careful program keeps its stack small.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:10}
+\smallskip\noindent\hspace*{2em}\code{def dump(m):}
+
+\noindent\hspace*{4em}\code{f = m["flags"]}
+
+\noindent\hspace*{4em}\code{lines = ["R0={} R1={} R2={} R3={} PC={} SP={} Z={} N={} C={}".format(}
+
+\noindent\hspace*{6em}\code{*m["reg"], m["pc"], m["sp"], f["Z"], f["N"], f["C"])]}
+
+\noindent\hspace*{4em}\code{cells = [(a, v) for a, v in enumerate(m["mem"]) if v]}
+
+\noindent\hspace*{4em}\code{for i in range(0, len(cells), 8):}
+
+\noindent\hspace*{6em}\code{lines.append("  " + "  ".join(f"M[{a}]={v}" for a, v in cells[i:i + 8]))}
+
+\noindent\hspace*{4em}\texttt{return "\textbackslash n".join(lines)}
+
+\smallskip\noindent After \code{sum_array.toy}, the first line is \code{R0=84 R1=27 R2=0 R3=9 PC=18 SP=0 Z=1 N=0 C=1};
+the tests compare the whole text with the shared tool's.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:11}
+\begin{center}
+\begin{tabular}{rrlrrrrccc}
+  step & PC & instruction & R0 & R1 & R2 & R3 & Z & N & C \\ \hline
+  $1$ & $0$ & \code{LOADI R0, 250} & $0$ & $0$ & $0$ & $0$ & $0$ & $0$ & $0$ \\
+  $2$ & $2$ & \code{ADDI R0, 10} & $250$ & $0$ & $0$ & $0$ & $0$ & $0$ & $0$ \\
+  $3$ & $4$ & \code{JC 8} & $4$ & $0$ & $0$ & $0$ & $0$ & $0$ & $1$ \\
+  $4$ & $8$ & \code{OUT R0} & $4$ & $0$ & $0$ & $0$ & $0$ & $0$ & $1$ \\
+  $5$ & $10$ & \code{HALT} & $4$ & $0$ & $0$ & $0$ & $0$ & $0$ & $1$
+\end{tabular}
+\end{center}
+$250 + 10 = 260 = 256 + 4$: R0 is $4$ with a carry, so \code{JC} jumps to \code{big}, at address $8$; the program
+prints $4$ and halts after $5$ steps.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:12}
+The expansion goes on the rows, before the first pass: each row \code{INC r} becomes \code{ADDI r, 1}. Both passes
+then see only real instructions. The \omterm{def:g11:project-toy-machine:two-pass}{symbol table} stays right because \code{INC} takes two bytes, as \code{ADDI} does:
+every address counted by the first pass is the address where the second pass places the bytes. (A pseudo-instruction
+that expanded into two instructions would have to be counted as four bytes in the first pass.)
+
+\smallskip\noindent\hspace*{2em}\code{def expand(rows):}
+
+\noindent\hspace*{4em}\code{out = []}
+
+\noindent\hspace*{4em}\code{for line, label, mnemonic, operands in rows:}
+
+\noindent\hspace*{6em}\code{if mnemonic == "INC":}
+
+\noindent\hspace*{8em}\code{mnemonic, operands = "ADDI", operands + ["1"]}
+
+\noindent\hspace*{6em}\code{out.append((line, label, mnemonic, operands))}
+
+\noindent\hspace*{4em}\code{return out}
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:13}
+Let $b_0 < 112$ and $b_1$ be two bytes. The division of $b_0$ by $4$ gives one quotient $q$ and one remainder $r$,
+$b_0 = 4q + r$ with $0 \le r < 4$; since $b_0 < 112 = 4 \times 28$, $q \le 27$ is the operation code of exactly one
+line of the table, with one mnemonic and one kind of operands. The text is then fixed: the mnemonic, followed,
+according to the kind, by R$r$, by $b_1$, by \code{[}$b_1$\code{]} or by R$(b_1 \bmod 4)$. Two different
+instructions never come from one pair of bytes.
+
+Assembling that text gives the operation code $q$ back from the mnemonic. The first byte is $4q + r$ when the kind
+has a register, $4q$ otherwise; the second is $b_1$ for a number or an address, $b_1 \bmod 4$ for a second register,
+$0$ when there is no operand. So it gives back $b_0$ and $b_1$ exactly when the fields the kind does not use are $0$:
+$r = 0$ for an instruction without register, $b_1 < 4$ for a second register, $b_1 = 0$ without operand.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:14}
+\smallskip\noindent\hspace*{2em}\code{def disassemble_program(memory, end):}
+
+\noindent\hspace*{4em}\code{lines = [f"{a:3d}: {disassemble(memory[a], memory[a + 1])}"}
+
+\noindent\hspace*{8em}\code{for a in range(0, end, 2)]}
+
+\noindent\hspace*{4em}\code{last = max((a for a, v in enumerate(memory) if v), default=end - 1)}
+
+\noindent\hspace*{4em}\code{if last >= end:}
+
+\noindent\hspace*{6em}\code{rest = ", ".join(str(v) for v in memory[end:last + 1])}
+
+\noindent\hspace*{6em}\code{lines.append(f"{end:3d}: DATA {rest}")}
+
+\noindent\hspace*{4em}\code{return lines}
+
+\smallskip\noindent On \code{sum_array.toy}: ten instructions from \code{0: LOADI R0, 0} to \code{18: HALT}, with
+\code{2: LOADI R1, 21} and \code{12: ADDI R2, 255} where the source said \code{array} and \code{-1}: the labels and
+the notations are lost; then \code{20: DATA 6, 12, 7, 30, 1, 25, 9}. Where the instructions end cannot be read from
+the bytes; that is why \code{end} is a parameter.
+\end{solution}
+
+\begin{solution}{exo:g11:project-toy-machine:15}
+By kind of operands: no operand (\code{HALT}, \code{RET}, \code{NOP}): $3 \times 1$; one register (\code{NOT},
+\code{SHL}, \code{SHR}, \code{IN}, \code{OUT}, \code{PUSH}, \code{POP}): $7 \times 4 = 28$; one address (\code{JMP},
+the four \omterm{def:g11:von-neumann-machine:jump}{conditional jumps}, \code{CALL}): $6 \times 256 = 1536$; a register and a number or an address
+(\code{LOADI}, \code{ADDI}, \code{LOAD}, \code{STORE}): $4 \times 4 \times 256 = 4096$; two registers (\code{ADD},
+\code{SUB}, \code{AND}, \code{OR}, \code{XOR}, \code{CMP}, \code{LOADR}, \code{STORER}): $8 \times 16 = 128$. In all
+$3 + 28 + 1536 + 4096 + 128 = 5791$, out of $65\,536$ pairs of bytes.
+\end{solution}

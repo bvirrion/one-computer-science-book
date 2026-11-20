@@ -1,0 +1,153 @@
+\section*{Chapter \ref{ch:g11:von-neumann-machine} --- The von Neumann Machine and Assembly Language}
+
+\begin{solution}{exo:g11:von-neumann-machine:1}
+\code{R1} becomes $9 - 6 = 3$, and the program prints \code{3}.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:2}
+\code{ADD R1, R2}: operation code $4$, $r = 1$, so $4 \times 4 + 1 = 17$, then $2$: \code{00010001 00000010}.
+\code{JNZ 6}: operation code $16$, $r = 0$, so $64$, then $6$: \code{01000000 00000110}.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:3}
+$52 = 4 \times 13 + 0$: operation $13$, \code{CMP}, with $r = 0$ and $s = 3$: \code{CMP R0, R3}. $60 = 4 \times 15 +
+0$: \code{JZ}, to the address $18$: \code{JZ 18}.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:4}
+$5 - 10$ wraps to $256 - 5 = 251$: $Z = 0$, $N = 1$ (bit 7 is $1$, the result read with sign is $-5$), $C = 1$ (a
+borrow). Starting again from $5$ and $10$, \code{SUB R1, R0} gives $5$: $Z = 0$, $N = 0$, $C = 0$.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:5}
+Keep the largest in \code{R0}; read the next number into \code{R1}, \code{CMP R0, R1}, and when \code{JC} shows
+\code{R0} smaller, copy \code{R1} into \code{R0} (\code{LOADI R0, 0} then \code{ADD R0, R1}, since there is no move
+instruction). The file \code{exercises/max3.toy} does it; the tests run it on $50$ random triples.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:6}
+It prints $7$, $5$, $3$, $1$, then $1 - 2$ wraps to $255$, and the odd numbers $255$, $253$, \dots{} follow: the
+counter never reaches $0$, so \code{JNZ} always \omterm{def:g11:von-neumann-machine:jump}{jumps}, until the machine stops the program after $10\,000$ steps.
+The fix is \code{JC done} right after the \code{SUB}: the subtraction borrows exactly when the counter was smaller
+than $2$ (\code{exercises/count_by_two_fixed.toy}).
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:7}
+As \code{sum_array.toy}, but with \code{CMP R0, R3} and \code{JC} to a block that copies \code{R3} into \code{R0}
+before going on (\code{exercises/max_array.toy}). On the array $12, 7, 130, 1, 25, 9, 64$ it prints $130$.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:8}
+Three steps before the loop, three per turn, and \code{OUT} and \code{HALT}: $3n + 5$. For $n = 0$, the first
+\code{SUB} gives $255$ and $Z = 0$: the loop runs $256$ times, adding $0 + 255 + 254 + \dots + 1 = 32\,640$, which
+modulo $256$ is $128$. The program prints $128$ after $773$ steps. The tests check $3n + 5$ for $n = 1$, $5$, $20$.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:9}
+After step $2$ (\code{CALL}): \code{SP} $= 255$, cell $255$ holds $4$. After step $3$ (\code{PUSH R2}): \code{SP}
+$= 254$, cell $254$ holds $0$, the caller's \code{R2}. After step $16$ (\code{POP R2}): \code{SP} $= 255$; cell $254$
+still holds $0$, since popping does not erase. After step $17$ (\code{RET}): \code{SP} $= 255 + 1$, which wraps to
+$0$; cell $255$ still holds $4$.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:10}
+On top of the stack is the $40$ pushed by \code{PUSH R2}, not the return address: \code{RET} pops it and \omterm{def:g11:von-neumann-machine:jump}{jumps} to
+address $40$. That cell is empty, and two bytes $0$ are \code{HALT}: the program stops there and prints nothing
+(\code{exercises/bad_return.toy}; the tests check it). With other values in \code{R2}, it could have run anything.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:11}
+\code{SHL R0} gives $2x$, which is copied into \code{R1}; two more \code{SHL R0} give $8x$, and \code{ADD R0, R1}
+gives $10x$ (\code{exercises/times_ten.toy}). All modulo $256$: for $x = 26$, $260 \bmod 256 = 4$.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:12}
+Before the loop: \code{IN}, \code{IN}, \code{LOADI}, $3$ steps. Each turn with a bit $1$ runs \code{ADDI}, \code{JZ},
+\code{SHR}, \code{JC} (taken), \code{ADD}, \code{SHL}, \code{JMP}; with a bit $0$, \code{ADDI}, \code{JZ},
+\code{SHR}, \code{JC} (not taken), \code{JMP next}, \code{SHL}, \code{JMP}: $7$ steps either way. Each turn shifts
+\code{R1} right by one, so after $L$ turns it is $0$; then \code{ADDI}, \code{JZ}, \code{OUT}, \code{HALT}: $4$
+steps. In all $3 + 7L + 4 = 7 + 7L$. Since $L \le 8$ for an $8$-bit number, no input takes more than $63$ steps.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:13}
+While $a \ge b$ (\code{CMP R0, R1} then \code{JC done}), subtract $b$ from $a$ and add $1$ to the quotient; then print
+the quotient and what is left of $a$, the remainder (\code{exercises/divide.toy}; the tests compare it with
+\code{//} and \texttt{\%} on $888$ pairs).
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:14}
+$i$ instructions take $2i$ cells from address $0$, then come the $d$ data cells. Each level of call pushes a return
+address and at most $p$ registers: the stack holds at most $k(1 + p)$ cells, from $255$ down. Nothing overlaps if
+$2i + d + k(1 + p) \le 256$. For $d = 30$, $k = 4$, $p = 2$: $2i \le 256 - 30 - 12 = 214$, so at most $107$
+instructions.
+\end{solution}
+
+\begin{solution}{exo:g11:von-neumann-machine:15}
+After reading $a$ into \code{R0} and $b$ into \code{R1}: \code{CMP R0, R1}; \code{JZ done} when they are equal;
+\code{JC} to a block that does \code{SUB R1, R0} when $a < b$; otherwise \code{SUB R0, R1}; both \omterm{def:g11:von-neumann-machine:jump}{jump} back to the
+comparison; \code{done} prints \code{R0} (\code{exercises/gcd.toy}). The tests compare it with \code{math.gcd} on
+$720$ pairs.
+\end{solution}
+
+\begin{solution}{pb:g11:von-neumann-machine:1}
+\textbf{1.} \code{IN}, \code{IN}, \code{LOADI}, \code{LOADI}, \code{ADDI}, \code{JZ} (taken), \code{OUT},
+\code{HALT}: $8$ steps.
+
+\textbf{2.} The same $6$ steps before the loop, $3$ per turn for $b$ turns, then \code{OUT} and \code{HALT}:
+$8 + 3b$. For $b = 1$, $11$; for $b = 255$, $773$, as printed.
+
+\textbf{3.} No: \code{R0} is only added, never tested.
+
+\textbf{4.} $\frac{1}{256}\left(8 + \sum_{b=1}^{255} (8 + 3b)\right) = 8 + \frac{3}{256} \cdot \frac{255 \times 256}{2}
+= 8 + 382.5 = 390.5$, as printed.
+
+\textbf{5.} At \code{loop}: $(13, 11, 0)$, then $(26, 5, 13)$, $(52, 2, 39)$, $(104, 1, 39)$, $(208, 0, 143)$; the
+last test finds $b = 0$, and the program prints $143$.
+
+\textbf{6.} \code{SHR} moves every bit one place right, and the bit that falls out, the lowest, goes into $C$;
+\code{JC} \omterm{def:g11:von-neumann-machine:jump}{jumps} exactly when it was $1$.
+
+\textbf{7.} $2a$: after $i$ turns \code{R0} holds $a \times 2^i$, the value of bit $i$ of $b$. It must double at every
+turn so that it matches the weight of the next bit, which the next turn tests, whatever this one was.
+
+\textbf{8.} Each turn halves \code{R1}, dropping its lowest bit; it becomes $0$ once every bit up to the highest $1$
+has been dropped, after $L$ turns.
+
+\textbf{9.} \code{ADD} and \code{SHL} wrap modulo $256$, so the program prints $a \times b \bmod 256$, the low byte of
+the product.
+
+\textbf{10.} $7$ in both cases (the list is in the solution of exercise 12): taking \code{JC} to \code{add} costs the
+\code{ADD}, not taking it costs a \code{JMP next}.
+
+\textbf{11.} $3$ steps before, $7$ per turn, $4$ at the end: $7 + 7L$. For $b = 0$, $L = 0$ and $7$ steps; for
+$b = 1$, $L = 1$ and $14$; as printed.
+
+\textbf{12.} $L = 8$ for $b$ from $128$ to $255$: $128$ values. $128 = 10000000$ is the smallest of them, so the
+worst case, $7 + 56 = 63$, appears first there.
+
+\textbf{13.} One value has $L = 0$, and $2^{L - 1}$ values have each $L$ from $1$ to $8$. The mean is
+\[ \frac{1}{256}\left(7 + \sum_{L=1}^{8} 2^{L-1}(7 + 7L)\right) = \frac{7 + 1785 + 12\,551}{256} =
+\frac{14\,343}{256} \approx 56.03, \]
+printed $56.0$.
+
+\textbf{14.} That the machine printed exactly one number, the product modulo $256$: the machine's arithmetic wraps
+while Python's does not.
+
+\textbf{15.} $773$ and $63$ steps: repeated addition is about $12.3$ times slower in the worst case.
+
+\textbf{16.} For $b$ from $1$ to $6$, and $8$; at $b = 9$ both take $35$. The largest saving is $8$ steps, at $b = 4$
+($20$ against $28$).
+
+\textbf{17.} Below $7$, but the test that chooses costs a \code{CMP} and a \omterm{def:g11:von-neumann-machine:jump}{jump}, $2$ steps, which eats most of a saving
+of at most $8$: it is not worth it.
+
+\textbf{18.} Repeated addition: $8 + 3 \times 65\,535 = 196\,613$ steps; shift and add: $7 + 7 \times 16 = 119$.
+
+\textbf{19.} The same idea, shifted copies of $a$ for the bits of $b$ that are $1$, added up. The circuit makes all the
+shifted copies at once with AND gates and adds them with a tree of adders, in a few levels of gates instead of one
+turn per bit.
+
+\textbf{20.} Over all $8$-bit values of $b$, multiplication by repeated addition takes up to $773$ steps ($8 + 3b$),
+and by shift and add at most $63$ ($7 + 7L$, where $L \le 8$ is the number of bits of $b$): about $12$ times fewer in
+the worst case, and $56.0$ against $390.5$ steps on average.
+\end{solution}

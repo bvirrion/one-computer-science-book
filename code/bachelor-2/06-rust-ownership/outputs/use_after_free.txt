@@ -1,0 +1,22 @@
+$ rustc --edition 2021 -O -o use_after_free use_after_free.rs && ./use_after_free
+error[E0505]: cannot move out of `name` because it is borrowed
+ --> use_after_free.rs:6:10
+  |
+4 |     let name = String::from("Mill Lane");
+  |         ---- binding `name` declared here
+5 |     let shown = &name; // a reference to the same string
+  |                 ----- borrow of `name` occurs here
+6 |     drop(name); // the owner gives the string back
+  |          ^^^^ move out of `name` occurs here
+7 |     println!("{shown}"); // ...and the reference still uses it
+  |                ----- borrow later used here
+  |
+help: consider cloning the value if the performance cost is acceptable
+  |
+5 |     let shown = &name.clone(); // a reference to the same string
+  |                      ++++++++
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0505`.
+[exit status 1]

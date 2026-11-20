@@ -1,0 +1,346 @@
+% Provenance (never printed): NSI terminale "Algorithmique: recherche textuelle (algorithme de Boyer-Moore, ici
+% sous la forme simplifiee de Horspool; interet du pretraitement du motif; cout non exigible)". See
+% sources/book2/BRIEFS.md.
+\chapter{Searching in Text}\label{ch:g12:text-search}
+
+A text editor finds a word in a book of a million letters before the finger leaves the key. The obvious way is to
+try the word at every position of the text, comparing letters until one differs. It works, and it reads every
+letter of the text at least once. A cleverer search looks at the word before it starts, and then, at most positions,
+reads one letter and jumps several places at once.
+
+This chapter writes both searches, counts the letters they compare, and shows when the jumps are long and when they
+are short. The cost is measured on generated texts rather than proved: the guarantee of the cleverer method is that
+it never misses an \omterm{def:g12:text-search:pattern}{occurrence}, and that much is proved.
+
+\begin{recall}
+A string is a sequence of characters, indexed from $0$; \code{s[i:j]} is the slice from $i$ up to $j$ (Book 1, grade
+7; chapter \ref{ch:g10:text-encodings}). The cost of an algorithm is counted in elementary steps, as a function of the
+size of its input (chapter \ref{ch:g11:cost-of-an-algorithm}). A dictionary maps keys to values, and \code{d.get(k,
+default)} gives a value with a default for absent keys (Book 1, grade 8).
+\end{recall}
+
+\section{The naive search}\label{sec:g12:text-search:naive}
+
+\begin{definition}[Pattern, occurrence]\label{def:g12:text-search:pattern}
+In text search, the \emph{pattern}\index{pattern (text search)} is the string looked for, of length $m$, in a
+\emph{text} of length $n$. An \emph{occurrence}\index{occurrence} of the pattern is a position $i$ of the text with
+\code{text[i:i + m] == p}. Placing the pattern under the text from position $i$ is called an \emph{alignment}; there
+are $n - m + 1$ of them.
+\end{definition}
+
+The naive search tries every alignment, from left to right. At each one it compares the letters of the \omterm{def:g12:text-search:pattern}{pattern} with
+those of the text above them, from the first, and gives up at the first difference.
+
+\omcode{code/grade-12/08-text-search/listings/naive.py}{1}{24}{The naive search, with its comparisons
+counted.}\label{lst:g12:text-search:naive}
+
+\omoutput{code/grade-12/08-text-search/outputs/naive.txt}{Positions found, and comparisons made, in a text of $27$
+letters.}\label{out:g12:text-search:naive}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\ttfamily\small, x=4.4mm, y=-5.2mm]
+  \foreach \c [count=\k from 0] in {a,{ },m,a,n,{ },a,{ },p,l,a,n} \node at (\k,0) {\c};
+  \foreach \k in {0,...,11} \node[font=\tiny, black!50] at (\k,-0.8) {\k};
+  \foreach \i/\r in {0/1, 1/2, 2/3, 3/4} {
+    \foreach \c [count=\j from 0] in {p,l,a,n} {
+      \pgfmathtruncatemacro{\k}{\i+\j}
+      \ifnum\j=0 \node[draw, fill=omThm!15, minimum size=4mm, inner sep=0pt] at (\k,\r) {\c};
+      \else \node[black!35] at (\k,\r) {\c}; \fi
+    }
+  }
+  \foreach \c [count=\j from 0] in {p,l,a,n} \node[draw, fill=omMeth!20, minimum size=4mm, inner sep=0pt] at (8+\j,5.4) {\c};
+  \node[font=\small\rmfamily, black!60] at (8,3.2) {$\vdots$};
+  \node[font=\footnotesize\rmfamily, right, align=left] at (12.6,2.5) {each alignment fails\\ at its first letter: one\\ comparison};
+  \node[font=\footnotesize\rmfamily, right] at (12.6,5.4) {position $8$: four comparisons, found};
+\end{tikzpicture}
+
+{\small The naive search for \code{plan}. Each row is one alignment; the boxed letter is the one compared, the grey
+letters are never looked at. In ordinary text most alignments fail at the first or second letter, so the search makes
+a little more than one comparison per position.}
+\end{omfigure}
+
+In the worst case, every alignment matches all letters but the last. In a text of $n$ letters \code{a}, the \omterm{def:g12:text-search:pattern}{pattern}
+\code{aa...ab} costs $m$ comparisons at each of the $n - m + 1$ alignments.
+
+\omcode{code/grade-12/08-text-search/listings/worst_naive.py}{1}{9}{The worst case of the naive
+search.}\label{lst:g12:text-search:worst}
+
+\omoutput{code/grade-12/08-text-search/outputs/worst_naive.txt}{Exactly $(n - m + 1) \times m$
+comparisons.}\label{out:g12:text-search:worst}
+
+\section{Looking at the pattern first}\label{sec:g12:text-search:preprocessing}
+
+Suppose the \omterm{def:g12:text-search:pattern}{pattern} is \code{STATION} and, at some alignment, the text letter under its last place is a \code{K}. No
+letter of \code{STATION} is a \code{K}. Any alignment that puts a letter of the \omterm{def:g12:text-search:pattern}{pattern} under that \code{K} fails; the
+\omterm{def:g12:text-search:pattern}{pattern} can jump past it, seven places at once. If the letter were a \code{T}, the \omterm{def:g12:text-search:pattern}{pattern} could jump until its own
+last \code{T}, not counting the final place, comes under it: three places.
+
+These distances depend on the \omterm{def:g12:text-search:pattern}{pattern} only, so they can be computed once, before reading the text. Doing work on
+the \omterm{def:g12:text-search:pattern}{pattern} in advance to save work on the text is called \emph{preprocessing}.
+
+\begin{definition}[Shift table]\label{def:g12:text-search:shift-table}
+The \emph{shift table}\index{shift table} of a \omterm{def:g12:text-search:pattern}{pattern} $p$ of length $m$ gives, for each letter $c$, the distance from
+the last place of $c$ in $p$, the final place excluded, to the final place: $m - 1 - j$, where $j$ is that last place.
+A letter absent from the first $m - 1$ places of $p$ gets the shift $m$.
+\end{definition}
+
+\omcode{code/grade-12/08-text-search/listings/shift_table.py}{1}{15}{The \omterm{def:g12:text-search:shift-table}{shift table}, as a dictionary; absent letters
+are left out.}\label{lst:g12:text-search:shift}
+
+\omoutput{code/grade-12/08-text-search/outputs/shift_table.txt}{The later \code{T} of \code{STATION} overwrote the
+earlier one.}\label{out:g12:text-search:shift}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\ttfamily\small, x=7mm, y=-6mm]
+  \foreach \c [count=\j from 0] in {S,T,A,T,I,O,N} {
+    \node[draw, minimum width=7mm, minimum height=6mm, fill=omDef!8] at (\j,0) {\c};
+    \node[font=\tiny\rmfamily, black!50] at (\j,-0.85) {\j};
+  }
+  \foreach \c/\s [count=\k from 0] in {S/6, T/3, A/4, I/2, O/1, {other}/7} {
+    \node[draw, minimum width=11mm, minimum height=6mm, fill=black!5] at (1.6*\k-0.4,2) {\c};
+    \node[draw, minimum width=11mm, minimum height=6mm] at (1.6*\k-0.4,3) {\s};
+  }
+  \node[draw, minimum width=7mm, minimum height=6mm, fill=black!8] at (6,0) {N};
+  \node[left, font=\footnotesize\rmfamily] at (-1.1,2) {letter}; \node[left, font=\footnotesize\rmfamily] at (-1.1,3) {shift};
+  \draw[<->, omThm, thick] (3,0.55) -- node[below, font=\scriptsize\rmfamily] {$3$} (6,0.55);
+\end{tikzpicture}
+
+{\small The \omterm{def:g12:text-search:shift-table}{shift table} of \code{STATION} ($m = 7$). The last \code{T} before the final place is at $3$, three places
+from the end: shift $3$. \code{N}, which appears only in the final place (shaded), and every letter absent from the
+\omterm{def:g12:text-search:pattern}{pattern} get $7$.}
+\end{omfigure}
+
+\section{The Boyer--Moore--Horspool search}\label{sec:g12:text-search:horspool}
+
+\begin{method}[Boyer--Moore--Horspool]\label{met:g12:text-search:horspool}
+The \emph{Boyer--Moore--Horspool algorithm}\index{Boyer--Moore--Horspool algorithm} computes the \omterm{def:g12:text-search:shift-table}{shift table} of the
+\omterm{def:g12:text-search:pattern}{pattern}, then places the \omterm{def:g12:text-search:pattern}{pattern} at position $i = 0$ and repeats while $i \le n - m$: compare the \omterm{def:g12:text-search:pattern}{pattern} with the text
+above it from right to left, and record $i$ if all $m$ letters agree; then, whatever happened, read the text letter
+$c$ under the \omterm{def:g12:text-search:pattern}{pattern}'s last place and move the \omterm{def:g12:text-search:pattern}{pattern} $\mathrm{shift}(c)$ places to the right.
+\end{method}
+
+\omcode{code/grade-12/08-text-search/listings/horspool.py}{1}{30}{Horspool's search, with a trace of the
+alignments.}\label{lst:g12:text-search:horspool}
+
+\omoutput{code/grade-12/08-text-search/outputs/horspool.txt}{Seven alignments and $13$ comparisons to find
+\code{station} in $45$ letters; then \code{the}, three times.}\label{out:g12:text-search:horspool}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\ttfamily\small, x=4.6mm, y=-5.4mm]
+  \foreach \c [count=\k from 0] in {t,h,e,{ },b,u,s,{ },t,o,{ },t,h} \node at (\k,0) {\c};
+  \foreach \k in {0,...,12} \node[font=\tiny, black!50] at (\k,-0.8) {\k};
+  \foreach \c [count=\j from 0] in {s,t,a,t,i,o} \node[black!45] at (\j,1.3) {\c};
+  \node[draw, fill=omThm!15, minimum size=4mm, inner sep=0pt] at (6,1.3) {n};
+  \draw[omThm, thick] (5.6,-0.35) rectangle (6.4,0.35);
+  \node[font=\footnotesize\rmfamily, right, align=left] at (13.2,0.6) {\code{s} $\ne$ \code{n}: no;\\ under the last place: \code{s}};
+  \foreach \c [count=\j from 0] in {s,t,a,t,i,o,n} \node[draw, fill=omMeth!12, minimum size=4mm, inner sep=0pt] at (6+\j,3.2) {\c};
+  \draw[->, thick, omThm] (0,1.9) to[bend right=12] node[below left, font=\scriptsize\rmfamily] {jump $6$} (6,2.7);
+  \draw[densely dotted, omThm] (6,0.4) -- (6,2.8);
+\end{tikzpicture}
+
+{\small A jump of Horspool's search for \code{station}. At position $0$, the first step of the trace, the text letter under the last
+place is \code{s}; the \omterm{def:g12:text-search:pattern}{pattern}'s only \code{s} is $6$ places from its end, so the \omterm{def:g12:text-search:pattern}{pattern} jumps $6$ places, bringing its
+\code{s} under the text's \code{s}. Any smaller jump would put some other letter of the \omterm{def:g12:text-search:pattern}{pattern} under that \code{s}.}
+\end{omfigure}
+
+Why are no \omterm{def:g12:text-search:pattern}{occurrences} skipped? Let $c$ be the text letter under the last place, at alignment $i$, and $s$ its shift.
+For a jump of $d$ places with $1 \le d < s$, the letter of the \omterm{def:g12:text-search:pattern}{pattern} that would come under $c$ is at place
+$m - 1 - d$, which is not the last place and lies after the last place of $c$ among the first $m - 1$; so it is not
+$c$, and that alignment fails. The alignments jumped over all fail, and the search tries every one that could succeed
+(exercise \ref{exo:g12:text-search:12}).
+
+\begin{history}[Boyer and Moore, 1977; Horspool, 1980]
+Robert S.\ Boyer and J Strother Moore published ``A fast string searching algorithm'' in the \emph{Communications of
+the ACM} in 1977; their method uses the \omterm{def:g12:text-search:shift-table}{shift table} of this chapter and a second, more elaborate table. In 1980,
+R.\ Nigel Horspool showed in ``Practical fast searching in strings'' that the first table alone gives most of the
+speed.
+% ledger: g12:boyer-moore-1977, g12:horspool-1980
+\end{history}
+
+\section{The cost in practice}\label{sec:g12:text-search:cost}
+
+How many comparisons does each search make for each letter of the text? The answer depends on the text. The program
+draws random texts of $100\,000$ letters, from $26$ letters and from four (\code{A}, \code{C}, \code{G}, \code{T}, as
+in genetic sequences), and cuts the \omterm{def:g12:text-search:pattern}{patterns} from the texts so that each occurs at least once.
+
+\omcode{code/grade-12/08-text-search/listings/compare_counts.py}{1}{19}{Comparisons per text letter on generated
+texts.}\label{lst:g12:text-search:compare}
+
+\omoutput{code/grade-12/08-text-search/outputs/compare_counts.txt}{With $26$ letters, Horspool's count falls as the
+\omterm{def:g12:text-search:pattern}{pattern} grows; with four, it does not go on falling.}\label{out:g12:text-search:compare}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=11cm, height=6cm, xlabel={length $m$ of the pattern}, ylabel={comparisons per letter},
+    ymin=0, ymax=2.1, legend pos=north east, legend style={font=\footnotesize}, legend columns=2]
+  \addplot[omThm, thick, dashed] table[x=m, y=naive4]{code/grade-12/08-text-search/figures/per_letter.dat};
+  \addplot[omThm, thick, mark=square*, mark size=1.2pt] table[x=m, y=hors4]{code/grade-12/08-text-search/figures/per_letter.dat};
+  \addplot[omDef, thick, dashed] table[x=m, y=naive26]{code/grade-12/08-text-search/figures/per_letter.dat};
+  \addplot[omDef, thick, mark=*, mark size=1.2pt] table[x=m, y=hors26]{code/grade-12/08-text-search/figures/per_letter.dat};
+  \legend{naive{,} 4 letters, Horspool{,} 4 letters, naive{,} 26 letters, Horspool{,} 26 letters}
+\end{axis}
+\end{tikzpicture}
+
+{\small Comparisons per text letter, averaged over five \omterm{def:g12:text-search:pattern}{patterns} for each length, on random texts of $50\,000$
+letters, from \code{figures/per_letter.py}. The naive search stays near $1.04$ and $1.33$ whatever the \omterm{def:g12:text-search:pattern}{pattern}. With
+$26$ letters Horspool's count falls roughly like $1/m$, to $0.06$ at $m = 32$; with four letters it stays around
+$0.4$.}
+\end{omfigure}
+
+The jump is long only when the letter under the last place is rare in the \omterm{def:g12:text-search:pattern}{pattern}. With $26$ letters, most text
+letters do not appear in a short \omterm{def:g12:text-search:pattern}{pattern} at all, and the \omterm{def:g12:text-search:pattern}{pattern} jumps its whole length. With four letters, every
+letter appears among the last few places of any long \omterm{def:g12:text-search:pattern}{pattern}, so the jumps stay short, about four places, however
+long the \omterm{def:g12:text-search:pattern}{pattern}. The worst case is as bad as the naive search's: in a text of \code{a}s, the \omterm{def:g12:text-search:pattern}{pattern}
+\code{baa...a} costs $m$ comparisons at each alignment and jumps one place (exercise \ref{exo:g12:text-search:13}).
+
+On the titles of the town library, joined into one text, the counts are those of ordinary text.
+
+\omcode{code/grade-12/08-text-search/listings/town_titles.py}{1}{17}{Five words searched in the library's
+titles.}\label{lst:g12:text-search:titles}
+
+\omoutput{code/grade-12/08-text-search/outputs/town_titles.txt}{The longer the word, the fewer letters Horspool
+reads; for \code{The}, three letters long, it still saves half.}\label{out:g12:text-search:titles}
+
+\section{Searching in practice}\label{sec:g12:text-search:practice}
+
+Counting comparisons is not the same as timing. A Python loop costs far more per step than the machine code of the
+interpreter's own string methods.
+
+\omcode{code/grade-12/08-text-search/listings/measure_find.py}{1}{31}{The two searches and \code{str.find}, timed on a
+million letters.}\label{lst:g12:text-search:measure}
+
+\omoutput{code/grade-12/08-text-search/outputs/measure_find.txt}{On the author's laptop. \code{str.find} answers in
+under a millisecond, many times faster than either Python loop.}\label{out:g12:text-search:measure}
+
+\begin{inpractice}[Searching in real programs]
+Python's \code{str.find}, \code{in} and \code{str.count} are written in C and use a search of the Boyer--Moore family,
+with a \omterm{def:g12:text-search:shift-table}{shift table} of their own. Text editors and command-line tools search the same way. Searching for many words at
+once, such as every name of a list in a long text, uses a different preprocessing: the words are merged into one
+structure that is followed letter by letter through the text, reading each letter once. It is studied in Book 4.
+\end{inpractice}
+
+\section{Exercises}\label{sec:g12:text-search:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g12:text-search:1}
+Where does \code{ana} occur in \code{bananas}? Do the \omterm{def:g12:text-search:pattern}{occurrences} overlap?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:text-search:2}
+Count the comparisons of \code{search_naive("abcabd", "abd")}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:text-search:3}
+Write the \omterm{def:g12:text-search:shift-table}{shift table} of \code{BANANA}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:text-search:4}
+List the alignments Horspool's search tries for \code{TOWN} in \code{THE OLD TOWN HALL}, and the jump after each.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:text-search:5}
+Write \code{count_occurrences(text, p)} with slices, trying every position.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:text-search:6}
+A student writes \code{for i in range(len(text) - len(p))}. Which \omterm{def:g12:text-search:pattern}{occurrences} are missed? Give the smallest test that
+catches it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:text-search:7}
+Write \code{horspool_first(text, p)}, which returns the first \omterm{def:g12:text-search:pattern}{occurrence}, or $-1$, and stops as soon as it is found.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:text-search:8}
+A student builds the \omterm{def:g12:text-search:shift-table}{shift table} with \code{range(m)} instead of \code{range(m - 1)}. What is the shift of \code{N}
+for \code{TOWN}? What happens when the search meets an \code{N} under the last place?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:text-search:9}
+For a text of $n$ letters, which \omterm{def:g12:text-search:pattern}{pattern} length $m$ makes the worst case of the naive search, $(n - m + 1)m$, the
+largest? How many comparisons for $n = 1000$?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:text-search:10}
+Where does \code{ABAB} occur in \code{ABABABAB}, by the naive search? What does \code{"ABABABAB".count("ABAB")} return,
+and why the difference?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:text-search:11}
+Write \code{search_ignore_case(text, p)}, which finds \code{TOWN} in \code{The Town and the town} twice.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:text-search:12}
+Prove that Horspool's search finds every \omterm{def:g12:text-search:pattern}{occurrence}: no alignment it jumps over is an \omterm{def:g12:text-search:pattern}{occurrence}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:text-search:13}
+Show that for the text of $n$ letters \code{a} and the \omterm{def:g12:text-search:pattern}{pattern} \code{b} followed by $m - 1$ letters \code{a},
+Horspool's search makes exactly $m(n - m + 1)$ comparisons.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:text-search:14}
+Write \code{search_wildcard(text, p)}, in which a \code{?} of the \omterm{def:g12:text-search:pattern}{pattern} matches any one letter. Why does the \omterm{def:g12:text-search:shift-table}{shift
+table} not work directly with a \code{?}?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:text-search:15}
+On a random text of four letters, the mean jump of Horspool's search stays around four places, whatever the length of
+the \omterm{def:g12:text-search:pattern}{pattern}. Explain why, and measure the mean jump for one \omterm{def:g12:text-search:pattern}{pattern} of length $32$.
+\end{exercise}
+
+\section{Problem: Searching a Long Chain of Letters}\label{sec:g12:text-search:problem}
+
+\begin{problem}[{Weekend problem --- a million letters, four of them}]\label{pb:g12:text-search:1}
+A genetic sequence is written with four letters, \code{A}, \code{C}, \code{G}, \code{T}. The program draws a random
+chain of a million of them, cuts five \omterm{def:g12:text-search:pattern}{patterns} of each length from it, and runs both searches.
+
+\omcode{code/grade-12/08-text-search/listings/chain.py}{1}{26}{Both searches on a million letters of four
+kinds.}\label{lst:g12:text-search:chain}
+
+\omoutput{code/grade-12/08-text-search/outputs/chain.txt}{Comparisons per letter, their ratio, and the mean jump of
+the \omterm{def:g12:text-search:shift-table}{shift tables}.}\label{out:g12:text-search:chain}
+
+\medskip\noindent\textbf{Part I --- The chain.}
+\begin{enumerate}
+  \item Why are the \omterm{def:g12:text-search:pattern}{patterns} cut from the text rather than drawn at random?
+  \item In a random chain, how often would you expect a given \omterm{def:g12:text-search:pattern}{pattern} of $4$ letters? Compare with the $378$ found in
+    the $100\,000$ letters of \code{compare_counts.py}.
+  \item Why is a \omterm{def:g12:text-search:pattern}{pattern} of $16$ letters very unlikely to occur twice?
+  \item What does \code{assert found == found_h} check, and why is it in the program?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The naive search.}
+\begin{enumerate}[resume]
+  \item At an alignment, what is the chance that the first comparison fails? That the search reaches a second
+    comparison? A third?
+  \item Explain why the naive search makes about $1 + \frac14 + \frac1{16} + \dotsb$ comparisons per alignment, and
+    why this is close to $\frac43$.
+  \item Why is the result almost the same for every \omterm{def:g12:text-search:pattern}{pattern} length?
+  \item With $26$ letters, what number replaces $\frac43$? Compare with the output of \code{compare_counts.py}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Horspool's search.}
+\begin{enumerate}[resume]
+  \item The mean jump is the average of the \omterm{def:g12:text-search:shift-table}{shift table} over the four letters. Compute it for the \omterm{def:g12:text-search:pattern}{pattern}
+    \code{ACGTACGT}.
+  \item At each alignment Horspool makes a little more than one comparison. Explain why its count per letter is
+    about $1.4$ divided by the mean jump, and check it on the output.
+  \item Why does the mean jump grow from $m = 4$ to $m = 16$, and then stop growing?
+  \item Why can no shift exceed $m$, and why, with four letters, are shifts above $10$ rare for long \omterm{def:g12:text-search:pattern}{patterns}?
+  \item Which \omterm{def:g12:text-search:pattern}{pattern} of length $8$ has the largest mean jump? Give its \omterm{def:g12:text-search:shift-table}{shift table}.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- The ratio.}
+\begin{enumerate}[resume]
+  \item Read the ratio of the two counts for each $m$.
+  \item Compare with the chart for $26$ letters: what would the ratio be at $m = 32$ there?
+  \item The count for $m = 32$ is higher than for $m = 16$. Is the search worse for long \omterm{def:g12:text-search:pattern}{patterns}? What does the
+    variation say about five \omterm{def:g12:text-search:pattern}{patterns} per length?
+  \item The comparisons are counted, not timed. Which listing of the chapter shows that the two do not tell the same
+    story, and why?
+  \item What text and \omterm{def:g12:text-search:pattern}{pattern} would make Horspool's count per letter close to $m$?
+  \item Why would a real program use \code{str.find} rather than either of these functions?
+  \item State the result: comparisons per letter of the two searches on the chain, their ratio, and how it depends on
+    the \omterm{def:g12:text-search:pattern}{pattern}'s length.
+\end{enumerate}
+\end{problem}

@@ -1,0 +1,338 @@
+% Book 3, Year 1, chapter 16 -- hash tables.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 16.
+% ledger: b1:fnv1a, b1:python-siphash
+\chapter{Hash Tables}\label{ch:b1:hash-tables}
+
+A directory of a million names, sorted alphabetically, finds any name in about twenty looks: binary search halves the
+candidates each time, and $2^{20}$ is a million. Twenty is good; one would be better. If a name could be turned
+directly into the position where it is stored, one look would suffice. A \omterm{def:b1:hash-tables:hash-table}{hash table} does this: a function computes a
+position from the key, and the table deals with the \omterm{def:b1:hash-tables:dictionary}{keys} that land on the same position. Its expected cost per
+operation is constant, under an assumption about the \omterm{def:b1:hash-tables:dictionary}{keys} that an adversary can break, which this chapter also shows,
+with the defence.
+
+\begin{recall}
+A \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic array} that doubles when full has amortised constant cost per insertion (\cref{ch:b1:dynamic-arrays}). A
+\omterm{def:b1:linked-structures:list}{singly linked list} inserts and removes at a known link in constant time (\cref{ch:b1:linked-structures}). Unsigned
+integer arithmetic in C is exact modulo $2^{64}$ for \code{uint64_t} (\cref{ch:b1:c-types-and-control}).
+\end{recall}
+
+\section{Dictionaries and sets}\label{sec:b1:hash-tables:dictionaries}
+
+\begin{definition}[Dictionary, key]\label{def:b1:hash-tables:dictionary}
+A \emph{dictionary}\index{dictionary (abstract type)} is an abstract type that associates values with
+\emph{keys}\index{key (of a dictionary)}, each key at most once, with the operations insert (or replace) the value of a
+key, search for the value of a key, and delete a key. A \emph{set} is a dictionary without values.
+\end{definition}
+
+The structures of the previous chapters already implement it. A list of pairs searches in $\Theta(n)$; a sorted \omterm{def:b1:pointers-and-arrays:array}{array}
+searches in $\Theta(\log n)$ but inserts in $\Theta(n)$. Python's \code{dict} and \code{set}, used since the first
+programming chapters, are \omterm{def:b1:hash-tables:hash-table}{hash tables}; this chapter builds two in C.
+
+\section{Hash functions}\label{sec:b1:hash-tables:functions}
+
+\begin{definition}[Hash function, hash value]\label{def:b1:hash-tables:hash-function}
+A \emph{hash function}\index{hash function} maps every key to an integer, its \emph{hash value}\index{hash value}; equal
+\omterm{def:b1:hash-tables:dictionary}{keys} must have equal hash values. For a table of $m$ positions, the position of a key is its hash value modulo $m$.
+\end{definition}
+
+For integer \omterm{def:b1:hash-tables:dictionary}{keys}, the \emph{division method} takes $k \bmod m$, with $m$ a prime far from a power of 2. For strings,
+four functions show what makes a hash good: the first character only; the sum of the characters (the additive hash);
+the polynomial $s_0 31^{L-1} + s_1 31^{L-2} + \dots + s_{L-1} \bmod 2^{64}$, evaluated by Horner's scheme; and FNV-1a,
+which mixes in each byte with an exclusive or and multiplies by a fixed prime, $2^{40} + 2^8 + 179$, starting from a fixed
+offset basis.
+
+\omcodes{code/bachelor-1/16-hash-tables/listings/hashes.c}{6-25}{The additive, polynomial and FNV-1a \omterm{def:b1:hash-tables:hash-function}{hash
+functions}}\label{lst:b1:hash-tables:hashes}
+
+\omoutput{code/bachelor-1/16-hash-tables/outputs/hash_funcs.txt}{Four \omterm{def:b1:hash-tables:hash-function}{hash values} of six \omterm{def:b1:hash-tables:dictionary}{keys}, then their positions
+among 31.}\label{out:b1:hash-tables:funcs}
+
+The first character ignores the rest of the key. The additive hash gives the same value to \code{listen} and
+\code{silent}, and to every reordering of a word. The polynomial hash distinguishes orders, but \code{Aa} and \code{BB}
+collide: $65 \cdot 31 + 97 = 66 \cdot 31 + 66 = 2112$. With $m = 31$, the polynomial hash of a short key keeps only its
+last character, since every other term is a multiple of 31 (\code{listen} lands in \omterm{def:b1:hash-tables:hash-table}{bucket} $110 \bmod 31 = 17$, the \omterm{def:b1:hash-tables:hash-table}{bucket}
+of its \code{n}); only the wrap modulo $2^{64}$ of longer \omterm{def:b1:hash-tables:dictionary}{keys} disturbs this. The multiplier and the table size must not
+share a factor. A good \omterm{def:b1:hash-tables:hash-function}{hash
+function} spreads the \omterm{def:b1:hash-tables:dictionary}{keys} that occur in practice evenly over the positions, and is fast.
+
+\section{Chaining}\label{sec:b1:hash-tables:chaining}
+
+\begin{definition}[Hash table, bucket, collision]\label{def:b1:hash-tables:hash-table}
+A \emph{hash table}\index{hash table} stores a \omterm{def:b1:hash-tables:dictionary}{dictionary} in an \omterm{def:b1:pointers-and-arrays:array}{array} of $m$ \emph{buckets}\index{bucket}; the key $k$
+belongs to bucket $h(k) \bmod m$. Two different \omterm{def:b1:hash-tables:dictionary}{keys} in the same bucket form a \emph{collision}\index{collision}.
+\end{definition}
+
+\begin{definition}[Separate chaining, open addressing, linear probing, tombstone]\label{def:b1:hash-tables:collisions}
+In \emph{separate chaining}\index{separate chaining}, each \omterm{def:b1:hash-tables:hash-table}{bucket} holds a \omterm{def:b1:linked-structures:list}{linked list} of the entries that belong to it.
+In \emph{open addressing}\index{open addressing}, all entries live in the \omterm{def:b1:pointers-and-arrays:array}{array} itself, and a key whose position is taken
+goes to another position, computed by a fixed rule; with \emph{linear probing}\index{linear probing}, the next position,
+cyclically. A deletion in open addressing leaves a \emph{tombstone}\index{tombstone}: a mark that the slot is free for an
+insertion but that a search must go past.
+\end{definition}
+
+\begin{definition}[Load factor, rehashing]\label{def:b1:hash-tables:load-factor}
+The \emph{load factor}\index{load factor} of a table holding $n$ \omterm{def:b1:hash-tables:dictionary}{keys} in $m$ \omterm{def:b1:hash-tables:hash-table}{buckets} is $\alpha = n/m$.
+\emph{Rehashing}\index{rehashing} moves every entry to a new \omterm{def:b1:pointers-and-arrays:array}{array} of a different size, recomputing its position.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[k/.style={draw, rounded corners=2pt, font=\scriptsize, fill=omCode!8, minimum width=16mm},
+  b/.style={draw, minimum width=6mm, minimum height=5mm, font=\scriptsize}, >={Stealth[length=1.6mm]}]
+\foreach \k/\y in {cat/1.2, dog/0.6, the/0, saw/-0.6, river/-1.2} {\node[k] (\k) at (0,\y) {\k};}
+\node[draw, fill=omDef!15, align=center, font=\scriptsize, minimum height=30mm, minimum width=14mm] (h) at (2.4,0)
+{$h(k)$\\mod 7};
+\foreach \i in {0,...,6} {\node[b] (B\i) at (5,1.5-\i*0.5) {\i};}
+\foreach \k in {cat, dog, the, saw, river} {\draw[->] (\k) -- (h.west |- \k);}
+\draw[->] (h.east |- cat) -- (B1.west); \draw[->] (h.east |- dog) -- (B5.west);
+\draw[->] (h.east |- the) -- (B2.west); \draw[->, omThm, thick] (h.east |- saw) -- (B5.west);
+\draw[->] (h.east |- river) -- (B6.west);
+\node[k] (c1) at (6.6,1.0) {cat}; \draw[->] (B1) -- (c1);
+\node[k] (c2) at (6.6,0.5) {the}; \draw[->] (B2) -- (c2);
+\node[k] (c5) at (6.6,-1.0) {dog}; \node[k, fill=omThm!20] (c5b) at (8.6,-1.0) {saw};
+\draw[->] (B5) -- (c5); \draw[->] (c5) -- (c5b);
+\node[k] (c6) at (6.6,-1.5) {river}; \draw[->] (B6) -- (c6);
+\node[font=\scriptsize, text=omThm] at (8.6,-0.4) {collision};
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b1:hash-tables:dictionary}{Keys}, a \omterm{def:b1:hash-tables:hash-function}{hash function} and seven \omterm{def:b1:hash-tables:hash-table}{buckets} with chaining: \code{dog} and \code{saw} land in the
+same \omterm{def:b1:hash-tables:hash-table}{bucket}, which then holds a list of two entries. Empty \omterm{def:b1:hash-tables:hash-table}{buckets} hold \omterm{def:b1:pointers-and-arrays:null}{null pointers}. (Illustrative positions.)}
+\end{omfigure}
+
+\omcode{code/bachelor-1/16-hash-tables/listings/chain.c}{39}{47}{Finding a key in its chain: the link to its cell,
+or to the end of the chain}\label{lst:b1:hash-tables:chain}
+
+The function \code{find} returns a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to the link that leads to the key's cell, as the removal of
+\cref{ch:b1:linked-structures} did; insertion, search and deletion all use it. With resizing on, the table doubles its
+\omterm{def:b1:hash-tables:hash-table}{buckets} when $n > m$, which keeps $\alpha \leq 1$.
+
+\omoutput{code/bachelor-1/16-hash-tables/outputs/chain_demo.txt}{Counting the words of a sentence with the
+\omterm{def:b1:hash-tables:dictionary}{dictionary}.}\label{out:b1:hash-tables:chain-demo}
+
+A search costs the hash, plus one key comparison per entry of the chain examined. In the worst case every key falls into
+one \omterm{def:b1:hash-tables:hash-table}{bucket}, and a search costs $\Theta(n)$. The average case needs an assumption on the \omterm{def:b1:hash-tables:dictionary}{keys}.
+
+\begin{definition}[Simple uniform hashing]\label{def:b1:hash-tables:uniform}
+The assumption of \emph{simple uniform hashing}\index{simple uniform hashing (assumption)} is that each key is equally
+likely to fall into any of the $m$ \omterm{def:b1:hash-tables:hash-table}{buckets}, independently of the other \omterm{def:b1:hash-tables:dictionary}{keys}.
+\end{definition}
+
+Under this assumption, a chain holds $\alpha$ \omterm{def:b1:hash-tables:dictionary}{keys} on average, an unsuccessful search compares $\alpha$ \omterm{def:b1:hash-tables:dictionary}{keys} and a
+successful one about $1 + \alpha/2$, so that with $m$ proportional to $n$ every operation has constant expected cost. The
+proof needs expectations of random variables, and belongs to the second year; the counts below check it.
+
+\omimg{book3/ai/b1-hash-tables-cloakroom.jpg}{0.55\linewidth}{A cloakroom works like \omterm{def:b1:hash-tables:collisions}{separate chaining}: the
+ticket names a hook, a hook may hold several coats, and the attendant looks through the few coats of one hook, never
+through the whole room.}
+
+\section{Open addressing}\label{sec:b1:hash-tables:open}
+
+\omterm{def:b1:hash-tables:collisions}{Open addressing} avoids the lists and their \omterm{def:b1:pointers-and-arrays:pointer}{pointers}: the \omterm{def:b1:pointers-and-arrays:array}{array} holds the entries, and a key whose slot is taken probes
+the next slots until it finds its own key or a free slot. The search stops at a free slot, because the key would have
+been placed there.
+
+\omcode{code/bachelor-1/16-hash-tables/listings/probe.c}{37}{53}{Searching with \omterm{def:b1:hash-tables:collisions}{linear probing}, past
+\omterm{def:b1:hash-tables:collisions}{tombstones}}\label{lst:b1:hash-tables:probe}
+
+\omoutput{code/bachelor-1/16-hash-tables/outputs/probe_demo.txt}{Seven \omterm{def:b1:hash-tables:dictionary}{keys} hashed by their first letter into 11 slots:
+a cluster forms; a deletion leaves a \omterm{def:b1:hash-tables:collisions}{tombstone} \code{x}.}\label{out:b1:hash-tables:probe-demo}
+
+Deleting \code{Bo} by marking its slot free would break the search for \code{Bea}, which starts at slot 0 and would stop
+there; the \omterm{def:b1:hash-tables:collisions}{tombstone} keeps the chain of probes intact, and a later insertion can reuse it. The demonstration also shows
+the weakness of \omterm{def:b1:hash-tables:collisions}{linear probing}: occupied slots form \emph{clusters}, runs of consecutive slots, which any key hashing
+into them lengthens. The expected number of probes, under uniform hashing, is about $\frac12(1 + \frac{1}{1 - \alpha})$
+for a successful search and $\frac12(1 + \frac{1}{(1 - \alpha)^2})$ for an unsuccessful one, so the table must stay well
+below full; this one doubles when \omterm{def:b1:hash-tables:dictionary}{keys} and \omterm{def:b1:hash-tables:collisions}{tombstones} fill three quarters of it.
+
+\begin{omfigure}
+\begin{tikzpicture}[s/.style={draw, minimum width=7mm, minimum height=6mm, font=\small}, >={Stealth[length=1.6mm]}]
+\fill[omThm!15] (-0.35,-0.3) rectangle (0.35,0.3);
+\foreach \v/\i in {x/0, L/1, A/2, C/3, B/4, W/5, ./6, ./7, ./8, ./9, A/10} {\node[s] (s\i) at (\i*0.7,0) {\v};
+  \node[font=\tiny] at (\i*0.7,-0.5) {\i};}
+\draw[decorate, decoration={brace, amplitude=4pt}] (-0.35,0.45) -- (3.85,0.45) node[midway, above=4pt,
+  font=\scriptsize] {one cluster: slots 10, 0, 1, \dots, 5};
+\draw[->, omCode, thick] (0,-0.7) .. controls (0.9,-1.3) and (1.9,-1.3) .. (2.8,-0.7);
+\node[font=\scriptsize, text=omCode, anchor=west] at (4.9,-0.9) {search for \code{Bea}: starts at slot 0 (tombstone,
+go on),};
+\node[font=\scriptsize, text=omCode, anchor=west] at (4.9,-1.3) {then 1, 2, 3, and finds it in slot 4: 5 probes};
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b1:hash-tables:collisions}{Linear probing} after the demonstration: Ada sits in slot 10, the others that hash to 10 wrapped to
+slots 1, 2 and 5, and the deleted Bo left a \omterm{def:b1:hash-tables:collisions}{tombstone} in slot 0. Marking slot 0 free instead would end the search for
+Bea at once.}
+\end{omfigure}
+
+The counts of the two designs, as the \omterm{def:b1:hash-tables:load-factor}{load factor} grows, come from a simulation with random positions:
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=11cm, height=6cm, xmin=0, xmax=1, ymin=0, ymax=12, xlabel={load factor $\alpha$},
+  ylabel={probes or keys compared}, legend pos=north west, legend style={font=\small}, tick label style={font=\small}]
+\addplot[thick, omDef, mark=*, mark size=1pt] table[x=alpha, y=chainhit]
+  {code/bachelor-1/16-hash-tables/figures/probes.dat}; \addlegendentry{chaining, found}
+\addplot[thick, omDef, dashed] table[x=alpha, y=chainmiss]
+  {code/bachelor-1/16-hash-tables/figures/probes.dat}; \addlegendentry{chaining, absent}
+\addplot[thick, omThm, mark=*, mark size=1pt] table[x=alpha, y=probehit]
+  {code/bachelor-1/16-hash-tables/figures/probes.dat}; \addlegendentry{linear probing, found}
+\addplot[thick, omThm, dashed, restrict y to domain=0:30] table[x=alpha, y=probemiss]
+  {code/bachelor-1/16-hash-tables/figures/probes.dat}; \addlegendentry{linear probing, absent}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b1:hash-tables:dictionary}{Keys} compared (chaining) and slots probed (\omterm{def:b1:hash-tables:collisions}{linear probing}) per search, counted on a table of 10\,007
+\omterm{def:b1:hash-tables:hash-table}{buckets} filled with random positions. Chaining degrades gently; probing stays cheap up to about $\alpha = 0.7$, then
+explodes for absent \omterm{def:b1:hash-tables:dictionary}{keys} (46 probes at 0.9, 123 at 0.95, off the chart).}
+\end{omfigure}
+
+\omoutput{code/bachelor-1/16-hash-tables/outputs/timing.txt}{Searches timed on the author's laptop, $m =
+2^{16}$.}\label{out:b1:hash-tables:timing}
+
+Here chaining wins at every \omterm{def:b1:hash-tables:load-factor}{load factor}. Probing touches consecutive slots of one \omterm{def:b1:pointers-and-arrays:array}{array}, which suits the memory
+hierarchy, but each slot of this table holds a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to its key, so every probe also follows a \omterm{def:b1:pointers-and-arrays:pointer}{pointer} to compare the
+key, and the advantage of the contiguous \omterm{def:b1:pointers-and-arrays:array}{array} is lost; near a full table the long clusters add the rest. Tables that
+store short \omterm{def:b1:hash-tables:dictionary}{keys}, such as integers, in the slots themselves are where probing is fastest.
+
+\section{Resizing, and inputs that defeat a hash function}\label{sec:b1:hash-tables:resizing}
+
+A table that doubles its size when the \omterm{def:b1:hash-tables:load-factor}{load factor} passes a threshold rehashes every key, at a cost proportional to the
+number of \omterm{def:b1:hash-tables:dictionary}{keys}; as for the \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic array}, the total over $n$ insertions is $O(n)$, an amortised constant per insertion
+(\cref{exo:b1:hash-tables:10}).
+
+\omoutput[2-7]{code/bachelor-1/16-hash-tables/outputs/resize.txt}{\omterm{def:b1:hash-tables:dictionary}{Keys} moved by the rehashes of $n$ insertions, doubling
+at load $\frac34$.}\label{out:b1:hash-tables:resize}
+
+The expected constant cost rests on the assumption that the \omterm{def:b1:hash-tables:dictionary}{keys} spread evenly. \omterm{def:b1:hash-tables:dictionary}{Keys} chosen by an adversary need not.
+Under the additive hash, every reordering of a word lands in the same \omterm{def:b1:hash-tables:hash-table}{bucket}; under the polynomial hash, the blocks
+\code{Aa} and \code{BB} can be combined into $2^k$ strings of length $2k$ with one \omterm{def:b1:hash-tables:hash-function}{hash value}. A server that stores the
+names of the fields of a request in a \omterm{def:b1:hash-tables:hash-table}{hash table} can be sent thousands of such names, and spend quadratic time on one
+request.
+
+\omoutput{code/bachelor-1/16-hash-tables/outputs/attack.txt}{1024 strings built from \code{Aa} and \code{BB}: one
+polynomial \omterm{def:b1:hash-tables:hash-function}{hash value}; FNV-1a with three seeds spreads them, differently each time.}\label{out:b1:hash-tables:attack}
+
+The defence is a \omterm{def:b1:hash-tables:hash-function}{hash function} with a secret: a seed chosen at random when the program starts, mixed into the hash, so
+that an attacker cannot know which \omterm{def:b1:hash-tables:dictionary}{keys} collide. Python has done this for strings for many years, and since version 3.4
+uses SipHash, a function designed to resist such attacks, for \code{str} and \code{bytes}.
+
+\begin{inpractice}
+In Python, \code{hash("abc")} changes from one run of the \omterm{def:b1:compilation-pipeline:interpreter}{interpreter} to the next, unless \code{PYTHONHASHSEED} fixes the
+seed --- which the captures of this book do, so that their outputs repeat. Never store such \omterm{def:b1:hash-tables:hash-function}{hash values} in a file or
+send them to another program: they are only meaningful inside one run.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b1:hash-tables:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:hash-tables:1}
+With the division method and $m = 11$, give the \omterm{def:b1:hash-tables:hash-table}{bucket} of the \omterm{def:b1:hash-tables:dictionary}{keys} 15, 26, 37, 100 and 121. Which collide?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:hash-tables:2}
+Insert the \omterm{def:b1:hash-tables:dictionary}{keys} 18, 41, 22, 44, 59, 32, 31, 73 in this order into a table of 13 slots with $h(k) = k \bmod 13$ and
+\omterm{def:b1:hash-tables:collisions}{linear probing}. Draw the table.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:hash-tables:3}
+Five \omterm{def:b1:hash-tables:dictionary}{keys} have additive \omterm{def:b1:hash-tables:hash-function}{hash values} 300, 310, 320, 331 and 341, and $m = 10$. Give the chain lengths with chaining.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:hash-tables:4}
+A chaining table of 16 \omterm{def:b1:hash-tables:hash-table}{buckets} doubles when $n > m$. What are $m$ and $\alpha$ after 17, 33 and 100 insertions?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:hash-tables:5}
+This deletion marks the slot free. Explain the output, and repair the deletion.
+\omcode{code/bachelor-1/16-hash-tables/listings/exo_delete_bug.c}{4}{29}{Insertion, search and deletion}
+\omoutput[2-2]{code/bachelor-1/16-hash-tables/outputs/exo_delete_bug.txt}{After deleting 17.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:hash-tables:6}
+A colleague hashes names by their first character only. Read the first row of the problem's table
+(\cref{out:b1:hash-tables:town}): why does the longest chain stay 9 whatever $m$, and why do 101 of 127 \omterm{def:b1:hash-tables:hash-table}{buckets} stay
+empty? What does \omterm{def:b1:hash-tables:collisions}{linear probing} cost with it?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:hash-tables:7}
+Write a set of non-negative integers by \omterm{def:b1:hash-tables:collisions}{open addressing} with \omterm{def:b1:hash-tables:collisions}{linear probing} (no deletion), doubling when three quarters
+full, and test it against an \omterm{def:b1:pointers-and-arrays:array}{array} of booleans.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:hash-tables:8}
+Write a program that reads a text and prints the frequency of each word with the chaining table, and check it against
+Python's \code{collections.Counter}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:hash-tables:9}
+Show that if all $n$ \omterm{def:b1:hash-tables:dictionary}{keys} fall into one \omterm{def:b1:hash-tables:hash-table}{bucket}, there are $n(n - 1)/2$ colliding pairs, and that if they are spread as
+evenly as possible over $m$ \omterm{def:b1:hash-tables:hash-table}{buckets}, there are about $n^2/(2m)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:hash-tables:10}
+A table starts with 8 slots and, after an insertion that makes $n > \frac34 m$, doubles and rehashes its $n$ \omterm{def:b1:hash-tables:dictionary}{keys}. Prove
+that $n$ insertions move fewer than $2n + \log_2 n$ \omterm{def:b1:hash-tables:dictionary}{keys} in all, that the number of moves per insertion comes close to 2
+just after a doubling, and compare with \cref{out:b1:hash-tables:resize}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:hash-tables:11}
+Write \code{colliding(k, L)}, which returns $k$ distinct strings of length $L$ with the same value of $h(s) = \sum_i s_i
+31^{L-1-i} \bmod 2^{64}$, and test it. Prove that it works.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:hash-tables:12}
+Prove that under the additive hash every permutation of a word has the same \omterm{def:b1:hash-tables:hash-function}{hash value}. Among the $26^4$ words of four
+letters \code{a} to \code{z}, how many share the most common additive \omterm{def:b1:hash-tables:hash-function}{hash value}? Count it with a program, and explain
+why it is the middle value.
+\end{exercise}
+
+\section{Problem: Collisions in the town directory}\label{sec:b1:hash-tables:problem}
+
+\begin{problem}[{Weekend problem --- Collisions in the town directory}]\label{pb:b1:hash-tables:1}
+The 120 people of the town are keyed by their full name, read from the town's \code{people.csv}. A program stores them
+in tables of 31, 64 and 127 \omterm{def:b1:hash-tables:hash-table}{buckets} with chaining, and of 127 and 251 slots with \omterm{def:b1:hash-tables:collisions}{linear probing}, under the four \omterm{def:b1:hash-tables:hash-function}{hash
+functions}, and reports the longest chain, the empty \omterm{def:b1:hash-tables:hash-table}{buckets}, and the average cost of a successful search. A second
+program hashes the 720 orders of the letters of one word.
+\omoutput{code/bachelor-1/16-hash-tables/outputs/chains_town.txt}{The town's names under four \omterm{def:b1:hash-tables:hash-function}{hash functions}.}
+\label{out:b1:hash-tables:town}
+\omoutput{code/bachelor-1/16-hash-tables/outputs/anagrams.txt}{The 720 orders of six distinct letters, in 127
+\omterm{def:b1:hash-tables:hash-table}{buckets}.}\label{out:b1:hash-tables:anagrams}
+
+\medskip\noindent\textbf{Part I --- Four hash functions.}
+\begin{enumerate}
+\item With 120 \omterm{def:b1:hash-tables:dictionary}{keys} and $m = 31$, what is the smallest possible longest chain? Which functions come close?
+\item Explain the polynomial hash's longest chain of 18 at $m = 31$, and why it drops at $m = 64$ and 127.
+\item Why does the first-character hash give the same longest chain for every $m \geq 26$?
+\item On these names the additive hash does about as well as FNV-1a. Why is it nevertheless a poor general \omterm{def:b1:hash-tables:hash-function}{hash
+function}? (Think of short \omterm{def:b1:hash-tables:dictionary}{keys}, and of \cref{exo:b1:hash-tables:12}.)
+\item Which of the four would you choose, and why?
+\item Why must equal \omterm{def:b1:hash-tables:dictionary}{keys} have equal \omterm{def:b1:hash-tables:hash-function}{hash values}, but unequal \omterm{def:b1:hash-tables:dictionary}{keys} need not have unequal ones?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Chaining.}
+\begin{enumerate}[resume]
+\item For FNV-1a, compare the \omterm{def:b1:hash-tables:dictionary}{keys} compared per successful search with $1 + \alpha/2$ for the three values of $m$.
+\item With 120 \omterm{def:b1:hash-tables:dictionary}{keys} in 127 \omterm{def:b1:hash-tables:hash-table}{buckets}, about how many \omterm{def:b1:hash-tables:hash-table}{buckets} should stay empty under uniform hashing? Compare with the
+table.
+\item Prove that the average number of \omterm{def:b1:hash-tables:dictionary}{keys} compared per successful search is $\frac1n \sum_b \frac{\ell_b(\ell_b +
+1)}{2}$, where $\ell_b$ is the length of chain $b$ (\omterm{def:b1:hash-tables:dictionary}{keys} added at the end of their chain).
+\item Deduce that, for fixed $n$ and $m$, this average is smallest when the chains are as equal as possible.
+\item What does a search for an absent key cost, in the worst case and on average?
+\item Why does the table of the problem not resize?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Open addressing.}
+\begin{enumerate}[resume]
+\item Compute $\alpha$ for 127 and 251 slots, and compare the FNV-1a probes with $\frac12(1 + \frac{1}{1 - \alpha})$.
+\item Why does the first-character hash cost about 50 probes per search, whatever the table size?
+\item Explain why a cluster grows faster the longer it is.
+\item Why does probing need $m > n$, while chaining works with $m < n$?
+\item Why can a search stop at a free slot but not at a \omterm{def:b1:hash-tables:collisions}{tombstone}?
+\item When the table is resized, what happens to the \omterm{def:b1:hash-tables:collisions}{tombstones}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- An attacker's names.}
+\begin{enumerate}[resume]
+\item Prove that, under the additive hash, a set of $k$ distinct letters gives $k!$ \omterm{def:b1:hash-tables:dictionary}{keys} in one \omterm{def:b1:hash-tables:hash-table}{bucket}.
+\item Read \cref{out:b1:hash-tables:anagrams}: how many \omterm{def:b1:hash-tables:hash-table}{buckets} do the 720 \omterm{def:b1:hash-tables:dictionary}{keys} use under each hash?
+\item With $n$ \omterm{def:b1:hash-tables:dictionary}{keys} in one \omterm{def:b1:hash-tables:hash-table}{bucket}, what does inserting all of them cost with chaining? And with a hash that spreads them
+over $m \geq n$ \omterm{def:b1:hash-tables:hash-table}{buckets}?
+\item An attacker knows the polynomial hash. How many names of length 20 with one \omterm{def:b1:hash-tables:hash-function}{hash value} can he build from \code{Aa}
+and \code{BB} (\cref{out:b1:hash-tables:attack})?
+\item Why does a random seed defeat that attack, and why must the seed stay secret?
+\item State the named result of the problem, \emph{the anagram attack}, with its proof and the numbers printed.
+\end{enumerate}
+\end{problem}

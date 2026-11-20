@@ -1,0 +1,668 @@
+% Book 4, Year 2, chapter 22 -- Regular expressions and the limits of regular languages.
+% Provenance (never printed): sources/book4/BRIEFS.md, chapter 22.
+\chapter{Regular Expressions and the Limits of Regular Languages}\label{ch:b2:regular-languages}
+
+A search box accepts a pattern: \code{(a|a)*b} asks for some $a$'s, each written in one of two ways, then a $b$. On a
+text of $a$'s with no $b$, Python's pattern engine answers ``no match''. The program times that answer:
+
+\omcode{code/bachelor-2/22-regular-languages/listings/backtracking.py}{1}{25}{Timing one pattern on longer and longer
+texts, each run in its own bounded \omterm{def:b2:processes-and-system-calls:process}{process}}\label{lst:b2:regular-languages:hook}
+
+\omoutput{code/bachelor-2/22-regular-languages/outputs/backtracking.txt}{Python's \code{re} on \code{(a|a)*b} and
+$a^n$, on the laptop.}\label{out:b2:regular-languages:hook}
+
+Each extra $a$ doubles the time: 27 letters take more than six seconds, and a search box that receives such a pattern
+freezes. The pattern is not hard. It means the same as \code{a*b}, and the previous chapter's automata decide it in one
+step per letter. This chapter connects the two: patterns, called \omterm{def:b2:regular-languages:regex}{regular expressions}, describe exactly the languages
+that finite automata recognise; every automaton has a smallest equivalent one, which is unique; and some simple
+languages, such as balanced brackets, are beyond both. It ends with a pattern engine that cannot freeze.
+
+\begin{recall}
+\Cref{ch:b2:finite-automata}: words, languages, concatenation $LM$ and star $L^*$; deterministic automata (DFA),
+complete and trim; nondeterministic automata (NFA) with \omterm{def:b2:finite-automata:epsilon}{spontaneous transitions}, which the \omterm{met:b2:finite-automata:subset}{subset construction} turns
+into DFAs, at a cost of up to $2^k$ states; the \omterm{def:b2:finite-automata:product}{product automaton}, so that \omterm{def:b2:finite-automata:recognisable}{recognisable languages} are closed under
+union, intersection and complement. The Year 1 volume: structural induction on trees, proving a property for leaves
+and then for each node from its children.
+\end{recall}
+
+\section{Regular expressions}\label{sec:b2:regular-languages:regex}
+
+\begin{definition}[Regular expression, denoted language]\label{def:b2:regular-languages:regex}
+The \emph{regular expressions}\index{regular expression} over an \omterm{def:b2:finite-automata:word}{alphabet} $\Sigma$ are the trees built by these rules:
+$\emptyset$ and $\varepsilon$ are expressions, every letter $a \in \Sigma$ is an expression, and if $e$ and $f$ are
+expressions, so are $e \mid f$ (alternation), $ef$ (concatenation) and $e^*$ (star). The \emph{language
+denoted}\index{denoted language} by an expression is defined on the tree: $L(\emptyset) = \emptyset$, $L(\varepsilon)
+= \{\varepsilon\}$, $L(a) = \{a\}$, $L(e \mid f) = L(e) \cup L(f)$, $L(ef) = L(e) L(f)$ and $L(e^*) = L(e)^*$. Two
+expressions are \emph{equivalent} if they denote the same language.
+\end{definition}
+
+Written on one line, star binds tighter than concatenation, which binds tighter than alternation: $ab^* \mid c$ is
+$(a(b^*)) \mid c$. The \emph{size} of an expression is the number of nodes of its tree. So $(a \mid b)^*abb$ denotes the
+words over $\{a, b\}$ that end with $abb$, and $(ab \mid b)^*$ the words in which every $a$ is followed by a $b$. The
+library of this chapter's listings, \code{regex.rs}, holds the tree as a Rust enumeration with six cases, and its
+function \code{lang} is the definition run, cut at a length $n$ so that the sets stay finite:
+
+\omcode{code/bachelor-2/22-regular-languages/listings/regex.rs}{159}{186}{The denotation, by induction on the tree;
+the star adds one more factor until nothing new fits}\label{lst:b2:regular-languages:lang}
+
+It is slow, since it builds every word, but it is obviously right, and the tests check the fast code against it.
+
+\begin{definition}[Regular language]\label{def:b2:regular-languages:regular}
+A language is \emph{regular}\index{regular language} if some \omterm{def:b2:regular-languages:regex}{regular expression} denotes it. Equivalently, the regular
+languages form the smallest class of languages that contains $\emptyset$, $\{\varepsilon\}$ and every $\{a\}$, and is
+closed under union, concatenation and star.
+\end{definition}
+
+The two descriptions agree by structural induction: every \omterm{def:b2:regular-languages:regex}{denoted language} is in any such class, and the \omterm{def:b2:regular-languages:regex}{denoted
+languages} form such a class. Every finite language is \omterm{def:b2:regular-languages:regular}{regular}: $\{w_1, \dots, w_k\}$ is denoted by $w_1 \mid \cdots
+\mid w_k$.
+
+\begin{definition}[Extended regular expression]\label{def:b2:regular-languages:extended}
+An \emph{extended regular expression}\index{extended regular expression} also uses these abbreviations: a class
+\code{[abc]} for $a \mid b \mid c$ and a range \code{[a-z]} for every letter from \code{a} to \code{z}; $e^+$ for
+$ee^*$; $e?$ for $e \mid \varepsilon$; and the counts $e\{m,n\}$ for $m$ copies of $e$ followed by $n - m$ copies of
+$e?$, with $e\{m\} = e\{m,m\}$.
+\end{definition}
+
+Each abbreviation is an ordinary expression, so extended expressions denote \omterm{def:b2:regular-languages:regular}{regular languages} too; but they can be
+much shorter: $(a \mid b)\{20\}$ stands for an expression with 40 letters. The parser of \code{regex.rs} reads them by
+recursive descent, one function per priority level; the function for the postfix operators expands them on the spot:
+
+\omcode{code/bachelor-2/22-regular-languages/listings/regex.rs}{86}{110}{Postfix operators: star, plus, option and
+counts, each rewritten into the basic syntax}\label{lst:b2:regular-languages:post}
+
+The syntax here is a small one. Practical pattern languages add a wildcard for any character, anchors for the start
+and end of a line, and often \emph{back-references}, which ask a later part of the text to repeat what an earlier
+group matched. Back-references go beyond \omterm{def:b2:regular-languages:regular}{regular languages} (\cref{sec:b2:regular-languages:limits}); the other
+additions do not.
+
+\section{Kleene's theorem}\label{sec:b2:regular-languages:kleene}
+
+Expressions describe languages; automata recognise them. This section turns each into the other.
+
+\begin{method}[Thompson's construction]\label{met:b2:regular-languages:thompson}
+For each node of the expression's tree, build an NFA \emph{fragment} with \omterm{def:b2:finite-automata:epsilon}{spontaneous transitions}, one entry state $i$
+and one exit state $o$, no transition into $i$ and none out of $o$, by induction on the tree
+as drawn below:
+\begin{itemize}
+\item for $\emptyset$: two states and no transition; for $\varepsilon$: $i \xrightarrow{\varepsilon} o$; for a letter:
+$i \xrightarrow{a} o$;
+\item for $ef$: $i$ to the entry of $e$, the exit of $e$ to the entry of $f$, the exit of $f$ to $o$, all spontaneous;
+\item for $e \mid f$: spontaneous moves from $i$ to both entries and from both exits to $o$;
+\item for $e^*$: spontaneous moves from $i$ to the entry of $e$ and to $o$, and from the exit of $e$ back to its entry
+and to $o$.
+\end{itemize}
+The fragment of the whole expression, with $i$ as start and $o$ as only \omterm{def:b2:finite-automata:dfa}{accepting state}, recognises $L(e)$. It has two
+states per node, $2s$ for an expression of size $s$, and at most two transitions leave each state.
+\end{method}
+
+\begin{omfigure}
+\begin{tikzpicture}[->, >={Stealth[length=1.6mm]}, every state/.style={minimum size=5mm, inner sep=0pt},
+    font=\scriptsize, frag/.style={draw, rounded corners, minimum width=13mm, minimum height=6mm}, auto]
+\begin{scope}
+\node[state] (i) at (0, 0) {$i$}; \node[state] (o) at (1.5, 0) {$o$};
+\path (i) edge node {$a$} (o);
+\node at (0.75, -1.3) {letter $a$};
+\end{scope}
+\begin{scope}[xshift=2.6cm]
+\node[state] (i) at (0, 0) {$i$}; \node[frag] (e) at (1.6, 0) {$e$}; \node[frag] (f) at (3.4, 0) {$f$};
+\node[state] (o) at (5, 0) {$o$};
+\path (i) edge node {$\varepsilon$} (e) (e) edge node {$\varepsilon$} (f) (f) edge node {$\varepsilon$} (o);
+\node at (2.5, -1.3) {concatenation $ef$};
+\end{scope}
+\begin{scope}[yshift=-2.6cm]
+\node[state] (i) at (0, 0) {$i$}; \node[frag] (e) at (1.8, 0.55) {$e$}; \node[frag] (f) at (1.8, -0.55) {$f$};
+\node[state] (o) at (3.6, 0) {$o$};
+\path (i) edge node {$\varepsilon$} (e) (i) edge node[below left] {$\varepsilon$} (f) (e) edge node {$\varepsilon$}
+  (o) (f) edge node[below right] {$\varepsilon$} (o);
+\node at (1.8, -1.4) {alternation $e \mid f$};
+\end{scope}
+\begin{scope}[xshift=5cm, yshift=-2.6cm]
+\node[state] (i) at (0, 0) {$i$}; \node[frag] (e) at (1.8, 0) {$e$}; \node[state] (o) at (3.6, 0) {$o$};
+\path (i) edge node {$\varepsilon$} (e) (e) edge node {$\varepsilon$} (o)
+  (i) edge[bend right=40] node[below] {$\varepsilon$} (o)
+  (e.north east) edge[bend right=60] node[above] {$\varepsilon$} (e.north west);
+\node at (1.8, -1.4) {star $e^*$};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Thompson's fragments. A box is the fragment of a subexpression, entered on its left and left on
+its right; every arrow but the letter's is a \omterm{def:b2:finite-automata:epsilon}{spontaneous transition}.}
+\end{omfigure}
+
+Correctness is a structural induction: a path from $i$ to $o$ reads exactly a word of the subexpression's language,
+since the only way out of a fragment is through its exit, which no transition leaves inside it. Thompson's automaton
+is easy to build but full of spontaneous moves. Glushkov's has none, and only one state per letter.
+
+\begin{definition}[Linear expression, local language]\label{def:b2:regular-languages:local}
+An expression is \emph{linear}\index{linear regular expression} if each letter occurs in it at most once. A language
+$L$ is \emph{local}\index{local language} if there are sets $P, S \subseteq \Sigma$ and $F \subseteq \Sigma^2$ such
+that $L \setminus \{\varepsilon\}$ is the set of nonempty words whose first letter is in $P$, whose last letter is in
+$S$, and whose factors of length 2 are all in $F$.
+\end{definition}
+
+Whether a word belongs to a \omterm{def:b2:regular-languages:local}{local language} is decided by a window of two letters slid along it. Any expression is made
+\omterm{def:b2:regular-languages:local}{linear} by numbering its letters from the left, its \emph{positions}: $(a \mid b)^*abb$ becomes $(a_1 \mid b_2)^* a_3
+b_4 b_5$. Erasing the numbers maps the \omterm{def:b2:regular-languages:local}{linear} expression's language onto the original one.
+
+\begin{definition}[Glushkov automaton]\label{def:b2:regular-languages:glushkov}
+Let $e$ have positions $1, \dots, m$, the letter at position $j$ being $\ell(j)$, and let $e'$ be the \omterm{def:b2:regular-languages:local}{linear}
+expression. Define $\mathrm{Null}$ (whether $\varepsilon \in L(e)$), $\mathrm{First}$ (the positions that can begin a
+word of $L(e')$), $\mathrm{Last}$ (those that can end one), and $\mathrm{Follow}(j)$ (the positions that can come right
+after $j$ in a word of $L(e')$). The \emph{Glushkov automaton}\index{Glushkov automaton} of $e$ has states $0, 1,
+\dots, m$, start state 0, transitions $0 \xrightarrow{\ell(j)} j$ for $j \in \mathrm{First}$ and $i \xrightarrow{\ell(j)}
+j$ for $j \in \mathrm{Follow}(i)$, and \omterm{def:b2:finite-automata:dfa}{accepting states} $\mathrm{Last}$, plus 0 if $\mathrm{Null}$.
+\end{definition}
+
+\begin{method}[The Berry--Sethi computation]\label{met:b2:regular-languages:berry-sethi}
+Compute $\mathrm{Null}$, $\mathrm{First}$ and $\mathrm{Last}$ for every subexpression, bottom up: a position $j$ has
+$(\mathrm{false}, \{j\}, \{j\})$; for $\varepsilon$, $(\mathrm{true}, \emptyset, \emptyset)$; an alternation takes the
+\emph{or} and the unions; a concatenation $fg$ has $\mathrm{Null} = \mathrm{Null}(f) \wedge \mathrm{Null}(g)$,
+$\mathrm{First} = \mathrm{First}(f)$, joined by $\mathrm{First}(g)$ if $f$ is nullable, and symmetrically for
+$\mathrm{Last}$; a star is nullable with its body's sets. On the way, at each concatenation $fg$ add
+$\mathrm{First}(g)$ to $\mathrm{Follow}(j)$ for every $j \in \mathrm{Last}(f)$, and at each star $f^*$ add
+$\mathrm{First}(f)$ to $\mathrm{Follow}(j)$ for every $j \in \mathrm{Last}(f)$.
+\end{method}
+
+The walk of \code{regex.rs} is this method, one case per kind of node:
+
+\omcode{code/bachelor-2/22-regular-languages/listings/regex.rs}{207}{241}{The Berry--Sethi computation: three values
+per subexpression, and the follow sets filled at each concatenation and each
+star}\label{lst:b2:regular-languages:walk}
+
+\omoutput{code/bachelor-2/22-regular-languages/outputs/glushkov.txt}{The positions and sets of $(a \mid b)^*abb$, and
+the automaton checked against the denotation.}\label{out:b2:regular-languages:glushkov}
+
+\begin{omfigure}
+\begin{tikzpicture}[->, >={Stealth[length=1.8mm]}, every state/.style={minimum size=7mm, inner sep=0pt},
+    font=\scriptsize, auto]
+\node[state, initial, initial text=] (0) at (0, 0) {0};
+\node[state] (1) at (2.6, 1.3) {$a_1$};
+\node[state] (2) at (2.6, -1.3) {$b_2$};
+\node[state] (3) at (5.6, 0) {$a_3$};
+\node[state] (4) at (7.6, 0) {$b_4$};
+\node[state, accepting] (5) at (9.6, 0) {$b_5$};
+\path (0) edge node {$a$} (1) (0) edge node[below left] {$b$} (2) (0) edge node[pos=0.3] {$a$} (3)
+  (1) edge[loop above] node {$a$} () (2) edge[loop below] node {$b$} ()
+  (1) edge[bend left=12] node {$b$} (2) (2) edge[bend left=12] node {$a$} (1)
+  (1) edge node {$a$} (3) (2) edge node[below right] {$a$} (3)
+  (3) edge node {$b$} (4) (4) edge node {$b$} (5);
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b2:regular-languages:glushkov}{Glushkov automaton} of $(a \mid b)^*abb$: one state per position, and every transition into
+a position carries that position's letter. It is nondeterministic: from 0, $a_1$ and $a_3$ both read
+$a$.}
+\end{omfigure}
+
+\begin{proposition}[Glushkov's automaton]\label{prop:b2:regular-languages:glushkov}
+The \omterm{def:b2:regular-languages:glushkov}{Glushkov automaton} of an expression with $m$ positions has $m + 1$ states, no \omterm{def:b2:finite-automata:epsilon}{spontaneous transition}, and at most
+$m(m + 1)$ transitions, and it recognises $L(e)$.
+\end{proposition}
+
+\begin{proof}
+The counts come from the definition. For the language, first show by structural induction that $L(e')$ is \omterm{def:b2:regular-languages:local}{local} with
+$P = \mathrm{First}$, $S = \mathrm{Last}$ and $F = \{ij : j \in \mathrm{Follow}(i)\}$, and that the sets computed by
+\cref{met:b2:regular-languages:berry-sethi} are these. For a position, both are clear. For $f \mid g$, the positions of
+$f$ and $g$ are disjoint, no follow pair joins them, so a nonempty word passing the window test uses the positions of
+one side only and belongs to it. For $fg$, a word passing the test splits at the only pair $ij$ with $i$ in $f$ and $j$
+in $g$, which the method added exactly for $i \in \mathrm{Last}(f)$, $j \in \mathrm{First}(g)$; the two parts pass the
+tests of $f$ and $g$, or one part is empty and its side nullable. For $f^*$, a word passing the test splits at the
+pairs $ij$ with $i \in \mathrm{Last}(f)$, $j \in \mathrm{First}(f)$ added by the star, into words of $L(f')$; and
+conversely every word of these languages passes the test. Finally, a run of the automaton on $w = a_1 \cdots a_k$
+from 0 visits positions $j_1, \dots, j_k$ with $\ell(j_t) = a_t$, $j_1 \in \mathrm{First}$ and each $j_{t+1} \in
+\mathrm{Follow}(j_t)$; it accepts when $j_k \in \mathrm{Last}$ (or $k = 0$ and $\mathrm{Null}$). So the automaton
+accepts $w$ exactly when $w$ is the image of a word of the \omterm{def:b2:regular-languages:local}{local language} $L(e')$, that is, $w \in L(e)$.
+\end{proof}
+
+Thompson's automaton for $(a \mid b)^*abb$ has 20 states; Glushkov's has 6:
+
+\omoutput{code/bachelor-2/22-regular-languages/outputs/thompson.txt}{Thompson's construction, two states per node of
+the tree, against Glushkov's $m + 1$, and the two automata compared on every word of length at most
+7.}\label{out:b2:regular-languages:thompson}
+
+The way back, from an automaton to an expression, labels transitions with expressions and removes the states one by
+one.
+
+\begin{method}[State elimination]\label{met:b2:regular-languages:elimination}
+Given an automaton with states $1, \dots, n$, add a new start $S$ with $S \xrightarrow{\varepsilon}$ the old start and
+a new end $E$ with $q \xrightarrow{\varepsilon} E$ for every accepting $q$. Label each pair $(i, j)$ by an expression
+$r_{ij}$: the alternation of the letters from $i$ to $j$, or $\emptyset$. Then, for $k = 1, \dots, n$, remove state
+$k$: for every pair $(i, j)$ of remaining states, replace
+\[
+r_{ij} \quad\text{by}\quad r_{ij} \mid r_{ik}\, r_{kk}^*\, r_{kj}.
+\]
+At the end only $S$ and $E$ remain, and $r_{SE}$ denotes the language of the automaton.
+\end{method}
+
+\begin{omfigure}
+\begin{tikzpicture}[->, >={Stealth[length=1.8mm]}, every state/.style={minimum size=6mm, inner sep=0pt},
+    font=\scriptsize, auto]
+\begin{scope}
+\node[state] (S) at (0, 0) {$S$}; \node[state] (0) at (1.8, 0) {0}; \node[state] (1) at (3.8, 0) {1};
+\node[state] (E) at (5.6, 0) {$E$};
+\path (S) edge node {$\varepsilon$} (0) (0) edge[loop above] node {$a$} () (0) edge[bend left=20] node {$b$} (1)
+  (1) edge[bend left=20] node {$a$} (0) (1) edge[loop above] node {$b$} () (1) edge node {$\varepsilon$} (E);
+\node[anchor=west] at (6.2, 0) {the automaton of ``ends with $b$''};
+\end{scope}
+\begin{scope}[yshift=-2cm]
+\node[state] (S) at (0, 0) {$S$}; \node[state] (1) at (3.8, 0) {1}; \node[state] (E) at (5.6, 0) {$E$};
+\path (S) edge node {$a^*b$} (1) (1) edge[loop above] node {$b \mid aa^*b$} () (1) edge node {$\varepsilon$} (E);
+\node[anchor=west] at (6.2, 0) {state 0 removed};
+\end{scope}
+\begin{scope}[yshift=-3.4cm]
+\node[state] (S) at (0, 0) {$S$}; \node[state] (E) at (5.6, 0) {$E$};
+\path (S) edge node {$a^*b(b \mid aa^*b)^*$} (E);
+\node[anchor=west] at (6.2, 0) {state 1 removed};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small State elimination in three steps. Removing 0 reroutes $S \to 0 \to 1$ into $a^*b$ (the loop
+$a$ on 0 becomes $a^*$) and $1 \to 0 \to 1$ into $aa^*b$, joined to the loop $b$.}
+\end{omfigure}
+
+The loop in \code{dfa.rs}, the second library of the chapter, is the formula of the method; the smart \omterm{def:b2:cpp-classes-raii:constructor}{constructors}
+\code{cat}, \code{alt} and \code{star} of \code{regex.rs} drop the $\emptyset$ and $\varepsilon$ that would otherwise
+fill the result:
+
+\omcode{code/bachelor-2/22-regular-languages/listings/dfa.rs}{115}{140}{State elimination on a complete
+DFA}\label{lst:b2:regular-languages:eliminate}
+
+\omoutput{code/bachelor-2/22-regular-languages/outputs/eliminate.txt}{The three-state automaton of the binary multiples
+of 3 (\cref{ch:b2:finite-automata}), turned into an expression and checked.}\label{out:b2:regular-languages:eliminate}
+
+\begin{theorem}[Kleene's theorem]\label{thm:b2:regular-languages:kleene}
+A language is \omterm{def:b2:regular-languages:regular}{regular} if and only if it is \omterm{def:b2:finite-automata:recognisable}{recognisable} by a finite automaton.
+\end{theorem}
+
+\begin{proof}
+If $L = L(e)$, the \omterm{def:b2:regular-languages:glushkov}{Glushkov automaton} recognises it (\cref{prop:b2:regular-languages:glushkov}). Conversely, take an
+automaton and run \cref{met:b2:regular-languages:elimination}. By induction on $k$: after states $1, \dots, k$ are
+removed, $r_{ij}$ denotes the set of words that lead from $i$ to $j$ through intermediate states among $1, \dots, k$
+only. True for $k = 0$, where there is no intermediate state. A path from $i$ to $j$ through $1, \dots, k$ either avoids
+$k$, and is counted by the old $r_{ij}$, or cuts at its visits to $k$ into a piece from $i$ to $k$, any number of loops
+from $k$ to $k$, and a piece from $k$ to $j$, each avoiding $k$ inside: that is $r_{ik} r_{kk}^* r_{kj}$. At the end,
+$r_{SE}$ denotes the words leading from $S$ to $E$, which are the accepted words.
+\end{proof}
+
+With \cref{ch:b2:finite-automata}, \omterm{def:b2:regular-languages:regular}{regular languages} are therefore closed under complement and intersection too,
+though expressions have no operator for either: the way goes through automata.
+
+\begin{history}
+% ledger: b2:kleene-1956
+% ledger: b2:glushkov-1961
+% ledger: b2:thompson-1968
+% ledger: b2:berry-sethi-1986
+Stephen Kleene introduced \omterm{def:b2:regular-languages:regex}{regular expressions} and proved the theorem in his paper of 1956 on nerve nets and finite
+automata. Victor Glushkov's position automaton appeared in his 1961 survey of the theory of automata. Ken Thompson
+published his construction in 1968, in a short paper on searching text for a \omterm{def:b2:regular-languages:regex}{regular expression}, where the NFA is
+simulated on all its states at once. Gérard Berry and Ravi Sethi showed in
+1986 how to compute the positions' sets on the expression directly, as in \cref{met:b2:regular-languages:berry-sethi}.
+\end{history}
+
+\section{The minimal automaton}\label{sec:b2:regular-languages:minimal}
+
+Many automata recognise the same language. What a DFA must remember after reading $u$ is what the rest of the word
+needs to know.
+
+\begin{definition}[Residual, Myhill--Nerode equivalence]\label{def:b2:regular-languages:residual}
+The \emph{residual}\index{residual (language)} (or left quotient) of a language $L$ by a word $u$ is $u^{-1}L = \{v :
+uv \in L\}$. Two words are \emph{equivalent for $L$}\index{Myhill--Nerode equivalence}, $u \sim_L v$, if $u^{-1}L =
+v^{-1}L$: no continuation $x$ tells them apart, $ux \in L \iff vx \in L$.
+\end{definition}
+
+For $L = (ab \mid b)^*$: $\varepsilon^{-1}L = L$, $a^{-1}L = bL$, $(aa)^{-1}L = \emptyset$, and $b^{-1}L = (ab)^{-1}L =
+L$. Every word has one of these three \omterm{def:b2:regular-languages:residual}{residuals}.
+
+\begin{theorem}[Myhill--Nerode]\label{thm:b2:regular-languages:myhill-nerode}
+A language $L$ is \omterm{def:b2:finite-automata:recognisable}{recognisable} if and only if it has finitely many \omterm{def:b2:regular-languages:residual}{residuals}. Every complete DFA for $L$ has at least as
+many \omterm{def:b2:finite-automata:trim}{accessible states} as $L$ has \omterm{def:b2:regular-languages:residual}{residuals}, and the \emph{\omterm{def:b2:regular-languages:residual}{residual} automaton} reaches the bound: its states are the
+\omterm{def:b2:regular-languages:residual}{residuals}, its start is $L$, its transitions are $R \xrightarrow{a} a^{-1}R$, and its \omterm{def:b2:finite-automata:dfa}{accepting states} are the
+\omterm{def:b2:regular-languages:residual}{residuals} that contain $\varepsilon$.
+\end{theorem}
+
+\begin{proof}
+Let $A$ be a complete DFA for $L$ and $L_q$ the language it accepts from state $q$. Then $u^{-1}L = L_{\delta^*(q_0,
+u)}$: $uv$ is accepted exactly when $v$ leads $\delta^*(q_0, u)$ to an \omterm{def:b2:finite-automata:dfa}{accepting state}
+(\cref{prop:b2:finite-automata:extended}). So each \omterm{def:b2:regular-languages:residual}{residual} is $L_q$ for some accessible $q$, and there are at most as
+many \omterm{def:b2:regular-languages:residual}{residuals} as \omterm{def:b2:finite-automata:trim}{accessible states}. Conversely, suppose there are finitely many \omterm{def:b2:regular-languages:residual}{residuals}. Since $a^{-1}(u^{-1}L) =
+(ua)^{-1}L$, the transitions of the \omterm{def:b2:regular-languages:residual}{residual} automaton lead from a \omterm{def:b2:regular-languages:residual}{residual} to a \omterm{def:b2:regular-languages:residual}{residual}, and by induction on $|w|$ its
+run on $w$ from $L$ ends in $w^{-1}L$. It accepts $w$ when $\varepsilon \in w^{-1}L$, that is, when $w \in L$.
+\end{proof}
+
+\begin{definition}[Minimal automaton]\label{def:b2:regular-languages:minimal}
+A complete DFA for $L$ is \emph{minimal}\index{minimal automaton} if no complete DFA for $L$ has fewer states. By the
+theorem, the \omterm{def:b2:regular-languages:residual}{residual} automaton is minimal; it is called \emph{the} minimal automaton of $L$.
+\end{definition}
+
+\begin{corollary}[Uniqueness]\label{cor:b2:regular-languages:unique-minimal}
+Every \omterm{def:b2:regular-languages:minimal}{minimal} complete DFA for $L$ equals the \omterm{def:b2:regular-languages:residual}{residual} automaton up to the names of its states.
+\end{corollary}
+
+\begin{proof}
+In a \omterm{def:b2:regular-languages:minimal}{minimal} DFA $A$ every state is accessible, or removing it would leave a smaller complete DFA. The map $q \mapsto
+L_q$ sends each state to a \omterm{def:b2:regular-languages:residual}{residual}, reaches them all, and so is a bijection, since both sets have the same size. It
+respects the start ($L_{q_0} = L$), the \omterm{def:b2:finite-automata:dfa}{accepting states} ($q \in F$ iff $\varepsilon \in L_q$) and the transitions
+($L_{\delta(q, a)} = a^{-1}L_q$).
+\end{proof}
+
+Two states $p$ and $q$ of a DFA can be merged when $L_p = L_q$. Moore's method finds these pairs by looking further and
+further ahead.
+
+\begin{method}[Moore's minimisation]\label{met:b2:regular-languages:moore}
+Start from an accessible complete DFA with $n$ states. Round 0 splits the states into two classes, accepting or not.
+Round $k + 1$ puts $p$ and $q$ in the same class when they were in the same class at round $k$ and, for every letter
+$a$, so were $\delta(p, a)$ and $\delta(q, a)$. Stop at the first round that splits no class. Merging each final class
+into one state gives the \omterm{def:b2:regular-languages:minimal}{minimal automaton}.
+\end{method}
+
+\begin{proof}[Correctness]
+By induction on $k$, $p$ and $q$ share a class at round $k$ exactly when no word of length at most $k$ is accepted
+from one and not from the other. A round that splits nothing gives the same partition at every later round, since a
+round depends only on the previous one; so the final classes are those of $L_p = L_q$. Merging them gives a well
+defined DFA, since equivalent states have equivalent successors, with one state per \omterm{def:b2:regular-languages:residual}{residual} of $L$: the \omterm{def:b2:regular-languages:minimal}{minimal
+automaton}. Each round but the last adds a class, and there are at most $n$, so there are at most $n$ rounds, each in
+time proportional to $n|\Sigma|$.
+\end{proof}
+
+\omcode{code/bachelor-2/22-regular-languages/listings/dfa.rs}{53}{80}{Moore's rounds: a state's new class is named by
+its old class and its successors' classes}\label{lst:b2:regular-languages:moore}
+
+The determinised \omterm{def:b2:regular-languages:glushkov}{Glushkov automaton} of ``starts with $a$, or starts and ends with $b$'' has 7 states; two rounds
+leave 4 classes:
+
+\omoutput{code/bachelor-2/22-regular-languages/outputs/minimise.txt}{The DFA of $a(a \mid b)^* \mid b(a \mid b)^*b
+\mid b$, Moore's classes round by round, and the result.}\label{out:b2:regular-languages:minimise}
+
+\begin{omfigure}
+\begin{tikzpicture}[->, >={Stealth[length=1.8mm]}, every state/.style={minimum size=9mm, inner sep=0pt},
+    font=\scriptsize, auto]
+\node[state, initial, initial text=] (A) at (0, 0) {$\{0\}$};
+\node[state, accepting] (B) at (2.8, 1) {$\{1, 3, 4\}$};
+\node[state, accepting] (C) at (2.8, -1) {$\{2, 6\}$};
+\node[state] (D) at (5.8, -1) {$\{5\}$};
+\path (A) edge node {$a$} (B) (A) edge node[below left] {$b$} (C) (B) edge[loop right] node {$a, b$} ()
+  (C) edge[loop below] node {$b$} () (C) edge[bend left=15] node {$a$} (D) (D) edge[bend left=15] node {$b$} (C)
+  (D) edge[loop right] node {$a$} ();
+\end{tikzpicture}
+\par\smallskip{\small The \omterm{def:b2:regular-languages:minimal}{minimal automaton}: each state is a class of \cref{out:b2:regular-languages:minimise}. In
+$\{2, 6\}$ the last letter read is a $b$ after a first $b$; in $\{5\}$ it is an $a$.}
+\end{omfigure}
+
+Moore's method can need $n$ rounds, on an automaton shaped as a chain, and then costs time proportional to
+$n^2|\Sigma|$. John Hopcroft's algorithm reaches $n |\Sigma| \log n$: it keeps a list of \emph{splitters}, a class and a
+letter, splits every class by ``enters the splitter on that letter or not'', and when a class splits in two puts only
+the smaller half on the list. A state then joins a splitter at most $\log_2 n$ times, since each time its class at
+least halves (\cref{exo:b2:regular-languages:11}).
+
+\section{The limits of regular languages}\label{sec:b2:regular-languages:limits}
+
+A finite automaton has a finite memory. A language that needs to count without bound is not \omterm{def:b2:regular-languages:regular}{regular}.
+
+\begin{theorem}[Pumping lemma]\label{thm:b2:regular-languages:pumping}
+If $L$ is recognised by a DFA with $p$ states, every word $w \in L$ with $|w| \ge p$ can be written $w = xyz$ with
+$|xy| \le p$ and $y \ne \varepsilon$, so that $xy^kz \in L$ for every $k \ge 0$.
+\end{theorem}
+
+\begin{proof}
+The run on the first $p$ letters of $w$ visits $p + 1$ states, so one state $q$ appears twice, after reading $x$ and
+after reading $xy$, with $|xy| \le p$ and $y$ nonempty. Reading $y$ leads $q$ back to $q$, so it can be read any
+number of times, zero included, and the run on $xy^kz$ ends where the run on $w$ ends, in an \omterm{def:b2:finite-automata:dfa}{accepting state}.
+\end{proof}
+
+\begin{proposition}[Three languages that are not regular]\label{prop:b2:regular-languages:nonregular}
+The languages $\{a^n b^n : n \ge 0\}$, the balanced bracket words over $\{(, )\}$, and the palindromes over $\{a, b\}$
+are not \omterm{def:b2:regular-languages:regular}{regular}.
+\end{proposition}
+
+\begin{proof}
+For $\{a^nb^n\}$, by the pumping lemma: if a DFA with $p$ states recognised it, $w = a^pb^p$ would split with $y =
+a^j$, $j \ge 1$, since $|xy| \le p$; but $xy^2z = a^{p+j}b^p$ is not in the language. Also by
+\cref{thm:b2:regular-languages:myhill-nerode}: for $i \ne j$, $b^i$ is in the \omterm{def:b2:regular-languages:residual}{residual} by $a^i$ and not in the \omterm{def:b2:regular-languages:residual}{residual}
+by $a^j$, so the \omterm{def:b2:regular-languages:residual}{residuals} are infinitely many. Balanced brackets: their intersection with the \omterm{def:b2:regular-languages:regular}{regular language}
+$(^*\,)^*$ is $\{(^n )^n\}$, which is $\{a^nb^n\}$ with other letters; if they were \omterm{def:b2:regular-languages:regular}{regular}, so would be the
+intersection. Palindromes: for $i \ne j$, $ba^i$ is in the \omterm{def:b2:regular-languages:residual}{residual} by $a^ib$ and not in the \omterm{def:b2:regular-languages:residual}{residual} by $a^jb$.
+\end{proof}
+
+The pumping lemma gives only a necessary condition: some languages that are not \omterm{def:b2:regular-languages:regular}{regular} can be pumped. The \omterm{def:b2:regular-languages:residual}{residuals}
+give the exact answer, and with them a proof is a matter of finding infinitely many words that pairwise differ in what
+must follow. A back-reference that repeats a group asks for the language $\{ww\}$, which has infinitely many \omterm{def:b2:regular-languages:residual}{residuals}
+(by $a^ib$, as for palindromes); this is why pattern engines with back-references cannot be finite automata. Balanced
+brackets and arithmetic expressions need the grammars of \cref{ch:b2:context-free-languages}.
+
+% ledger: b2:nerode-1958
+\begin{history}
+The equivalence and the theorem carry the names of John Myhill and Anil Nerode; Nerode's paper appeared in 1958. The
+pumping lemma for \omterm{def:b2:regular-languages:regular}{regular languages} is a direct form of the pigeonhole argument used in its proof.
+\end{history}
+
+\section{Deciding questions about automata}\label{sec:b2:regular-languages:decisions}
+
+Because an automaton is a finite object, many questions about the infinite language it recognises can be answered by a
+program that always stops.
+
+\begin{proposition}[Questions and their costs]\label{prop:b2:regular-languages:decisions}
+For complete DFAs $A$ and $B$ with $n_A$ and $n_B$ states over $\Sigma$:
+\begin{itemize}
+\item \emph{membership} of a word $w$: time proportional to $|w|$;
+\item \emph{emptiness}, $L(A) = \emptyset$: no \omterm{def:b2:finite-automata:dfa}{accepting state} is accessible, a graph search in time proportional to
+$n_A|\Sigma|$;
+\item \emph{finiteness}: $L(A)$ is infinite exactly when the \omterm{def:b2:finite-automata:trim}{trim automaton} has a cycle, also a graph search;
+\item \emph{inclusion}, $L(A) \subseteq L(B)$: $L(A) \cap (\Sigma^* \setminus L(B))$ is empty, a search of the product
+in time proportional to $n_A n_B |\Sigma|$;
+\item \emph{equivalence}: no accessible pair $(p, q)$ of the product has $p$ accepting and $q$ not, or the reverse; a
+breadth-first search finds a shortest word on which they differ, if there is one.
+\end{itemize}
+\end{proposition}
+
+\begin{proof}
+Membership is the run. Emptiness: a word is accepted exactly when its run reaches an \omterm{def:b2:finite-automata:dfa}{accepting state}, so $L(A)$ is
+nonempty exactly when an \omterm{def:b2:finite-automata:dfa}{accepting state} is accessible. Finiteness: in the \omterm{def:b2:finite-automata:trim}{trim automaton} every path extends into an
+accepted word; a cycle gives infinitely many paths, and without a cycle every path has fewer than $n_A$ transitions, so
+the accepted words are shorter than $n_A$ and finitely many. Inclusion is emptiness of the product for intersection
+with the complement (\cref{prop:b2:finite-automata:closure}), and equivalence is two inclusions, read on the same
+product: the pair after $w$ is $(\delta_A^*(q_A, w), \delta_B^*(q_B, w))$, and $w$ separates the languages exactly when
+one of the two states accepts and the other does not.
+\end{proof}
+
+From expressions, these questions go through automata. The \omterm{def:b2:regular-languages:glushkov}{Glushkov automaton} is built in time proportional to $m^2$
+and decides membership by simulation in at most $(m + 1)|w|$ steps; but inclusion and equivalence need complete DFAs,
+and determinisation may cost exponentially many states (\cref{thm:b2:finite-automata:blowup}). For short patterns it is
+fast:
+
+\omoutput{code/bachelor-2/22-regular-languages/outputs/equivalent.txt}{Five pairs of expressions, compared through
+their determinised Glushkov automata, with a shortest witness when they
+differ.}\label{out:b2:regular-languages:equivalent}
+
+The witness \code{"bb"} is in the language of $(a \mid b)^*bb$ but does not end with $abb$. The checker itself is
+\cref{exo:b2:regular-languages:9}. By \cref{cor:b2:regular-languages:unique-minimal}, a second way to compare is to
+minimise both automata and compare them state by state.
+
+\section{A pattern engine that cannot freeze}\label{sec:b2:regular-languages:engine}
+
+The engine of \code{regex.rs} parses the pattern into a tree, computes Glushkov's sets, and simulates the automaton
+on sets of states, as \cref{ch:b2:finite-automata} simulated NFAs. With at most 127 positions, a set of states is the
+bits of one 128-bit integer; for each letter, the next set is the union of the successors of the current states, kept
+only at positions holding that letter:
+
+\omcode{code/bachelor-2/22-regular-languages/listings/regex.rs}{251}{278}{The matcher: one OR per current state,
+then a mask for the letter}\label{lst:b2:regular-languages:matcher}
+
+\begin{proposition}[Linear matching]\label{prop:b2:regular-languages:linear}
+On an expression with $m$ positions and a text of $n$ letters, the matcher performs at most $(m + 1)n$ unions, whatever
+the expression and the text.
+\end{proposition}
+
+\begin{proof}
+Each letter costs one union per state of the current set, and the set holds at most the $m + 1$ states. The set after
+$k$ letters is the set of states the \omterm{def:b2:regular-languages:glushkov}{Glushkov automaton} can reach on the first $k$ letters, by induction on $k$, so the
+answer is that of the automaton, which is correct by \cref{prop:b2:regular-languages:glushkov}.
+\end{proof}
+
+On $(a \mid a)^*b$, with positions $a_1$, $a_2$, $b_3$, the set after each $a$ is $\{1, 2\}$, and every letter costs
+two unions:
+
+\omoutput{code/bachelor-2/22-regular-languages/outputs/engine_compare.txt}{The matcher on $(a \mid a)^*b$ and $a^n$,
+on the laptop.}\label{out:b2:regular-languages:engine}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=0.72\linewidth, height=5cm, xlabel={number $n$ of letters $a$}, ylabel={time (s)},
+    ymode=log, xmin=15.5, xmax=27.5, ymin=1e-8, ymax=20, legend style={font=\scriptsize, at={(0.97,0.5)}, anchor=east}]
+  \addplot[omDef, thick, mark=*, mark size=1pt] table[x=n, y=seconds]
+    {code/bachelor-2/22-regular-languages/figures/backtrack.dat};
+  \addlegendentry{Python's backtracking \texttt{re}}
+  \addplot[omThm, thick, dashed, domain=16:27] {7.34e-9 * x};
+  \addlegendentry{Glushkov matcher, 7.3 ns a letter}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Time to answer ``no match'' for $(a \mid a)^*b$ on $a^n$, on a logarithmic scale: the
+backtracking engine's points (\cref{out:b2:regular-languages:hook}) climb on a straight line, doubling with each $a$;
+the matcher's line is its measured cost per letter on ten million letters (\cref{out:b2:regular-languages:engine}),
+times $n$.}
+\end{omfigure}
+
+A backtracking engine tries one way to match at a time: on $a^n$, each $a$ can be matched by the left or the right
+branch of $(a \mid a)$, and when the missing $b$ makes a choice fail, the engine goes back to the last choice and tries
+the other. The $2^n$ ways to read $a^n$ all fail, and it tries them all. The automaton keeps every way at once, in a
+set that never holds more than $m + 1$ states. Backtracking has reasons: it reports which part of the text each group
+matched, in the order a programmer expects, and it supports back-references, which no automaton can. Engines built on
+automata, in the line of Thompson's, give up back-references and in exchange answer in \omterm{def:b2:regular-languages:local}{linear} time.
+
+\begin{dated}{2026}
+% ledger: b2:python-re-backtracking
+% ledger: b2:posix-ere
+Python's \code{re} module is a backtracking engine. Since version 3.11 it offers possessive quantifiers such as
+\code{a*+} and \omterm{def:b2:threads-and-synchronisation:atomic}{atomic} groups, which throw away the backtracking points inside them and can stop a blow-up like the
+hook's when the pattern's author sees it coming. The POSIX standard defines basic and \omterm{def:b2:regular-languages:extended}{extended regular expressions} for
+tools such as \code{grep}, and asks, when several matches start at the same point, for the longest.
+\end{dated}
+
+On the town's 24 street names, the engine answers patterns that expand to a hundred positions, since a range such as
+\code{[A-Z]} is an alternation of 26 letters:
+
+\omcode{code/bachelor-2/22-regular-languages/listings/streets.rs}{1}{21}{Five patterns over the street
+names}\label{lst:b2:regular-languages:streets}
+
+\omoutput{code/bachelor-2/22-regular-languages/outputs/streets.txt}{The number of positions of each pattern, the
+number of names it matches, and the first two.}\label{out:b2:regular-languages:streets}
+
+\section{Exercises}\label{sec:b2:regular-languages:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b2:regular-languages:1}
+Which of the words $\varepsilon$, $a$, $aa$, $bab$, $abba$, $babab$, $aab$ are in $L((ab \mid b)^*a?)$? Describe the
+language in words, then check with the engine.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:regular-languages:2}
+A tool checks variable names with the pattern \code{[a-z0-9_]+}. Find the names it wrongly accepts, and write a
+pattern that requires a first character that is not a digit.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:regular-languages:3}
+Write an extended expression for the decimal numbers of \cref{ch:b2:finite-automata}'s hook (an optional sign,
+digits, an optional point followed by digits, an optional exponent). Check it against the hook's automaton on every
+string of length at most 6 over the characters \code{0 1 + - . e E}; in this chapter's syntax, \code{.} is a plain
+letter.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b2:regular-languages:4}
+Let $c_n$ be the number of words of length $n$ in $L((ab \mid b)^*)$. Find a recurrence for $c_n$, and check it on
+$c_0, \dots, c_{12}$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:regular-languages:5}
+Number the positions of $a(ba \mid b)^*a$ and compute $\mathrm{Null}$, $\mathrm{First}$, $\mathrm{Last}$ and every
+$\mathrm{Follow}$ set by \cref{met:b2:regular-languages:berry-sethi}. Draw the \omterm{def:b2:regular-languages:glushkov}{Glushkov automaton}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:regular-languages:6}
+A program minimises the incomplete DFA of $\{ab, ba\}$ (states 0, 1 after $a$, 2 after $b$, 3 accepting) by refining
+classes on the classes of the successors that exist, without completing it first. Which states does it merge, and
+which words does the merged automaton wrongly accept? How must the program be fixed?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:regular-languages:7}
+Apply \cref{met:b2:regular-languages:elimination} by hand to the two-state DFA of ``an even number of $a$'' over
+$\{a, b\}$, removing the start state first. Check the expression on every word of length at most 10.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:regular-languages:8}
+Prove that $\{a^n b^m : n \le m\}$ is not \omterm{def:b2:regular-languages:regular}{regular}, once with the pumping lemma and once with \omterm{def:b2:regular-languages:residual}{residuals}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b2:regular-languages:9}
+Write a function that takes two complete DFAs over the same \omterm{def:b2:finite-automata:word}{alphabet} and returns either ``equivalent'' or a shortest
+word on which they differ. Use it to compare expressions through their Glushkov automata.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:regular-languages:10}
+Show that $\sim_L$ is a \emph{right congruence}: $u \sim_L v$ implies $ua \sim_L va$ for every letter $a$. Deduce that
+if $L$ is \omterm{def:b2:regular-languages:regular}{regular}, the classes of $\sim_L$ are in bijection with the states of the \omterm{def:b2:regular-languages:minimal}{minimal automaton}, $u \sim_L v$
+holding exactly when $u$ and $v$ lead it to the same state.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:regular-languages:11}
+Implement Hopcroft's algorithm: keep a list of splitters (a class and a letter); for a splitter $(B, a)$, split each
+class into the states that enter $B$ on $a$ and the others; when a class splits, put both halves on the list if it
+was there, and otherwise only the smaller half. Check that it finds Moore's classes, and compare the two on large
+automata. Why is the gain so small here?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b2:regular-languages:12}
+Prove that $\{w \in \{a, b\}^* : w \text{ has as many } a \text{ as } b\}$ is not \omterm{def:b2:regular-languages:regular}{regular}, once with \omterm{def:b2:regular-languages:residual}{residuals} and
+once by intersecting it with $a^*b^*$.
+\end{exercise}
+
+\section{Problem: A search box that never freezes}\label{sec:b2:regular-languages:problem}
+
+\begin{problem}[{Weekend problem --- A search box that never freezes}]\label{pb:b2:regular-languages:1}
+The town's website lets visitors search the street names with patterns. The first version used a backtracking engine,
+and a visitor froze it. This problem builds the replacement. The 24 names are Bridge Road, Bridge Way, Castle Road,
+Castle Row, Castle Way, Church Lane, Church Way, Garden Lane, Garden Road, Market Road, Market Row, Mill Avenue, Mill
+Row, Mill Street, Orchard Lane, Orchard Row, Orchard Way, River Avenue, River Lane, School Avenue, School Lane, School
+Way, Station Row and Willow Lane.
+
+\medskip\noindent\textbf{Part I --- Patterns over the street names.}\par\nopagebreak
+\begin{enumerate}
+\item How many names end in Road, in Row and in Way? Compare with \cref{out:b2:regular-languages:streets}.
+\item Why does \code{[A-Z][a-z]* Road} have 57 positions?
+\item Write a pattern for the names whose second word is Lane or Avenue. How many names does it match?
+\item List the 8 names matched by \code{[A-Z][a-z]*(e|n) [A-Z][a-z]*}.
+\item Show that any finite set of names is a \omterm{def:b2:regular-languages:regular}{regular language}.
+\item A search box looks for the pattern anywhere in a name. Which expression, built from $e$, denotes the names that
+contain a match of $e$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The Glushkov engine.}\par\nopagebreak
+Let $e = (ab \mid b)^*c$ over $\{a, b, c\}$.
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Number the positions of $e$ and give $\mathrm{Null}$, $\mathrm{First}$, $\mathrm{Last}$ and the follow sets.
+\item How many states and transitions does its \omterm{def:b2:regular-languages:glushkov}{Glushkov automaton} have?
+\item Give the matcher's set of states after each letter of $babbc$. Is the word accepted, and how many unions were
+made?
+\item Show that after reading a letter, every state in the set is a position holding that letter.
+\item At most how many unions does the matcher make on a name of 12 letters with the pattern \code{[A-Z][a-z]* Road}?
+\item Why does the matcher refuse patterns with more than 127 positions, and how would you lift the limit?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- One automaton per language.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item Determinise the \omterm{def:b2:regular-languages:glushkov}{Glushkov automaton} of $e$ over $\{a, b, c\}$, with the empty set as sink. How many states?
+\item Apply Moore's method to it. How many rounds, and how many classes at the end?
+\item List the \omterm{def:b2:regular-languages:residual}{residuals} of $L(e)$, and match them with the final classes.
+\item Show that $(ab \mid b)^*c$ and $b^*(abb^*)^*c$ are equivalent.
+\item Find a shortest word on which $(ab \mid b)^*c$ and $(a \mid b)^*bc$ differ.
+\item The site stores compiled patterns in a cache. Why can two patterns that denote the same language share one
+entry, and how can a key be computed for it?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Backtracking against the automaton.}\par\nopagebreak
+\begin{enumerate}[resume, beginpenalty=10000]
+\item In how many ways can $a^n$ be read as a sequence of matches of $(a \mid a)$?
+\item Why does a backtracking engine try all of them on $a^n$? Relate this to the ratios of
+\cref{out:b2:regular-languages:hook}.
+\item From the hook's last line, estimate how long the old site would take for 40 letters.
+\item How many unions does the matcher make on $a^n$ with $(a \mid a)^*b$? Check with
+\cref{out:b2:regular-languages:engine}.
+\item How long does the matcher take for 40 letters, and for ten million?
+\item State the result: from exponential to \omterm{def:b2:regular-languages:local}{linear}, backtracking's time doubling with each $a$, measured, against at
+most $(m + 1)n$ steps proved for the automaton.
+\end{enumerate}
+\end{problem}

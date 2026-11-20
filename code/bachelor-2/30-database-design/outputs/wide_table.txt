@@ -1,0 +1,34 @@
+$ python sqlrun.py wide_table.sql
+sql> SELECT count(*) AS lines, count(DISTINCT member_id) AS members,
+...>        count(DISTINCT book_id) AS books FROM wide;
++-------+---------+-------+
+| lines | members | books |
++-------+---------+-------+
+| 400   | 60      | 80    |
++-------+---------+-------+
+(1 row)
+
+sql> SELECT street, postcode, count(*) AS lines FROM wide
+...> WHERE member_id = 55 GROUP BY street, postcode;
++--------------+----------+-------+
+| street       | postcode | lines |
++--------------+----------+-------+
+| River Avenue | B-120    | 12    |
++--------------+----------+-------+
+(1 row)
+
+sql> UPDATE wide SET street = 'Garden Lane', postcode = 'B-110'
+...> WHERE member_id = 55
+...>   AND loan_id < (SELECT max(loan_id) FROM wide WHERE member_id = 55);
+OK (11 rows changed)
+
+sql> SELECT street, postcode, count(*) AS lines FROM wide
+...> WHERE member_id = 55 GROUP BY street, postcode;
++--------------+----------+-------+
+| street       | postcode | lines |
++--------------+----------+-------+
+| Garden Lane  | B-110    | 11    |
+| River Avenue | B-120    | 1     |
++--------------+----------+-------+
+(2 rows)
+

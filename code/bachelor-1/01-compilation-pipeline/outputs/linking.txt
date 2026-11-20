@@ -1,0 +1,26 @@
+$ gcc -c square.c
+$ gcc -c main.c
+$ nm square.o
+0000000000000000 T square
+0000000000000000 B square_calls
+$ nm main.o
+0000000000000000 T main
+                 U printf
+                 U square
+                 U square_calls
+$ gcc main.o square.o -o squares
+$ ./squares
+sum of the first ten squares: 385
+square was called 10 times
+$ gcc main.o -o broken
+/usr/bin/ld: main.o: warning: relocation against `square_calls' in read-only section `.text'
+/usr/bin/ld: main.o: in function `main':
+main.c:(.text+0x26): undefined reference to `square'
+/usr/bin/ld: main.c:(.text+0x57): undefined reference to `square_calls'
+/usr/bin/ld: warning: creating DT_TEXTREL in a PIE
+collect2: error: ld returned 1 exit status
+$ gcc -c twice.c
+$ gcc main.o square.o twice.o -o broken
+/usr/bin/ld: twice.o: in function `square':
+twice.c:(.text+0x0): multiple definition of `square'; square.o:square.c:(.text+0x0): first defined here
+collect2: error: ld returned 1 exit status

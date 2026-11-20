@@ -1,0 +1,415 @@
+% Book 3, Year 1, chapter 22 -- greedy algorithms and their proofs.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 22.
+% ledger: b1:huffman-1952
+\chapter{Greedy Algorithms and Their Proofs}\label{ch:b1:greedy-proofs}
+
+A conference has forty talks to fit in one room, and each talk has fixed hours. Taking the shortest talks first sounds
+reasonable; so does taking the earliest. One rule always gives the most talks, and it is neither of these. \omterm{def:b1:greedy-proofs:greedy}{Greedy
+algorithms} build a solution one irrevocable choice at a time; they are fast and short, and they are often wrong. This
+chapter is about telling the two cases apart, with two kinds of proof, and about one \omterm{def:b1:greedy-proofs:greedy}{greedy algorithm} that every
+compressed file relies on.
+
+\begin{recall}
+A \omterm{def:b1:heaps:pq}{priority queue} (\cref{def:b1:heaps:pq}) gives its smallest element in $O(\log n)$. In a \omterm{def:b1:induction-and-termination:binary-tree}{binary tree}
+(\cref{def:b1:induction-and-termination:binary-tree}), the depth of a node is the number of edges from the root to it.
+\end{recall}
+
+\section{The greedy method}\label{sec:b1:greedy-proofs:method}
+
+\begin{definition}[Greedy algorithm]\label{def:b1:greedy-proofs:greedy}
+A \emph{greedy algorithm}\index{greedy algorithm} builds a solution by a sequence of choices, each made by a fixed rule
+that looks only at the current \omterm{def:b1:backtracking:backtracking}{partial solution}, and never undone.
+\end{definition}
+
+The second book met greedy methods on examples; here they need proofs. \omterm{def:b1:backtracking:backtracking}{Backtracking} (\cref{ch:b1:backtracking}) tries
+every choice and undoes the bad ones; a \omterm{def:b1:greedy-proofs:greedy}{greedy algorithm} makes one choice per step and keeps it, which is why it is
+fast, and why a proof is needed: nothing in the method guarantees that a choice good now is not fatal later.
+
+\begin{method}[Proving a greedy algorithm optimal]\label{met:b1:greedy-proofs:exchange}
+Two templates.
+\begin{itemize}
+\item \emph{Exchange argument}\index{exchange argument}: take any optimal solution; show that it can be changed, step by
+step, into the greedy one without getting worse. The step usually replaces the optimal solution's first choice by the
+greedy choice and checks that the result is still valid and no worse.
+\item \emph{Greedy stays ahead}: measure the progress of a \omterm{def:b1:backtracking:backtracking}{partial solution}, and show by induction that after $i$
+choices the greedy solution is at least as far as any other solution after $i$ choices.
+\end{itemize}
+Either proof must use the rule: a proof that would work for any rule proves nothing, since most rules fail.
+\end{method}
+
+\section{Interval scheduling}\label{sec:b1:greedy-proofs:intervals}
+
+\begin{definition}[Interval scheduling, interval partitioning, maximum overlap]\label{def:b1:greedy-proofs:intervals}
+Talks are intervals $[s, f)$ of time; two talks are \emph{compatible} if their intervals do not overlap. The
+\emph{interval scheduling problem}\index{interval scheduling problem} asks for a largest set of pairwise compatible
+talks. The \emph{interval partitioning problem}\index{interval partitioning} asks to place all the talks in as few rooms
+as possible, compatible talks only in one room. The \emph{maximum overlap}\index{maximum overlap} of a set of talks is
+the largest number of them going on at one moment.
+\end{definition}
+
+Four rules come to mind: earliest start, shortest, fewest conflicts with the others, and earliest finish. The program
+applies each, keeping every talk compatible with those already kept, and compares with the optimum found by trying all
+subsets.
+
+\omcode{code/bachelor-1/22-greedy-proofs/listings/intervals.py}{6}{25}{Four greedy rules for one
+room}\label{lst:b1:greedy-proofs:intervals}
+
+\omoutput{code/bachelor-1/22-greedy-proofs/outputs/intervals.txt}{The conference, and the four rules against the
+optimum on random sets of talks.}\label{out:b1:greedy-proofs:intervals}
+
+A rule that fails once is wrong, however often it succeeds: fewest conflicts fails on one set in five hundred here.
+Earliest start fails on one long talk that starts first; shortest fails on a short talk overlapping two long compatible
+ones.
+
+\begin{theorem}[Earliest finish is optimal]\label{thm:b1:greedy-proofs:earliest-finish}
+Taking the talks by increasing finishing time, and keeping each one compatible with those kept, gives a largest set of
+compatible talks.
+\end{theorem}
+
+\begin{proof}
+By the \omterm{met:b1:greedy-proofs:exchange}{exchange argument}, by induction on the number of talks. Let $g$ be the talk that finishes first, which the greedy
+keeps, and $O$ an optimal set, sorted by finishing time, with first talk $o$. Then $f(g) \leq f(o)$, and every other
+talk of $O$ starts after $o$ finishes, hence after $g$ finishes: $O' = O - \{o\} + \{g\}$ is compatible, of the same
+size, and optimal. The other talks of $O'$ all start at or after $f(g)$: they form a compatible set of the talks
+starting at or after $f(g)$, and no larger one exists, or adding $g$ to it would beat $O$. After keeping $g$, the
+greedy discards exactly the talks that start before $f(g)$ and runs on the others, where by induction it finds an
+optimal set. With $g$, it has $|O|$ talks.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[x=12mm, y=7mm, t/.style={draw, rounded corners=1pt, minimum height=4mm, inner sep=0pt,
+  font=\scriptsize}]
+\draw[->] (0,-0.6) -- (10.4,-0.6) node[right, font=\scriptsize] {time};
+\foreach \x in {0,2,...,10} \draw (\x,-0.5) -- (\x,-0.7) node[below, font=\scriptsize] {\x};
+\node[font=\scriptsize, anchor=east] at (-0.1,3.6) {all talks};
+\foreach \s/\f/\n/\r in {0/4/A/3.9, 1/3/B/3.3, 3/6/C/3.3, 4/7/D/3.9, 5/9/E/4.5, 7/8/F/3.9, 8/10/G/3.3}
+  \node[t, fill=gray!15, minimum width={(\f-\s)*12mm}, anchor=west] at (\s,\r) {\n};
+\node[font=\scriptsize, anchor=east] at (-0.1,2.2) {greedy};
+\foreach \s/\f/\n in {1/3/B, 3/6/C, 7/8/F, 8/10/G}
+  \node[t, fill=omDef!25, minimum width={(\f-\s)*12mm}, anchor=west] at (\s,2.2) {\n};
+\node[font=\scriptsize, anchor=east] at (-0.1,1.2) {an optimum $O$};
+\foreach \s/\f/\n in {0/4/A, 4/7/D, 7/8/F, 8/10/G}
+  \node[t, fill=omThm!15, minimum width={(\f-\s)*12mm}, anchor=west] at (\s,1.2) {\n};
+\node[font=\scriptsize, anchor=east] at (-0.1,0.2) {$O$ after one exchange};
+\foreach \s/\f/\n in {1/3/B, 4/7/D, 7/8/F, 8/10/G}
+  \node[t, fill=omThm!15, minimum width={(\f-\s)*12mm}, anchor=west] at (\s,0.2) {\n};
+\draw[->, omThm, thick] (2,1.0) -- (2,0.45);
+\end{tikzpicture}
+\par\smallskip{\small Seven talks, the greedy choice by earliest finish, an optimal set, and the exchange step: the
+optimum's first talk A is replaced by B, which finishes earlier, so the rest of the optimum still fits after it.}
+\end{omfigure}
+
+With several rooms, every talk must be placed. At a moment when $d$ talks are going on, $d$ rooms are needed, so the
+\omterm{def:b1:greedy-proofs:intervals}{maximum overlap} is a lower bound; a greedy assignment reaches it.
+
+\omcodes{code/bachelor-1/22-greedy-proofs/listings/partition_rooms.py}{9-16,19-30}{The \omterm{def:b1:greedy-proofs:intervals}{maximum overlap}, and rooms
+assigned by increasing start}\label{lst:b1:greedy-proofs:rooms}
+
+\omoutput[2-4]{code/bachelor-1/22-greedy-proofs/outputs/partition_rooms.txt}{The forty talks in nine rooms; the first
+two rooms shown.}\label{out:b1:greedy-proofs:rooms}
+
+\begin{proposition}[Rooms by increasing start]\label{prop:b1:greedy-proofs:rooms}
+Assigning the talks by increasing start, each to a room whose last talk is over if there is one, uses exactly as many
+rooms as the \omterm{def:b1:greedy-proofs:intervals}{maximum overlap}.
+\end{proposition}
+
+\begin{proof}
+At least that many are needed. Conversely, suppose the algorithm opens room number $r + 1$ for a talk starting at $s$.
+Then each of the $r$ rooms has a last talk that started at or before $s$ (talks come by increasing start) and is not
+over at $s$: with the new talk, $r + 1$ talks are going on at time $s$, so $r + 1$ is at most the \omterm{def:b1:greedy-proofs:intervals}{maximum overlap}.
+\end{proof}
+
+\section{Unit tasks with deadlines and penalties}\label{sec:b1:greedy-proofs:penalties}
+
+\begin{definition}[Unit-task scheduling problem]\label{def:b1:greedy-proofs:unit-tasks}
+In the \emph{unit-task scheduling problem}\index{unit-task scheduling problem}, $n$ tasks each take one slot of time on
+one machine, in slots $1, 2, \dots, n$; task $i$ has a deadline $d_i$ and a penalty $p_i > 0$, paid if it ends after slot
+$d_i$. The problem asks for an order with the smallest total penalty.
+\end{definition}
+
+Only the set of tasks done on time matters: they can be run by increasing deadline, the late ones after them in any
+order. A set is \emph{feasible} if its tasks can all be on time; minimising the penalty paid means maximising the
+penalty of a feasible set.
+
+\begin{lemma}[Feasibility]\label{lem:b1:greedy-proofs:feasible}
+A set of tasks is feasible if and only if, for every $t$, at most $t$ of its tasks have a deadline at most $t$.
+\end{lemma}
+
+\begin{proof}
+If more than $t$ tasks have a deadline at most $t$, they cannot all fit in the first $t$ slots. Conversely, run the
+tasks by increasing deadline: the task in slot $i$ has the $i$-th smallest deadline, and at least $i$ tasks have a
+deadline at most that one, so it is at least $i$.
+\end{proof}
+
+The greedy rule takes the tasks by decreasing penalty and keeps each one that leaves the set feasible.
+
+\omcodes{code/bachelor-1/22-greedy-proofs/listings/penalties.py}{8-20}{The feasibility test and the greedy
+choice}\label{lst:b1:greedy-proofs:penalties}
+
+\omoutput{code/bachelor-1/22-greedy-proofs/outputs/penalties.txt}{Seven tasks, scheduled; and the greedy against all
+subsets.}\label{out:b1:greedy-proofs:penalties}
+
+\begin{theorem}[Greedy penalties]\label{thm:b1:greedy-proofs:penalties}
+The greedy rule by decreasing penalty gives a feasible set of largest total penalty, so a schedule with the smallest
+penalty paid.
+\end{theorem}
+
+\begin{proof}
+First an exchange property: \emph{if $X$ and $Y$ are feasible and $|X| < |Y|$, some task $y$ of $Y$ not in $X$ keeps
+$X + \{y\}$ feasible.} Write $N_t(S)$ for the number of tasks of $S$ with deadline at most $t$, and let $k$ be the
+largest $t$ with $N_t(Y) \leq N_t(X)$ ($k = 0$ qualifies). For large $t$, $N_t(Y) = |Y| > |X|$, so $N_t(Y) > N_t(X)$
+for every $t > k$, and $Y$ has more tasks than $X$ with a deadline after $k$: some $y \in Y - X$ has $d_y > k$. Adding
+it to $X$ changes $N_t$ only for $t \geq d_y > k$, where $N_t(X) + 1 \leq N_t(Y) \leq t$: still feasible by the lemma.
+
+Let $g_1, g_2, \dots$ be the greedy's tasks and $a_1, a_2, \dots$ those of an optimal set, both by decreasing penalty.
+A subset of a feasible set is feasible, so whenever the greedy rejected a task, adding it to all the tasks it ends
+with would not be feasible either. If the optimal set had more tasks, the exchange property would give a task that can be
+added to the greedy's set, which the greedy would have kept: so $|A| \leq |G|$. Suppose $p(a_i) > p(g_i)$ for some $i$,
+the first one. With $X = \{g_1, \dots, g_{i-1}\}$ and $Y = \{a_1, \dots, a_i\}$, some $a_j \notin X$, $j \leq i$, keeps
+$X + \{a_j\}$ feasible, and $p(a_j) \geq p(a_i) > p(g_i)$. The greedy looked at $a_j$ before $g_i$, when its set was part
+of $X$, so it would have kept it: then $a_j$ would be one of $g_1, \dots, g_{i-1}$, which it is not. So $p(g_i) \geq
+p(a_i)$ for all $i \leq |A|$, and the greedy's total is at least the optimum.
+\end{proof}
+
+\section{Huffman codes}\label{sec:b1:greedy-proofs:huffman}
+
+Text stored with a fixed number of bits per character wastes space on the frequent ones. The second book compressed
+texts by giving short codes to frequent symbols; the question here is the best such code.
+
+\begin{definition}[Prefix code, code tree, cost]\label{def:b1:greedy-proofs:prefix-code}
+A \emph{prefix code}\index{prefix code} assigns to each symbol a word of bits, its \emph{codeword}, so that no codeword is
+the beginning of another. Its \emph{code tree}\index{code tree} is the \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} whose leaves are the symbols, the
+codeword of a symbol spelling the path from the root, 0 for left and 1 for right. For frequencies $f_s$, the
+\emph{cost}\index{cost (of a code)} of the code is $\sum_s f_s \ell_s$, where $\ell_s$, the length of the codeword of
+$s$, is the depth of its \omterm{def:b1:induction-and-termination:rooted-tree}{leaf}: the number of bits of the encoded text.
+\end{definition}
+
+Without the prefix property, the bits would need separators: with $\mathtt{e} = 0$, $\mathtt{t} = 01$ and
+$\mathtt{h} = 1$, the bits $01$ read either \code{t} or \code{eh}. With it, the decoder walks down the tree and outputs
+a symbol at each \omterm{def:b1:induction-and-termination:rooted-tree}{leaf}.
+
+\begin{method}[Huffman's algorithm]\label{met:b1:greedy-proofs:huffman}
+Start with one tree per symbol, of weight its frequency. While there are two trees or more, remove the two lightest
+and join them under a new root, of weight the sum of theirs. The last tree is the \omterm{def:b1:greedy-proofs:prefix-code}{code tree} of a \emph{\omterm{met:b1:greedy-proofs:huffman}{Huffman code}}.
+\index{Huffman code}\index{Huffman's algorithm}
+\end{method}
+
+\omcodes{code/bachelor-1/22-greedy-proofs/listings/huffman.py}{18-37}{\omterm{met:b1:greedy-proofs:huffman}{Huffman's algorithm} with a \omterm{def:b1:heaps:pq}{priority queue}, and the
+codewords}\label{lst:b1:greedy-proofs:huffman}
+
+The \omterm{def:b1:heaps:pq}{priority queue} holds $(\mathit{weight}, \mathit{number}, \mathit{tree})$: the number breaks ties by age, so that two
+runs on the same frequencies build the same tree, which matters to the decoder (\cref{exo:b1:greedy-proofs:6}). With $n$
+symbols there are $n - 1$ merges, each $O(\log n)$.
+
+\begin{omfigure}
+\begin{tikzpicture}[n/.style={draw, circle, inner sep=1pt, minimum size=6mm, font=\scriptsize},
+  l/.style={draw, rounded corners=2pt, inner sep=2pt, font=\scriptsize, fill=omDef!20},
+  level distance=11mm, level 1/.style={sibling distance=48mm}, level 2/.style={sibling distance=24mm},
+  level 3/.style={sibling distance=20mm}, level 4/.style={sibling distance=22mm},
+  b/.style={font=\scriptsize, midway, fill=white, inner sep=0.5pt}]
+\node[n] {43}
+  child {node[n] {17}
+    child {node[l] {a 8: 00} edge from parent node[b] {0}}
+    child {node[l] {t 9: 01} edge from parent node[b] {1}} edge from parent node[b] {0}}
+  child {node[n] {26}
+    child {node[l] {e 12: 10} edge from parent node[b] {0}}
+    child {node[n] {14}
+      child {node[l] {o 7: 110} edge from parent node[b] {0}}
+      child {node[n] {7}
+        child {node[l] {s 3: 1110} edge from parent node[b] {0}}
+        child {node[l] {n 4: 1111} edge from parent node[b] {1}} edge from parent node[b] {1}}
+      edge from parent node[b] {1}} edge from parent node[b] {1}};
+\node[font=\scriptsize, align=left, anchor=north west] at (-7.8,-0.2) {merges, in order:\\
+1. s 3 + n 4 $\to$ 7\\ 2. o 7 + (7) $\to$ 14\\ 3. a 8 + t 9 $\to$ 17\\ 4. e 12 + (14) $\to$ 26\\
+5. (17) + (26) $\to$ 43};
+\end{tikzpicture}
+\par\smallskip{\small \omterm{met:b1:greedy-proofs:huffman}{Huffman's algorithm} on six symbols of frequencies 12, 9, 8, 7, 4, 3: the merges, then the \omterm{def:b1:greedy-proofs:prefix-code}{code
+tree}, each inner node marked with its weight, each \omterm{def:b1:induction-and-termination:rooted-tree}{leaf} with its symbol, frequency and codeword. The tie between o and
+the tree of weight 7 goes to o, made first. \omterm{def:b1:greedy-proofs:prefix-code}{Cost}: $107$ bits, against $3 \times 43 = 129$ with three bits per symbol.}
+\end{omfigure}
+
+On the library's catalogue, the 80 titles in lower case, one per line:
+
+\omoutput{code/bachelor-1/22-greedy-proofs/outputs/huffman.txt}{Frequencies and codewords of the catalogue's 24
+symbols (\texttt{'\textbackslash n'} is the end of a line).}\label{out:b1:greedy-proofs:huffman}
+
+\omcode{code/bachelor-1/22-greedy-proofs/listings/encode_decode.py}{12}{21}{Decoding by walking down the
+tree}\label{lst:b1:greedy-proofs:decode}
+
+\omoutput{code/bachelor-1/22-greedy-proofs/outputs/encode_decode.txt}{The first title, encoded and decoded; and the
+whole catalogue.}\label{out:b1:greedy-proofs:decode}
+
+\begin{lemma}[The two rarest are siblings]\label{lem:b1:greedy-proofs:siblings}
+For any frequencies, some optimal \omterm{def:b1:greedy-proofs:prefix-code}{code tree} has the two least frequent symbols $x$ and $y$ as sibling leaves at the
+largest depth.
+\end{lemma}
+
+\begin{proof}
+In an optimal tree every inner node has two children: an inner node with one child could be replaced by that child,
+shortening codewords. So a deepest \omterm{def:b1:induction-and-termination:rooted-tree}{leaf} has a sibling, also a \omterm{def:b1:induction-and-termination:rooted-tree}{leaf}; call them $a$ and $b$. Exchange $x$ with $a$: $x$ goes
+down by $\ell_a - \ell_x \geq 0$ and $a$ goes up as much, and the \omterm{def:b1:greedy-proofs:prefix-code}{cost} changes by $(f_x - f_a)(\ell_a - \ell_x) \leq 0$,
+since $f_x \leq f_a$. Exchange $y$ with $b$ in the same way. The tree is still optimal, and $x$, $y$ are sibling leaves
+at the largest depth.
+\end{proof}
+
+\begin{lemma}[Merging keeps optimality]\label{lem:b1:greedy-proofs:merge}
+Replace $x$ and $y$ by a new symbol $z$ of frequency $f_x + f_y$. If $T'$ is an optimal \omterm{def:b1:greedy-proofs:prefix-code}{code tree} for the new symbols,
+the tree $T$ obtained by hanging $x$ and $y$ under the \omterm{def:b1:induction-and-termination:rooted-tree}{leaf} $z$ of $T'$ is optimal for the old ones.
+\end{lemma}
+
+\begin{proof}
+The leaves $x$, $y$ of $T$ are one deeper than $z$ in $T'$, so $\mathrm{cost}(T) = \mathrm{cost}(T') + f_x + f_y$. Let
+$U$ be an optimal tree for the old symbols with $x$, $y$ siblings (\cref{lem:b1:greedy-proofs:siblings}); replacing them
+and their parent by a \omterm{def:b1:induction-and-termination:rooted-tree}{leaf} $z$ gives a tree $U'$ for the new symbols with $\mathrm{cost}(U) = \mathrm{cost}(U') + f_x +
+f_y \geq \mathrm{cost}(T') + f_x + f_y = \mathrm{cost}(T)$. So $T$ is optimal.
+\end{proof}
+
+\begin{theorem}[Huffman]\label{thm:b1:greedy-proofs:huffman}
+\omterm{met:b1:greedy-proofs:huffman}{Huffman's algorithm} builds a \omterm{def:b1:greedy-proofs:prefix-code}{prefix code} of smallest \omterm{def:b1:greedy-proofs:prefix-code}{cost}.
+\end{theorem}
+
+\begin{proof}
+By induction on the number of symbols; one symbol needs a tree of one \omterm{def:b1:induction-and-termination:rooted-tree}{leaf}. The first merge joins $x$ and $y$, the two
+lightest, and the rest of the algorithm is \omterm{met:b1:greedy-proofs:huffman}{Huffman's algorithm} on the symbols with $x$, $y$ replaced by $z$: by
+induction it builds an optimal tree $T'$ for them, and \cref{lem:b1:greedy-proofs:merge} makes the final tree optimal.
+\end{proof}
+
+The proof never used the tie rule: any Huffman tree is optimal, though different tie rules give different codewords.
+The construction was published by Huffman in 1952.
+
+\section{When greedy is only an approximation}\label{sec:b1:greedy-proofs:approximation}
+
+Change for an amount with the fewest coins: the greedy rule gives the largest coin that fits, repeatedly. With euro
+coins it is optimal; with coins of 1, 3 and 4 it is not.
+
+\omcode{code/bachelor-1/22-greedy-proofs/listings/coins.py}{4}{10}{Change, largest coin
+first}\label{lst:b1:greedy-proofs:coins}
+
+\omoutput{code/bachelor-1/22-greedy-proofs/outputs/coins.txt}{Greedy change against the fewest coins, for three coin
+systems (amounts in cents).}\label{out:b1:greedy-proofs:coins}
+
+The knapsack of \cref{sec:b1:backtracking:bb} can be filled greedily \omterm{def:b1:c-functions-and-stack:by-value}{by value} per unit of weight. That was the optimum of
+the relaxed problem, where fractions are allowed; for whole items it is an approximation, good on average and bad on
+some instances.
+
+\omcode{code/bachelor-1/22-greedy-proofs/listings/knapsack_greedy.py}{6}{13}{The knapsack \omterm{def:b1:c-functions-and-stack:by-value}{by value} per unit of
+weight}\label{lst:b1:greedy-proofs:knapsack}
+
+\omoutput{code/bachelor-1/22-greedy-proofs/outputs/knapsack_greedy.txt}{The greedy knapsack against the optimum,
+computed by the method of \cref{ch:b1:dynamic-programming}.}\label{out:b1:greedy-proofs:knapsack}
+
+On the last instance, the greedy takes the small item of ratio 2 and has no room left for the item worth 100: its result
+can be as far from the optimum as one likes. How far a greedy method can be from the optimum, in the worst case, is a
+subject of the fifth book.
+
+\section{Exercises}\label{sec:b1:greedy-proofs:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:greedy-proofs:1}
+Which talks does the earliest-finish rule keep among $[2, 5)$, $[1, 3)$, $[4, 7)$, $[6, 8)$, $[3, 9)$, $[8, 10)$, $[7, 11)$,
+$[9, 12)$? Can four talks fit?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:greedy-proofs:2}
+Give the codeword lengths of a \omterm{met:b1:greedy-proofs:huffman}{Huffman code} for six symbols of frequencies 1, 1, 2, 3, 5, 8, and its \omterm{def:b1:greedy-proofs:prefix-code}{cost}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:greedy-proofs:3}
+Decode \code{111111001101110} with the \omterm{def:b1:greedy-proofs:prefix-code}{code tree} of the six-symbol figure.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:greedy-proofs:4}
+Which coins does the greedy rule give for 289 cents with euro coins? For 10 with coins of 1, 3 and 4, and what is the
+optimum?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:greedy-proofs:5}
+This version sorts the talks by start. Explain its result, and say where the \omterm{met:b1:greedy-proofs:exchange}{exchange argument} breaks for it.
+\omcode{code/bachelor-1/22-greedy-proofs/listings/exo_by_start.py}{4}{9}{Talks by start time}
+\omoutput[2-3]{code/bachelor-1/22-greedy-proofs/outputs/exo_by_start.txt}{Five talks, two orders.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:greedy-proofs:6}
+Sender and receiver build the Huffman tree from the same frequencies, but break ties differently. Explain the output,
+and give two ways to make decoding safe.
+\omoutput[2-4]{code/bachelor-1/22-greedy-proofs/outputs/exo_ties.txt}{Four symbols of equal frequency.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:greedy-proofs:7}
+A station's timetable gives each train an arrival and a departure time; a train occupies a platform from its arrival to
+its departure, both included. Compute the fewest platforms needed, in $O(n \log n)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:greedy-proofs:8}
+Given only the codeword lengths of a \omterm{def:b1:greedy-proofs:prefix-code}{prefix code}, build the \emph{canonical} code: symbols sorted by length then by
+name, each codeword the previous one plus one, followed by zeros when the length grows. Why is it enough for a sender to
+transmit the lengths?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:greedy-proofs:9}
+Show that the codeword lengths $\ell_1, \dots, \ell_n$ of a \omterm{def:b1:greedy-proofs:prefix-code}{prefix code} satisfy $\sum_i 2^{-\ell_i} \leq 1$, with equality
+when every inner node of the \omterm{def:b1:greedy-proofs:prefix-code}{code tree} has two children.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:greedy-proofs:10}
+Show that for the coins $1, c, c^2, \dots, c^k$, with $c \geq 2$, greedy change uses the fewest coins.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:greedy-proofs:11}
+Tasks of lengths $t_i$ and deadlines $d_i$ must all be run, one after the other, on one machine; the lateness of a task
+is its finishing time minus its deadline, if positive. Show that the order by earliest deadline minimises the largest
+lateness, and test it against all orders.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:greedy-proofs:12}
+Prove \cref{thm:b1:greedy-proofs:earliest-finish} again, with the other template: if $g_1, g_2, \dots$ are the greedy's
+talks and $o_1, o_2, \dots$ those of an optimal set, both by finishing time, then $f(g_i) \leq f(o_i)$ for every $i$.
+\end{exercise}
+
+\section{Problem: Compressing the library catalogue}\label{sec:b1:greedy-proofs:problem}
+
+\begin{problem}[{Weekend problem --- Compressing the library catalogue}]\label{pb:b1:greedy-proofs:1}
+The catalogue is the text of \cref{out:b1:greedy-proofs:huffman}: the 80 titles in lower case, one per line. The problem
+builds its \omterm{met:b1:greedy-proofs:huffman}{Huffman code} and proves that no \omterm{def:b1:greedy-proofs:prefix-code}{prefix code} does better.
+
+\medskip\noindent\textbf{Part I --- A fixed-length code.}
+\begin{enumerate}
+\item How many characters and how many distinct symbols has the catalogue? Why is the end of line a symbol?
+\item What is the shortest fixed length of codewords for its symbols?
+\item How many bits does the fixed-length code take?
+\item Which symbols are the most and the least frequent?
+\item Is a fixed-length code a \omterm{def:b1:greedy-proofs:prefix-code}{prefix code}?
+\item Show with an example why a code without the prefix property may not be decodable.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Building the tree.}
+\begin{enumerate}[resume]
+\item Which two symbols does the first merge join, and what is the new weight?
+\item The second merge has a choice between \code{g} and \code{u}, both of frequency 17. Which does the program take,
+and why?
+\item How many merges are made in all?
+\item How many trees does the queue hold after $k$ merges?
+\item What is the cost of the algorithm for $n$ symbols?
+\item Why does the tie rule change the codewords but not the \omterm{def:b1:greedy-proofs:prefix-code}{cost}?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Lengths, bits, decoding.}
+\begin{enumerate}[resume]
+\item Group the symbols by codeword length.
+\item Check that $\sum_s 2^{-\ell_s} = 1$.
+\item Compute the \omterm{def:b1:greedy-proofs:prefix-code}{cost} $\sum_s f_s \ell_s$ and compare with the program.
+\item How many bits are saved against the fixed-length code, in percent?
+\item Decode the first eleven bits of \cref{out:b1:greedy-proofs:decode} with the table.
+\item Why does the decoder never need to read ahead?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Nothing does better.}
+\begin{enumerate}[resume]
+\item Which two symbols are siblings at the largest depth in the program's tree? Is this what
+\cref{lem:b1:greedy-proofs:siblings} says?
+\item Why does an optimal \omterm{def:b1:greedy-proofs:prefix-code}{code tree} have no inner node with one child?
+\item In \cref{lem:b1:greedy-proofs:merge}, why is $\mathrm{cost}(T) = \mathrm{cost}(T') + f_x + f_y$?
+\item Write the induction that proves \cref{thm:b1:greedy-proofs:huffman}.
+\item Coding pairs of characters can take fewer bits than 5993. Why does this not contradict the theorem?
+\item State the named result, \emph{Huffman's theorem on the catalogue}.
+\end{enumerate}
+\end{problem}

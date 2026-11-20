@@ -1,0 +1,151 @@
+\section*{Chapter \ref{ch:g12:project-route-planner} --- Project: A Route Planner}
+
+\begin{solution}{exo:g12:project-route-planner:1}
+Direct: $3.6 \times 1730 / 30 = 207.6$, so $208$ s. Through the Theatre: $3.6 \times 890 / 30 = 106.8$, so $107$ s,
+then $3.6 \times 1540 / 70 = 79.2$, so $79$ s: $186$ s in all. The call returns
+\texttt{([\textquotesingle{}Bakery Corner\textquotesingle{}, \textquotesingle{}Theatre\textquotesingle{}, \textquotesingle{}South School\textquotesingle{}], 186)}: the longer route is faster.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:2}
+$3.6 \times 1830 / 30 = 219.6$, rounded to $220$ seconds, more than three and a half minutes for under two kilometres.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:3}
+\code{(20, 1830)}. The count is in the output of milestone~1: $20$ roads at $30$ km/h. The longest road of the town,
+$1830$ m, is at $30$ km/h (the query of the town's tables), so it is also the longest of those $20$.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:4}
+Two arcs for each of the $52$ two-way roads and one for the one-way road: $105$. With $k$ one-way roads,
+$2(53 - k) + k = 106 - k$.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:5}
+\smallskip\noindent\hspace*{2em}\code{def place_id(conn, name):}
+
+\noindent\hspace*{4em}\code{row = conn.execute("SELECT place_id FROM place WHERE name = ?",}
+
+\noindent\hspace*{12em}\code{(name,)).fetchone()}
+
+\noindent\hspace*{4em}\code{if row is None:}
+
+\noindent\hspace*{6em}\code{raise ValueError(f"no place called {name!r}")}
+
+\noindent\hspace*{4em}\code{return row[0]}
+
+\smallskip\noindent The name goes in as a parameter, never pasted into the text of the query, against \omterm{def:g12:relational-databases-sql:injection}{SQL injection}.
+\code{fetchone} returns \code{None} when no row matches. The file is \code{exercises/rp_ex.py}.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:6}
+The \omterm{def:g10:graphs-first-look:graph}{graph} now has $106$ arcs, and \code{one_way_arcs()} returns \code{[]} instead of \code{[(1, 3)]}: both checks of
+milestone~2 that concern road~$1$ fail, as does the test \code{test_one_way_road}. The planner answers $98$ seconds
+from the Library to the Town Square, straight up the one-way road, the wrong way; the right answer is $204$ seconds,
+through the Garden Centre.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:7}
+A \omterm{def:g10:graphs-first-look:graph}{graph} with the same arcs, each of cost $1$: the cost of a route is then its number of roads. From the Old Mill to
+the Post Office it gives $7$ roads, through the Football Ground, the Swimming Pool, North Bridge, the Town Square, the
+Garden Centre and the East Gate. That route is $8420$ m long and takes $770$ s; the fastest route has $10$ roads,
+$9130$ m and $675$ s. Fewer roads, and even fewer metres, but over a minute and a half slower. Breadth-first search
+would give the same answer, since all costs are equal; the tests compute both numbers with \code{cost_of}.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:8}
+Every other cost is in seconds, so the planner reads \code{0.25} as a quarter of a second: the shuttle looks almost
+free, and every route that can use it does, for routes that in truth take fifteen minutes longer. Python adds the
+numbers without complaint; nothing but the programmer knows the unit. The cost must be in the \omterm{def:g10:graphs-first-look:graph}{graph}'s unit:
+$0.25 \times 3600 = 900$ seconds. Naming the unit in the code, as in \code{length_m} or \code{travel_seconds}, makes
+such a mix visible.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:9}
+Each run finishes the $n$ vertices one by one, and each choice scans at most $n$ tentative costs: at most $n^2$
+comparisons, plus one test per arc. For $n = 30$, about $900$ per run, so about $30 \times 900 = 27\,000$ for the
+measure, plus $30 \times 105$ arc tests. Building a \omterm{def:g10:graphs-first-look:graph}{graph} reads $30$ places
+and $53$ roads, a cost of the same order as one run. Building it once would save little here; on a \omterm{def:g10:graphs-first-look:graph}{graph} of millions
+of arcs, it would matter.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:10}
+\smallskip\noindent\hspace*{2em}\code{def roads_on_route(conn, ids):}
+
+\noindent\hspace*{4em}\code{found = []}
+
+\noindent\hspace*{4em}\code{for a, b in zip(ids, ids[1:]):}
+
+\noindent\hspace*{6em}\code{(road,) = conn.execute("SELECT road_id FROM road WHERE (from_place,"}
+
+\noindent\hspace*{10em}\code{" to_place) IN ((?, ?), (?, ?))", (a, b, b, a)).fetchone()}
+
+\noindent\hspace*{6em}\code{found.append(road)}
+
+\noindent\hspace*{4em}\code{return found}
+
+\smallskip\noindent The route from the Station to the Library uses roads $6$, $30$, $2$ and $1$. The tests close each
+of the $49$ others in turn: the time stays $276$ s. The argument: closing a road only removes arcs, so no new route
+appears and the best time cannot drop. And the old fastest route uses none of the removed arcs, so it is still there,
+with the same cost: the best time cannot rise either.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:11}
+After each prompt the menu waits for one line; the run prints
+
+\smallskip\noindent\hspace*{2em}\texttt{1 min 38 s over 1 road}
+
+\noindent\hspace*{2em}\texttt{\ \ Town Square > Library}
+
+\noindent\hspace*{2em}\texttt{3 min 24 s over 2 roads}
+
+\noindent\hspace*{2em}\texttt{\ \ Library > Garden Centre > Town Square}
+
+\smallskip\noindent each answer after its prompts, and the program ends at \code{4}. The way there is the one-way
+road, $98$ s; the way back cannot use it.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:12}
+Build the \omterm{def:g10:graphs-first-look:graph}{graph} as usual, then remove the place: delete it from the successors of every vertex, and delete its own
+entry. \omterm{met:g12:graph-algorithms:dijkstra}{Dijkstra's algorithm} on what remains gives the answer (\code{route_avoiding} in \code{exercises/rp_ex.py}).
+Avoiding North Bridge, the fastest route from the Station to the Library goes round by the east: River Park, the Town
+Hall, the Sports Hall, the East Gate and the Garden Centre, $572$ s instead of $276$.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:13}
+\emph{A route.} Each vertex but the source receives a parent $u$ only while the arc $u \to v$ is being examined, so
+parent and child are joined by an arc; following parents from $b$ reaches the source, whose parent is \code{None},
+since each parent was finished before its child, so the chain never loops. Reversed, the list is a route from $a$ to $b$.
+
+\emph{Its cost.} When $v$ gets parent $u$, its tentative cost is set to $d(u) + c(u, v)$, where $d(u)$ is final, $u$
+being finished. If $v$ later gets a better parent, both change together. So at the end $d(v) = d(\text{parent}) +
+c(\text{parent}, v)$ for each $v$ on the route, and adding these equalities along the route gives $d(b)$ = the sum of
+the costs of its arcs.
+
+\emph{The fastest.} The costs are times, all $\ge 0$, so the theorem of chapter \ref{ch:g12:graph-algorithms} applies:
+the cost of each finished vertex is its distance from the source, the smallest cost of any route. Hence no route from
+$a$ to $b$ costs less than $d(b)$, the cost of the route returned.
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:14}
+\smallskip\noindent\hspace*{2em}\code{def within(planner, start, seconds):}
+
+\noindent\hspace*{4em}\code{dist, _ = dijkstra(from_database(planner.conn), planner.place_id(start))}
+
+\noindent\hspace*{4em}\code{return sorted(planner.names[p] for p, t in dist.items()}
+
+\noindent\hspace*{11em}\code{if 0 < t <= seconds)}
+
+\smallskip\noindent Within $120$ s of the Station: Hill Park, Market Hall, North Bridge, River Park and the Town Hall.
+The Town Hall is reached in $68$ s through River Park, not in $120$ s by its direct road. One run gives the time to
+every place, so any limit is a filter on its result. (The run could also stop as soon as the next place to finish is
+beyond the limit, since the places are finished in order of time.)
+\end{solution}
+
+\begin{solution}{exo:g12:project-route-planner:15}
+The Old Mill lies in the south-west corner of the map and the Post Office near the north-east edge. The fastest route
+does not go straight: it climbs north to the Station, where two roads at $70$ km/h meet, then turns east, $9130$ m
+of road for $4.9$ km in a straight line. Its end is slow too: all three roads of the Post
+Office are at $30$ km/h, so its last $680$ m alone take $82$ s. The South School and the Garden Centre are farther
+apart, but their route keeps to roads at $50$ and $70$ km/h all the way. Time on a road map depends on
+the roads, not on the distance between the ends.
+\end{solution}

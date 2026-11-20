@@ -1,0 +1,408 @@
+% Provenance (never printed): NSI terminale "Algorithmique: programmation dynamique (alignement de sequences, rendu
+% de monnaie; cout en memoire)". See sources/book2/BRIEFS.md.
+\chapter{Dynamic Programming}\label{ch:g12:dynamic-programming}
+
+The recursive \code{fib} of chapter \ref{ch:g12:recursion} needs $2\,692\,537$ calls to compute $\mathrm{fib}(30)$,
+a number it could find by hand in $30$ additions. It is not slow because the problem is hard: it is slow because it
+solves the same small problems again and again, $\mathrm{fib}(2)$ alone $514\,229$ times, and forgets each answer as
+soon as it has used it. Writing the answers down fixes it.
+
+This chapter makes that remedy a method. It applies whenever a problem splits into smaller problems that overlap:
+the fewest coins for an amount, where greedy failed; the longest part two texts have in common, and the fewest
+changes from one version of a text to the next; the best load of a knapsack with whole objects. Each time the work
+is a table filled in the right order, and its price is the memory of the table.
+
+\begin{recall}
+A \omterm{def:g12:recursion:recursion}{recursive function} is defined from its values on smaller inputs (chapter \ref{ch:g12:recursion}). A \omterm{def:g11:greedy-algorithms:greedy}{greedy
+algorithm} takes the best-looking choice at each step, and fails for some coin systems and for the knapsack with whole
+objects (chapter \ref{ch:g11:greedy-algorithms}). A grid is a list of lists, and a dictionary maps keys to values
+(Book 1, grades 8 and 9).
+\end{recall}
+
+\section{Overlapping subproblems}\label{sec:g12:dynamic-programming:overlap}
+
+\begin{definition}[Subproblem, dynamic programming]\label{def:g12:dynamic-programming:dp}
+A \emph{subproblem}\index{subproblem} of a problem is the same problem on a smaller input, whose solution helps build
+the solution of the whole. \emph{Dynamic programming}\index{dynamic programming} solves a problem whose subproblems
+overlap by solving each subproblem once, recording its solution, and building larger solutions from the recorded
+ones.
+\end{definition}
+
+\omterm{def:g12:divide-and-conquer:dc}{Divide and conquer} (chapter \ref{ch:g12:divide-and-conquer}) also uses \omterm{def:g12:dynamic-programming:dp}{subproblems}, but the two halves of a \omterm{def:g12:divide-and-conquer:merge}{merge
+sort} never share any work. The two calls of \code{fib(n)}, on $n - 1$ and $n - 2$, do: the first one computes
+$\mathrm{fib}(n - 2)$ on its way.
+
+\begin{definition}[Memoisation]\label{def:g12:dynamic-programming:memo}
+\emph{Memoisation}\index{memoisation} is the recording of a function's results in a table, usually a dictionary from
+arguments to results: the function looks the arguments up before computing, and stores the result before returning.
+\end{definition}
+
+\omcode{code/grade-12/07-dynamic-programming/listings/fib_memo.py}{1}{35}{The naive recursion and the memoised one,
+both counting their calls.}\label{lst:g12:dynamic-programming:fib-memo}
+
+\omoutput{code/grade-12/07-dynamic-programming/outputs/fib_memo.txt}{The memoised version makes $2n - 1$
+calls.}\label{out:g12:dynamic-programming:fib-memo}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners=1pt, inner sep=2pt, fill=omDef!10},
+    hit/.style={draw, dashed, rounded corners=1pt, inner sep=2pt, text=black!60}]
+  \node[box] (f5) at (0,0) {fib(5)};
+  \node[box] (f4) at (-1.2,-0.9) {fib(4)}; \node[hit] (h3) at (1.2,-0.9) {fib(3)};
+  \node[box] (f3) at (-2.4,-1.8) {fib(3)}; \node[hit] (h2) at (0,-1.8) {fib(2)};
+  \node[box] (f2) at (-3.6,-2.7) {fib(2)}; \node[hit] (h1) at (-1.2,-2.7) {fib(1)};
+  \node[box] (f1) at (-4.8,-3.6) {fib(1)}; \node[box] (f0) at (-2.4,-3.6) {fib(0)};
+  \foreach \a/\b in {f5/f4, f5/h3, f4/f3, f4/h2, f3/f2, f3/h1, f2/f1, f2/f0} \draw (\a) -- (\b);
+  \node[box] at (3.6,-2.4) {computed};
+  \node[hit] at (3.6,-3.0) {looked up};
+\end{tikzpicture}
+
+{\small The $9$ calls of the memoised \code{fib(5)}, against $15$ for the naive one. The first call on each value
+computes it, going down the left side; every later call on it finds it in the dictionary and returns at once, so the
+tree has no repeated subtree.}
+\end{omfigure}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=11cm, height=5.6cm, ymode=log, xlabel={$n$}, ylabel={calls},
+    legend pos=north west, legend style={font=\footnotesize}]
+  \addplot[omThm, thick, mark=square*, mark size=1.2pt] table[x=n, y=naive]{code/grade-12/07-dynamic-programming/figures/calls.dat};
+  \addplot[omDef, thick, mark=*, mark size=1.2pt] table[x=n, y=memo]{code/grade-12/07-dynamic-programming/figures/calls.dat};
+  \legend{naive recursion, memoised}
+\end{axis}
+\end{tikzpicture}
+
+{\small Calls made by the two versions of \code{fib(n)}, from \code{figures/calls.py}, with a scale that multiplies
+by $10$ at each mark. The naive count is multiplied by about $1.6$ at each step and passes $29$ million at $n = 35$;
+the memoised count is $2n - 1$, $69$ at $n = 35$.}
+\end{omfigure}
+
+Python can keep the notebook itself. The line \code{@cache}, written just above \code{def}, hands the function to
+\code{functools.cache}, which returns a version of it that records every result; \code{cache_info} reports how often
+the record was used.
+
+\omcode{code/grade-12/07-dynamic-programming/listings/fib_cache.py}{1}{10}{The same \omterm{def:g12:dynamic-programming:memo}{memoisation}, done by the \omterm{def:g11:modules-and-interfaces:library}{standard
+library}.}\label{lst:g12:dynamic-programming:fib-cache}
+
+\omoutput{code/grade-12/07-dynamic-programming/outputs/fib_cache.txt}{$91$ values computed, $88$ calls answered from
+the record.}\label{out:g12:dynamic-programming:fib-cache}
+
+\section{The bottom-up table}\label{sec:g12:dynamic-programming:bottom-up}
+
+The memoised function still recurses: \code{fib(n)} waits for \code{fib(n - 1)}, which waits for \code{fib(n - 2)},
+down to $1$. For large $n$ the chain of waiting calls is longer than Python allows. But the order in which the values
+are needed is known in advance: from small to large. Filling the table in that order needs no recursion at all.
+
+\omcode{code/grade-12/07-dynamic-programming/listings/fib_table.py}{1}{24}{Fibonacci bottom-up, with the whole table
+and with two values.}\label{lst:g12:dynamic-programming:fib-table}
+
+\omoutput{code/grade-12/07-dynamic-programming/outputs/fib_table.txt}{The table up to $12$; $\mathrm{fib}(90)$ both
+ways; $\mathrm{fib}(1000)$, far beyond the recursion limit.}\label{out:g12:dynamic-programming:fib-table}
+
+\begin{method}[Designing a dynamic programme]\label{met:g12:dynamic-programming:design}
+(1) Say what one cell of the table means, in words: ``\code{best[a]} is the fewest coins that make \code{a}''.
+(2) Write the recurrence: the value of a cell from cells of smaller \omterm{def:g12:dynamic-programming:dp}{subproblems}, and the cells known directly.
+(3) Choose an order of filling in which every cell a cell needs is already filled. (4) Read the answer in the last
+cell, and, to know how it is achieved and not only its value, follow the choices back. (5) Count the cells: they are
+the memory, and, times the work per cell, the time.
+\end{method}
+
+Step (5) also shows what can be saved: \code{fib_two} keeps only the last two values, since no cell needs an older
+one. The same saving works whenever each row of a table needs only the row before it.
+
+\section{Change with the fewest coins}\label{sec:g12:dynamic-programming:change}
+
+With the coins $1$, $3$ and $4$, greedy pays $6$ as $4 + 1 + 1$, three coins, when $3 + 3$ takes two (chapter
+\ref{ch:g11:greedy-algorithms}). The \omterm{def:g12:dynamic-programming:dp}{subproblems} are the smaller amounts. If a best way to pay $a$ uses a coin $c$,
+the other coins pay $a - c$, and must do so with as few coins as possible: otherwise a better way to pay $a - c$
+would give a better way to pay $a$. So
+\[
+\mathrm{best}(0) = 0, \qquad \mathrm{best}(a) = 1 + \min_{c \le a} \mathrm{best}(a - c) \quad (a \ge 1),
+\]
+the minimum running over the coins $c$ of the system that are at most $a$.
+
+\omcode{code/grade-12/07-dynamic-programming/listings/change_dp.py}{1}{32}{The table of fewest coins, and the coins
+rebuilt from the recorded choices.}\label{lst:g12:dynamic-programming:change}
+
+\omoutput{code/grade-12/07-dynamic-programming/outputs/change_dp.txt}{Two coins for $6$ where greedy used three; and
+$36$ in Brenmoor, the smallest amount greedy got wrong there.}\label{out:g12:dynamic-programming:change}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, x=11mm, y=6mm]
+  \foreach \a/\b/\l in {0/0/{--}, 1/1/1, 2/2/1, 3/1/3, 4/1/4, 5/2/1, 6/2/3} {
+    \node[draw, minimum width=11mm, minimum height=6mm, fill=black!5] (a\a) at (\a,1) {$\a$};
+    \node[draw, minimum width=11mm, minimum height=6mm] (b\a) at (\a,0) {$\b$};
+    \node[draw, minimum width=11mm, minimum height=6mm] at (\a,-1) {$\l$};
+  }
+  \node[left] at (-0.6,1) {amount}; \node[left] at (-0.6,0) {\code{best}}; \node[left] at (-0.6,-1) {\code{last}};
+  \foreach \a in {0, 3, 6} \draw[omThm, very thick] (\a-0.5,-1.5) rectangle (\a+0.5,1.5);
+  \draw[->, thick, omThm] ([yshift=4mm]a6.north) to[bend right=35] node[above, font=\scriptsize] {coin $3$}
+    ([yshift=4mm]a3.north);
+  \draw[->, thick, omThm] ([yshift=4mm]a3.north) to[bend right=35] node[above, font=\scriptsize] {coin $3$}
+    ([yshift=4mm]a0.north);
+\end{tikzpicture}
+
+{\small The table for the coins $1$, $3$, $4$, filled from left to right. \code{best[6]} $= 2$ came from
+\code{best[3]} $+ 1$, and \code{last[6]} records the coin $3$; the rebuild follows the recorded coins back from $6$ to
+$3$ to $0$.}
+\end{omfigure}
+
+The table has $a + 1$ cells, and each looks at every coin: for $k$ coins, about $a \times k$ steps. Trying all
+combinations of coins, as in chapter \ref{ch:g11:greedy-algorithms}, took $3687$ combinations for $100$ in Brenmoor;
+the table takes about $600$ steps.
+
+\section{Common subsequences and alignments}\label{sec:g12:dynamic-programming:lcs}
+
+\begin{definition}[Longest common subsequence]\label{def:g12:dynamic-programming:lcs}
+A \emph{subsequence} of a sequence keeps some of its elements, in their order, and drops the others: \code{LIBRY} is a
+subsequence of \code{LIBRARY}. A \emph{longest common subsequence}\index{longest common subsequence} of two sequences
+is a sequence that is a subsequence of both, and as long as possible.
+\end{definition}
+
+Let $t[i][j]$ be the length of a \omterm{def:g12:dynamic-programming:lcs}{longest common subsequence} of the first $i$ letters of $a$ and the first $j$ of $b$.
+If $a$'s letter $i$ and $b$'s letter $j$ are equal, one such subsequence ends with that letter, and
+$t[i][j] = t[i - 1][j - 1] + 1$. If they differ, at least one of them is not the last letter of the subsequence and can
+be dropped: $t[i][j] = \max(t[i - 1][j], t[i][j - 1])$. A row or a column with no letters holds $0$. Filling row by row
+from the top left, each cell finds the three cells it needs above it and on its left.
+
+\omcode{code/grade-12/07-dynamic-programming/listings/lcs.py}{1}{35}{The table of common subsequences, and a longest
+one rebuilt.}\label{lst:g12:dynamic-programming:lcs}
+
+\omoutput{code/grade-12/07-dynamic-programming/outputs/lcs.txt}{\code{LIBRARY} and \code{LITERARY} share
+\code{LIRARY}, six letters.}\label{out:g12:dynamic-programming:lcs}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, x=6.5mm, y=-6.5mm]
+  \foreach \c [count=\j] in {L,I,T,E,R,A,R,Y} \node at (\j,-1) {\c};
+  \foreach \c [count=\i] in {L,I,B,R,A,R,Y} \node at (-1,\i) {\c};
+  \foreach \i/\j in {0/0, 1/1, 2/2, 2/3, 2/4, 3/4, 4/5, 5/6, 6/7, 7/8}
+    \fill[omMeth!18] (\j-0.5,\i-0.5) rectangle (\j+0.5,\i+0.5);
+  \foreach \row [count=\i from 0] in {{0,0,0,0,0,0,0,0,0}, {0,1,1,1,1,1,1,1,1}, {0,1,2,2,2,2,2,2,2},
+      {0,1,2,2,2,2,2,2,2}, {0,1,2,2,2,3,3,3,3}, {0,1,2,2,2,3,4,4,4}, {0,1,2,2,2,3,4,5,5},
+      {0,1,2,2,2,3,4,5,6}}
+    \foreach \v [count=\j from 0] in \row \node at (\j,\i) {$\v$};
+  \foreach \x in {-0.5,0.5,...,8.5} \draw[black!30] (\x,-0.5) -- (\x,7.5);
+  \foreach \y in {-0.5,0.5,...,7.5} \draw[black!30] (-0.5,\y) -- (8.5,\y);
+  \foreach \i/\j in {1/1, 2/2, 4/5, 5/6, 6/7, 7/8} \draw[omThm, thick] (\j,\i) circle (2.6mm);
+\end{tikzpicture}
+
+{\small The table of \code{LIBRARY} (rows) and \code{LITERARY} (columns). The shaded cells are the path of the
+rebuild, from the bottom right back to the top left; at each circled cell the two letters are equal, and that letter
+belongs to the subsequence: L, I, R, A, R, Y.}
+\end{omfigure}
+
+A second question about two versions of a text is how many changes turn one into the other.
+
+\begin{definition}[Edit distance, alignment]\label{def:g12:dynamic-programming:edit-distance}
+The \emph{edit distance}\index{edit distance} between two sequences is the smallest number of operations that turn the
+first into the second, each operation inserting one element, deleting one, or replacing one by another. An
+\emph{alignment}\index{alignment} of two sequences writes them one above the other, with gaps, so that each column
+holds two equal elements, two different ones (a replacement), or an element and a gap (an insertion or a deletion).
+\end{definition}
+
+The table has the same shape. $d[i][j]$ is the distance from the first $i$ elements of $a$ to the first $j$ of $b$. In
+a best \omterm{def:g12:dynamic-programming:edit-distance}{alignment}, the last column either pairs $a$'s element $i$ with $b$'s element $j$, for no cost if they are equal
+and $1$ otherwise; or holds $a$'s element $i$ over a gap, a deletion; or a gap over $b$'s element $j$, an insertion.
+So $d[i][j]$ is the smallest of $d[i - 1][j - 1]$ (plus $1$ if the elements differ), $d[i - 1][j] + 1$ and
+$d[i][j - 1] + 1$; and $d[i][0] = i$, $d[0][j] = j$. The elements can be letters, or the words of a sentence.
+
+\omcode{code/grade-12/07-dynamic-programming/listings/align.py}{1}{37}{The distance table, and an \omterm{def:g12:dynamic-programming:edit-distance}{alignment}
+rebuilt from it.}\label{lst:g12:dynamic-programming:align}
+
+\omcode{code/grade-12/07-dynamic-programming/listings/align.py}{39}{56}{Printing an \omterm{def:g12:dynamic-programming:edit-distance}{alignment} of two
+sentences, word by word.}\label{lst:g12:dynamic-programming:align-show}
+
+\omoutput{code/grade-12/07-dynamic-programming/outputs/align.txt}{Three changes: one word inserted, two words
+replaced. The marks are \code{|} for a word kept and \code{*} for a word replaced.}\label{out:g12:dynamic-programming:align}
+
+Several \omterm{def:g12:dynamic-programming:edit-distance}{alignments} can reach the same distance. The rebuild keeps an element whenever it can, and otherwise prefers a
+gap to a replacement, which keeps the \omterm{def:g12:dynamic-programming:edit-distance}{alignment} close to what a reader would write.
+
+\section{The knapsack with whole objects}\label{sec:g12:dynamic-programming:knapsack}
+
+A knapsack holds at most $W$ kilograms; each object has a mass and a value, and is taken whole or left. Greedy by
+value per kilogram fails here (chapter \ref{ch:g11:greedy-algorithms}): with $10$ kilograms, it takes the object of
+$6$~kg worth $30$ and then nothing fits, when two objects of $5$~kg worth $20$ each give $40$. Trying every subset is
+exact, but there are $2^n$ of them.
+
+The \omterm{def:g12:dynamic-programming:dp}{subproblems} use fewer objects and less room. Let $k[i][w]$ be the best value with the first $i$ objects and at
+most $w$ kilograms. Object $i$ is left, and then $k[i][w] = k[i - 1][w]$; or, if it fits, taken, and then the rest is
+the best load of $w$ minus its mass with the objects before it. The table is filled row by row, each row from the one
+above.
+
+\omcode{code/grade-12/07-dynamic-programming/listings/knapsack_dp.py}{1}{31}{The knapsack table, the objects rebuilt,
+and every subset as a check.}\label{lst:g12:dynamic-programming:knapsack}
+
+\omcode{code/grade-12/07-dynamic-programming/listings/knapsack_dp.py}{32}{42}{The small case of the greedy chapter,
+then a pack of eight objects.}\label{lst:g12:dynamic-programming:knapsack-run}
+
+\omoutput{code/grade-12/07-dynamic-programming/outputs/knapsack_dp.txt}{The table of the small case, row $i$ for the
+first $i$ objects; then $240$ in $15$~kg, as every subset finds.}\label{out:g12:dynamic-programming:knapsack}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\footnotesize, x=7mm, y=-6mm]
+  \foreach \w in {0,...,10} \node[black!60] at (\w,-1) {$\w$};
+  \foreach \t [count=\i from 0] in {--, A\,6\,kg\,30, B\,5\,kg\,20, C\,5\,kg\,20} \node[left] at (-0.6,\i) {\t};
+  \fill[omMeth!18] (9.5,2.5) rectangle (10.5,3.5); \fill[omMeth!18] (4.5,1.5) rectangle (5.5,2.5);
+  \fill[omMeth!18] (-0.5,0.5) rectangle (0.5,1.5);
+  \foreach \row [count=\i from 0] in {{0,0,0,0,0,0,0,0,0,0,0}, {0,0,0,0,0,0,30,30,30,30,30},
+      {0,0,0,0,0,20,30,30,30,30,30}, {0,0,0,0,0,20,30,30,30,30,40}}
+    \foreach \v [count=\w from 0] in \row \node at (\w,\i) {$\v$};
+  \foreach \x in {-0.5,0.5,...,10.5} \draw[black!30] (\x,-0.5) -- (\x,3.5);
+  \foreach \y in {-0.5,0.5,...,3.5} \draw[black!30] (-0.5,\y) -- (10.5,\y);
+  \draw[->, thick, omThm] (9.6,2.9) -- (5.4,2.1);
+  \draw[->, thick, omThm] (4.6,1.9) -- (0.4,1.1);
+  \foreach \t [count=\i] in {A left, B taken, C taken} \node[font=\scriptsize, right, omThm] at (10.7,\i) {\t};
+  \node[font=\scriptsize, black!60, left] at (-0.6,-1) {mass $w$:};
+\end{tikzpicture}
+
+{\small The table of the small case, objects in rows, mass allowed in columns. $40$ in the last cell differs from the
+$30$ above it, so C was taken, leaving $5$~kg; $20$ in row B differs from the $0$ above it, so B was taken, leaving
+$0$~kg; A was left.}
+\end{omfigure}
+
+The table has $(n + 1)(W + 1)$ cells and each takes a few steps: for $8$ objects and $15$~kg, $144$ cells against
+$256$ subsets. The cost grows with $W$, the size of the knapsack, not only with the number of objects: masses to the
+gram in a $15$~kg knapsack make $15\,001$ columns. Tables of two whole texts grow faster still.
+
+\omcode{code/grade-12/07-dynamic-programming/listings/table_sizes.py}{1}{9}{The memory of an $n \times n$ table, and
+of two rows.}\label{lst:g12:dynamic-programming:sizes}
+
+\omoutput{code/grade-12/07-dynamic-programming/outputs/table_sizes.txt}{Two texts of a million words would need eight
+terabytes for the whole table, and $16$ megabytes for two rows.}\label{out:g12:dynamic-programming:sizes}
+
+The distance needs only the row above: two rows are enough, as for \code{fib_two}. The \omterm{def:g12:dynamic-programming:edit-distance}{alignment} does not: the rebuild
+walks back through the whole table. Keeping both the small memory and the \omterm{def:g12:dynamic-programming:edit-distance}{alignment} is possible, by a cleverer
+method that is out of reach here.
+
+\begin{history}[Bellman, 1954]
+Richard Bellman published ``The theory of \omterm{def:g12:dynamic-programming:dp}{dynamic programming}'', an early general account of the method, in 1954 in
+the \emph{Bulletin of the American Mathematical Society}. In its title, \emph{programming} means planning a sequence
+of decisions, as in a schedule, not writing code.
+% ledger: g12:bellman-1954
+\end{history}
+
+\section{Exercises}\label{sec:g12:dynamic-programming:exercises}
+
+\begin{exercise}[$\star$]\label{exo:g12:dynamic-programming:1}
+How many calls does \code{fib_memo(6)} make? And \code{fib_naive(6)}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:dynamic-programming:2}
+Fill the table \code{best} for the coins $1$, $3$, $4$ up to the amount $7$. Which coins pay $7$?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:dynamic-programming:3}
+Find a \omterm{def:g12:dynamic-programming:lcs}{longest common subsequence} of \code{STATION} and \code{NATIONS}, and its length.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:dynamic-programming:4}
+In the knapsack table of the small case, from which cells is $k[2][10] = 30$ computed?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:g12:dynamic-programming:5}
+Write \code{binomial(n, k)}, memoised, from Pascal's rule $\binom{n}{k} = \binom{n-1}{k-1} + \binom{n-1}{k}$, with
+$\binom{n}{0} = \binom{n}{n} = 1$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:dynamic-programming:6}
+A student memoises \code{binomial} with \code{memo[n]} instead of \code{memo[(n, k)]}. The call
+\code{binomial_bad(10, 5)} returns $96$. Explain.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:dynamic-programming:7}
+Write \code{min_coins(amount, coins)} top-down, as a memoised recursion, returning \code{None} when the amount cannot
+be paid.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:dynamic-programming:8}
+A student fills the table of \code{lcs_table} with \code{range(n, 0, -1)} and \code{range(m, 0, -1)}, the same
+recurrence otherwise. On \code{LIBRARY} and \code{LITERARY} the answer is $1$. Why?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:dynamic-programming:9}
+How many paths go from the top-left corner to the bottom-right corner of a grid of $5 \times 5$ squares, along its
+lines, moving only right or down? Set up a table.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:dynamic-programming:10}
+Write \code{diff_lines(old, new)}, which lists the lines of two versions of a file: lines kept with two spaces in
+front, lines deleted with \code{-}, lines added with \code{+}, using a \omterm{def:g12:dynamic-programming:lcs}{longest common subsequence} of the lines.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:g12:dynamic-programming:11}
+What does \code{show} print for the letters of \code{kitten} and \code{sitting}? What is their distance?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:dynamic-programming:12}
+Prove, by induction on $a$, that \code{change_table} gives the fewest coins for every amount $a$ that can be paid.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:dynamic-programming:13}
+Write \code{edit_operations(a, b)}, the list of operations of a best \omterm{def:g12:dynamic-programming:edit-distance}{alignment}, such as \code{"replace k by s"}.
+Check that it has as many operations as the distance.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:dynamic-programming:14}
+Count the cells and the steps of \code{knapsack} for $n$ objects and a capacity $W$. A removal van holds $3$ tonnes;
+its $40$ boxes are weighed to the kilogram, then to the gram. How many cells in each case? What does it say about the
+cost?
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:g12:dynamic-programming:15}
+Write \code{longest_increasing(t)}, which returns a longest strictly increasing subsequence of a list, with a table
+of the longest one ending at each position and a rebuild. Count its steps.
+\end{exercise}
+
+\section{Problem: Aligning Two Versions}\label{sec:g12:dynamic-programming:problem}
+
+\begin{problem}[{Weekend problem --- what changed in the notice?}]\label{pb:g12:dynamic-programming:1}
+The library on Town Square has rewritten its notice. The program compares the two versions word by word, with the
+tables of the chapter, and prints only the columns of the \omterm{def:g12:dynamic-programming:edit-distance}{alignment} that changed.
+
+\omcode{code/grade-12/07-dynamic-programming/listings/versions.py}{1}{37}{The two versions, compared word by
+word.}\label{lst:g12:dynamic-programming:versions}
+
+\omoutput{code/grade-12/07-dynamic-programming/outputs/versions.txt}{Words, common words, distance, the changed
+columns, and the size of the tables.}\label{out:g12:dynamic-programming:versions}
+
+\medskip\noindent\textbf{Part I --- The two versions.}
+\begin{enumerate}
+  \item Read the two notices. List, in your own words, what the library changed.
+  \item Why does the program compare words and not letters?
+  \item \code{Sunday.} and \code{Sunday} count as different words. Why? What would change if the program removed the
+    punctuation first?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Common words.}
+\begin{enumerate}[resume]
+  \item What does \code{lcs_table(a, b)[n][m]} measure here?
+  \item How many words of the old version are not in the common subsequence? Of the new one?
+  \item Why is the \omterm{def:g12:dynamic-programming:edit-distance}{edit distance} at least the larger of these two numbers, and at most their sum?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- The distance and the alignment.}
+\begin{enumerate}[resume]
+  \item Count the replacements, deletions and insertions in the printed columns. Check the distance.
+  \item The deleted words \code{cents a day.} come after \code{ten -> nothing.}. Give another \omterm{def:g12:dynamic-programming:edit-distance}{alignment} of the same
+    cost for these words.
+  \item Why is \code{appointment -> appointment.} a replacement?
+  \item \code{Thursday} and \code{and} are deleted. Write the columns of the \omterm{def:g12:dynamic-programming:edit-distance}{alignment} around them.
+  \item Each row of the distance table is filled from left to right. Which cells does $d[i][j]$ need, and why is this
+    order right?
+  \item The rebuild starts at the bottom-right cell. Why does it never leave the table, and why does it stop?
+  \item Prove that a column holding two different words in the rebuilt \omterm{def:g12:dynamic-programming:edit-distance}{alignment} costs one change, and that the
+    total of the costs is $d[n][m]$.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Memory.}
+\begin{enumerate}[resume]
+  \item How many cells has the full table? How many bytes, at $8$ bytes per cell?
+  \item Explain \code{distance_two_rows}: what does \code{previous} hold at the start of each pass of the loop?
+  \item Why can the two-row version give the distance but not the \omterm{def:g12:dynamic-programming:edit-distance}{alignment}?
+  \item Two versions of a book of $100\,000$ words each: memory of the full table, and of two rows?
+  \item Time: how many cells are computed in each version? Did saving memory cost time?
+  \item The tests compare \code{distance_two_rows} with the full table on $150$ random pairs. Why is that a
+    convincing check?
+  \item State the result: the distance between the two notices, the common words, and the cells of the two tables.
+\end{enumerate}
+\end{problem}

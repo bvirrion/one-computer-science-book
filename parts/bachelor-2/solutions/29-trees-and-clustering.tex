@@ -1,0 +1,201 @@
+\section*{Chapter \ref{ch:b2:trees-and-clustering} --- Learning from Examples: Decision Trees and Clustering}
+
+\begin{solution}{exo:b2:trees-and-clustering:1}
+\omterm{def:b2:trees-and-clustering:confusion}{Accuracy}: $(224 + 35)/300 = 0.863$. Late loans caught: $35/67 \approx 0.522$. Right ``late'' predictions: $35/(35 + 9)
+\approx 0.795$. If only false alarms cost anything, the library should watch the last number, the fraction of alarms that
+are right, and could raise the bar for calling a loan late; \omterm{def:b2:trees-and-clustering:confusion}{accuracy} mixes the two kinds of error with equal weight.
+\end{solution}
+
+\begin{solution}{exo:b2:trees-and-clustering:2}
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/exo_scaling.txt}{Raw \omterm{def:b2:trees-and-clustering:examples}{features} against scaled ones.}
+The distance in metres ranges over almost 6,000 and the pages over about 800, while the late returns range over 6: in the
+raw distance, a difference of one late return weighs as much as one metre. The neighbours are then the members who live
+at about the same distance and \omterm{def:b2:rust-ownership:borrow}{borrow} books of about the same length, whatever their late returns, and one of the two
+\omterm{def:b2:trees-and-clustering:examples}{features} of the rule is lost. Scaling every \omterm{def:b2:trees-and-clustering:examples}{feature} to $[0, 1]$ gives each the same weight.
+\end{solution}
+
+\begin{solution}{exo:b2:trees-and-clustering:3}
+The function visits a node, reports its point if it lies in the rectangle, and goes down to the left only if the
+rectangle reaches coordinates at most the node's on its axis ($\mathit{lo}_a \leq p_a$), to the right only if it reaches
+coordinates at least the node's ($\mathit{hi}_a \geq p_a$).
+
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/exo_range.txt}{Three rectangles in a tree of 10,000 points.}
+The nodes visited are the points reported plus the nodes whose region only crosses the rectangle's border: about twice
+the answer for the square, and 13 for an empty point query, a path down the tree. A long thin strip crosses many
+regions, so it visits more nodes per point reported.
+\end{solution}
+
+\begin{solution}{exo:b2:trees-and-clustering:4}
+The whole set has $8/20 = 0.4$ late, so $H = h(0.4) \approx 0.971$ bits. The left part has $0.7$ late, $h(0.7) \approx
+0.881$; the right part $0.1$, $h(0.1) \approx 0.469$. The gain is $0.971 - \tfrac{1}{2} \cdot 0.881 - \tfrac{1}{2} \cdot
+0.469 \approx 0.296$ bits: the dotted gap of the \omterm{def:b2:trees-and-clustering:entropy}{entropy} figure of the chapter.
+\end{solution}
+
+\begin{solution}{exo:b2:trees-and-clustering:5}
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/exo_lloyd_step.txt}{One iteration, then the assignment that
+stops the algorithm.}
+From A, E and I, the points A, B, C go to A; D, E, F, G, H to E (D is $2.26$ from E and $3.65$ from A); I, J, K, L to I.
+The cost is $42.54$. The \omterm{def:b2:trees-and-clustering:clustering}{centroids} are $(1.50, 1.77)$, $(7.28, 1.94)$ and $(4.65, 8.00)$, and the same assignment now
+costs $28.78$. With these centres no point changes cluster, so the algorithm stops after one iteration, with D in the
+right-hand group.
+\end{solution}
+
+\begin{solution}{exo:b2:trees-and-clustering:6}
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/exo_identifier.txt}{One branch per value: the loan's number wins.}
+A split with one branch per loan leaves a single loan in each branch, so every branch has \omterm{def:b2:trees-and-clustering:entropy}{entropy} $0$ and the gain is the
+whole \omterm{def:b2:trees-and-clustering:entropy}{entropy} of the labels, the largest possible. The tree would ask ``which loan is it?'' and learn nothing that applies
+to a new loan, whose number is new. The gain ratio divides by the \omterm{def:b2:trees-and-clustering:entropy}{entropy} of the branch sizes, $\log_2 700 \approx
+9.45$ bits for the number, and lowers its score to $0.093$, but that is still above the $0.064$ of the late returns: here
+it is not enough. Identifiers must be left out of the \omterm{def:b2:trees-and-clustering:examples}{features}; binary splits limit the damage, since one threshold on the
+number gains almost nothing.
+\end{solution}
+
+\begin{solution}{exo:b2:trees-and-clustering:7}
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/exo_crossval.txt}{The mean of the five \omterm{def:b2:functional-programming:fold}{folds} for each depth.}
+Cross-validation chooses depth 2, with a mean of $0.846$, as the \omterm{def:b2:trees-and-clustering:examples}{test set} did in \cref{out:b2:trees-and-clustering:overfit},
+without looking at it. The five \omterm{def:b2:functional-programming:fold}{folds} differ by up to $0.07$ for the same depth: one validation set of 140 is a noisy
+judge, and the mean of five is steadier.
+\end{solution}
+
+\begin{solution}{exo:b2:trees-and-clustering:8}
+Write $a_t$ for the $t$-th assignment, $c_t$ for the centres from which it is computed, and $\mathrm{cost}(c, a)$ for
+the $k$-means cost. The assignment step gives each point its nearest centre, so $\mathrm{cost}(c_t, a_t) \leq
+\mathrm{cost}(c_t, a_{t-1})$. The \omterm{def:b2:trees-and-clustering:clustering}{centroid} step replaces the centre of each non-empty cluster of $a_{t-1}$ by its
+\omterm{def:b2:trees-and-clustering:clustering}{centroid}, which by \cref{lem:b2:trees-and-clustering:centroid} does not increase that cluster's sum, and leaves empty
+clusters' centres in place; so $\mathrm{cost}(c_t, a_{t-1}) \leq \mathrm{cost}(c_{t-1}, a_{t-1})$. Together,
+$\mathrm{cost}(c_t, a_t) \leq \mathrm{cost}(c_{t-1}, a_{t-1})$: the recorded cost never increases.
+
+For termination, let $D(a)$ be the cost of an assignment $a$ with each centre at the \omterm{def:b2:trees-and-clustering:clustering}{centroid} of its cluster, empty
+clusters contributing nothing; then $D(a_{t-1}) = \mathrm{cost}(c_t, a_{t-1})$, since the \omterm{def:b2:trees-and-clustering:clustering}{centroid} step computes $c_t$
+from $a_{t-1}$. The two steps and the lemma give $D(a_{t-1}) = \mathrm{cost}(c_t, a_{t-1}) \geq \mathrm{cost}(c_t, a_t)
+\geq D(a_t)$. If $D(a_t) = D(a_{t-1})$, the last inequality is an equality, and by the uniqueness in the lemma each
+centre of $c_t$ with a non-empty cluster in $a_t$ is already its \omterm{def:b2:trees-and-clustering:clustering}{centroid}; the others stay in place. So the next centres
+are $c_t$ again, the next assignment is $a_t$ again, and the algorithm stops. Hence, as long as it runs, $D$ strictly
+decreases, so no assignment comes back; there are at most $k^n$ assignments, so the algorithm stops.
+\end{solution}
+
+\begin{solution}{exo:b2:trees-and-clustering:9}
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/exo_complete.txt}{The eleven merges of complete \omterm{def:b2:trees-and-clustering:hac}{linkage}.}
+The first five merges are A with B ($1.26$), F with G ($1.58$), J with K ($1.77$), C with AB ($1.92$: its farthest point
+in AB is A) and E with FG ($2.21$). Complete \omterm{def:b2:trees-and-clustering:hac}{linkage} measures a cluster by its farthest point: D is $3.65$ from A, the
+farthest of A, B, C, but $4.46$ from G, the farthest of E, F, G, H, so it joins A, B, C. Single \omterm{def:b2:trees-and-clustering:hac}{linkage} measures by the
+nearest point: D is $2.26$ from E but $2.41$ from B, so it joins E's group.
+\end{solution}
+
+\begin{solution}{exo:b2:trees-and-clustering:10}
+Run Kruskal's algorithm on the complete graph: it examines the edges by increasing length and accepts an edge when its
+ends lie in different components. We show by induction on $m$ that after $m$ merges, the clusters of single \omterm{def:b2:trees-and-clustering:hac}{linkage} are
+the components after $m$ accepted edges. At $m = 0$ both are the singletons.
+
+Suppose it holds after $m$ merges. An edge whose ends are now in different components was never examined: when it was,
+its ends were in different components, since components only grow, and it would have been accepted, putting them in the
+same component. So the next edge Kruskal accepts is the shortest edge between two different components. The next merge of
+single \omterm{def:b2:trees-and-clustering:hac}{linkage} joins the two clusters at the least single \omterm{def:b2:trees-and-clustering:hac}{linkage}, the least distance between a point of one and a
+point of the other: it is the shortest edge between two different clusters. Since the distances are distinct, it is
+the same edge, and both join the same two sets.
+
+After $n - k$ merges there are $k$ clusters, the components after $n - k$ accepted edges. With distinct weights the
+minimum spanning tree is unique and is Kruskal's, made of its $n - 1$ accepted edges in increasing order; the
+components after the first $n - k$ are those of the tree without the last $k - 1$, its $k - 1$ heaviest edges.
+\end{solution}
+
+\begin{solution}{exo:b2:trees-and-clustering:11}
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/exo_kmeanspp.txt}{100 runs from each seeding, costs rounded.}
+Uniform seeding finds the best \omterm{def:b2:trees-and-clustering:clustering}{clustering}, cost 131, in 53 runs of 100, and stops at 17 different costs; $k$-means++
+finds it in 80 runs and stops at 12 different costs. With five groups, a uniform start leaves some group without a centre
+with fair probability; the $k$-means++ start, by favouring points far from the centres chosen, rarely does. Neither
+avoids every local minimum, so keeping the best of several runs remains the practice.
+\end{solution}
+
+\begin{solution}{exo:b2:trees-and-clustering:12}
+Put the points on a circle centred on the query, for \omterm{def:b2:trees-and-clustering:examples}{example} the 20 integer points with $x^2 + y^2 = 625$, and the
+query at the origin. Every point is at squared distance 625, so the best distance never improves after the first point,
+and a subtree is skipped only when $(q_a - p_a)^2 \geq 625$. Every coordinate of every point lies in $[-25, 25]$, so the
+test fails except at the points with a coordinate $\pm 25$ on the node's axis, whose far side holds nothing on the
+circle.
+
+\omoutput{code/bachelor-2/29-trees-and-clustering/outputs/exo_kd_worst.txt}{The query at the centre visits all 20 nodes;
+moving it a little barely helps.}
+The search visits all 20 nodes, the cost of the brute force plus the overhead of the tree. The pruning needs the best
+distance to be small compared with the distances to the splitting lines; points all at nearly the same distance from
+the query defeat it.
+\end{solution}
+
+\begin{solution}{pb:b2:trees-and-clustering:1}
+\textbf{1.} The loans might come in an order that matters, by date for \omterm{def:b2:trees-and-clustering:examples}{example}; without shuffling, the \omterm{def:b2:trees-and-clustering:examples}{test set} could
+come from another period than the \omterm{def:b2:trees-and-clustering:examples}{training set}, and measure something else.
+
+\textbf{2.} The \omterm{def:b2:trees-and-clustering:examples}{training set} grows the trees, the validation set chooses the depth, the \omterm{def:b2:trees-and-clustering:examples}{test set} measures the chosen
+tree. A \omterm{def:b2:trees-and-clustering:examples}{test set} used to choose anything becomes part of the training, and its score is then optimistic.
+
+\textbf{3.} The two fractions come from the same source and differ by chance: on 300 loans the standard deviation of a
+fraction near the expected $0.27$ is about $0.026$, and the \omterm{def:b2:trees-and-clustering:examples}{test set}'s $0.217$ is two of them below it. A stratified split, which keeps the same
+proportion of late loans in each part, removes that source of variation.
+
+\textbf{4.} Even the planted rule is wrong on the flipped labels, one in ten on average, so about $0.9$, give or take
+the chance of a single set.
+
+\textbf{5.} Always answering ``on time'' scores $1 - 65/300 \approx 0.783$. A \omterm{def:b2:trees-and-clustering:learning}{classifier} that does not beat it has
+learned nothing useful.
+
+\textbf{6.} One would guess the late returns, and perhaps the distance or the days lent; nothing in the data says so in
+advance.
+
+\textbf{7.} Depth 2, with $0.885$ on validation; depths 3 and 4 score $0.880$, slightly less. Among nearly equal scores
+the shallowest tree is the simplest, and the least likely to have fitted noise.
+
+\textbf{8.} A loan whose member has more than 1.5 late returns, that is at least 2, and lives more than 2,495 m away.
+
+\textbf{9.} The planted rule is ``at least 2 late returns and at least 2,500 m''. The distances are multiples of 10, so
+``more than 2,495'' and ``at least 2,500'' agree on every possible loan, and the late returns are whole numbers: the
+tree computes exactly the rule, and agrees with it on every test loan.
+
+\textbf{10.} On the noisy training loans, the left branch has 69 late labels out of 457, all of them noise, and they are
+not spread evenly: 34 of 176 among the short books, 35 of 281 among the long ones. Splitting there lowers the \omterm{def:b2:trees-and-clustering:entropy}{entropy} a
+little, so the gain is positive, but both parts keep a majority on time and the predictions do not change. Pruning,
+which removes a split whose two leaves agree, would remove it.
+
+\textbf{11.} The 700 loans have $34 + 35 + 5 + 138 = 212$ late, $H \approx 0.885$ bits. The left part has $69$ late of
+$457$, \omterm{def:b2:trees-and-clustering:entropy}{entropy} about $0.612$; the right part $143$ of $243$, about $0.977$. The gain is $0.885 - \tfrac{457}{700} \cdot
+0.612 - \tfrac{243}{700} \cdot 0.977 \approx 0.146$ bits.
+
+\textbf{12.} The tree recovers the planted rule at depth 2: test \omterm{def:b2:trees-and-clustering:confusion}{accuracy} $0.923$, against a majority baseline of
+$0.783$.
+
+\textbf{13.} Below depth 2, the tree has not learned the rule; beyond, the only patterns left in the training labels are
+the flips, which are random, so each new split fits flips that new loans do not share.
+
+\textbf{14.} Once the depth is chosen, the validation loans are only more data: the tree grown on 700 loans estimates
+the thresholds and the majorities better.
+
+\textbf{15.} Yes. On 300 loans with labels wrong with probability $0.1$, the number of wrong labels varies: its standard
+deviation is $\sqrt{300 \cdot 0.1 \cdot 0.9} \approx 5.2$, so this \omterm{def:b2:trees-and-clustering:examples}{test set} had about 23 flips instead of 30. A single
+\omterm{def:b2:trees-and-clustering:examples}{test set} of 300 gives \omterm{def:b2:trees-and-clustering:confusion}{accuracy} to within a few hundredths only.
+
+\textbf{16.} On the loans with 15~\% noise, $k$-nearest neighbours reaches about $0.84$ with all five \omterm{def:b2:trees-and-clustering:examples}{features} against
+$0.863$ for the depth-2 tree, because the three useless \omterm{def:b2:trees-and-clustering:examples}{features} enter every distance; with the two right \omterm{def:b2:trees-and-clustering:examples}{features} it
+does about as well as the tree. It also keeps all the \omterm{def:b2:trees-and-clustering:examples}{examples}, where the tree keeps two questions.
+
+\textbf{17.} The flips would hide the rule more: validation would choose a shallow tree, still the rule if the data are
+enough, with an \omterm{def:b2:trees-and-clustering:confusion}{accuracy} of at most about $0.7$; with fewer loans it might choose depth 0 or 1.
+
+\textbf{18.} Rerun the whole procedure on other shuffles of the data, or on samples drawn with replacement, and compare
+the \omterm{def:b2:trees-and-clustering:examples}{features} and thresholds chosen: a rule that keeps the same two questions with nearby thresholds is stable.
+
+\textbf{19.} The members have no label: nobody has said which group each belongs to. The algorithm has only the points.
+
+\textbf{20.} $k = 3$: the cost falls by a factor of four from 1 to 2 and more than three from 2 to 3, then by less than a
+quarter at each step. Past the bend, the extra clusters only split real groups.
+
+\textbf{21.} About 31 loans a year kept 9 days: frequent readers of short books. About 12 a year kept 24 days: readers who
+keep their books long. About 4 or 5 a year kept 13 days: occasional borrowers.
+
+\textbf{22.} \omterm{met:b2:trees-and-clustering:lloyd}{Lloyd's algorithm} stops at a local minimum that depends on the start; the best of 10 starts is much more
+likely to be the best \omterm{def:b2:trees-and-clustering:clustering}{clustering}, as in \cref{out:b2:trees-and-clustering:kmeanspp}.
+
+\textbf{23.} Both \omterm{def:b2:trees-and-clustering:examples}{features} range over a few tens, so scaling would change little; in general, as with $k$-nearest
+neighbours, a \omterm{def:b2:trees-and-clustering:examples}{feature} with a larger range would decide the distances alone.
+
+\textbf{24.} \omterm{def:b2:trees-and-clustering:hac}{Hierarchical agglomerative clustering}: its \omterm{def:b2:trees-and-clustering:hac}{dendrogram} shows every number of clusters at once, and a long
+vertical gap between two merge heights suggests where to cut.
+\end{solution}

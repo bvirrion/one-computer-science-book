@@ -1,0 +1,316 @@
+\chapter{The Kernel and CPU Scheduling}\label{ch:b3:kernel-and-scheduling}
+
+A laptop runs many more processes than it has processor cores, and each process behaves as if it had a processor of its own. The Year~2 volume used that illusion from the outside, through system calls. This chapter builds it from the inside: how control gets into the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} and back out, how the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} stops one program and resumes another exactly where it was, and how it decides which one runs next. Switching is written in RISC-V assembly and counted on \code{rv}; deciding is studied with a simulator, and the classic policies are compared and some of them proved optimal or fair.
+
+\begin{recall}
+In the Year~2 volume a process is a running program with its own memory; it asks the operating system for a service with a system call, and the processor runs the operating system's code in \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} mode, where privileged instructions are allowed, then returns to user mode.
+\end{recall}
+
+\section{The kernel}\label{sec:b3:kernel-and-scheduling:kernel}
+
+\begin{definition}[Kernel, monolithic kernel, microkernel]\label{def:b3:kernel-and-scheduling:kernel}
+The \emph{kernel}\index{kernel} is the part of the operating system that runs in kernel mode: it alone touches the devices, the memory map and the processor's privileged state, and every process reaches them through it. A \emph{monolithic kernel}\index{monolithic kernel} runs all its services (file systems, device drivers, network stack, scheduler) in kernel mode, in one address space. A \emph{microkernel}\index{microkernel} keeps in kernel mode only what needs the privilege, address spaces, threads and messages between them, and runs the other services as ordinary processes that exchange messages.
+\end{definition}
+
+The trade is speed against isolation. In a \omterm{def:b3:kernel-and-scheduling:kernel}{monolithic kernel} a call from the file system to a disk driver is a function call; in a \omterm{def:b3:kernel-and-scheduling:kernel}{microkernel} it is two messages, each crossing into the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} and out. In exchange, a faulty driver in a \omterm{def:b3:kernel-and-scheduling:kernel}{microkernel} crashes one process, which can be restarted, where in a \omterm{def:b3:kernel-and-scheduling:kernel}{monolithic kernel} it can corrupt anything. The system-call interface is the same in both: a table, indexed by the number the program puts in a register, of the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel}'s functions. \code{rv} has such a table (\code{Machine.ecalls}), with print, read, \code{sbrk} and exit.
+
+\section{Interrupts and traps}\label{sec:b3:kernel-and-scheduling:traps}
+
+\begin{definition}[Interrupt, trap, hardware exception, interrupt vector, timer interrupt]\label{def:b3:kernel-and-scheduling:interrupt}
+A \emph{trap}\index{trap} is a transfer of control from the running program to the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel}, made by the processor itself in the middle of an instruction stream. It is caused either by the instruction being executed, a \emph{hardware exception}\index{hardware exception} (an illegal instruction, a load from an address that faults, a system call), or by an event outside the program, an \emph{interrupt}\index{interrupt} (a device has data, a timer has expired). The \emph{interrupt vector}\index{interrupt vector} is the address, or table of addresses, the processor jumps to on a trap. A \emph{timer interrupt}\index{timer interrupt} is an interrupt raised when a clock reaches a value the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} set.
+\end{definition}
+
+On RISC-V, a \omterm{def:b3:kernel-and-scheduling:interrupt}{trap} into machine mode writes the address of the interrupted instruction, or of the one that caused the exception, into the register \code{mepc}, and a code for the cause into \code{mcause}, whose top bit says whether it was an \omterm{def:b3:kernel-and-scheduling:interrupt}{interrupt}; the processor then jumps to the address configured in \code{mtvec}. The instruction \code{mret} returns to the address in \code{mepc}. % ledger: b3:rv-mepc, b3:rv-mcause, b3:rv-mtvec
+The machine \omterm{def:b3:kernel-and-scheduling:interrupt}{timer interrupt} becomes pending when the free-running counter \code{mtime} reaches the value of \code{mtimecmp}, which the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} writes to choose the next tick. % ledger: b3:rv-mtimecmp
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >=Stealth, x=10mm, y=10mm,
+  b/.style={draw, rounded corners=2pt, align=center, inner sep=3pt, minimum height=8mm}]
+  \draw[densely dashed, black!50] (-0.5, 0.9) -- (12.5, 0.9);
+  \node[anchor=west, font=\scriptsize, black!60] at (-0.5, 1.15) {user mode};
+  \node[anchor=west, font=\scriptsize, black!60] at (-0.5, 0.6) {kernel mode};
+  \node[b, fill=omDef!10] (p) at (1.2, 2) {program\\running};
+  \node[b, fill=omThm!12, font=\scriptsize] (hw) at (4.1, 2) {processor:\\\code{mepc} = pc\\\code{mcause} = cause\\pc = \code{mtvec}};
+  \node[b, fill=black!6] (save) at (4.1, -0.4) {save the\\registers};
+  \node[b, fill=black!6] (h) at (7, -0.4) {handle: system call,\\fault, device, timer};
+  \node[b, fill=black!6] (rest) at (10, -0.4) {restore the\\registers};
+  \node[b, fill=omDef!10, font=\scriptsize] (back) at (10, 2) {\code{mret}: pc = \code{mepc}\\(+4 after an \code{ecall})};
+  \draw[->] (p) -- node[above, font=\scriptsize] {trap} (hw);
+  \draw[->] (hw) -- (save);
+  \draw[->] (save) -- (h);
+  \draw[->] (h) -- (rest);
+  \draw[->] (rest) -- (back);
+  \draw[->] (back.east) -- ++(1.2, 0) node[right, font=\scriptsize, align=left] {same program,\\or another};
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b3:kernel-and-scheduling:interrupt}{trap}. The processor does three things by itself, all in one step: it records where the program was and why it stopped, and jumps to the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel}'s entry point. The \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} saves the registers the handler will use, handles the event, restores registers (perhaps those of another process), and returns. For a system call, the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} adds 4 to the saved address, so that the program resumes after its \code{ecall}.}
+\end{omfigure}
+
+\begin{definition}[Preemption, context switch, process control block]\label{def:b3:kernel-and-scheduling:switch}
+\emph{Preemption}\index{preemption} is the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} taking the processor away from a running process that did not ask to give it up. A \emph{context switch}\index{context switch} saves the state of the running process (its registers and program counter) and loads the saved state of another, which then resumes where it stopped. The \emph{process control block}\index{process control block} is the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel}'s record of a process: its saved state, its memory map, its open files, its scheduling information.
+\end{definition}
+
+Without the timer, a program that never makes a system call and never faults keeps the processor for ever. With it, the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} gets control back at every tick, whatever the program does. \code{rv} has no timer, but a \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} written in Python around it can count the instructions and take control every 50 (\cref{lst:b3:kernel-and-scheduling:timer}). The two programs it runs in turn are loops that never give the processor up (\code{two_loops.S}).
+
+\omcode{code/bachelor-3/10-kernel-and-scheduling/listings/timer.py}{1}{40}{A preemptive \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} in Python around \code{rv}: one \omterm{def:b3:kernel-and-scheduling:switch}{process control block} per program, a timer every 50 instructions, and a \omterm{def:b3:kernel-and-scheduling:switch}{context switch} that saves and restores all 32 registers and the program counter.}\label{lst:b3:kernel-and-scheduling:timer}
+
+\omoutput{code/bachelor-3/10-kernel-and-scheduling/outputs/timer.txt}{Two loops that each print their letter 12 times, interleaved by the timer: neither program contains a single instruction that hands control to the other.}\label{out:b3:kernel-and-scheduling:timer}
+
+\section{The context switch}\label{sec:b3:kernel-and-scheduling:switch}
+
+The \omterm{def:b3:kernel-and-scheduling:kernel}{kernel}'s switch, as \cref{lst:b3:kernel-and-scheduling:timer} does it, saves all the registers, because the program was stopped between any two instructions. A switch the program asks for, by calling a function, needs less: by the calling convention, the caller has already saved whatever it needs among the registers a call may change. Only the registers a callee must preserve, \code{s0}--\code{s11}, with \code{ra} and \code{sp}, must survive. % ledger: b3:rv-preserved
+That is the switch at the heart of most \omterm{def:b3:kernel-and-scheduling:kernel}{kernels}, called by the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel}'s own code: the \omterm{def:b3:kernel-and-scheduling:interrupt}{trap} entry saves the interrupted program's registers on the \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} stack of that process, and the switch then only has to move from one \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} stack to another.
+
+\begin{recall}
+In the Year~2 volume's RISC-V calling convention, \code{a0}--\code{a7} carry arguments and results, \code{ra} the return address and \code{sp} the stack pointer; a function may change \code{t0}--\code{t6} and \code{a0}--\code{a7}, and must leave \code{s0}--\code{s11} and \code{sp} as it found them.
+\end{recall}
+
+\Cref{lst:b3:kernel-and-scheduling:coroutines} runs two coroutines, each on its own stack and each counting in \code{s1}; \cref{lst:b3:kernel-and-scheduling:switch} is the switch, 28 stores and loads and a \code{ret}. The \code{ret} returns to the address in the \emph{loaded} \code{ra}: into the other coroutine, just after the call by which it gave the processor up.
+
+\omcode{code/bachelor-3/10-kernel-and-scheduling/listings/switch.S}{30}{50}{Two coroutines that pass the processor to each other; each counts in \code{s1}.}\label{lst:b3:kernel-and-scheduling:coroutines}
+
+\omcode{code/bachelor-3/10-kernel-and-scheduling/listings/switch.S}{62}{91}{The switch: save the callee-saved registers, \code{ra} and \code{sp} of one context, load the other's, return into it.}\label{lst:b3:kernel-and-scheduling:switch}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=10mm, y=5mm, >=Stealth,
+  w/.style={draw, minimum width=22mm, minimum height=5mm, inner sep=0pt}]
+  \foreach \ctx/\x/\ra/\sp/\sone in {ctx\_a/0/in \texttt{loop\_a}/stack\_a/1, ctx\_b/4.6/\texttt{task\_b}/stack\_b/0} {
+    \node[font=\small] at (\x + 1.1, 1.2) {\texttt{\ctx}};
+    \node[w, anchor=west] at (\x, 0) {\ra};
+    \node[w, anchor=west] at (\x, -1) {\sp};
+    \node[w, anchor=west] at (\x, -2) {s0: 0};
+    \node[w, anchor=west] at (\x, -3) {s1: \sone};
+    \node[w, anchor=west] at (\x, -4) {s2 \dots s11};
+  }
+  \foreach \y/\f in {0/ra, -1/sp, -2/s0, -3/s1, -4/s2\dots} \node[anchor=east] at (-0.1, \y) {\f};
+  \draw[->, thick, omThm] (3.3, -1.5) -- node[above, font=\scriptsize] {save} (2.3, -1.5);
+  \draw[->, thick, omMeth] (3.5, -1.5) -- node[above, font=\scriptsize] {load} (4.5, -1.5);
+  \node[draw, rounded corners, fill=omThm!8, align=center] at (3.4, -5.8) {\code{switch(ctx_a, ctx_b)}\\while A runs};
+\end{tikzpicture}
+\par\smallskip{\small The first switch from A to B in \cref{lst:b3:kernel-and-scheduling:coroutines}. A's registers go into \code{ctx_a}: its \code{ra} is the instruction after its call to \code{switch}, its \code{s1} is 1. B's context was prepared by \code{main}: \code{ra} = \code{task_b}, \code{sp} = the top of B's stack, the rest 0. The \code{ret} at the end of the switch therefore starts B.}
+\end{omfigure}
+
+\omoutput{code/bachelor-3/10-kernel-and-scheduling/outputs/switch_count.txt}{The coroutines take turns. Each of the 8 switches executes 29 instructions, 14 stores and 14 loads: the 112 loads of the run are all in the switch.}\label{out:b3:kernel-and-scheduling:switchcount}
+
+Of the 371 instructions of the run, 232 are in the 8 switches. A real \omterm{def:b3:kernel-and-scheduling:kernel}{kernel}'s switch also changes the memory map when the two processes differ, which has an indirect cost far larger than its instructions, since the caches and the address translations of the old process are of no use to the new one: chapter~\ref{ch:b3:virtual-memory} returns to it. The C library offers the same mechanism to programs as \code{ucontext}: \code{getcontext} captures the current context, \code{makecontext} prepares one that will run a function on a given stack, and \code{swapcontext} saves one and resumes the other (\cref{lst:b3:kernel-and-scheduling:ucontext}). POSIX marked these functions obsolescent in 2004 and later removed them, advising threads instead; the GNU C library still provides them. % ledger: b3:ucontext-obsolescent, b3:ucontext-removed
+
+\omcode{code/bachelor-3/10-kernel-and-scheduling/listings/ucontext_switch.c}{9}{41}{The same ping-pong with \code{ucontext}. When \code{task_a} returns, the context in \code{uc_link}, \code{main}'s, resumes.}\label{lst:b3:kernel-and-scheduling:ucontext}
+
+\omoutput{code/bachelor-3/10-kernel-and-scheduling/outputs/ucontext_switch.txt}{The ping-pong in C.}\label{out:b3:kernel-and-scheduling:ucontext}
+
+\section{Scheduling policies}\label{sec:b3:kernel-and-scheduling:policies}
+
+\begin{definition}[Turnaround, waiting and response time]\label{def:b3:kernel-and-scheduling:metrics}
+For a job that arrives at time $a$, needs $b$ units of processor time (its \emph{burst}), first runs at time $f$ and finishes at time $c$: its \emph{turnaround time}\index{turnaround time} is $c - a$, its \emph{waiting time}\index{waiting time} $c - a - b$, the time it spent ready but not running, and its \emph{response time}\index{response time} $f - a$.
+\end{definition}
+
+\begin{definition}[Scheduling policies]\label{def:b3:kernel-and-scheduling:policies}
+A \emph{scheduling policy}\index{scheduling policy} chooses which ready job runs next, and for how long. \emph{First come first served}\index{first come first served} runs the jobs to completion in their order of arrival. \emph{Shortest job first}\index{shortest job first} runs to completion the ready job with the smallest burst. \emph{Shortest remaining time first}\index{shortest remaining time first} is its preemptive form: whenever a job arrives, the job with the least work left runs. \emph{Round robin} runs the ready jobs in turn, each for at most a \emph{time slice}\index{time slice} $q$, the \emph{quantum}, then puts it at the back of the queue.
+\end{definition}
+
+\code{sched.py} simulates them (\cref{lst:b3:kernel-and-scheduling:sim}): time advances from one decision to the next, a job that arrives during a turn joins the queue before the job that was running, and a change of job can cost \code{switch} units of time.
+
+\omcode{code/bachelor-3/10-kernel-and-scheduling/listings/sched.py}{38}{75}{The simulator. The policy is the function \code{pick}, plus a quantum and whether arrivals preempt.}\label{lst:b3:kernel-and-scheduling:sim}
+
+\omoutput{code/bachelor-3/10-kernel-and-scheduling/outputs/fcfs_sjf.txt}{Five jobs, A to E, arriving at times 0, 1, 2, 3, 6 with bursts 8, 4, 9, 5, 2, under four policies: the averages, then each timeline as \code{job[start,end)}.}\label{out:b3:kernel-and-scheduling:policies}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\scriptsize, x=4.2mm, y=6mm]
+  \tikzset{seg/.style={draw, minimum height=5mm, inner sep=0pt, anchor=south west}}
+  \newcommand{\row}[3]{% y, label, list of start/end/name
+    \node[anchor=east] at (-0.4, #1 + 0.4) {#2};
+    \foreach \s/\e/\n in {#3} {
+      \pgfmathsetmacro{\w}{(\e - \s) * 4.2}
+      \node[seg, minimum width=\w mm, fill=black!6] at (\s, #1) {\n};
+    }}
+  \row{3}{FCFS}{0/8/A, 8/12/B, 12/21/C, 21/26/D, 26/28/E}
+  \row{2}{SJF}{0/8/A, 8/10/E, 10/14/B, 14/19/D, 19/28/C}
+  \row{1}{SRTF}{0/1/A, 1/5/B, 5/6/D, 6/8/E, 8/12/D, 12/19/A, 19/28/C}
+  \row{0}{RR $q = 3$}{0/3/A, 3/6/B, 6/9/C, 9/12/D, 12/15/A, 15/17/E, 17/18/B, 18/21/C, 21/23/D, 23/25/A, 25/28/C}
+  \foreach \t in {0, 4, ..., 28} {
+    \draw (\t, -0.2) -- (\t, -0.35);
+    \node[below] at (\t, -0.3) {\t};
+  }
+\end{tikzpicture}
+\par\smallskip{\small The timelines of \cref{out:b3:kernel-and-scheduling:policies}. \omterm{def:b3:kernel-and-scheduling:policies}{Shortest job first} moves E, the shortest, before B, D and C; \omterm{def:b3:kernel-and-scheduling:policies}{shortest remaining time first} also \omterm{def:b3:kernel-and-scheduling:interrupt}{interrupts} A twice. Round robin gives every job the processor within 9 units of its arrival, at the price of finishing almost every job later.}
+\end{omfigure}
+
+\omterm{def:b3:kernel-and-scheduling:policies}{Shortest remaining time first} has the best averages, and round robin the worst turnaround but a \omterm{def:b3:kernel-and-scheduling:metrics}{response time} close to the best. A policy is a choice of what to optimise. For \omterm{def:b3:kernel-and-scheduling:metrics}{waiting time}, with all jobs present at once, \omterm{def:b3:kernel-and-scheduling:policies}{shortest job first} is the best possible order.
+
+\begin{recall}
+The Year~1 volume proved greedy algorithms optimal by exchange: take an optimal solution that differs from the greedy one, swap two elements to make it closer to the greedy one, and show that the swap does not make it worse.
+\end{recall}
+
+\begin{theorem}[Shortest job first is optimal]\label{thm:b3:kernel-and-scheduling:sjf}
+For jobs all present at time 0, running them to completion in increasing order of burst minimises the average \omterm{def:b3:kernel-and-scheduling:metrics}{waiting time} over all orders.
+\end{theorem}
+
+\begin{proof}
+In the order $b_1, b_2, \dots, b_n$, the $k$-th job waits $b_1 + \dots + b_{k-1}$, so the total \omterm{def:b3:kernel-and-scheduling:metrics}{waiting time} is $\sum_{k} (n - k)\, b_k$: the job in position $k$ delays the $n - k$ jobs after it. Take an order in which two neighbours are out of order, $b_k > b_{k+1}$. Swapping them changes the total by $(n - k) b_{k+1} + (n - k - 1) b_k - (n - k) b_k - (n - k - 1) b_{k+1} = b_{k+1} - b_k < 0$. So an optimal order has no such pair: it is sorted. Splitting the processor between jobs cannot help either, since it only delays the job that would have finished first.
+\end{proof}
+
+\code{test_sched.py} checks the theorem against every order on 200 random sets of jobs. With arrivals at different times, \omterm{def:b3:kernel-and-scheduling:policies}{shortest remaining time first} is the preemptive counterpart, and \cref{out:b3:kernel-and-scheduling:policies} shows it ahead. Both need the bursts in advance, which a \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} does not know; it can only estimate each process's next burst from its past ones, for instance by an exponential average. And both can starve a long job for as long as short ones keep arriving (exercise~\ref{exo:b3:kernel-and-scheduling:12}). Round robin cannot starve anyone, and bounds the \omterm{def:b3:kernel-and-scheduling:metrics}{response time}.
+
+\begin{theorem}[Round robin's response time]\label{thm:b3:kernel-and-scheduling:rr}
+With $n$ jobs ready at time 0, quantum $q$ and no switching cost, every job first runs by time $(n - 1)q$.
+\end{theorem}
+
+The proof is exercise~\ref{exo:b3:kernel-and-scheduling:8}. The quantum trades response against throughput: each switch costs time, and the weekend problem measures how much.
+
+\begin{definition}[Multilevel feedback queue]\label{def:b3:kernel-and-scheduling:mlfq}
+A \emph{multilevel feedback queue}\index{multilevel feedback queue} keeps several round-robin queues of decreasing priority, with longer quanta lower down. A new job enters the top queue; a job that uses up its whole quantum moves down one level; a job that gives the processor up before, to wait for input, keeps its level. The highest non-empty queue runs, and a job arriving in a higher queue preempts a lower one.
+\end{definition}
+
+The policy learns what it cannot be told: a job that keeps computing reveals itself as a long one and sinks, and an interactive job, which computes briefly between inputs, stays at the top and responds at once (\cref{out:b3:kernel-and-scheduling:mlfq}). Two weaknesses are told, not simulated: many interactive jobs can starve the bottom queue, the remedy is to move every job back to the top now and then; and a job that gives up the processor just before its quantum ends stays on top for ever, unless the scheduler counts the processor time used at a level rather than per turn.
+
+\omcode{code/bachelor-3/10-kernel-and-scheduling/listings/mlfq.py}{13}{42}{Three levels, quanta 2, 4 and 8, simulated one time unit at a time.}\label{lst:b3:kernel-and-scheduling:mlfq}
+
+\omoutput{code/bachelor-3/10-kernel-and-scheduling/outputs/mlfq.txt}{A long computation, \code{render}, and an editor, \code{edit}, which needs one unit after each keystroke. \code{render} sinks to the bottom level in two turns; \code{edit} stays on top and, after each keystroke, runs at once.}\label{out:b3:kernel-and-scheduling:mlfq}
+
+\begin{definition}[Fair-share scheduling: lottery and stride]\label{def:b3:kernel-and-scheduling:share}
+\emph{Fair-share scheduling}\index{fair-share scheduling} gives each client a share of the processor proportional to the number of tickets it holds. \emph{Lottery scheduling}\index{lottery scheduling} draws a ticket at random at each quantum, and its holder runs. \emph{Stride scheduling}\index{stride scheduling} gives each client a \emph{stride}, a large constant divided by its tickets, and a \emph{pass}, initially its stride; at each quantum the client with the least pass runs and its pass grows by its stride.
+\end{definition}
+
+\omcode{code/bachelor-3/10-kernel-and-scheduling/listings/stride.py}{11}{27}{A lottery and a stride scheduler for the same three clients.}\label{lst:b3:kernel-and-scheduling:stride}
+
+\omoutput{code/bachelor-3/10-kernel-and-scheduling/outputs/stride.txt}{Quanta received by A, B and C, holding 100, 50 and 250 tickets. The lottery is right on average; stride is within a quantum at every checkpoint.}\label{out:b3:kernel-and-scheduling:stride}
+
+\begin{theorem}[Stride scheduling is nearly exact]\label{thm:b3:kernel-and-scheduling:stride}
+Let $k$ clients hold $t_1, \dots, t_k$ tickets, $T = \sum_i t_i$, with exact strides $s_i = L/t_i$ and initial passes $s_i$. After $N$ quanta, client $i$ has received $n_i$ quanta with
+\[ -1 < n_i - N\frac{t_i}{T} \le (k - 1)\frac{t_i}{T}. \]
+In particular the error is less than one quantum for two clients, and less than $k - 1$ for any number.
+\end{theorem}
+
+The proof is exercise~\ref{exo:b3:kernel-and-scheduling:10}. The lottery's error after $t$ quanta grows like $\sqrt{t}$: its largest error over 1,000 quanta was 27.6 quanta, the stride scheduler's 0.88.
+
+\begin{definition}[Real-time scheduling, deadline, rate-monotonic, earliest deadline first]\label{def:b3:kernel-and-scheduling:realtime}
+\emph{Real-time scheduling}\index{real-time scheduling} must finish each job by its \emph{deadline}\index{deadline}, a time fixed in advance. A periodic task $i$ releases a job every $T_i$ units, needing $C_i$ units, due before the next release. \emph{Rate-monotonic scheduling}\index{rate-monotonic scheduling} gives each task a fixed priority, higher for a shorter period. \emph{Earliest deadline first}\index{earliest deadline first} runs at every moment the ready job whose deadline is nearest.
+\end{definition}
+
+Two results of Liu and Layland are stated here, with the utilisation $U = \sum_i C_i / T_i$, the fraction of the processor the tasks need. \omterm{def:b3:kernel-and-scheduling:realtime}{Rate-monotonic scheduling} meets every \omterm{def:b3:kernel-and-scheduling:realtime}{deadline} if $U \le n(2^{1/n} - 1)$ for $n$ tasks, a bound that decreases towards $\ln 2 \approx 0.69$; \omterm{def:b3:kernel-and-scheduling:realtime}{earliest deadline first} meets every \omterm{def:b3:kernel-and-scheduling:realtime}{deadline} whenever $U \le 1$, which no policy can improve on. % ledger: b3:liu-layland-1973
+Exercise~\ref{exo:b3:kernel-and-scheduling:11} proves the first bound for two tasks.
+
+\begin{history}[Schedulers]
+Fernando Corbató, Marjorie Merwin-Daggett and Robert Daley described an experimental time-sharing system in May 1962. % ledger: b3:corbato-1962
+C.~L.~Liu and James Layland published their scheduling algorithms for hard-real-time multiprogramming in January 1973. % ledger: b3:liu-layland-1973
+Carl Waldspurger and William Weihl presented \omterm{def:b3:kernel-and-scheduling:share}{lottery scheduling} in 1994. % ledger: b3:waldspurger-weihl-1994
+\end{history}
+
+\section{Exercises}\label{sec:b3:kernel-and-scheduling:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b3:kernel-and-scheduling:1}
+Draw the round-robin timeline with $q = 2$ for P (arrives at 0, burst 5), Q (1, 3) and R (2, 1). When does each job finish?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:kernel-and-scheduling:2}
+Four jobs present at time 0 have bursts 6, 2, 8 and 3. Give the average \omterm{def:b3:kernel-and-scheduling:metrics}{waiting time} under \omterm{def:b3:kernel-and-scheduling:policies}{first come first served} in that order, and under \omterm{def:b3:kernel-and-scheduling:policies}{shortest job first}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:kernel-and-scheduling:3}
+Which of these transfer control to the RISC-V \omterm{def:b3:kernel-and-scheduling:kernel}{kernel} by a \omterm{def:b3:kernel-and-scheduling:interrupt}{trap}, and which kind: an \code{ecall}; an integer division by zero; a load from address 0; the timer reaching \code{mtimecmp}; a key pressed; an illegal instruction; a \code{ret}?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b3:kernel-and-scheduling:4}
+In \code{switch.S}, \code{main} switches to \code{ctx_b} instead of \code{ctx_a}. Predict the output.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:kernel-and-scheduling:5}
+\code{switch_bug.S} is \code{switch.S} with a switch that neither saves nor loads \code{s1}. It prints only two lines. Explain them, and why the program then stops normally.
+
+\omoutput{code/bachelor-3/10-kernel-and-scheduling/outputs/switch_bug.txt}{The switch without \code{s1}.}\label{out:b3:kernel-and-scheduling:switchbug}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:kernel-and-scheduling:6}
+Write non-preemptive priority scheduling with aging: a lower number runs first, and a job's priority improves by 1 for every \code{age} units it has waited. Test it on a low-priority job of 3 units at time 0 and ten high-priority jobs of 3 units arriving every 3 units: without aging, when does the low one finish?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:kernel-and-scheduling:7}
+Show that the ratio of the average \omterm{def:b3:kernel-and-scheduling:metrics}{waiting time} under \omterm{def:b3:kernel-and-scheduling:policies}{first come first served} to that under \omterm{def:b3:kernel-and-scheduling:policies}{shortest job first}, for jobs all present at time 0, can be as large as you like.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:kernel-and-scheduling:8}
+Prove \cref{thm:b3:kernel-and-scheduling:rr}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b3:kernel-and-scheduling:9}
+From \cref{lst:b3:kernel-and-scheduling:switch}, count the instructions one switch executes, including those that prepare and make the call, and check the total against \cref{out:b3:kernel-and-scheduling:switchcount}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:kernel-and-scheduling:10}
+Prove \cref{thm:b3:kernel-and-scheduling:stride}. (Show first that the passes always lie within one stride of the least pass.) Check the bound against \cref{out:b3:kernel-and-scheduling:stride}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:kernel-and-scheduling:11}
+Two periodic tasks with periods $T_1 < T_2$ run under \omterm{def:b3:kernel-and-scheduling:realtime}{rate-monotonic scheduling}. Prove that every \omterm{def:b3:kernel-and-scheduling:realtime}{deadline} is met when $C_1/T_1 + C_2/T_2 \le 2(\sqrt{2} - 1) \approx 0.828$.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b3:kernel-and-scheduling:12}
+Build a workload in which \omterm{def:b3:kernel-and-scheduling:policies}{shortest remaining time first} makes a job of 20 units wait as long as you like, then fix it with aging: the key becomes the work left minus the time waited divided by \code{age}. How long does the long job take with 100 short jobs of 2 units, with and without aging, $\mathit{age} = 2$?
+\end{exercise}
+
+\section{Weekend problem}\label{sec:b3:kernel-and-scheduling:problem}
+
+\begin{problem}[{Weekend problem --- The print shop's queue}]\label{pb:b3:kernel-and-scheduling:1}
+The town's print shop has one machine and a queue. Sixty jobs arrive at random, on average one every 45 units of time; four in five are small (2 to 12 units), one in five long (40 to 120). Changing from one job to another costs $s = 1$ unit. \Cref{out:b3:kernel-and-scheduling:pb} runs \omterm{def:b3:kernel-and-scheduling:policies}{first come first served}, \omterm{def:b3:kernel-and-scheduling:policies}{shortest job first}, and round robin for every quantum from 1 to 20; the figure after it plots the averages.
+
+\omcode{code/bachelor-3/10-kernel-and-scheduling/listings/rr_quantum.py}{1}{29}{The print shop's workload and the sweep over the quantum.}\label{lst:b3:kernel-and-scheduling:pb}
+
+\omoutput{code/bachelor-3/10-kernel-and-scheduling/outputs/rr_quantum.txt}{Averages for each policy; for round robin, the number of switches, the fraction of the machine's busy time spent switching, the model $s/(q + s)$, and the load once switching is paid for.}\label{out:b3:kernel-and-scheduling:pb}
+
+\begin{omfigure}
+\begin{tikzpicture}
+  \begin{axis}[omrecord, width=0.8\linewidth, height=5.6cm, ymode=log, xmin=0.5, xmax=20.5,
+      xlabel={quantum $q$}, ylabel={time units}, legend pos=north east, legend cell align=left,
+      ytick={5, 10, 20, 50, 100, 200, 400}, yticklabels={5, 10, 20, 50, 100, 200, 400}]
+    \addplot[omThm, thick, mark=*, mark size=1.2pt] table[x=q, y=turnaround]
+      {code/bachelor-3/10-kernel-and-scheduling/figures/quantum.dat};
+    \addlegendentry{RR turnaround}
+    \addplot[omDef, thick, mark=square*, mark size=1.2pt] table[x=q, y=response]
+      {code/bachelor-3/10-kernel-and-scheduling/figures/quantum.dat};
+    \addlegendentry{RR response}
+    \addplot[black!60, dashed, domain=0.5:20.5] {51.6};
+    \addlegendentry{FCFS turnaround}
+  \end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Round robin on the print shop's jobs, on a logarithmic scale. Below $q = 3$ the switches eat a quarter of the machine or more and the turnaround explodes; from $q = 9$ to 20 it is flat, below \omterm{def:b3:kernel-and-scheduling:policies}{first come first served}'s; the \omterm{def:b3:kernel-and-scheduling:metrics}{response time} grows steadily with $q$.}
+\end{omfigure}
+
+\medskip\noindent\textbf{Part I --- Without preemption.}
+\begin{enumerate}
+\item What is the load, the fraction of the time the machine would be busy without switching? Why must it stay below 1?
+\item \omterm{def:b3:kernel-and-scheduling:policies}{First come first served} gives an average turnaround of 51.6 units. Why is the average \omterm{def:b3:kernel-and-scheduling:metrics}{response time}, 20.7, so large when most jobs are small?
+\item Why does \omterm{def:b3:kernel-and-scheduling:policies}{shortest job first} improve both averages, and by how much?
+\item Why is \omterm{def:b3:kernel-and-scheduling:policies}{shortest job first} not fair to the long jobs? Give the situation in which a long job waits longest.
+\item Under \omterm{def:b3:kernel-and-scheduling:policies}{first come first served}, how many switches are there at most? What fraction of the busy time do they cost?
+\item What does a customer with a 3-unit job care about: turnaround or response? And the shop?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- Round robin with a switch cost.}
+\begin{enumerate}[resume]
+\item If every turn uses a whole quantum, show that the fraction of busy time spent switching is $s/(q + s)$.
+\item Why is the measured overhead below $s/(q + s)$ for every $q \ge 2$?
+\item With load $\rho$ and every turn using a whole quantum, show that the machine's load once switches are paid for is $\rho (q + s)/q$. For which $q$ is it below 1 here?
+\item Explain the turnaround of 402.7 at $q = 1$ from the last column.
+\item Why does round robin's \omterm{def:b3:kernel-and-scheduling:metrics}{response time} grow with $q$? What does it tend to as $q$ grows?
+\item What does round robin become when $q$ exceeds every burst?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Measured.}
+\begin{enumerate}[resume]
+\item Read the quantum $q^*$ with the least average turnaround, and its value. By how much does it beat \omterm{def:b3:kernel-and-scheduling:policies}{first come first served}, and \omterm{def:b3:kernel-and-scheduling:policies}{shortest job first}?
+\item Over which range of $q$ is the turnaround within 3~\% of its minimum?
+\item Compare the overhead at $q = 2$ with the model, and explain the agreement.
+\item At $q = 5$, the overhead is 8.2~\%, about half the model's 16.7~\%. How many switches would full quanta need, against the 166 measured, and why are there fewer?
+\item Why is the \omterm{def:b3:kernel-and-scheduling:metrics}{response time} at $q = 1$ (11.9) larger than at $q = 5$ (3.4), when a shorter quantum should give a faster first turn?
+\item Count the switches at $q = 20$: why are they close to the number of turns \omterm{def:b3:kernel-and-scheduling:policies}{first come first served} would need?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Choosing the quantum.}
+\begin{enumerate}[resume]
+\item A rule of thumb sets the quantum so that most jobs finish within one. Which $q$ does it suggest here, and how does it do?
+\item If the switch cost doubled to $s = 2$, which quanta would make the machine overloaded?
+\item What would change if the small jobs were interactive, needing a fast first response?
+\item Why would a \omterm{def:b3:kernel-and-scheduling:mlfq}{multilevel feedback queue} suit this shop?
+\item A long job of 120 units arrives at an empty shop at $q = 17$. How many switches does it cause if nothing else arrives?
+\item Sum up: what quantum do you choose, what does it cost in switching, and what does it gain over \omterm{def:b3:kernel-and-scheduling:policies}{first come first served}?
+\end{enumerate}
+\end{problem}

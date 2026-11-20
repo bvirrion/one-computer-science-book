@@ -1,0 +1,103 @@
+\section*{Chapter \ref{ch:b3:lexical-analysis} --- Lexical Analysis}
+
+\begin{solution}{exo:b3:lexical-analysis:1}
+Thirteen \omterm{def:b3:lexical-analysis:token}{tokens}: the keyword \code{while}, identifier \code{i}, \code{<=}, identifier \code{n}, \texttt{\{}, identifier \code{i}, \code{=}, identifier \code{i}, \code{+}, the number 1, \code{;}, \texttt{\}}, and the end-of-file \omterm{def:b3:lexical-analysis:token}{token}. The missing spaces change nothing, since no two neighbouring \omterm{def:b3:lexical-analysis:token}{lexemes} could join into a longer one (\texttt{n\{} is not a \omterm{def:b3:lexical-analysis:token}{token}), and the comment \code{//done} disappears with the rest of its line.
+\end{solution}
+
+\begin{solution}{exo:b3:lexical-analysis:2}
+\code{iffy}: one identifier, by \omterm{def:b3:lexical-analysis:munch}{maximal munch} (four characters beat the keyword's two). \code{if}: the keyword, by the \omterm{def:b3:lexical-analysis:munch}{priority rule} in a generated \omterm{def:b3:lexical-analysis:scanner}{scanner}, by the keyword lookup in the hand-written one. \code{if2}: one identifier, by \omterm{def:b3:lexical-analysis:munch}{maximal munch}. \code{<=}: one operator, by \omterm{def:b3:lexical-analysis:munch}{maximal munch}. \code{<==}: \code{<=} then \code{=}; \omterm{def:b3:lexical-analysis:munch}{maximal munch} takes the longest \omterm{def:b3:lexical-analysis:token}{token} first and never looks for a better cut, so \code{<} followed by \code{==} is never tried. \code{1x}: the number 1, then the identifier \code{x}; a digit cannot continue an identifier's first character, and the \omterm{def:b3:lexical-analysis:scanner}{scanner} does not object, the parser will. \code{->-}: \code{->} then \code{-}. \code{a--b}: \code{a}, \code{-}, \code{-}, \code{b}, since Moor has no \code{--} operator.
+\end{solution}
+
+\begin{solution}{exo:b3:lexical-analysis:3}
+\texttt{//[\textasciicircum\textbackslash n]*}. The newline is better left out: it is white space and ends the line in any case, a comment on the last line of a file with no final newline still matches, and the line counter of the \omterm{def:b3:lexical-analysis:scanner}{scanner} sees every newline as an ordinary character. The expression has three character sets (\code{/}, \code{/}, \texttt{[\textasciicircum\textbackslash n]}) and one star, so $2(3 + 1) = 8$ states by \cref{prop:b3:lexical-analysis:thompson-size}; the tests of \code{dfa_test.rs} check the count.
+\end{solution}
+
+\begin{solution}{exo:b3:lexical-analysis:4}
+The first expression has five character sets and two operators, the bar and the star: $2 \times 7 = 14$ states. The second has three sets (two digit classes and the dot) and three operators (two \code{+} and a \code{?}): 12 states. Both counts are asserted in \code{tests/dfa_test.rs}. The parentheses add nothing: they only group.
+\end{solution}
+
+\begin{solution}{exo:b3:lexical-analysis:5}
+A word is pushed only when a character that cannot continue it is read. The last word of an input that ends inside a word is never followed by such a character, so it is lost. The first call ends with \code{;} and a newline, which flush \code{7}; the second ends on \code{7}. The fix (\code{exercises/ex5_words_fixed.rs}, tested in \code{tests/exercises_test.rs}) pushes the word under construction after the loop if it is not empty. The hand-written \omterm{def:b3:lexical-analysis:scanner}{scanner} of the chapter avoids the bug by construction: it reads a whole \omterm{def:b3:lexical-analysis:token}{lexeme} in an inner loop that stops at the end of the input as well as at a delimiter.
+\end{solution}
+
+\begin{solution}{exo:b3:lexical-analysis:6}
+\code{exercises/ex6_hex.rs} reads an optional \code{0x} or \code{0X}, then the longest run of digits in the radix, and refuses an empty run, a letter, digit or underscore glued to the end (so \code{0x1g} and \code{12ab} are errors rather than two \omterm{def:b3:lexical-analysis:token}{tokens}), and a value that does not fit. A decimal literal must fit a positive 32-bit integer, at most $2^{31} - 1$; a hexadecimal literal is accepted up to \code{0xFFFFFFFF}, because programmers write hexadecimal for bit patterns, and \code{0xFFFFFFFF} is the pattern of $-1$ on a 32-bit machine: a mask with all bits set. The tests check \code{255}, \code{0xff}, \code{0XFFFFFFFF}, \code{0} and the four errors.
+\end{solution}
+
+\begin{solution}{exo:b3:lexical-analysis:7}
+Write $N_i$ for rule $i$'s Thompson fragment, with entry $s_i$ and exit $e_i$. Thompson's construction is correct: $e_i$ is reachable from $s_i$ by a path spelling $w$ if and only if $w \in L(r_i)$. The fragments share no state and the only moves into $N_i$ come from the new start state, by a spontaneous move to $s_i$; so $e_i$ is reachable from the start on $w$ if and only if $w \in L(r_i)$. The subset construction reaches, on $w$, the set $S(w)$ of all NFA states reachable from the start on $w$. Its label is the smallest $i$ with $e_i \in S(w)$, that is, the smallest $i$ with $w \in L(r_i)$: the state is labelled $i$ exactly when $w$ matches $r_i$ and no earlier rule. If $L(r_j) \subseteq L(r_i)$ with $i < j$, every $w$ that matches $r_j$ also matches $r_i$, so the label of its state is at most $i$ and never $j$. This is why the identifier rule must come after the keywords: written first, it would make every keyword unreachable, which the test \code{the_first_rule_wins_a_tie} shows on \code{if}.
+\end{solution}
+
+\begin{solution}{exo:b3:lexical-analysis:8}
+Line and column: the line's own number, column 12 (the tab is column 1, \code{var} columns 2 to 4, and \texttt{\#} is the twelfth character). On a screen with tab stops every eight positions, the tab fills positions 1 to 8, and \texttt{\#} lands in position 19. A caret line of eleven spaces and a caret would put the caret at screen position 12, under the space after \code{var}, seven positions too far left. \Cref{lst:b3:lexical-analysis:show} copies the tab into the caret line, so the caret line expands exactly as the source line does, whatever the tab width.
+\end{solution}
+
+\begin{solution}{exo:b3:lexical-analysis:9}
+The identifier rule alone gives a minimal automaton of 2 states: the start, and one accepting state that loops on letters, digits and underscores. With the eleven keywords as rules before it, the minimal automaton has 43 states (\code{tests/dfa_test.rs}). The keywords spell 43 characters; their prefix tree shares only \code{i} (\code{if}, \code{int}) and \code{f} (\code{fn}, \code{false}), which leaves 41 states inside the keywords, plus the start and the generic identifier state. The lookup keeps the automaton at 2 states and costs one table lookup per identifier, which a hash table or a perfect hash makes constant. The large automaton is not slower to run (one table step per character either way), but its table is twenty times larger, and every keyword added to the language grows it.
+\end{solution}
+
+\begin{solution}{exo:b3:lexical-analysis:10}
+A scan from position $i$ reads at most the $n - i$ remaining characters and one failing character, and returns a \omterm{def:b3:lexical-analysis:token}{token} of length at least 1, so successive scans start at distinct positions; the total is at most $\sum_{i}(n - i + 1) = O(n^2)$. Call the \emph{overshoot} of a scan the number of characters read after the end of the \omterm{def:b3:lexical-analysis:token}{token} it returns. A scan reads the \omterm{def:b3:lexical-analysis:token}{token}'s length plus its overshoot, and the \omterm{def:b3:lexical-analysis:token}{token} lengths add up to $n$; if every overshoot is at most $k$, the total is at most $n + k t \le (k + 1)n$ for $t \le n$ \omterm{def:b3:lexical-analysis:token}{tokens}, which is linear. So a quadratic total needs unbounded overshoot. Overshoot is unbounded exactly when, in the minimal automaton (whose states can all reach an accepting state), some cycle of non-accepting states can be reached from an accepting state through non-accepting states only: following the cycle reads as many characters past the last acceptance as wanted, and without such a cycle the walk past an accepting state is a path without repeated states, of length less than $|Q|$. In Moor's automaton the only non-accepting states other than the start are those after a single \texttt{\&} or \code{|}, which only the start leads to; every move out of an accepting state leads to an accepting state (\code{<} to \code{<=}, \code{/} to a comment, a letter to a longer identifier), so the overshoot is exactly the one failing character. For the rules \code{-} and \code{-+>}, the state after two or more dashes is non-accepting, loops on \code{-}, and is reached from the accepting state after one dash; the overshoot is unbounded, and $n$ dashes cost $n(n+1)/2$ reads.
+\end{solution}
+
+\begin{solution}{exo:b3:lexical-analysis:11}
+For $k \ge 1$ let $u_k = (\code{/*a})^k$ and $v_k = (\code{a*/})^k$. The word $u_k v_k$ is one nested comment: it opens $k$ times, then closes $k$ times, and the \code{a}s keep a \code{*} from touching a \code{/} in the wrong order. For $j < k$, the word $u_j v_k$ is not one comment: the depth returns to zero after $j$ closings, which ends the comment, and the rest of the word follows it. So the prefixes $u_1, u_2, \dots$ are pairwise distinguishable (the suffix $v_k$ separates $u_k$ from $u_j$), the language has infinitely many Myhill--Nerode classes, and it is not regular. \code{exercises/ex11_nested.rs} keeps a depth counter: it adds one at \code{/*}, subtracts one at \code{*/}, returns the length when the depth comes back to zero, and reports an unterminated comment if the input ends first; the counter is the unbounded memory that no finite automaton has. The tests check a flat comment, a nested one, an unterminated one, and an input that does not start with a comment.
+\end{solution}
+
+\begin{solution}{exo:b3:lexical-analysis:12}
+\code{exercises/memo_munch.rs} implements it. \emph{Same \omterm{def:b3:lexical-analysis:token}{tokens}}: a pair $(q, p)$ is marked only after a scan visited it at a position $p$ beyond the end $e$ of the \omterm{def:b3:lexical-analysis:token}{token} that scan returned; since that scan returned $e$, no accepting state was reached after $p$ from $(q, p)$, and the automaton is deterministic, so any later run from $(q, p)$ would also reach none. Stopping there loses no acceptance, and the last accepting position found is the one the plain \omterm{def:b3:lexical-analysis:scanner}{scanner} finds. \emph{Bound}: a scan from $s$ that returns a \omterm{def:b3:lexical-analysis:token}{token} ending at $e$ reads $e - s$ characters up to the \omterm{def:b3:lexical-analysis:token}{token}'s end, plus the characters after $e$, each of which either enters a pair that is then marked (it was not marked, or the scan would have stopped), or is the one read that stops the scan. \omterm{def:b3:lexical-analysis:token}{Token} lengths add up to $n$; a pair is marked once, so the marked pairs number at most $|Q|n$; there is one stopping read per \omterm{def:b3:lexical-analysis:token}{token}, at most $n$. In all at most $(|Q| + 2)n$. \emph{On $a^n$}: the first scan reads all $n$ characters and marks the non-accepting state at positions $2, \dots, n$; every later scan from position $i \le n - 2$ reads two characters, the accepting \code{a} and one that enters a marked pair; the last scan reads one. That is $n + 2(n - 2) + 1 = 3n - 3$. The test \code{naive_munch_is_quadratic_and_memo_munch_linear} checks it for $n$ = 2, 10, 100 and 1,000.
+\end{solution}
+
+\begin{solution}{pb:b3:lexical-analysis:1}
+The numbers below are asserted in \code{tests/pb_test.rs}.
+
+\textbf{1.} Nine \omterm{def:b3:lexical-analysis:token}{tokens}: name \code{Library}, space, time \code{09:45}, dash, time \code{12:30}, space, word \code{room}, space, number \code{3}.
+
+\textbf{2.} \code{number} matches \code{0} and \code{09}; \code{time} matches \code{09:45}. \omterm{def:b3:lexical-analysis:munch}{Maximal munch} returns the longest, the time. On \code{0945} the time rule fails at the third character, and the number \code{0945} (four characters) is returned.
+
+\textbf{3.} Every \omterm{def:b3:lexical-analysis:token}{lexeme} of \code{time} contains a colon and no other rule's does; \code{number} has only digits; \code{name} starts with a capital and \code{word} has none; \code{arrow} ends with \code{>}, which \code{dash} and \code{space} never contain; \code{dash} is the single \code{-}, \code{space} only blanks. The seven languages are pairwise disjoint, so no two rules ever tie, and the \omterm{def:b3:lexical-analysis:munch}{priority rule} never decides anything: the order of the rules does not matter.
+
+\textbf{4.} No \omterm{def:b3:lexical-analysis:token}{token} changes, for either move, by the answer to question 3.
+
+\textbf{5.} It reads \code{1}, \code{2}, \code{:}, \code{3}, and then \code{x}, on which it has no move: five characters. The last accepting position was after \code{12}, so it returns the number 12. The next scan starts at the colon, which starts no \omterm{def:b3:lexical-analysis:token}{token}: the error is at offset 2, column 3.
+
+\textbf{6.} It returns the number 9, then reports the colon as an error. Making the first digit of \code{time} optional,
+\begin{center}\code{[0-9][0-9]?:[0-9][0-9]}\end{center}
+accepts \code{9:45}. A number is not affected in its \omterm{def:b3:lexical-analysis:token}{tokens}, but a one-digit number followed by a colon now makes the \omterm{def:b3:lexical-analysis:scanner}{scanner} read ahead for a time, as two digits already did.
+
+\textbf{7.} \code{time} 10 states (five sets), \code{number} 4, \code{name} 6, \code{word} 4, \code{arrow} 6 (two sets and a plus), \code{dash} 2, \code{space} 4: 36, plus the start of the union, 37.
+
+\textbf{8.} From the start, a digit leads to a state accepting \code{number} in which \code{time} is still possible; a second digit to another such state; the colon to a state where only \code{time} is alive, which does not accept; a digit to a second non-accepting state; the last digit to the state accepting \code{time}. Five states after the start, three of them accepting: two for \code{number}, the last for \code{time}.
+
+\textbf{9.} The two \code{name} states merge: the one after the capital letter and the one after one or more lower-case letters stand for different NFA states, but both accept \code{name} and loop on \code{[a-z]}. No other pair can merge: the states of different classes start in different blocks, the three \code{number} states differ on what a colon or a digit leads to, and the non-accepting ones differ in how many characters remain before an acceptance.
+
+\textbf{10.} Nine of the 13 states accept: one each for \code{space}, \code{dash}, \code{name}, \code{word}, \code{arrow} and \code{time}, and three for \code{number}. The three \code{number} states are a number of one digit, of two digits, and of three or more: after two digits a colon can still start a time, after one or three it cannot (and with the rule of question 6, after one it can).
+
+\textbf{11.} Minimisation must never merge two states of different classes, or the \omterm{def:b3:lexical-analysis:scanner}{scanner} would no longer know which class it found. With a first partition into accepting and non-accepting states, the \code{name} state and the \code{word} state would merge: both accept and both loop on \code{[a-z]} and on nothing else, so every word would be returned with one class for both.
+
+\textbf{12.} Eight classes (\code{tests/pb_test.rs}): the digits, the colon, the capitals, the lower-case letters, \code{-}, \code{>}, the space and newline together, and every other character, on which all states have no move.
+
+\textbf{13.} $13 \times 128 \times 4 = 6{,}656$ bytes with 128 columns; $13 \times 8 \times 4 + 128 = 544$ bytes with eight columns and the map, twelve times less.
+
+\textbf{14.} Four characters, one \code{arrow} \omterm{def:b3:lexical-analysis:token}{token}: the dashes keep \code{arrow} alive, and the \code{>} accepts.
+
+\textbf{15.} From position $i$, every dash keeps \code{arrow} possible, so the automaton reads to the end of the line; it never sees \code{>}, and the last acceptance was \code{dash} after one character. It returns one dash and starts again at $i + 1$. Each of the $n$ scans returns one dash, and they read $n + (n-1) + \dots + 1 = n(n+1)/2$ characters in all, with no failing read since the line ends.
+
+\textbf{16.} $80 \times 81 / 2 = 3{,}240$ reads for one rule line. The 365 lines cost $1{,}182{,}600$ reads. The other lines hold 60,000 characters and their \omterm{def:b3:lexical-analysis:token}{tokens} overshoot by at most a few characters (questions 17 and 18), so they cost at most $4 \times 60{,}000 = 240{,}000$ reads by question 18, and about 60,000 in practice. The rule lines cause about 95\,\% of the reads ($1{,}182{,}600$ out of about $1{,}242{,}600$), and at least 83\,\% with the bound, for a third of the characters ($29{,}200$ out of $89{,}200$).
+
+\textbf{17.} Past the end of a returned \omterm{def:b3:lexical-analysis:token}{token}, only the \code{time} rule can still be alive, and only after a \omterm{def:b3:lexical-analysis:token}{token} of one or two digits (a number). From two digits it can read a colon and one digit without accepting, then fail on the next character: three characters past the \omterm{def:b3:lexical-analysis:token}{token}, as on \code{12:3x}. From one digit, the colon is already a failure: one character. No other path through the time pattern reads further without accepting.
+
+\textbf{18.} With these five rules the overshoot of a scan is at most 3 (question 17; every other rule's overshoot is the one failing character). A scan reads its \omterm{def:b3:lexical-analysis:token}{token} plus at most 3, the \omterm{def:b3:lexical-analysis:token}{tokens} add up to $n$ characters, and there are at most $n$ \omterm{def:b3:lexical-analysis:token}{tokens}: at most $n + 3n = 4n$ reads.
+
+\textbf{19.} Replace \code{arrow} and \code{dash} by \code{dashes} \code{-+} and \code{gt} \code{>}. A rule line becomes one \code{dashes} \omterm{def:b3:lexical-analysis:token}{token}, read once; the overshoot of every rule is now bounded and the \omterm{def:b3:lexical-analysis:scanner}{scanner} is linear. The parser recognises an arrow as a \code{dashes} \omterm{def:b3:lexical-analysis:token}{token} followed by a \code{gt} \omterm{def:b3:lexical-analysis:token}{token} whose \omterm{def:b3:lexical-analysis:scanner}{span} starts where the dashes end, and a separator as a \code{dashes} \omterm{def:b3:lexical-analysis:token}{token} alone on its line.
+
+\textbf{20.} Write $D$ for the state after one dash (accepting) and $A$ for the state after two or more (not accepting). The first scan visits $(D,1)$, $(A,2)$, $(A,3)$, $(A,4)$, $(A,5)$, reads 5, returns the dash ending at 1, and marks $(A,2)$ to $(A,5)$. The scans from 1, 2 and 3 each read 2: they reach $(D, i+1)$, accept, and stop on the marked $(A, i+2)$. The scan from 4 reads 1 and meets the end. Total $5 + 2 + 2 + 2 + 1 = 12$.
+
+\textbf{21.} The first scan reads $n$; each scan from positions 1 to $n - 2$ reads 2, as in question 20; the scan from $n - 1$ reads 1. So $n + 2(n - 2) + 1 = 3n - 3$.
+
+\textbf{22.} $n - 1$ pairs: $(A, 2)$ to $(A, n)$, all marked by the first scan, since every later scan's visited pairs lie at or before the end of its \omterm{def:b3:lexical-analysis:token}{token}. The table could hold $13n$ pairs; the memo is a small fraction of it, and a hash set stores only the marked ones.
+
+\textbf{23.} The test \code{memo_bound_holds_on_mixed_lines} builds 500 lines of 40 random pieces (dashes, double dashes, \code{>}, times, numbers, a name, a word, spaces, newlines), and checks on every line both \omterm{def:b3:lexical-analysis:scanner}{scanners} accept that they return the same \omterm{def:b3:lexical-analysis:token}{tokens} and that the memoised one reads at most $15n$ characters ($|Q| + 2 = 15$).
+
+\textbf{24.} On the 80-dash rule line the plain maximal-munch \omterm{def:b3:lexical-analysis:scanner}{scanner} reads $n(n+1)/2 = 3{,}240$ characters and the memoised \omterm{def:b3:lexical-analysis:scanner}{scanner} $3n - 3 = 237$, a factor of about 13.7; on $n$ dashes the factor is $(n+1)/6$, and it grows without bound with the length of the line.
+\end{solution}

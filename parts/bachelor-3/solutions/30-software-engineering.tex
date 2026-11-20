@@ -1,0 +1,101 @@
+\section*{Chapter \ref{ch:b3:software-engineering} --- Software Engineering: Design, Testing and Maintenance}
+
+\begin{solution}{exo:b3:software-engineering:1}
+From the most coupled to the least: (a), then (b), then (c). Design (a) knows the database, its table and its columns: a test needs a database with the right schema and rows, and a change of storage changes the report. Design (b) knows only the repository's interface: a test hands it a fake repository holding a few loans. Design (c) knows nothing but loans: a test passes a list, and the report can be used on loans from anywhere. Design (c) is the most reusable and the easiest to test; (b) is right when the report must choose which loans to ask for.
+\end{solution}
+
+\begin{solution}{exo:b3:software-engineering:2}
+(a) Unit: one class, no collaborator. (b) Integration: the service with the real SQLite repository and a stub clock. (c) End-to-end: the whole program through its command line, in another process. (d) Integration: the contract exercises the real database. (e) Unit.
+\end{solution}
+
+\begin{solution}{exo:b3:software-engineering:3}
+The two calls run the three statements of the function: \code{(2024, 2)} takes the \code{if} and returns 29, \code{(2026, 1)} falls through to the table. Of the branches, the test \code{month == 2} goes both ways, but \code{is_leap(year)} is only seen true. One more test, \code{days_in_month(2026, 2) == 28}, takes it false and reaches every branch of this function. A test checks it with the coverage tool.
+\end{solution}
+
+\begin{solution}{exo:b3:software-engineering:4}
+The three \omterm{def:b3:software-engineering:mutation}{mutants} are
+\begin{center}\code{min(20 + days_late, 500)}, \quad \code{min(21 * days_late, 500)}, \quad \code{min(20 * days_late, 501)}.\end{center}
+ With 30 days late: the first gives 50, killed; the second gives $\min(630, 500) = 500$, which survives, since the cap hides the rate; the third gives 501, killed. A test of the uncapped part, such as \code{capped_fine(1) == 20}, kills the survivor. A test computes the three \omterm{def:b3:software-engineering:mutation}{mutants} and checks the prediction.
+\end{solution}
+
+\begin{solution}{exo:b3:software-engineering:5}
+The test asserts on the loan returned by \code{borrow}, whose days late at day 25 are 4 whatever \code{give_back} computes: it never looks at the fine. \omterm{def:b3:software-engineering:mutation}{Mutation testing} shows it: the two \omterm{def:b3:software-engineering:mutation}{mutants} of \code{flat_fine}, \code{20 + days_late} and \code{21 * days_late}, survive it, while they change the fine from 80 to 24 and 84. The fixed test asserts \code{fine == 80} and kills both: the score of the test alone rises from 3 to 5 of the 16 \omterm{def:b3:software-engineering:mutation}{mutants} of the service. The rest survive because a single test exercises a single path, which is what the whole suite is for.
+\end{solution}
+
+\begin{solution}{exo:b3:software-engineering:6}
+\code{exercises/ex6_memory_repo.py} keeps a list of loans and stores and returns copies, made with \code{dataclasses.replace}, so that a caller who changes an object does not change the store, as with SQLite, which stores values. \code{open_loan_of} and \code{open_loans_of} filter on \code{returned is None}; \code{save} replaces the open loan of the same book. The contract test adds two loans of two readers, changes the caller's copy, finds the stored due date unchanged, saves the first loan as returned and checks that it is no longer open and that the other reader's loan is still there. It is one function, called with each repository: a fake that passes the same contract as the real implementation can stand in for it in every other test.
+\end{solution}
+
+\begin{solution}{exo:b3:software-engineering:7}
+Facts used: a branch is covered when each way of each conditional jump is taken. Take \texttt{is\_leap(year) = year \% 4 == 0 and year \% 100 != 0}, which forgets that years divisible by 400 are leap. The suite \code{is_leap(2024)} true, \code{is_leap(2026)} false and \code{is_leap(1900)} false passes, since these are the right answers, and takes both ways of each comparison: 2026 makes the first false, 2024 makes both true, 1900 makes the second false. So it covers every statement and every branch, and the function is wrong on 2000. A test measures the coverage with the chapter's tool and checks the three answers.
+\end{solution}
+
+\begin{solution}{exo:b3:software-engineering:8}
+One \omterm{def:b3:software-engineering:mutation}{mutant} per operator of the table and one per integer constant: $k + c$, since each operator in the table has exactly one replacement and each constant $n$ becomes $n + 1$. For \code{a + b * c < d - 1}: the operators \code{+}, \code{*}, \code{<} and \code{-}, and the constant 1, so 5, as a test checks. A mutator that replaces each comparison by each of the five others makes $5$ \omterm{def:b3:software-engineering:mutation}{mutants} per comparison instead of 1: with $r$ comparisons, $k - r$ other operators and $c$ constants, $5r + (k - r) + c$.
+\end{solution}
+
+\begin{solution}{exo:b3:software-engineering:9}
+\code{exercises/ex9_steps.py} holds \code{report_step1}, with the fine computed by an extracted function \code{fine(late, rate, cap)}, and \code{report_step2}, with the line formatted by an extracted \code{line}. Each step changes one thing, so that if the tests fail, the cause is that step. The property test draws 200 combinations of rate (0 to 100 cents), cap (none, or 0 to 1,000), grace (0 to 30 days) and day (up to 120 days after 5 January) and checks that the four versions print the same report on the same four loans. Introducing the parameter object, the third step, changes the signature: every caller must change with it, which is why it comes last, once the body is simple.
+\end{solution}
+
+\begin{solution}{exo:b3:software-engineering:10}
+On 500 random lists of 1 to 8 numbers from 0 to 9, the permutation and the shift relations always hold, and the doubling relation fails on every list: sorting \code{xs + xs} must give each element of the sorted list twice, and the sort returns fewer. The bug is in the merge: when the two heads are equal, it takes one and advances both sides, so it drops one copy of every equal pair it meets. Permuting or shifting the input does not change which values are equal, so those relations see the same wrong output on both sides; doubling guarantees duplicates. The sorted builtin satisfies all three, as a test checks. A good set of relations varies what the bug is likely to depend on: here, repeated values.
+\end{solution}
+
+\begin{solution}{exo:b3:software-engineering:11}
+Facts used: a test suite fails on a program if at least one of its tests fails. Let $Q$ differ from $P$ by one change of class $C$ and compute a different function from $P$. Then $Q$ is, by definition, a \omterm{def:b3:software-engineering:mutation}{mutant} of $P$ by $C$, and it is not equivalent to $P$. By hypothesis $T$ kills it: at least one test of $T$ fails on $Q$. So every such single fault is detected. The hypothesis is about \omterm{def:b3:software-engineering:mutation}{mutants} of the correct program, which nobody has. What the mutator runs on is the program under test, $Q$; if $Q$ contains one fault of class $C$ and the class contains the inverse of each of its changes, then $P$ itself is a \omterm{def:b3:software-engineering:mutation}{mutant} of $Q$, and a suite that kills every non-equivalent \omterm{def:b3:software-engineering:mutation}{mutant} of $Q$ while passing on $Q$ fails on $P$: its tests agree with the faulty program, not the correct one. That is why survivors, and not the score alone, are read: each survivor is a change that the tests cannot see, and either it is equivalent, or the tests have a gap at that place. The claim that real faults are close to such changes is a hypothesis about programmers, not a theorem.
+\end{solution}
+
+\begin{solution}{exo:b3:software-engineering:12}
+\code{exercises/ex12_counts.py} overrides \code{_line} to add one to a counter at each event and not to return \code{DISABLE}, so that the interpreter keeps reporting the line. For \code{day_number(2026, 3, 1)}: the first two lines run once, the body of the loop twice (months 1 and 2), the call to \code{days_in_month} inside it runs its \code{if} and its table lookup twice, and the return once. The \code{for} line runs 3 times: once for each of the two turns and once more for the exit, when \code{range} is exhausted. A test checks all eight counts. Without \code{DISABLE} the tool slows the program much more: every line of every run calls back into Python.
+\end{solution}
+
+\begin{solution}{pb:b3:software-engineering:1}
+\textbf{1.} A year is leap if it is divisible by 4, except that a year divisible by 100 is not, unless it is divisible by 400. The first tests check that 2024 is leap and 2026 is not; the lengths of February in both years and of January; the validity of 31 January and the invalidity of 30 February and of month 13; the 59 days from 1 January to 1 March 2026, in both orders; and that 20 November 2026 is a Friday.
+
+\textbf{2.} $365y$ counts the days of the $y = \mathit{year} - 1$ complete years if none were leap; $\lfloor y/4\rfloor - \lfloor y/100\rfloor + \lfloor y/400\rfloor$ is the number of leap years among $1, \dots, y$: the multiples of 4, minus the multiples of 100, plus back the multiples of 400.
+
+\textbf{3.} Both dates are in 2026, so the year terms cancel: $(31 + 28 + 1) - 1 = 59$.
+
+\textbf{4.} All five compare with values known in advance; the test in both orders also checks a relation, the symmetry of \code{days_between}.
+
+\textbf{5.} Its specification says ``in either order''; the absolute value makes it symmetric.
+
+\textbf{6.} That 1 January of year 1 was a Monday in the proleptic Gregorian calendar, day number 1. Python's \code{datetime.date} uses the same calendar and the same day numbers, through \code{toordinal}, so its weekday is an oracle.
+
+\textbf{7.} All of them: 16 of 16.
+
+\textbf{8.} At line 17, \texttt{year \% 400 == 0} is never evaluated, so its jump is never seen either way; at line 27, \code{1 <= month} is never false (month 0) and \code{1 <= day} is never false (day 0). The inputs \code{is_leap(1900)} and \code{is_leap(2000)}, \code{is_valid(2026, 0, 1)} and \code{is_valid(2026, 1, 0)} take them.
+
+\textbf{9.} Because 2024 is not divisible by 100: \texttt{year \% 100 != 0} is true, and \code{or} stops there.
+
+\textbf{10.} True for statements, not for branches (15 of 18). It proves nothing about the century rule: no test has a year divisible by 100.
+
+\textbf{11.} \texttt{year \% 4 == 0}, alone: it gives the same answers on 2024 and 2026, and runs the same statements.
+
+\textbf{12.} Lines 4 and 33 have no branch and line 42's two are both taken, yet 6 \omterm{def:b3:software-engineering:mutation}{mutants} survive there: 2 on each line.
+
+\textbf{13.} 62 \omterm{def:b3:software-engineering:mutation}{mutants}, 46 killed: a score of $46/62 \approx 74\,\%$.
+
+\textbf{14.} The first tests use the lengths of January and February directly, and the weekday of 20 November sums those of January to October; the lengths of November (30) and December (31) are never used. They are the two survivors.
+
+\textbf{15.} The only years tested are 2024 and 2026: 2026 stops at \texttt{year \% 4}; for 2024, \texttt{year \% 100 != 0} stays true when \texttt{\%} becomes \code{//} ($20 \ne 0$), when 100 becomes 101 ($24 \ne 0$) and when 0 becomes 1 ($24 \ne 1$), and the 400 part, with its four \omterm{def:b3:software-engineering:mutation}{mutants}, is never evaluated. Only the \omterm{def:b3:software-engineering:mutation}{mutants} of \texttt{year \% 4 == 0} and of \code{and}, \code{or} and \code{!=} are seen.
+
+\textbf{16.} For 20 November 2026, $y = 2025$, and $\lfloor 2025/100\rfloor = \lfloor 2025/101\rfloor = 20$, $\lfloor 2025/400\rfloor = \lfloor 2025/401\rfloor = 5$: on that one date the \omterm{def:b3:software-engineering:mutation}{mutants} give the same day number. The other tests compare two dates of the same year, where the year terms cancel.
+
+\textbf{17.} \code{1 <= month <= 12} to \code{1 <= month < 12}: December is never checked valid. \code{1 <= day} to \code{1 < day}, and the constant 1 of \code{1 <= day} to 2: the first day of a month is never checked valid.
+
+\textbf{18.} The month table, November and December (2); the leap rule for centuries (7 on line 17, 2 on line 33); the boundaries of validity, December and day 1 (3); and the 2 \omterm{def:b3:software-engineering:mutation}{mutants} of line 42, which Part IV shows are no gap.
+
+\textbf{19.} The first compares \code{day_number} with \code{date.toordinal}, the calendar's own day number, on the first of each month of the years 1, 100, 101, 400, 401, 1900, 2000 and 2026; the second checks that 1 January and 31 December are valid and that day 0, 32 December and 29 February 2026 are not.
+
+\textbf{20.} The first test kills every survivor of lines 17 and 33 and November's: the years 1900 and 2000 test the century rule on 1 March, the years 100, 101, 400 and 401 make $\lfloor y/100 \rfloor$ and $\lfloor y/101 \rfloor$, and $\lfloor y/400 \rfloor$ and $\lfloor y/401 \rfloor$, differ, and 1 December sums November. The second kills the boundary \omterm{def:b3:software-engineering:mutation}{mutants} of line 27 and December's length, which no day number uses, through 32 December.
+
+\textbf{21.} 2 of 62: both on line 42.
+
+\textbf{22.} Facts used: for an integer $n$, $-0 = 0$. The original returns \code{n if n >= 0 else -n}; the \omterm{def:b3:software-engineering:mutation}{mutants} test \code{n > 0} and \code{n >= 1}, which are the same condition on integers. They differ from the original only at $n = 0$, where the original returns $n = 0$ and the \omterm{def:b3:software-engineering:mutation}{mutants} return $-n = 0$. So the three functions are equal on every integer input, and the \omterm{def:b3:software-engineering:mutation}{mutants} are equivalent.
+
+\textbf{23.} 60 killed of $62 - 2 = 60$ non-equivalent \omterm{def:b3:software-engineering:mutation}{mutants}: 100\,\%.
+
+\textbf{24.} The first suite runs 100\,\% of statements yet kills only 46 of the 62 \omterm{def:b3:software-engineering:mutation}{mutants}; the two new tests raise the score to 60 of 62, and the 2 survivors are proved equivalent.
+\end{solution}

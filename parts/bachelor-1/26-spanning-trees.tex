@@ -1,0 +1,331 @@
+% Book 3, Year 1, chapter 26 -- minimum spanning trees and union--find.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 26.
+% ledger: b1:kruskal-1956, b1:prim-1957, b1:tarjan-uf-1975
+\chapter{Minimum Spanning Trees and Union--Find}\label{ch:b1:spanning-trees}
+
+Brenmoor wants fibre to every place, laid along its roads. Every place must be connected to every other, through the
+cable if not directly, and cable costs by the metre. The town has 61 kilometres of road; how little of it can carry the
+fibre? The cheapest network never closes a loop, since removing one road of a loop disconnects nothing: it is a tree,
+and the question is to find the lightest one. Two \omterm{def:b1:greedy-proofs:greedy}{greedy algorithms} find it, and their proofs rest on one \omterm{met:b1:greedy-proofs:exchange}{exchange
+argument}. The faster of them needs to answer, again and again, ``are these two places already connected?'', and the
+data structure that answers it in almost constant time is the second subject of the chapter.
+
+\begin{recall}
+A \omterm{def:b1:graph-traversals:free-tree}{free tree} on $n$ \omterm{def:b1:graph-traversals:graph}{vertices} is connected with $n - 1$ edges (\cref{prop:b1:graph-traversals:free-tree}). \omterm{def:b1:greedy-proofs:greedy}{Greedy
+algorithms} are proved by exchange (\cref{ch:b1:greedy-proofs}); \omterm{def:b1:heaps:binary-heap}{binary heaps} are in \cref{ch:b1:heaps}.
+\end{recall}
+
+\section{Spanning trees and the cut property}\label{sec:b1:spanning-trees:cut}
+
+\begin{definition}[Spanning tree, minimum spanning tree]\label{def:b1:spanning-trees:mst}
+A \emph{spanning tree}\index{spanning tree} of a connected undirected \omterm{def:b1:graph-traversals:graph}{graph} $G$ is a subgraph that contains every \omterm{def:b1:graph-traversals:graph}{vertex}
+of $G$ and is a \omterm{def:b1:graph-traversals:free-tree}{free tree}. In a \omterm{def:b1:graph-traversals:weighted}{weighted graph}, its weight is the sum of the weights of its edges, and a \emph{minimum
+spanning tree}\index{minimum spanning tree} is a spanning tree of smallest weight.
+\end{definition}
+
+\begin{definition}[Cut, crossing edge]\label{def:b1:spanning-trees:cut}
+A \emph{cut}\index{cut (of a graph)} of a \omterm{def:b1:graph-traversals:graph}{graph} is a partition of its \omterm{def:b1:graph-traversals:graph}{vertices} into two non-empty sets $S$ and $V
+\setminus S$. An edge \emph{crosses}\index{crossing edge} the cut if it has one end in each set.
+\end{definition}
+
+\begin{theorem}[Cut property, cycle property]\label{thm:b1:spanning-trees:cut-property}
+Let $G$ be a connected \omterm{def:b1:graph-traversals:weighted}{weighted graph}. (\omterm{def:b1:spanning-trees:cut}{Cut} property) For any \omterm{def:b1:spanning-trees:cut}{cut}, a lightest edge crossing it belongs to some \omterm{def:b1:spanning-trees:mst}{minimum
+spanning tree}; if it is the only lightest one, to every \omterm{def:b1:spanning-trees:mst}{minimum spanning tree}. (Cycle property) An edge strictly heavier
+than every other edge of some cycle belongs to no \omterm{def:b1:spanning-trees:mst}{minimum spanning tree}.
+\end{theorem}
+
+\begin{proof}
+Let $e = uv$ be a lightest edge crossing the \omterm{def:b1:spanning-trees:cut}{cut} $(S, V \setminus S)$, $u \in S$, and $T$ a \omterm{def:b1:spanning-trees:mst}{minimum spanning tree} without
+$e$. The path from $u$ to $v$ in $T$ starts in $S$ and ends outside, so one of its edges, $f$, \omterm{def:b1:spanning-trees:cut}{crosses} the \omterm{def:b1:spanning-trees:cut}{cut}. Removing
+$f$ from $T$ splits it into two trees, one containing $u$ and one $v$; adding $e$ joins them again. The result $T' = T
+- f + e$ is a \omterm{def:b1:spanning-trees:mst}{spanning tree} of weight $w(T) - w(f) + w(e) \leq w(T)$, so it is minimum and contains $e$. If $e$ is the
+only lightest edge, $w(e) < w(f)$ and $T'$ would be lighter than $T$: so no \omterm{def:b1:spanning-trees:mst}{minimum spanning tree} lacks $e$. For the
+cycle property, let $e$ be the heaviest edge of a cycle $C$, in a \omterm{def:b1:spanning-trees:mst}{spanning tree} $T$. Removing $e$ splits $T$ into two
+parts, a \omterm{def:b1:spanning-trees:cut}{cut} that $e$ \omterm{def:b1:spanning-trees:cut}{crosses}; the rest of $C$ joins the ends of $e$, so it has another edge $f$ crossing that \omterm{def:b1:spanning-trees:cut}{cut}, and
+$T - e + f$ is a lighter \omterm{def:b1:spanning-trees:mst}{spanning tree}.
+\end{proof}
+
+\begin{omfigure}
+\begin{tikzpicture}[v/.style={circle, draw, fill=white, minimum size=4mm, inner sep=0pt}, font=\scriptsize]
+\fill[omDef!12, rounded corners=4mm] (-0.6,-1.6) rectangle (2.4,1.6);
+\node[font=\small, omDef] at (0.9,1.9) {$S$}; \node[font=\small] at (5.1,1.9) {$V \setminus S$};
+\node[v] (a) at (0,0.9) {}; \node[v] (u) at (1.6,0.2) {}; \node[v] (b) at (0.3,-1.0) {};
+\node[v] (v) at (4.0,0.5) {}; \node[v] (c) at (5.6,1.0) {}; \node[v] (d) at (5.2,-0.9) {}; \node[v] (x) at (3.9,-1.1)
+{};
+\draw[very thick] (a) -- (u) -- (b); \draw[very thick] (v) -- (c) -- (d) -- (x);
+\draw[very thick, omThm] (b) -- node[below] {$f$, in $T$} (x);
+\draw[thick, dashed, omDef] (u) -- node[above] {$e$} (v);
+\node[anchor=south east] at (u.north west) {$u$}; \node[anchor=south west] at (v.north east) {$v$};
+\node[anchor=west, align=left] at (6.2,0.2) {$e$: a lightest crossing edge\\ $T - f + e$ is a spanning tree\\ no heavier than $T$};
+\end{tikzpicture}
+\par\smallskip{\small The exchange in the \omterm{def:b1:spanning-trees:cut}{cut} property: the tree $T$ (thick) joins $u$ to $v$ by a path that \omterm{def:b1:spanning-trees:cut}{crosses} the
+\omterm{def:b1:spanning-trees:cut}{cut} at some edge $f$; swapping $f$ for the lightest \omterm{def:b1:spanning-trees:cut}{crossing edge} $e$ keeps a \omterm{def:b1:spanning-trees:mst}{spanning tree} and cannot add weight.}
+\end{omfigure}
+
+With distinct weights the \omterm{def:b1:spanning-trees:mst}{minimum spanning tree} is unique (\cref{exo:b1:spanning-trees:10}): every edge of it is the
+only lightest edge across some \omterm{def:b1:spanning-trees:cut}{cut}.
+
+\section{Kruskal's algorithm}\label{sec:b1:spanning-trees:kruskal}
+
+\begin{method}[Kruskal's algorithm]\label{met:b1:spanning-trees:kruskal}
+Take the edges by increasing weight; keep an edge if it joins two different trees of the \omterm{def:b1:graph-traversals:free-tree}{forest} kept so far, that is,
+if it closes no cycle. Stop at $n - 1$ edges.
+\end{method}
+
+Each kept edge $uv$ is a lightest edge crossing the \omterm{def:b1:spanning-trees:cut}{cut} between the tree of $u$ and the rest, since every lighter edge
+crossing it was examined earlier and would have been kept; by the \omterm{def:b1:spanning-trees:cut}{cut} property, it belongs to a \omterm{def:b1:spanning-trees:mst}{minimum spanning tree}
+together with the edges kept before it (the exchange of the proof never removes them, since none of them \omterm{def:b1:spanning-trees:cut}{crosses} that
+\omterm{def:b1:spanning-trees:cut}{cut}). By induction, the \omterm{def:b1:graph-traversals:free-tree}{forest} is always contained in some \omterm{def:b1:spanning-trees:mst}{minimum spanning tree}, and at $n - 1$ edges it is one.
+
+\omoutput{code/bachelor-1/26-spanning-trees/outputs/mst_town.txt}{The town as an undirected \omterm{def:b1:graph-traversals:graph}{graph}: fibre carries data both
+ways, so the one-way road is an edge like the others.}\label{out:b1:spanning-trees:town}
+
+\omcode{code/bachelor-1/26-spanning-trees/listings/kruskal.py}{8}{16}{Kruskal's algorithm, with \omterm{def:b1:spanning-trees:union-find}{union--find} for the
+cycle test}\label{lst:b1:spanning-trees:kruskal}
+
+\omoutput{code/bachelor-1/26-spanning-trees/outputs/kruskal.txt}{The fibre network of Brenmoor: 27.2 km of the 61 km
+of road.}\label{out:b1:spanning-trees:kruskal}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\foreach \file/\title/\dx in {forest/{after 15 roads}/0, mst/{all 29 roads}/72} {
+\begin{axis}[omrecord, xshift=\dx mm, width=7.2cm, height=6.6cm, xmin=-0.2, xmax=6, ymin=-0.2, ymax=5.1,
+    axis equal image, grid=none, title={\small \title}, xticklabels={}, yticklabels={}]
+  \addplot[black!20, line width=0.5pt] table[x=x, y=y]{code/bachelor-1/26-spanning-trees/figures/roads.dat};
+  \addplot[omDef, line width=1.5pt] table[x=x, y=y]{code/bachelor-1/26-spanning-trees/figures/\file.dat};
+  \addplot[only marks, mark=*, mark size=1.2pt, black!60] table[x=x, y=y]
+    {code/bachelor-1/26-spanning-trees/figures/places.dat};
+\end{axis}}
+\end{tikzpicture}
+\par\smallskip{\small Kruskal's algorithm on Brenmoor, drawn from the data by \code{figures/mst_map.py}: on the left a
+\omterm{def:b1:graph-traversals:free-tree}{forest} of short roads, scattered over the town; on the right the \omterm{def:b1:spanning-trees:mst}{minimum spanning tree}.}
+\end{omfigure}
+
+Sorting costs $O(m \log m) = O(m \log n)$. The rest is $m$ tests ``same tree?'' and $n - 1$ merges; done naively, by
+searching the \omterm{def:b1:graph-traversals:free-tree}{forest}, each test costs $O(n)$, and Kruskal's algorithm $O(mn)$.
+
+\section{Disjoint sets}\label{sec:b1:spanning-trees:union-find}
+
+\begin{definition}[Disjoint-set structure, representative]\label{def:b1:spanning-trees:union-find}
+A \emph{disjoint-set structure}\index{disjoint-set structure}, or \emph{union--find}\index{union--find}, keeps a
+partition of a set of elements, at first into singletons, under two operations: \code{find(x)} returns the
+\emph{representative}\index{representative (of a set)} of the set of $x$, the same element for all members of a set;
+\code{union(x, y)} merges the sets of $x$ and $y$.
+\end{definition}
+
+Two naive versions come first. One stores a label per element: \code{find} reads it in $O(1)$, \code{union} relabels a
+whole set, $O(n)$. The other stores, for each element, a \emph{parent}; the \omterm{def:b1:spanning-trees:union-find}{representative} is the root, reached by
+climbing: \code{union} links one root under the other, and \code{find} costs the height of the tree.
+
+\omcodes{code/bachelor-1/26-spanning-trees/listings/uf_naive.py}{15-21,30-37}{The union of labels and the find of
+parent \omterm{def:b1:pointers-and-arrays:pointer}{pointers}}\label{lst:b1:spanning-trees:naive}
+
+\omoutput{code/bachelor-1/26-spanning-trees/outputs/uf_naive.txt}{A chain of $n - 1$ unions each followed by a find: both
+versions are quadratic.}\label{out:b1:spanning-trees:naive}
+
+\begin{definition}[Union by rank, path compression]\label{def:b1:spanning-trees:rank}
+Each root carries a \emph{rank}\index{rank (union--find)}, 0 at the start. \emph{Union by rank}\index{union by rank}
+links the root of smaller rank under the other, and raises the rank of the new root by one when the two ranks were
+equal. \emph{Path compression}\index{path compression} makes every element met by a \code{find} point straight at the
+root.
+\end{definition}
+
+\omcode{code/bachelor-1/26-spanning-trees/listings/union_find.py}{5}{30}{\omterm{def:b1:spanning-trees:rank}{Union by rank} and \omterm{def:b1:spanning-trees:rank}{path compression}, with the
+parent steps counted}\label{lst:b1:spanning-trees:union-find}
+
+\begin{proposition}[Height under union by rank]\label{prop:b1:spanning-trees:rank}
+Without \omterm{def:b1:spanning-trees:rank}{path compression}, the tree of a root of \omterm{def:b1:spanning-trees:rank}{rank} $r$ has height $r$ and at least $2^r$ elements. So with $n$
+elements every tree has height at most $\log_2 n$, and \code{find} costs $O(\log n)$.
+\end{proposition}
+
+\begin{proof}
+A \omterm{def:b1:spanning-trees:rank}{rank} changes only when two trees of equal \omterm{def:b1:spanning-trees:rank}{rank} $r$ are joined: the new tree has height $r + 1$ and at least $2^r +
+2^r$ elements. Joining under a root of larger \omterm{def:b1:spanning-trees:rank}{rank} changes neither its \omterm{def:b1:spanning-trees:rank}{rank} nor its height, which already exceeds the
+other's by one at least. The size bound is \cref{exo:b1:spanning-trees:9}; then $2^r \leq n$ gives $r \leq \log_2 n$.
+\end{proof}
+
+\omoutput{code/bachelor-1/26-spanning-trees/outputs/rank_height.txt}{The tallest tree after random unions, and after
+merging trees of equal \omterm{def:b1:spanning-trees:rank}{rank} two by two: the bound $\log_2 n$ is reached.}\label{out:b1:spanning-trees:height}
+
+\begin{omfigure}
+\begin{tikzpicture}[v/.style={circle, draw, minimum size=5mm, inner sep=0pt, font=\scriptsize}, >=stealth,
+  level distance=9mm, sibling distance=9mm]
+\node[v] (r) at (0,0) {r} child {node[v] (a) {a} child {node[v] (b) {b} child {node[v] (c) {c}}}} child {node[v]
+{d}};
+\node[font=\scriptsize] at (0.2,-3.7) {before \code{find(c)}};
+\draw[->, omThm, thick] (1.3,-1.4) -- node[above, font=\scriptsize] {compress} (2.6,-1.4);
+\begin{scope}[xshift=45mm, sibling distance=8mm]
+\node[v] at (0,0) {r} child {node[v] {a}} child {node[v] {b}} child {node[v] {c}} child {node[v] {d}};
+\node[font=\scriptsize] at (0,-3.7) {after: every node met points at the root};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small \omterm{def:b1:spanning-trees:rank}{Path compression}. The find from \code{c} climbs three parent \omterm{def:b1:pointers-and-arrays:pointer}{pointers}; afterwards \code{c},
+\code{b} and \code{a} hang from the root, and the next find from any of them climbs one. \omterm{def:b1:spanning-trees:rank}{Ranks} are not updated: a \omterm{def:b1:spanning-trees:rank}{rank}
+remains an upper bound on the height.}
+\end{omfigure}
+
+With both improvements, a sequence of $m$ operations on $n$ elements costs $O(m\, \alpha(n))$, where $\alpha$ is an
+inverse of Ackermann's function of \cref{prop:b1:induction-and-termination:ackermann}: it grows so slowly that
+$\alpha(n) \leq 4$ for any $n$ that can be written down. Tarjan proved this bound in 1975; its proof is beyond this
+book, and we admit it.
+
+\omoutput{code/bachelor-1/26-spanning-trees/outputs/union_find.txt}{The chain of \cref{out:b1:spanning-trees:naive}
+with both improvements: the work grows linearly.}\label{out:b1:spanning-trees:fast}
+
+Kruskal's algorithm now costs $O(m \log n)$ for the sort and $O(m\, \alpha(n))$ for the rest: on the town, 65 parent
+steps in all for the 53 roads.
+
+\section{Prim's algorithm}\label{sec:b1:spanning-trees:prim}
+
+\begin{method}[Prim's algorithm]\label{met:b1:spanning-trees:prim}
+Grow a single tree from a start \omterm{def:b1:graph-traversals:graph}{vertex}: repeatedly add the lightest edge with exactly one end in the tree, and its
+other end.
+\end{method}
+
+Each added edge is a lightest edge across the \omterm{def:b1:spanning-trees:cut}{cut} between the tree and the rest, so the \omterm{def:b1:spanning-trees:cut}{cut} property proves the
+algorithm, as for Kruskal's. A heap holds the edges leaving the tree; an edge whose two ends have entered the tree is
+discarded when it comes off the heap, as with lazy deletion in Dijkstra's algorithm.
+
+\omcode{code/bachelor-1/26-spanning-trees/listings/prim.py}{9}{27}{Prim's algorithm with a heap of
+edges}\label{lst:b1:spanning-trees:prim}
+
+\omoutput{code/bachelor-1/26-spanning-trees/outputs/prim.txt}{From two different places, the same weight as
+Kruskal's.}\label{out:b1:spanning-trees:prim}
+
+Each edge enters the heap at most twice: $O(m \log n)$. Prim's algorithm suits dense \omterm{def:b1:graph-traversals:graph}{graphs}, given as a matrix: with an
+\omterm{def:b1:pointers-and-arrays:array}{array} of best edges instead of a heap it costs $O(n^2)$, with no sort of the $m \approx n^2 / 2$ edges. Kruskal's
+suits sparse \omterm{def:b1:graph-traversals:graph}{graphs} and edges that arrive as a list. Kruskal published his algorithm in 1956, and Prim his in 1957, for
+networks of telephone lines.
+
+\section{Bottlenecks}\label{sec:b1:spanning-trees:bottleneck}
+
+\begin{definition}[Bottleneck spanning tree]\label{def:b1:spanning-trees:bottleneck}
+A \emph{bottleneck spanning tree}\index{bottleneck spanning tree} is a \omterm{def:b1:spanning-trees:mst}{spanning tree} whose heaviest edge is as light as
+possible among all \omterm{def:b1:spanning-trees:mst}{spanning trees}.
+\end{definition}
+
+A \omterm{def:b1:spanning-trees:mst}{minimum spanning tree} is a \omterm{def:b1:spanning-trees:bottleneck}{bottleneck spanning tree} (\cref{exo:b1:spanning-trees:11}). More: for any two \omterm{def:b1:graph-traversals:graph}{vertices},
+the path joining them in a \omterm{def:b1:spanning-trees:mst}{minimum spanning tree} minimises the heaviest edge among all paths between them. Read with
+maxima, a maximum \omterm{def:b1:spanning-trees:mst}{spanning tree} gives the \emph{widest} paths, those whose narrowest edge is widest, for every pair at
+once. Removing the $k - 1$ heaviest edges of a \omterm{def:b1:spanning-trees:mst}{minimum spanning tree} splits the \omterm{def:b1:graph-traversals:graph}{vertices} into $k$ clusters, which
+maximise the smallest distance between two clusters; the second volume uses this for clustering data.
+
+\section{Exercises}\label{sec:b1:spanning-trees:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:spanning-trees:1}
+A \omterm{def:b1:graph-traversals:graph}{graph} on $a, b, c, d, e$ has the edges $ab$ 4, $ac$ 1, $bc$ 3, $bd$ 2, $cd$ 5, $ce$ 7, $de$ 6. Give the edges kept by
+Kruskal's algorithm, in order, and the weight.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:spanning-trees:2}
+Run Prim's algorithm from $e$ on the same \omterm{def:b1:graph-traversals:graph}{graph}: in which order do the \omterm{def:b1:graph-traversals:graph}{vertices} enter?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:spanning-trees:3}
+Starting from six singletons $0, \dots, 5$, run \code{union(0, 1)}, \code{union(2, 3)}, \code{union(1, 3)},
+\code{union(4, 5)}, \code{union(5, 0)} with \cref{lst:b1:spanning-trees:union-find}. Give the parents and \omterm{def:b1:spanning-trees:rank}{ranks} at the
+end.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:spanning-trees:4}
+In the \omterm{def:b1:graph-traversals:graph}{graph} of \cref{exo:b1:spanning-trees:1}, is the tree $ac, bc, bd, de$ a \omterm{def:b1:spanning-trees:mst}{minimum spanning tree}? Use the cycle
+property.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:spanning-trees:5}
+This version replaces \omterm{def:b1:spanning-trees:union-find}{union--find} by a set of visited places. Why does it keep only 21 roads?
+\omcode{code/bachelor-1/26-spanning-trees/listings/exo_visited.py}{6}{12}{Kruskal with a visited flag}
+\omoutput[2-2]{code/bachelor-1/26-spanning-trees/outputs/exo_visited.txt}{On the town.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:spanning-trees:6}
+Find the error in this \omterm{def:b1:spanning-trees:rank}{union by rank}, and explain the tree of height 999.
+\omcode{code/bachelor-1/26-spanning-trees/listings/exo_rank_bug.py}{7}{16}{A wrong \omterm{def:b1:spanning-trees:rank}{rank}}
+\omoutput[2-3]{code/bachelor-1/26-spanning-trees/outputs/exo_rank_bug.txt}{The unions \code{union(i, i - 1)} for $i$ from 1
+to 999, before any other find.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:spanning-trees:7}
+Compute the weight of a second-best \omterm{def:b1:spanning-trees:mst}{spanning tree}, the lightest \omterm{def:b1:spanning-trees:mst}{spanning tree} different from the minimum one, by
+swapping one edge of the \omterm{def:b1:spanning-trees:mst}{minimum spanning tree} for one outside it; test it against all \omterm{def:b1:spanning-trees:mst}{spanning trees} of small
+\omterm{def:b1:graph-traversals:graph}{graphs}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:spanning-trees:8}
+Generate a maze on a grid of cells by Kruskal's algorithm on the walls taken in a random order, seeded. Why is every
+cell reachable from every other, by exactly one way?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:spanning-trees:9}
+Show that with \omterm{def:b1:spanning-trees:rank}{union by rank} a root of \omterm{def:b1:spanning-trees:rank}{rank} $r$ has at least $2^r$ elements in its tree, with or without \omterm{def:b1:spanning-trees:rank}{path
+compression}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:spanning-trees:10}
+Show that a \omterm{def:b1:graph-traversals:connected}{connected graph} whose edge weights are all distinct has exactly one \omterm{def:b1:spanning-trees:mst}{minimum spanning tree}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:spanning-trees:11}
+Show that every \omterm{def:b1:spanning-trees:mst}{minimum spanning tree} is a \omterm{def:b1:spanning-trees:bottleneck}{bottleneck spanning tree}, and give a \omterm{def:b1:spanning-trees:bottleneck}{bottleneck spanning tree} that is not
+minimum.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:spanning-trees:12}
+Borůvka's method works in rounds: each tree of the \omterm{def:b1:graph-traversals:free-tree}{forest}, at first the single \omterm{def:b1:graph-traversals:graph}{vertices}, picks its lightest leaving
+edge, and all picked edges are added. Implement it with \omterm{def:b1:spanning-trees:union-find}{union--find}, prove that it needs at most $\log_2 n$ rounds,
+and test it against Kruskal's algorithm.
+\end{exercise}
+
+\section{Problem: Laying fibre in Brenmoor}\label{sec:b1:spanning-trees:problem}
+
+\begin{problem}[{Weekend problem --- Laying fibre in Brenmoor}]\label{pb:b1:spanning-trees:1}
+The council has chosen to lay fibre along a \omterm{def:b1:spanning-trees:mst}{minimum spanning tree} of the roads, weighted by length. Before trusting the
+algorithms with the whole town, it counts the trees of a small piece of it.
+\omcode{code/bachelor-1/26-spanning-trees/listings/count_trees.py}{11}{16}{Every \omterm{def:b1:spanning-trees:mst}{spanning tree}, by \omterm{def:b1:backtracking:exhaustive}{brute
+force}}\label{lst:b1:spanning-trees:count}
+\omoutput{code/bachelor-1/26-spanning-trees/outputs/count_trees.txt}{The places within two roads of the Town
+Square.}\label{out:b1:spanning-trees:count}
+\omoutput{code/bachelor-1/26-spanning-trees/outputs/bottleneck.txt}{Minimax routes read from the tree, and clusters
+obtained by removing its longest roads.}\label{out:b1:spanning-trees:bottleneck}
+
+\medskip\noindent\textbf{Part I --- Spanning trees of a piece of the town.}
+\begin{enumerate}
+\item Why does a set of $n - 1$ edges without a cycle form a \omterm{def:b1:spanning-trees:mst}{spanning tree}?
+\item Why are only 37 of the 165 sets of 8 roads \omterm{def:b1:spanning-trees:mst}{spanning trees}?
+\item How many sets would the \omterm{def:b1:backtracking:exhaustive}{brute force} try for the whole town, $\binom{53}{29}$? Estimate its order of magnitude.
+\item Why does \code{all} stop at the first union that fails, and why is that correct?
+\item The lightest tree found by \omterm{def:b1:backtracking:exhaustive}{brute force} weighs the same as Kruskal's: what does that check, and what not?
+\item How many cycles at least does the piece have, given 9 places and 11 roads?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The whole town.}
+\begin{enumerate}[resume]
+\item Read the fibre length and the number of roads used.
+\item Why do Kruskal's and Prim's algorithms give the same weight from any start?
+\item Are the road lengths distinct? If not, could two \omterm{def:b1:spanning-trees:mst}{minimum spanning trees} exist?
+\item Count the heap pops of Prim's algorithm, and explain the 44.
+\item Which of the two algorithms would you use for a town of a million places and three million roads?
+\item Why is the longest road of the tree, 1540 m, kept although longer roads exist?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Union--find.}
+\begin{enumerate}[resume]
+\item Explain the 9900 and 9801 steps of \cref{out:b1:spanning-trees:naive}.
+\item Why does the chain cost about $2n$ steps with \omterm{def:b1:spanning-trees:rank}{union by rank} and \omterm{def:b1:spanning-trees:rank}{path compression}?
+\item Why does the largest \omterm{def:b1:spanning-trees:rank}{rank} stay at 1 on this chain?
+\item Why do random unions give trees much lower than $\log_2 n$?
+\item Describe the unions that reach height $\log_2 n$ exactly.
+\item Why does \code{find} not update \omterm{def:b1:spanning-trees:rank}{ranks} when it compresses?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Bottlenecks.}
+\begin{enumerate}[resume]
+\item Prove that for two \omterm{def:b1:graph-traversals:graph}{vertices} $a$ and $b$, the path from $a$ to $b$ in a \omterm{def:b1:spanning-trees:mst}{minimum spanning tree} has the smallest
+possible heaviest edge among all paths from $a$ to $b$.
+\item What does ``no route avoids a road of 1240 m'' mean for a lorry that must avoid long roads?
+\item How was the bottleneck computed without the tree, and why do the two answers agree?
+\item Explain the clusters of sizes 29 and 1, then 26, 3 and 1.
+\item Is removing the longest tree roads a good way to split the town into districts?
+\item State the named result, \emph{the minimum fibre length of Brenmoor}, with the bottleneck theorem.
+\end{enumerate}
+\end{problem}

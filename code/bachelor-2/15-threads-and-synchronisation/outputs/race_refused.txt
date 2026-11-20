@@ -1,0 +1,53 @@
+$ rustc --edition 2021 -O -o race_refused race_refused.rs && ./race_refused
+error[E0373]: closure may outlive the current function, but it borrows `count`, which is owned by the current function
+  --> race_refused.rs:7:27
+   |
+ 7 |     let t = thread::spawn(|| {
+   |                           ^^ may outlive borrowed value `count`
+ 8 |         for _ in 0..1000 {
+ 9 |             count += 1;
+   |             ----- `count` is borrowed here
+   |
+note: function requires argument type to outlive `'static`
+  --> race_refused.rs:7:13
+   |
+ 7 |       let t = thread::spawn(|| {
+   |  _____________^
+ 8 | |         for _ in 0..1000 {
+ 9 | |             count += 1;
+10 | |         }
+11 | |     });
+   | |______^
+help: to force the closure to take ownership of `count` (and any other referenced variables), use the `move` keyword
+   |
+ 7 |     let t = thread::spawn(move || {
+   |                           ++++
+
+error[E0502]: cannot borrow `count` as immutable because it is also borrowed as mutable
+   --> race_refused.rs:13:16
+    |
+  7 |       let t = thread::spawn(|| {
+    |               -             -- mutable borrow occurs here
+    |  _____________|
+    | |
+  8 | |         for _ in 0..1000 {
+  9 | |             count += 1;
+    | |             ----- first borrow occurs due to use of `count` in closure
+ 10 | |         }
+ 11 | |     });
+    | |______- argument requires that `count` is borrowed for `'static`
+ 12 |       t.join().unwrap();
+ 13 |       println!("{count}");
+    |                  ^^^^^ immutable borrow occurs here
+    |
+note: requirement that the value outlives `'static` introduced here
+   --> /home/ada/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/thread/functions.rs:128:15
+    |
+128 |     F: Send + 'static,
+    |               ^^^^^^^
+
+error: aborting due to 2 previous errors
+
+Some errors have detailed explanations: E0373, E0502.
+For more information about an error, try `rustc --explain E0373`.
+[exit status 1]

@@ -1,0 +1,120 @@
+\section*{Chapter \ref{ch:b2:project-key-value-server} --- Project: A Key-Value Server}
+
+\begin{solution}{exo:b2:project-key-value-server:1}
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/exo_session.txt}{The session's replies.}
+The second \code{DEL b} finds nothing. \code{SET c 4 5} has three arguments and is refused. The line with doubled spaces
+is accepted: the parser drops the \omterm{def:b2:finite-automata:word}{empty words} between spaces, so it reads as \code{SET c 4}. A stricter protocol would
+refuse it; this one is lenient on purpose, and the tests fix the behaviour so that it cannot change by accident.
+\code{DEL} without a key is refused, and the last \code{COUNT} sees \code{a} and \code{c}.
+\end{solution}
+
+\begin{solution}{exo:b2:project-key-value-server:2}
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/exo_one_read.txt}{Three reads: two requests in the first,
+half a request in each of the others.}
+TCP delivers a stream of bytes, not the client's writes. The first \code{read} returns both requests of the first write,
+which the buggy server would parse as one line, with a newline inside. The last request was written in two pieces, 100
+milliseconds apart, and arrives in two reads, neither of them a request. \Cref{lst:b2:project-key-value-server:handle}
+reads through a buffer up to each newline: it would see \code{SET a 1}, \code{GET a} and \code{GET a}, whatever the
+reads return.
+\end{solution}
+
+\begin{solution}{exo:b2:project-key-value-server:3}
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/exo_incr.txt}{Two increments make 1; eight clients of
+INCR lose none.}
+Both clients read 0 before either writes, then both write 1: a \omterm{def:b2:database-design:anomalies}{lost update}, staged here by a \omterm{def:b2:threads-and-synchronisation:barrier}{barrier} between the read
+and the write. Each step is locked, but the \omterm{def:b2:threads-and-synchronisation:lock}{lock} is released between them. \code{INCR} reads, adds one and writes under
+one acquisition of the \omterm{def:b2:threads-and-synchronisation:lock}{lock}, so no other client can come between: $8 \times 10\,000 = 80\,000$. In the server, it is one
+more \code{Command} handled like \code{SET} under the shard's write \omterm{def:b2:threads-and-synchronisation:lock}{lock}, and logged as the \code{SET} of the new value,
+so that a \omterm{def:b2:project-key-value-server:log}{replay} does not depend on the order of increments being repeated exactly.
+\end{solution}
+
+\begin{solution}{exo:b2:project-key-value-server:4}
+A record is $8 + 3 + 1 + 4 + 1 + 6 = 23$ bytes. Before compaction the log holds $23n$ bytes; after it, one record per
+key present, $23\min(n, k)$ bytes, here $23k$ since $n \ge k$.
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/exo_log_size.txt}{The four cases.}
+When $n = k$ compaction gains nothing; with $n = 100\,000$ and $k = 10$ it shrinks the log ten thousand times.
+\end{solution}
+
+\begin{solution}{exo:b2:project-key-value-server:5}
+Each client's two steps keep their order, so an \omterm{def:b2:threads-and-synchronisation:interleaving}{interleaving} is a choice of the 2 positions of $a$'s steps among 4:
+$\binom{4}{2} = 6$.
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/exo_interleave.txt}{The six \omterm{def:b2:threads-and-synchronisation:interleaving}{interleavings}.}
+Only the two serial orders give 2. In the four others both clients read 0 before either writes, and both write 1: one
+increment is lost. That is the \omterm{def:b2:database-design:anomalies}{lost update} of the previous chapter, here with no database to refuse it.
+\end{solution}
+
+\begin{solution}{exo:b2:project-key-value-server:6}
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/exo_mset_deadlock.txt}{Opposite orders deadlock; one
+order does not.}
+The wait-for graph has an edge from \code{MSET a b} to \code{MSET b a} (the first waits for shard 1, held by the second)
+and an edge back (the second waits for shard 0, held by the first): a cycle, so a deadlock; the program sees it only
+because it gives up after 200 milliseconds. Fix: sort the shard numbers of the keys and \omterm{def:b2:threads-and-synchronisation:lock}{lock} in increasing order, as in
+\cref{prop:b2:project-key-value-server:lock-order}; both now take shard 0 first, so one of them waits before holding
+anything, and the cycle cannot close. Two keys in the same shard need one \omterm{def:b2:threads-and-synchronisation:lock}{lock}, not two: the numbers must be deduplicated,
+or a \omterm{def:b2:threads-and-synchronisation:thread}{thread} would wait for a \omterm{def:b2:threads-and-synchronisation:lock}{lock} it already holds.
+\end{solution}
+
+\begin{solution}{exo:b2:project-key-value-server:7}
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/exo_setex.txt}{Lazy expiry on read, then a sweep.}
+The key set at $t = 0$ for 30 seconds is still there at 29 and gone at 30. Two keys were never read after expiring:
+only the sweep removes them, and a real server runs it from time to time. The log must record the instant of expiry, not
+the duration: a \code{SETEX k 30 v} replayed an hour later would give the key thirty new seconds. Record
+\code{SETAT k} \emph{deadline} \code{v}, and let \omterm{def:b2:project-key-value-server:log}{replay} skip, or delete, the keys whose deadline has passed.
+\end{solution}
+
+\begin{solution}{exo:b2:project-key-value-server:8}
+Write $M_0$ for the empty map and $M_i$ for the map after applying $r_1, \dots, r_i$. \emph{Claim}: after $i$ iterations
+of the loop of \cref{lst:b2:project-key-value-server:replay}, the map is $M_i$ and \code{at} is the offset where
+$r_{i+1}$ begins. True for $i = 0$. If true for $i < n$, \code{next_record} reads $r_{i+1}$: its eight header bytes are
+present, its length is right, its CRC matches, since the record was written whole by \code{record}, and its payload
+parses as a \code{SET} or \code{DEL}; applying it gives $M_{i+1}$, and \code{at} advances by its size. At $i = n$, the
+bytes that remain do not begin with a complete, undamaged record by hypothesis, so \code{next_record} returns
+\code{None} and the loop ends with $M_n$. Finally, the server appended each change before applying it, in the order of
+the changes to each key (the shard \omterm{def:b2:threads-and-synchronisation:lock}{lock} is held across both), and changes to different keys commute; so $M_n$ is the map
+the server held after its $n$-th logged change. The hypothesis on the tail is the delicate one: a torn record is short
+and fails the length test, and a tail of zeros fails the parse; random bytes pass the CRC test with probability $2^{-32}$.
+\end{solution}
+
+\begin{solution}{exo:b2:project-key-value-server:9}
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/exo_snapshot.txt}{Snapshot and tail replayed as one log.}
+The snapshot is itself a log of one \code{SET} per key, so recovery \omterm{def:b2:project-key-value-server:log}{replays} the snapshot and then the tail as one
+sequence; a \code{DEL} in the tail removes a key of the snapshot, as \code{k4} shows. Order: write the snapshot to a
+temporary file, sync it, rename it over the old snapshot, sync the directory, and only then empty the log. A crash while
+the snapshot is written leaves the temporary file, which recovery ignores, and the old snapshot and full log, which are
+still correct. Emptying the log before the snapshot is durable would lose every change since the previous snapshot. The
+program does not sync, since it demonstrates the formats only; a server must.
+\end{solution}
+
+\begin{solution}{exo:b2:project-key-value-server:10}
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/exo_mset.txt}{The two keys in different \omterm{def:b2:project-key-value-server:shard}{shards}, and no torn
+read.}
+The module \code{mset.rs} sorts and deduplicates the shard numbers, takes the write \omterm{def:b2:threads-and-synchronisation:lock}{locks} in that order, and changes
+every key while it holds them all; \code{mget} takes the read \omterm{def:b2:threads-and-synchronisation:lock}{locks} in the same order. An \code{MGET} therefore sees the
+state either before or after each \code{MSET}, never between, and no deadlock is possible
+(\cref{prop:b2:project-key-value-server:lock-order}), although half the writers name the keys the other way round. The
+crate's test runs the same check with three keys. In the server, an \code{MSET} must also be one log record, or a crash
+between its records would \omterm{def:b2:project-key-value-server:log}{replay} half of it.
+\end{solution}
+
+\begin{solution}{exo:b2:project-key-value-server:11}
+Each client sends a request every $s$ microseconds, so $c$ clients offer $c / s$ requests per microsecond. One \omterm{def:b2:threads-and-synchronisation:lock}{lock} is
+held $h$ microseconds per request, so it lets through at most $1 / h$ requests per microsecond, whatever $c$; $N$ \omterm{def:b2:project-key-value-server:shard}{shards},
+with keys spread evenly, at most about $N / h$. The throughput is about $\min(c / s,\ N / h)$. In process, one \omterm{def:b2:threads-and-synchronisation:thread}{thread} does
+about 4.5 million operations per second, so $s \approx 0.2$~\textmu s, and the \omterm{def:b2:threads-and-synchronisation:lock}{lock} is held for most of it: one \omterm{def:b2:threads-and-synchronisation:lock}{lock} caps
+near 5 million per second. The measured throughput \emph{drops} below that with more \omterm{def:b2:threads-and-synchronisation:thread}{threads}, to 1 million: the model
+leaves out the cost of contention itself, the \omterm{def:b2:threads-and-synchronisation:lock}{lock}'s memory moving between cores and the \omterm{def:b2:threads-and-synchronisation:thread}{threads} put to sleep and woken.
+Over TCP, $s \approx 150$~\textmu s, so 8 clients offer about 53 thousand requests per second, far below either cap,
+and the \omterm{def:b2:threads-and-synchronisation:lock}{lock} does not matter, as measured. The measured rate at 8 clients is higher than the model, about 100 thousand,
+because the latency per request fell as the machine got busier; a model with one fixed $s$ cannot show that.
+\end{solution}
+
+\begin{solution}{exo:b2:project-key-value-server:12}
+\omoutput{code/bachelor-2/31-project-key-value-server/outputs/exo_pipeline.txt}{One client, batches of 1 to 1000
+requests, on the author's laptop.}
+With $b = 1$ each request pays a whole round trip, about 150 microseconds of \omterm{def:b2:processes-and-system-calls:syscall}{system calls}, scheduling and loopback. A
+batch pays one round trip for $b$ requests, so the time per request falls almost as $1/b$ until the server's own work
+per request, under a microsecond, dominates: about 230 times the throughput at $b = 1000$. \Cref{lst:b2:project-key-value-server:handle}
+reads requests from its buffer one line at a time whatever the batch, and \omterm{def:b2:files-pipes-signals:buffering}{flushes} the replies only when the buffer is
+empty: one write of $b$ replies for a batch of $b$ requests. Nothing in the protocol had to change, because each reply
+is one line in the order of the requests.
+\end{solution}

@@ -1,0 +1,428 @@
+% Book 3, Year 1, chapter 17 -- binary search trees and balanced trees.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 17.
+% ledger: b1:avl-origin, b1:rb-origin, b1:llrb, b2:map-complexity
+\chapter{Binary Search Trees and Balanced Trees}\label{ch:b1:balanced-trees}
+
+The town library keeps its catalogue in a search tree, so that a title is found by a few comparisons and the titles can
+be listed in alphabetical order. One year the librarian rebuilds the tree by inserting the titles in alphabetical
+order, from a printed list. The new tree answers correctly, but every search now takes forty comparisons on average
+instead of a handful: the tree has become a \omterm{def:b1:linked-structures:list}{linked list}. This chapter builds search trees, measures how their shape depends
+on the order of insertion, and makes two kinds of trees that keep their height logarithmic whatever the order: \omterm{def:b1:balanced-trees:avl}{AVL trees}
+and \omterm{def:b1:balanced-trees:rb}{red-black trees}.
+
+\begin{recall}
+A \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} is empty or a root with a left and a right \omterm{def:b1:induction-and-termination:rooted-tree}{subtree}; its height is the number of edges on a longest path
+from the root down, $-1$ for the empty tree (\cref{def:b1:induction-and-termination:height}). Properties of trees are
+proved by \omterm{def:b1:induction-and-termination:structural}{structural induction} (\cref{def:b1:induction-and-termination:structural}). A \omterm{def:b1:hash-tables:dictionary}{dictionary} associates values with
+keys (\cref{def:b1:hash-tables:dictionary}).
+\end{recall}
+
+\section{Binary search trees}\label{sec:b1:balanced-trees:bst}
+
+\begin{definition}[Binary search tree]\label{def:b1:balanced-trees:bst}
+A \emph{binary search tree}\index{binary search tree} is a \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} whose nodes hold keys from an ordered set, with
+the \emph{search-tree property}\index{search-tree property}: at every node, the keys of the left \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} are smaller than
+the node's key, and the keys of the right \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} are larger.
+\end{definition}
+
+A search compares the key with the root's and goes left or right; it follows one path, so it costs $O(h)$ for a tree of
+height $h$. Insertion searches, and puts the new node where the search fell off the tree.
+
+\omcode{code/bachelor-1/17-balanced-trees/listings/bst.c}{38}{47}{The floor: the largest key at most
+\texttt{key}}\label{lst:b1:balanced-trees:floor}
+
+\begin{definition}[Traversals]\label{def:b1:balanced-trees:traversal}
+The \emph{in-order traversal}\index{in-order traversal} of a \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} visits the left \omterm{def:b1:induction-and-termination:rooted-tree}{subtree}, then the root, then the
+right \omterm{def:b1:induction-and-termination:rooted-tree}{subtree}; the \emph{preorder}\index{preorder} visits the root first, the \emph{postorder}\index{postorder} last.
+\end{definition}
+
+\begin{proposition}[In-order is sorted]\label{prop:b1:balanced-trees:inorder}
+The \omterm{def:b1:balanced-trees:traversal}{in-order traversal} of a \omterm{def:b1:balanced-trees:bst}{binary search tree} visits its keys in increasing order.
+\end{proposition}
+
+\begin{proof}
+By \omterm{def:b1:induction-and-termination:structural}{structural induction}. The empty tree visits nothing. For a root $r$ with \omterm{def:b1:induction-and-termination:rooted-tree}{subtrees} $L$ and $R$, the traversal visits
+the keys of $L$ in increasing order (hypothesis), all smaller than $r$ (\omterm{def:b1:balanced-trees:bst}{search-tree property}), then $r$, then the keys of
+$R$ in increasing order, all larger than $r$.
+\end{proof}
+
+\begin{definition}[Ordered dictionary, successor]\label{def:b1:balanced-trees:ordered}
+An \emph{ordered dictionary}\index{ordered dictionary} is a \omterm{def:b1:hash-tables:dictionary}{dictionary} whose keys are ordered, with the further
+operations minimum, maximum, floor (the largest key at most $k$), ceiling, \emph{successor}\index{successor (in a search
+tree)} (the smallest key larger than $k$), and the listing of the keys between two bounds.
+\end{definition}
+
+A \omterm{def:b1:hash-tables:hash-table}{hash table} cannot answer these questions without examining every key; a search tree answers each by one path. The
+floor goes right whenever the node's key is small enough, remembering it as a candidate, since a larger candidate can
+only be on its right.
+
+\omoutput{code/bachelor-1/17-balanced-trees/outputs/bst_demo.txt}{Nine names, drawn sideways (root on the left, right
+\omterm{def:b1:induction-and-termination:rooted-tree}{subtree} above); the deletion of a node with two children.}\label{out:b1:balanced-trees:demo}
+
+Deletion has three cases. A \omterm{def:b1:induction-and-termination:rooted-tree}{leaf} is removed. A node with one child is replaced by that child. A node with two children
+takes the key of its \omterm{def:b1:balanced-trees:ordered}{successor}, the minimum of its right \omterm{def:b1:induction-and-termination:rooted-tree}{subtree}, which has no left child, and that \omterm{def:b1:balanced-trees:ordered}{successor} is
+deleted from the right \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} by one of the first two cases.
+
+\omcode{code/bachelor-1/17-balanced-trees/listings/bst.c}{57}{72}{Deletion: the two-child case moves the \omterm{def:b1:balanced-trees:ordered}{successor}
+up}\label{lst:b1:balanced-trees:delete}
+
+\begin{omfigure}
+\begin{tikzpicture}[level distance=9mm, every node/.style={font=\small, draw, rounded corners=2pt, minimum
+  width=9mm, inner sep=2pt}, level 1/.style={sibling distance=26mm}, level 2/.style={sibling distance=14mm},
+  level 3/.style={sibling distance=10mm}, on/.style={fill=omCode!20, thick}]
+\node[on] {Mia}
+  child {node[on] {Eli} child {node {Bea}} child {node[on] {Ivy} child {node {Gus}} child {node[on] {Kai}}}}
+  child {node {Tom} child {node {Pia}} child {node {Zoe}}};
+\begin{scope}[xshift=7.2cm]
+\node {Mia}
+  child {node[fill=omThm!20] {Gus} child {node {Bea}} child {node {Ivy} child[missing] child {node {Kai}}}}
+  child {node {Tom} child {node {Pia}} child {node {Zoe}}};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Left: the tree of \cref{out:b1:balanced-trees:demo} and the path of the search for the floor of
+\code{Jo} (shaded): Mia, Eli, Ivy and Kai; the answer is Ivy, the last node where the search went right. Right: after
+deleting Eli, its \omterm{def:b1:balanced-trees:ordered}{successor} Gus has taken its place.}
+\end{omfigure}
+
+\section{Height bounds}\label{sec:b1:balanced-trees:height}
+
+Every operation of the previous section costs $\Theta(h)$ in the worst case. The height depends on the order of the
+insertions, not only on the keys.
+
+\begin{proposition}[Height of a binary tree]\label{prop:b1:balanced-trees:height}
+A \omterm{def:b1:induction-and-termination:binary-tree}{binary tree} with $n \geq 1$ nodes has height $h$ with $\lfloor \log_2 n \rfloor \leq h \leq n - 1$.
+\end{proposition}
+
+\begin{proof}
+A longest path holds $h + 1$ nodes, all distinct, so $n \geq h + 1$. Depth $d$ holds at most $2^d$ nodes, so $n \leq 1 +
+2 + \dots + 2^h = 2^{h+1} - 1 < 2^{h+1}$, and $\log_2 n < h + 1$, that is $\lfloor \log_2 n \rfloor \leq h$.
+\end{proof}
+
+\begin{definition}[Degenerate tree]\label{def:b1:balanced-trees:degenerate}
+A tree is \emph{degenerate}\index{degenerate tree} when every node has at most one child: its height is $n - 1$, and it
+is a \omterm{def:b1:linked-structures:list}{linked list}.
+\end{definition}
+
+Inserting keys in increasing order builds a \omterm{def:b1:balanced-trees:degenerate}{degenerate tree}: each new key is larger than all the others and goes to the
+right of the rightmost node. The town's 80 titles show the three regimes.
+
+\omoutput{code/bachelor-1/17-balanced-trees/outputs/heights.txt}{Heights of trees built from the first $n$ titles.
+The last three lines are used by the problem.}\label{out:b1:balanced-trees:heights}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=11cm, height=6cm, xmin=0, xmax=82, ymin=0, ymax=26, xlabel={number of titles $n$},
+  ylabel={height}, legend pos=north east, legend style={font=\small}, tick label style={font=\small}]
+\addplot[thick, omThm, dashed] table[x=n, y=sorted] {code/bachelor-1/17-balanced-trees/figures/heights.dat};
+\addlegendentry{plain tree, alphabetical order}
+\addplot[thick, omThm, mark=*, mark size=1pt] table[x=n, y=shuffled]
+  {code/bachelor-1/17-balanced-trees/figures/heights.dat}; \addlegendentry{plain tree, random order (mean)}
+\addplot[thick, omDef, mark=square*, mark size=1pt] table[x=n, y=avl]
+  {code/bachelor-1/17-balanced-trees/figures/heights.dat}; \addlegendentry{AVL tree}
+\addplot[thick, black, densely dotted] table[x=n, y=lg] {code/bachelor-1/17-balanced-trees/figures/heights.dat};
+\addlegendentry{$\lfloor \log_2 n \rfloor$}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Heights from \cref{out:b1:balanced-trees:heights}. The alphabetical order climbs as $n - 1$ and
+leaves the chart at $n = 27$; random orders grow slowly; the \omterm{def:b1:balanced-trees:avl}{AVL tree} stays within one or two of the lower bound.}
+\end{omfigure}
+
+A random order of insertion gives, on average, a height of order $\log n$; the average depth of a node is about $2 \ln n
+\approx 1.39 \log_2 n$, a result of the second year. Input does not come in random order: sorted files, increasing
+identifiers and timestamps are common. Balanced trees guarantee $O(\log n)$ for every order, by repairing the tree after
+each insertion with \omterm{def:b1:balanced-trees:rotation}{rotations}.
+
+\section{Rotations}\label{sec:b1:balanced-trees:rotations}
+
+\begin{definition}[Rotation]\label{def:b1:balanced-trees:rotation}
+A \emph{right rotation}\index{rotation} at a node $y$ with left child $x$ makes $x$ the root of the \omterm{def:b1:induction-and-termination:rooted-tree}{subtree}, $y$ its right
+child, and the former right \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} of $x$ the left \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} of $y$. A \emph{left rotation} is the inverse operation.
+\end{definition}
+
+\begin{omfigure}
+\begin{tikzpicture}[level distance=10mm, n/.style={draw, circle, minimum size=7mm, font=\small},
+  t/.style={draw, isosceles triangle, shape border rotate=90, minimum height=8mm, minimum width=8mm, inner sep=0pt,
+  font=\small, fill=omCode!10}, level 1/.style={sibling distance=20mm}, level 2/.style={sibling distance=11mm},
+  >={Stealth[length=2mm]}]
+\node[n] {$y$} child {node[n] {$x$} child {node[t] {$A$}} child {node[t, fill=omThm!20] {$B$}}}
+  child {node[t] {$C$}};
+\draw[->, thick] (2.2,-1.2) -- node[above, font=\small] {right at $y$} (4.0,-1.2);
+\draw[<-, thick] (2.2,-1.6) -- node[below, font=\small] {left at $x$} (4.0,-1.6);
+\begin{scope}[xshift=6.2cm]
+\node[n] {$x$} child {node[t] {$A$}} child {node[n] {$y$} child {node[t, fill=omThm!20] {$B$}}
+  child {node[t] {$C$}}};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small A \omterm{def:b1:balanced-trees:rotation}{rotation} changes three links. The in-order sequence is $A, x, B, y, C$ on both sides; the \omterm{def:b1:induction-and-termination:rooted-tree}{subtree}
+$B$ (shaded) changes parent; $A$ moves up a level and $C$ down a level.}
+\end{omfigure}
+
+\begin{proposition}[Rotations preserve the order]\label{prop:b1:balanced-trees:rotation}
+A \omterm{def:b1:balanced-trees:rotation}{rotation} of a \omterm{def:b1:balanced-trees:bst}{binary search tree} yields a \omterm{def:b1:balanced-trees:bst}{binary search tree} with the same keys and the same in-order sequence.
+\end{proposition}
+
+\begin{proof}
+Before a \omterm{def:b1:balanced-trees:rotation}{right rotation}, the in-order sequence of the \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} is $A, x, B, y, C$, where $A$, $B$ and $C$ stand for the
+sequences of the three \omterm{def:b1:induction-and-termination:rooted-tree}{subtrees}: $x$ is the left child of $y$, $A$ and $B$ its \omterm{def:b1:induction-and-termination:rooted-tree}{subtrees}. After it, $x$ is the root with
+left \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} $A$ and right \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} $y$, whose \omterm{def:b1:induction-and-termination:rooted-tree}{subtrees} are $B$ and $C$: the sequence is again $A, x, B, y, C$. The rest of
+the tree, outside the \omterm{def:b1:induction-and-termination:rooted-tree}{subtree}, is unchanged, and the \omterm{def:b1:induction-and-termination:rooted-tree}{subtree}'s set of keys too, so the property holds everywhere.
+\end{proof}
+
+\omcode{code/bachelor-1/17-balanced-trees/listings/avl.c}{18}{25}{A \omterm{def:b1:balanced-trees:rotation}{right rotation}, with the stored heights
+updated}\label{lst:b1:balanced-trees:rotate}
+
+\section{AVL trees}\label{sec:b1:balanced-trees:avl}
+
+\begin{definition}[Balance factor, AVL tree]\label{def:b1:balanced-trees:avl}
+The \emph{balance factor}\index{balance factor} of a node is the height of its right \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} minus the height of its left
+\omterm{def:b1:induction-and-termination:rooted-tree}{subtree}. An \emph{AVL tree}\index{AVL tree} is a \omterm{def:b1:balanced-trees:bst}{binary search tree} in which every node has balance factor $-1$, 0 or 1.
+\end{definition}
+
+\omterm{def:b1:balanced-trees:avl}{AVL trees} take their name from G. M. Adelson-Velsky and E. M. Landis, who published them in 1962. Each node stores its
+height. After an insertion, the heights change only on the path from the new node up to the root, and a node on it may
+reach \omterm{def:b1:balanced-trees:avl}{balance factor} $\pm 2$. Four cases repair it, named after the path from the unbalanced node to the new key: a
+single \omterm{def:b1:balanced-trees:rotation}{rotation} when the path goes twice the same way (LL or RR), a double \omterm{def:b1:balanced-trees:rotation}{rotation} when it turns (LR or RL), which
+first rotates the child the other way.
+
+\omcode{code/bachelor-1/17-balanced-trees/listings/avl.c}{36}{49}{Rebalancing on the way back up}\label{lst:b1:balanced-trees:rebalance}
+
+\begin{omfigure}
+\begin{tikzpicture}[level distance=9mm, n/.style={draw, circle, minimum size=6mm, font=\small, inner sep=1pt},
+  new/.style={n, fill=omThm!25}, level 1/.style={sibling distance=10mm}, >={Stealth[length=2mm]}]
+\node[font=\small\bfseries] at (0.6,0.8) {LL: single rotation};
+\node[n] (a) at (0,0) {3} child {node[n] {2} child {node[new] {1}} child[missing]} child[missing];
+\draw[->, thick] (1.0,-0.9) -- (1.9,-0.9);
+\node[n] at (3.0,0) {2} child {node[n] {1}} child {node[n] {3}};
+\begin{scope}[xshift=7cm]
+\node[font=\small\bfseries] at (1.9,0.8) {LR: double rotation};
+\node[n] at (0,0) {3} child {node[n] {1} child[missing] child {node[new] {2}}} child[missing];
+\draw[->, thick] (0.9,-0.9) -- node[above, font=\scriptsize] {left at 1} (2.1,-0.9);
+\node[n] at (3.0,0) {3} child {node[n] {2} child {node[n] {1}} child[missing]} child[missing];
+\draw[->, thick] (3.6,-0.9) -- node[above, font=\scriptsize] {right at 3} (4.8,-0.9);
+\node[n] at (5.8,0) {2} child {node[n] {1}} child {node[n] {3}};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Two of the four rebalancing cases, on three keys; the new key is shaded. The node 3 has \omterm{def:b1:balanced-trees:avl}{balance
+factor} $-2$. When the new key lies left of its left child (LL), one \omterm{def:b1:balanced-trees:rotation}{right rotation} at 3 restores the balance. When it
+lies to the right of its left child (LR), a left \omterm{def:b1:balanced-trees:rotation}{rotation} at 1 turns the case into LL. RR and RL are the mirror images.}
+\end{omfigure}
+
+\omoutput{code/bachelor-1/17-balanced-trees/outputs/avl_demo.txt}{Increasing keys, then two keys that need double
+\omterm{def:b1:balanced-trees:rotation}{rotations}; \omterm{def:b1:balanced-trees:avl}{balance factors} in parentheses.}\label{out:b1:balanced-trees:avl-demo}
+
+Ten increasing keys, which built a \omterm{def:b1:balanced-trees:degenerate}{degenerate tree} of height 9 in a plain search tree, give an \omterm{def:b1:balanced-trees:avl}{AVL tree} of height 3. The
+cost of an insertion is the descent, $O(h)$, plus constant work at each node of the way back up: at most one \omterm{def:b1:balanced-trees:rotation}{rotation}
+event happens per insertion (\cref{exo:b1:balanced-trees:11}). The height is guaranteed by counting the smallest trees.
+
+\begin{theorem}[Height of an AVL tree]\label{thm:b1:balanced-trees:avl-height}
+An \omterm{def:b1:balanced-trees:avl}{AVL tree} with $n$ nodes has height $h \leq \log_\varphi (n + 1) - 1 < 1.45 \log_2 (n + 2)$, where $\varphi = (1 +
+\sqrt 5)/2$.
+\end{theorem}
+
+\begin{proof}
+Let $N(h)$ be the smallest number of nodes of an \omterm{def:b1:balanced-trees:avl}{AVL tree} of height $h$: $N(0) = 1$, $N(1) = 2$. A smallest tree of height
+$h \geq 2$ has one \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} of height $h - 1$ and, since the \omterm{def:b1:balanced-trees:avl}{balance factor} is at most 1 in absolute value and the tree
+is smallest, the other of height $h - 2$, both smallest themselves: $N(h) = N(h - 1) + N(h - 2) + 1$. With the Fibonacci
+numbers $F_0 = 0$, $F_1 = 1$, $F_{k+2} = F_{k+1} + F_k$, induction gives $N(h) = F_{h+3} - 1$, and $F_k \geq
+\varphi^{k-2}$ for $k \geq 1$ (problem, Part IV). So $n \geq N(h) \geq \varphi^{h+1} - 1$, and $h + 1 \leq \log_\varphi
+(n + 1)$. Finally $1/\log_2 \varphi \approx 1.4404$.
+\end{proof}
+
+\omoutput{code/bachelor-1/17-balanced-trees/outputs/minimal_avl.txt}{Minimal \omterm{def:b1:balanced-trees:avl}{AVL trees}, built as trees and
+counted.}\label{out:b1:balanced-trees:minimal}
+
+\section{Red-black trees}\label{sec:b1:balanced-trees:rb}
+
+\begin{definition}[Red-black tree, black height]\label{def:b1:balanced-trees:rb}
+A \emph{red-black tree}\index{red-black tree} is a \omterm{def:b1:balanced-trees:bst}{binary search tree} whose nodes are coloured red or black, such that
+the root is black, a red node has no red child, and every path from a node down to an empty \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} contains the same
+number of black nodes, the \emph{black height}\index{black height} of the node. A \emph{left-leaning red-black
+tree}\index{left-leaning red-black tree} is a red-black tree in which every red node is a left child.
+\end{definition}
+
+\omterm{def:b1:balanced-trees:rb}{Red-black trees} were introduced by L. Guibas and R. Sedgewick in 1978; the left-leaning variant is
+Sedgewick's. A red node and its parent can be read as one node with two keys: a \omterm{def:b1:balanced-trees:rb}{left-leaning red-black tree} is then a
+\emph{2-3 tree}, whose nodes hold one or two keys and whose empty \omterm{def:b1:induction-and-termination:rooted-tree}{subtrees} are all at the same depth. Three local repairs,
+on the way back up after inserting a red node, keep the colour rules: a red right link is rotated to the left, two red
+links in a row are rotated right, and a node with two red children passes its red up by a colour flip.
+
+\omcode{code/bachelor-1/17-balanced-trees/listings/llrb.c}{32}{47}{Insertion in a \omterm{def:b1:balanced-trees:rb}{left-leaning red-black
+tree}}\label{lst:b1:balanced-trees:llrb}
+
+\omoutput{code/bachelor-1/17-balanced-trees/outputs/llrb_demo.txt}{The same ten increasing keys; red nodes are
+starred.}\label{out:b1:balanced-trees:llrb-demo}
+
+\begin{omfigure}
+\begin{tikzpicture}[level distance=9mm, n/.style={draw, circle, minimum size=6mm, font=\small, inner sep=1pt,
+  fill=black!75, text=white}, r/.style={draw=omThm, circle, minimum size=6mm, font=\small, inner sep=1pt,
+  fill=omThm!25}, level 1/.style={sibling distance=36mm}, level 2/.style={sibling distance=20mm},
+  level 3/.style={sibling distance=9mm}]
+\node[n] {D}
+  child {node[n] {B} child {node[n] {A}} child {node[n] {C}}}
+  child {node[n] {H} child {node[r] {F} child {node[n] {E}} child {node[n] {G}}}
+    child {node[n] {J} child {node[r] {I}} child[missing]}};
+\begin{scope}[xshift=8.3cm, b/.style={draw, rounded corners=2pt, font=\small, minimum height=6mm, inner sep=3pt},
+  level 1/.style={sibling distance=30mm}, level 2/.style={sibling distance=12mm}]
+\node[b] {D}
+  child {node[b] {B} child {node[b] {A}} child {node[b] {C}}}
+  child {node[b] {F\enspace H} child {node[b] {E}} child {node[b] {G}} child {node[b] {I\enspace J}}};
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Left: the \omterm{def:b1:balanced-trees:rb}{left-leaning red-black tree} of \cref{out:b1:balanced-trees:llrb-demo}, red nodes shaded;
+every path from the root to an empty \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} meets three black nodes. Right: the same tree read as a 2-3 tree, each red
+node merged with its parent: all leaves at depth 2.}
+\end{omfigure}
+
+\begin{theorem}[Height of a red-black tree]\label{thm:b1:balanced-trees:rb-height}
+A \omterm{def:b1:balanced-trees:rb}{red-black tree} with $n$ nodes has height $h$ with $h + 1 \leq 2 \log_2 (n + 1)$.
+\end{theorem}
+
+The proof (\cref{exo:b1:balanced-trees:10}) counts at least $2^b - 1$ nodes below a node of \omterm{def:b1:balanced-trees:rb}{black height} $b$, and at least
+one black node out of two on any path. The bound is weaker than the \omterm{def:b1:balanced-trees:avl}{AVL tree}'s, $2$ against $1.44$, but the repairs are
+simpler, and deletion needs at most a constant number of \omterm{def:b1:balanced-trees:rotation}{rotations} in the classic version. The standard libraries of
+C++ and Java implement their ordered maps as \omterm{def:b1:balanced-trees:rb}{red-black trees}; the left-leaning variant shown here is shorter to write,
+and its deletion, told but not written, is shorter too.
+
+\section{Serialising a tree}\label{sec:b1:balanced-trees:serialisation}
+
+\begin{definition}[Serialisation]\label{def:b1:balanced-trees:serialisation}
+The \emph{serialisation}\index{serialisation (of a data structure)} of a data structure is a sequence of bytes, or of
+characters, from which the structure can be rebuilt, in another run or on another machine; \omterm{def:b1:pointers-and-arrays:pointer}{pointers} are not part of it,
+since they are only meaningful in one address space.
+\end{definition}
+
+A \omterm{def:b1:balanced-trees:traversal}{preorder} traversal that writes a marker for each empty \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} describes the shape completely: reading it back, the
+first item is the root, then comes the left \omterm{def:b1:induction-and-termination:rooted-tree}{subtree}, written in the same way, then the right one.
+
+\omcode{code/bachelor-1/17-balanced-trees/listings/serialise.c}{9}{31}{Writing and reading a tree in \omterm{def:b1:balanced-trees:traversal}{preorder} with
+markers}\label{lst:b1:balanced-trees:serialise}
+
+\omoutput{code/bachelor-1/17-balanced-trees/outputs/serialise.txt}{A tree written to a file and read
+back.}\label{out:b1:balanced-trees:serialise}
+
+\begin{inpractice}
+For a search tree, the sorted list of keys is enough to rebuild a balanced tree in linear time
+(\cref{exo:b1:balanced-trees:12}), and it is the better file format: it does not depend on the shape, which is an
+accident of the insertion order. The \omterm{def:b1:balanced-trees:traversal}{preorder} with markers is needed when the shape itself is the information, as in an
+expression tree or a decision tree.
+\end{inpractice}
+
+\section{Exercises}\label{sec:b1:balanced-trees:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:balanced-trees:1}
+The keys 50, 30, 70, 20, 40, 60, 80, 35 are inserted in this order into an empty search tree. Give the in-order, the
+\omterm{def:b1:balanced-trees:traversal}{preorder} and the \omterm{def:b1:balanced-trees:traversal}{postorder} sequences of the tree.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:balanced-trees:2}
+Draw the search tree obtained by inserting 8, 3, 10, 1, 6, 14, 4, 7, 13, and give its height. Then delete 3 and draw the
+tree again.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:balanced-trees:3}
+Insert 5, 3, 8, 2, 4, 1 into a plain search tree and give the \omterm{def:b1:balanced-trees:avl}{balance factor} of every node. Is it an \omterm{def:b1:balanced-trees:avl}{AVL tree}? Which
+\omterm{def:b1:balanced-trees:rotation}{rotation} would make it one?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:balanced-trees:4}
+Insert S, E, A, R into an empty \omterm{def:b1:balanced-trees:rb}{left-leaning red-black tree}, and give the tree and the colours after each insertion.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:balanced-trees:5}
+This deletion lets one child take the place of the deleted node. Explain the output and the memory it leaks.
+\omcode{code/bachelor-1/17-balanced-trees/listings/exo_delete_bug.c}{8}{19}{A shortcut}
+\omoutput{code/bachelor-1/17-balanced-trees/outputs/exo_delete_bug.txt}{Deleting the root of seven names.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:balanced-trees:6}
+The \omterm{def:b1:balanced-trees:rotation}{rotation} is correct, but its caller is not. The tree held Mia, Eli, Tom, Bea, Ivy and Abe. Explain the output and
+repair the call.
+\omcode{code/bachelor-1/17-balanced-trees/listings/exo_rotate_bug.c}{6}{11}{A \omterm{def:b1:balanced-trees:rotation}{right rotation}}
+\omoutput[2-2]{code/bachelor-1/17-balanced-trees/outputs/exo_rotate_bug.txt}{After \code{rotate_right(t->left);}.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:balanced-trees:7}
+Write \code{range_count(t, lo, hi)}, the number of keys $k$ with $\code{lo} \leq k \leq \code{hi}$, in time $O(h + r)$
+where $r$ is the answer, and test it.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:balanced-trees:8}
+A function checks that a tree is a search tree by comparing each node with its two children. Give a tree that it
+accepts wrongly, then write a correct check that passes bounds down the tree.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:balanced-trees:9}
+Count the shapes of search trees with $n$ nodes for $n \leq 5$, first by a program that inserts every permutation of
+$n$ keys and collects the shapes, then by the recurrence $C_n = \sum_{i=0}^{n-1} C_i C_{n-1-i}$. Justify the recurrence.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:balanced-trees:10}
+Prove \cref{thm:b1:balanced-trees:rb-height}: show that a \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} whose root has \omterm{def:b1:balanced-trees:rb}{black height} $b$ has at least $2^b - 1$
+nodes, then that $b \geq (h + 1)/2$ at the root.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:balanced-trees:11}
+Prove that an AVL insertion performs at most one single or double \omterm{def:b1:balanced-trees:rotation}{rotation}, by showing that the \omterm{def:b1:balanced-trees:rotation}{rotation} gives the
+rebalanced \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} the height it had before the insertion.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:balanced-trees:12}
+Write a function that builds a search tree of minimal height from $n$ sorted keys in time $O(n)$, and prove that its
+height is $\lfloor \log_2 n \rfloor$.
+\end{exercise}
+
+\section{Problem: Indexing the library catalogue}\label{sec:b1:balanced-trees:problem}
+
+\begin{problem}[{Weekend problem --- Indexing the library catalogue}]\label{pb:b1:balanced-trees:1}
+The town library has 80 titles, numbered in its catalogue. \Cref{out:b1:balanced-trees:heights} gives the heights of
+the trees built from the first $n$ titles by inserting them in catalogue order, in alphabetical order and in 1000 random
+orders, into a plain search tree, and in catalogue order into an \omterm{def:b1:balanced-trees:avl}{AVL tree} and a \omterm{def:b1:balanced-trees:rb}{left-leaning red-black tree}; its last
+three lines count the \omterm{def:b1:balanced-trees:rotation}{rotations} and give the \omterm{def:b1:balanced-trees:rb}{black height}. \Cref{out:b1:balanced-trees:minimal} counts minimal \omterm{def:b1:balanced-trees:avl}{AVL
+trees}.
+
+\medskip\noindent\textbf{Part I --- Insertion order.}
+\begin{enumerate}
+\item Why is the height of the plain tree exactly $n - 1$ in the alphabetical column?
+\item In that tree, how many comparisons does a successful search make on average, for $n = 80$?
+\item How many comparisons does building it take?
+\item Compare the catalogue column with the random orders. What does it suggest about the catalogue numbers?
+\item Compare the heights at $n = 80$ with the lower bound $\lfloor \log_2 80 \rfloor$.
+\item A library adds its new titles each year in alphabetical order. Give two ways to keep its searches fast.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- AVL insertion.}
+\begin{enumerate}[resume]
+\item The alphabetical order needs 73 single \omterm{def:b1:balanced-trees:rotation}{rotations} and no double \omterm{def:b1:balanced-trees:rotation}{rotation}. Why can increasing keys never need a
+double \omterm{def:b1:balanced-trees:rotation}{rotation}?
+\item In catalogue order, how many of the 80 insertions rotate? What does an insertion cost in all?
+\item Insert 3, 1, 2 into an empty \omterm{def:b1:balanced-trees:avl}{AVL tree}: which case arises, and what are the two \omterm{def:b1:balanced-trees:rotation}{rotations}?
+\item Why must the stored heights be updated on the way back up, and why does each update cost $O(1)$?
+\item The \omterm{def:b1:balanced-trees:avl}{AVL tree} of the 80 titles in catalogue order has height 7. Is a taller \omterm{def:b1:balanced-trees:avl}{AVL tree} with 80 nodes possible?
+\item A deletion can need a \omterm{def:b1:balanced-trees:rotation}{rotation} at every level of the path. Why does the argument of \cref{exo:b1:balanced-trees:11}
+fail for deletions?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Colours and black height.}
+\begin{enumerate}[resume]
+\item The \omterm{def:b1:balanced-trees:rb}{red-black tree} of the 80 titles has height 7 and \omterm{def:b1:balanced-trees:rb}{black height} 5. Check \cref{thm:b1:balanced-trees:rb-height}
+and the bound $n \geq 2^b - 1$.
+\item In \cref{out:b1:balanced-trees:llrb-demo}, list the red nodes and the nodes of the corresponding 2-3 tree.
+\item Show that a \omterm{def:b1:balanced-trees:rb}{left-leaning red-black tree} of \omterm{def:b1:balanced-trees:rb}{black height} $b$ has between $2^b - 1$ and $3^b - 1$ keys.
+\item Which \omterm{def:b1:balanced-trees:rb}{black heights} are possible for 80 keys?
+\item Why does a new key enter the tree as a red node?
+\item Compare the guarantees and the \omterm{def:b1:balanced-trees:rotation}{rotation} counts of AVL and \omterm{def:b1:balanced-trees:rb}{red-black trees}, and say which suits a \omterm{def:b1:hash-tables:dictionary}{dictionary} with
+many deletions.
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Minimal AVL trees.}
+\begin{enumerate}[resume]
+\item Prove $N(h) = N(h - 1) + N(h - 2) + 1$ for $h \geq 2$, with $N(0) = 1$ and $N(1) = 2$.
+\item Prove $N(h) = F_{h+3} - 1$ by induction.
+\item Prove $F_k \geq \varphi^{k-2}$ for $k \geq 1$, using $\varphi^2 = \varphi + 1$.
+\item Deduce $h \leq \log_\varphi (n + 1) - 1$ for every \omterm{def:b1:balanced-trees:avl}{AVL tree} with $n$ nodes.
+\item Compute this bound for $n = 80$, and compare with the largest height of \cref{out:b1:balanced-trees:minimal} and
+with the measured AVL height.
+\item State the named result of the problem, \emph{minimal \omterm{def:b1:balanced-trees:avl}{AVL trees} are Fibonacci trees}, with the height bound it
+gives for the 80 titles.
+\end{enumerate}
+\end{problem}

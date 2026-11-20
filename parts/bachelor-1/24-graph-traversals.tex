@@ -1,0 +1,570 @@
+% Book 3, Year 1, chapter 24 -- graphs and traversals.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 24.
+% ledger: b1:robbins-1939, b1:kosaraju
+\chapter{Graphs and Traversals}\label{ch:b1:graph-traversals}
+
+Brenmoor has thirty places, fifty-three roads and a single one-way street, from the Town Square to the Library. Can
+every place still reach every other? The town council would like to go further and make every road one-way, to
+widen the pavements: is that possible without cutting anyone off? Both questions are about reachability in a \omterm{def:b1:graph-traversals:graph}{graph},
+and both are answered by a program that walks the \omterm{def:b1:graph-traversals:graph}{graph} in a well-chosen order. This chapter builds the two walks,
+depth first and breadth first, and what they compute: \omterm{def:b1:graph-traversals:distance}{distances}, components, orders, and the roads that cannot be
+spared.
+
+\begin{recall}
+The second book drew \omterm{def:b1:graph-traversals:graph}{graphs}, computed \omterm{def:b1:graph-traversals:distance}{distances} in a \omterm{def:b1:graph-traversals:graph}{graph} by \omterm{def:b1:graph-traversals:bfs}{breadth-first search} and routes by Dijkstra's
+algorithm. The mathematics book represents a \omterm{def:b1:graph-traversals:graph}{graph} by its adjacency matrix. Stacks and queues were built in
+\cref{ch:b1:linked-structures}.
+\end{recall}
+
+\section{Definitions}\label{sec:b1:graph-traversals:definitions}
+
+\begin{definition}[Graph, vertex, edge, arc, loop]\label{def:b1:graph-traversals:graph}
+A \emph{graph}\index{graph} $G = (V, E)$ is a finite set $V$ of \emph{vertices}\index{vertex} and a set $E$ of
+\emph{edges}\index{edge (graph)}. In an \emph{undirected graph} an edge is a set $\{u, v\}$ of two vertices, its
+\emph{ends}, written $uv$. In a \emph{directed graph}\index{directed graph} an edge is a pair $(u, v)$, an
+\emph{arc}\index{arc} from $u$ to $v$, written $u \to v$. An edge whose two ends are equal is a
+\emph{loop}\index{loop (graph)}; unless stated otherwise, graphs here have no loops and $n = |V|$, $m = |E|$.
+\end{definition}
+
+\begin{definition}[Degree]\label{def:b1:graph-traversals:degree}
+The \emph{degree}\index{degree} $\deg(v)$ of a \omterm{def:b1:graph-traversals:graph}{vertex} of an undirected \omterm{def:b1:graph-traversals:graph}{graph} is the number of \omterm{def:b1:graph-traversals:graph}{edges} at $v$; its
+\emph{neighbours} are the other ends of these \omterm{def:b1:graph-traversals:graph}{edges}. In a \omterm{def:b1:graph-traversals:graph}{directed graph}, the \emph{out-degree}\index{out-degree} of
+$v$ counts the \omterm{def:b1:graph-traversals:graph}{arcs} leaving $v$, its \emph{in-degree}\index{in-degree} those arriving at $v$.
+\end{definition}
+
+\begin{proposition}[Handshake lemma]\label{prop:b1:graph-traversals:handshake}
+In an undirected \omterm{def:b1:graph-traversals:graph}{graph}, $\sum_v \deg(v) = 2m$; so the number of \omterm{def:b1:graph-traversals:graph}{vertices} of odd \omterm{def:b1:graph-traversals:degree}{degree} is even. In a \omterm{def:b1:graph-traversals:graph}{directed graph},
+the \omterm{def:b1:graph-traversals:degree}{out-degrees} and the \omterm{def:b1:graph-traversals:degree}{in-degrees} both sum to $m$.
+\end{proposition}
+
+\begin{proof}
+Each edge $uv$ is counted twice in the sum, once in $\deg(u)$ and once in $\deg(v)$; each \omterm{def:b1:graph-traversals:graph}{arc} once among the
+\omterm{def:b1:graph-traversals:degree}{out-degrees}, at its tail, and once among the \omterm{def:b1:graph-traversals:degree}{in-degrees}, at its head. The sum of the even \omterm{def:b1:graph-traversals:degree}{degrees} is even, so the
+odd \omterm{def:b1:graph-traversals:degree}{degrees} have an even sum, which needs an even number of them.
+\end{proof}
+
+\begin{definition}[Path, simple path, cycle]\label{def:b1:graph-traversals:path}
+A \emph{path}\index{path (graph)} of length $k$ from $u$ to $v$ is a sequence of \omterm{def:b1:graph-traversals:graph}{vertices} $u = v_0, v_1, \dots, v_k = v$
+where each $v_{i-1} v_i$ is an edge (an \omterm{def:b1:graph-traversals:graph}{arc} $v_{i-1} \to v_i$ in a \omterm{def:b1:graph-traversals:graph}{directed graph}). It is \emph{simple}\index{simple
+path} if its \omterm{def:b1:graph-traversals:graph}{vertices} are distinct. A \emph{cycle}\index{cycle (graph)} is a path of length at least 1 from a \omterm{def:b1:graph-traversals:graph}{vertex}
+to itself whose other \omterm{def:b1:graph-traversals:graph}{vertices} are distinct and distinct from it; in an undirected \omterm{def:b1:graph-traversals:graph}{graph} its length must be at least 3
+and it uses no edge twice. $v$ is \emph{reachable} from $u$ if there is a path from $u$ to $v$.
+\end{definition}
+
+\begin{definition}[Distance]\label{def:b1:graph-traversals:distance}
+The \emph{distance}\index{distance (graph)} $\delta(u, v)$ is the smallest length of a \omterm{def:b1:graph-traversals:path}{path} from $u$ to $v$, counted in
+\omterm{def:b1:graph-traversals:graph}{edges}, and $\infty$ if $v$ is not reachable from $u$.
+\end{definition}
+
+\begin{definition}[Connected, strongly connected]\label{def:b1:graph-traversals:connected}
+An undirected \omterm{def:b1:graph-traversals:graph}{graph} is \emph{connected}\index{connected graph} if every \omterm{def:b1:graph-traversals:graph}{vertex} is reachable from every other. Being
+reachable from one another is an equivalence relation on the \omterm{def:b1:graph-traversals:graph}{vertices}; its classes are the \emph{connected
+components}\index{connected component (graph)}. In a \omterm{def:b1:graph-traversals:graph}{directed graph}, $u$ and $v$ are \emph{strongly connected} when
+each is reachable from the other; the classes of this equivalence are the \emph{strongly connected
+components}\index{strongly connected component}, and the \omterm{def:b1:graph-traversals:graph}{graph} is \emph{strongly connected}\index{strongly connected
+graph} if there is only one.
+\end{definition}
+
+\begin{definition}[Directed acyclic graph]\label{def:b1:graph-traversals:dag}
+A \emph{directed acyclic graph}\index{directed acyclic graph}, or DAG, is a \omterm{def:b1:graph-traversals:graph}{directed graph} without a \omterm{def:b1:graph-traversals:path}{cycle}.
+\end{definition}
+
+\begin{definition}[Free tree, forest]\label{def:b1:graph-traversals:free-tree}
+A \emph{free tree}\index{free tree} is a \omterm{def:b1:graph-traversals:connected}{connected} undirected \omterm{def:b1:graph-traversals:graph}{graph} without a \omterm{def:b1:graph-traversals:path}{cycle}; a \emph{forest}\index{forest} is
+an undirected \omterm{def:b1:graph-traversals:graph}{graph} without a \omterm{def:b1:graph-traversals:path}{cycle}, whose components are free trees. Choosing a \omterm{def:b1:graph-traversals:graph}{vertex} as the root turns a free tree
+into a \omterm{def:b1:induction-and-termination:rooted-tree}{rooted tree} (\cref{def:b1:induction-and-termination:rooted-tree}).
+\end{definition}
+
+\begin{proposition}[Free trees]\label{prop:b1:graph-traversals:free-tree}
+For an undirected \omterm{def:b1:graph-traversals:graph}{graph} $G$ with $n \geq 1$ \omterm{def:b1:graph-traversals:graph}{vertices}, the following are equivalent: (i) $G$ is a \omterm{def:b1:graph-traversals:free-tree}{free tree}; (ii) any
+two \omterm{def:b1:graph-traversals:graph}{vertices} are joined by exactly one \omterm{def:b1:graph-traversals:path}{simple path}; (iii) $G$ is \omterm{def:b1:graph-traversals:connected}{connected} and has $n - 1$ \omterm{def:b1:graph-traversals:graph}{edges}.
+\end{proposition}
+
+\begin{proof}
+(i)$\Rightarrow$(ii): a \omterm{def:b1:graph-traversals:path}{simple path} exists, since $G$ is \omterm{def:b1:graph-traversals:connected}{connected} and a shortest \omterm{def:b1:graph-traversals:path}{path} is \omterm{def:b1:graph-traversals:path}{simple}. If two different \omterm{def:b1:graph-traversals:path}{simple
+paths} join $u$ and $v$, follow them from $u$ to the first \omterm{def:b1:graph-traversals:graph}{vertex} where they part, $x$, and on the first one to the
+first \omterm{def:b1:graph-traversals:graph}{vertex} after $x$ that the second one also visits, $y$; the two pieces from $x$ to $y$ share only their ends and
+make a \omterm{def:b1:graph-traversals:path}{cycle}. (ii)$\Rightarrow$(i): $G$ is \omterm{def:b1:graph-traversals:connected}{connected}, and a \omterm{def:b1:graph-traversals:path}{cycle} through $u v$ would give two \omterm{def:b1:graph-traversals:path}{simple paths} from $u$
+to $v$, the edge and the rest of the \omterm{def:b1:graph-traversals:path}{cycle}. (i)$\Leftrightarrow$(iii) is \cref{exo:b1:graph-traversals:9}.
+\end{proof}
+
+\begin{definition}[Bipartite graph]\label{def:b1:graph-traversals:bipartite}
+An undirected \omterm{def:b1:graph-traversals:graph}{graph} is \emph{bipartite}\index{bipartite graph} if its \omterm{def:b1:graph-traversals:graph}{vertices} can be coloured with two colours so that
+every edge joins two \omterm{def:b1:graph-traversals:graph}{vertices} of different colours.
+\end{definition}
+
+\begin{definition}[Weighted graph, labelled graph]\label{def:b1:graph-traversals:weighted}
+A \emph{weighted graph}\index{weighted graph} has a number, its weight, on each edge; a \emph{labelled
+graph}\index{labelled graph} has a value of any kind on each edge or \omterm{def:b1:graph-traversals:graph}{vertex}: a road's length, a street's name.
+\end{definition}
+
+\section{Representations and their costs}\label{sec:b1:graph-traversals:representations}
+
+The mathematics book stores a \omterm{def:b1:graph-traversals:graph}{graph} in its adjacency matrix: an $n \times n$ table whose entry $(u, v)$ is 1 when $u v$
+is an edge. Programs more often keep, for each \omterm{def:b1:graph-traversals:graph}{vertex}, the list of its neighbours.
+
+\begin{definition}[Adjacency list, edge list]\label{def:b1:graph-traversals:lists}
+The \emph{adjacency lists}\index{adjacency list} of a \omterm{def:b1:graph-traversals:graph}{graph} give, for each \omterm{def:b1:graph-traversals:graph}{vertex}, the list of its neighbours (in a
+\omterm{def:b1:graph-traversals:graph}{directed graph}, the heads of its \omterm{def:b1:graph-traversals:graph}{arcs}). Its \emph{edge list}\index{edge list} is the list of its \omterm{def:b1:graph-traversals:graph}{edges}, as pairs of
+\omterm{def:b1:graph-traversals:graph}{vertices}.
+\end{definition}
+
+\omcodes{code/bachelor-1/24-graph-traversals/listings/graph.py}{10-32,48-58}{A \omterm{def:b1:graph-traversals:graph}{graph} as \omterm{def:b1:graph-traversals:lists}{adjacency lists}, and the
+town's roads loaded}\label{lst:b1:graph-traversals:graph}
+
+\omoutput{code/bachelor-1/24-graph-traversals/outputs/graph.txt}{The two \omterm{def:b1:graph-traversals:graph}{graphs} of the town: each two-way road is two
+\omterm{def:b1:graph-traversals:graph}{arcs}, so the roads give $2 \times 53 - 1 = 105$ \omterm{def:b1:graph-traversals:graph}{arcs}.}\label{out:b1:graph-traversals:graph}
+
+The \omterm{def:b1:graph-traversals:degree}{degrees} of the friendship \omterm{def:b1:graph-traversals:graph}{graph} sum to 100, twice its 50 \omterm{def:b1:graph-traversals:graph}{edges}, as the handshake lemma says; the \omterm{def:b1:graph-traversals:degree}{out-degrees} of the
+road \omterm{def:b1:graph-traversals:graph}{graph} sum to its number of \omterm{def:b1:graph-traversals:graph}{arcs}.
+
+\begin{center}
+\small
+\begin{tabular}{l|c|c|c}
+ & adjacency matrix & \omterm{def:b1:graph-traversals:lists}{adjacency lists} & \omterm{def:b1:graph-traversals:lists}{edge list} \\ \hline
+space & $\Theta(n^2)$ & $\Theta(n + m)$ & $\Theta(m)$ \\
+is $u v$ an edge? & $O(1)$ & $O(\deg u)$ & $O(m)$ \\
+the neighbours of $u$ & $\Theta(n)$ & $\Theta(\deg u)$ & $\Theta(m)$ \\
+add an edge & $O(1)$ & $O(1)$ & $O(1)$ \\
+\end{tabular}
+\end{center}
+
+\omoutput{code/bachelor-1/24-graph-traversals/outputs/representations.txt}{Numbers each representation stores: the
+lists hold one entry per \omterm{def:b1:graph-traversals:graph}{vertex} and one per \omterm{def:b1:graph-traversals:graph}{arc}, twice as many per edge in an undirected
+\omterm{def:b1:graph-traversals:graph}{graph}.}\label{out:b1:graph-traversals:representations}
+
+A \omterm{def:b1:graph-traversals:graph}{graph} is \emph{sparse} when $m$ is much smaller than $n^2$, as for roads and friendships, whose \omterm{def:b1:graph-traversals:degree}{degrees} stay small
+however large the town; \omterm{def:b1:graph-traversals:lists}{adjacency lists} are then the right choice, and every algorithm of this chapter runs in time
+$O(n + m)$ on them. To store a \omterm{def:b1:graph-traversals:graph}{graph} in a file, an \omterm{def:b1:graph-traversals:lists}{edge list} is the simplest: one line per edge.
+
+\omcode{code/bachelor-1/24-graph-traversals/listings/edge_file.py}{9}{26}{A \omterm{def:b1:graph-traversals:graph}{graph} written as an \omterm{def:b1:graph-traversals:lists}{edge list} and read
+back}\label{lst:b1:graph-traversals:edge-file}
+
+\omoutput{code/bachelor-1/24-graph-traversals/outputs/edge_file.txt}{The road \omterm{def:b1:graph-traversals:graph}{graph} survives the round trip through a
+file.}\label{out:b1:graph-traversals:edge-file}
+
+The first line also lists the \omterm{def:b1:graph-traversals:graph}{vertices}, so that a \omterm{def:b1:graph-traversals:graph}{vertex} without \omterm{def:b1:graph-traversals:graph}{edges}, such as person 40 of the friendship \omterm{def:b1:graph-traversals:graph}{graph},
+is not lost.
+
+\section{Depth-first search}\label{sec:b1:graph-traversals:dfs}
+
+\begin{definition}[Depth-first search, discovery and finishing times]\label{def:b1:graph-traversals:dfs}
+A \emph{depth-first search}\index{depth-first search} visits a \omterm{def:b1:graph-traversals:graph}{vertex} $u$ by marking it, then visiting in turn each
+unmarked neighbour of $u$; on the whole \omterm{def:b1:graph-traversals:graph}{graph}, it visits each \omterm{def:b1:graph-traversals:graph}{vertex} not yet marked. A clock ticks at each start and
+each end of a visit: $u$'s \emph{discovery time}\index{discovery time} $d(u)$ is the tick when its visit starts, its
+\emph{finishing time}\index{finishing time} $f(u)$ the tick when it ends. Between the two, $u$ is \emph{open}. If the
+visit of $u$ calls the visit of $v$, $u$ is the \emph{parent} of $v$; the parent links form the \emph{DFS \omterm{def:b1:graph-traversals:free-tree}{forest}}.
+\end{definition}
+
+\begin{definition}[Classes of arcs]\label{def:b1:graph-traversals:edge-classes}
+In a \omterm{def:b1:graph-traversals:dfs}{depth-first search} of a \omterm{def:b1:graph-traversals:graph}{directed graph}, an \omterm{def:b1:graph-traversals:graph}{arc} $u \to v$ is a \emph{tree edge}\index{tree edge} if $u$ is the
+parent of $v$; a \emph{back edge}\index{back edge} if $v$ is an ancestor of $u$ in the \omterm{def:b1:graph-traversals:free-tree}{forest}, or $u$ itself; a
+\emph{forward edge}\index{forward edge} if $v$ is a descendant of $u$ but not its child; a \emph{cross
+edge}\index{cross edge} otherwise.
+\end{definition}
+
+\omcode{code/bachelor-1/24-graph-traversals/listings/dfs.py}{7}{35}{\omterm{def:b1:graph-traversals:dfs}{Depth-first search}: times, and the class of each
+\omterm{def:b1:graph-traversals:graph}{arc}}\label{lst:b1:graph-traversals:dfs}
+
+When the \omterm{def:b1:graph-traversals:graph}{arc} $u \to v$ is examined, $v$ is unmarked (a \omterm{def:b1:graph-traversals:edge-classes}{tree edge}), open (on the chain of visits in progress, so an
+ancestor: a \omterm{def:b1:graph-traversals:edge-classes}{back edge}), or finished, and then a descendant of $u$ exactly when it was discovered after $u$.
+
+\omoutput{code/bachelor-1/24-graph-traversals/outputs/dfs.txt}{A small \omterm{def:b1:graph-traversals:graph}{directed graph}: times, classes, and the order
+of the iterative search.}\label{out:b1:graph-traversals:dfs}
+
+\begin{omfigure}
+\begin{tikzpicture}[v/.style={circle, draw, minimum size=6mm, inner sep=0pt, font=\small},
+  t/.style={font=\scriptsize, omDef}, >=stealth]
+\node[v] (a) at (0,0) {a}; \node[v] (b) at (2.2,0) {b}; \node[v] (c) at (0,-1.8) {c}; \node[v] (d) at (2.2,-1.8) {d};
+\node[v] (e) at (4.6,-1.8) {e}; \node[v] (f) at (4.6,0) {f}; \node[v] (g) at (6.8,-0.9) {g}; \node[v] (h) at (8.8,-0.9)
+{h};
+\foreach \n/\tm/\pos in {a/1|8/above, b/2|5/above, c/6|7/left, d/3|4/right, e/9|16/below, f/10|15/above,
+  g/11|14/above, h/12|13/above} \node[t, \pos=3.3mm] at (\n) {\tm};
+\draw[->, very thick] (a) -- (b); \draw[->, very thick] (b) -- (d); \draw[->, very thick] (a) -- (c);
+\draw[->, very thick] (e) -- (f); \draw[->, very thick] (f) -- (g); \draw[->, very thick] (g) -- (h);
+\draw[->, dashed, omThm, thick] (d) to[bend left=18] (a); \draw[->, dashed, omThm, thick] (g) -- (e);
+\draw[->, dotted, thick] (a) to[bend left=18] (d);
+\draw[->, gray, thick] (c) -- (b); \draw[->, gray, thick] (e) to[bend left=35] (c);
+\node[anchor=west, font=\scriptsize, align=left] at (9.5,-0.3) {thick: tree\\ \textcolor{omThm}{dashed: back}\\
+dotted: forward\\ \textcolor{gray}{grey: cross}};
+\end{tikzpicture}
+\par\smallskip{\small The search of \cref{out:b1:graph-traversals:dfs}, started at \code{a}, then at \code{e}; each
+\omterm{def:b1:graph-traversals:graph}{vertex} carries $d|f$. The \omterm{def:b1:graph-traversals:edge-classes}{tree edges} form two trees, rooted at \code{a} and \code{e}.}
+\end{omfigure}
+
+\begin{theorem}[Parenthesis theorem]\label{thm:b1:graph-traversals:parenthesis}
+For any two \omterm{def:b1:graph-traversals:graph}{vertices} $u$ and $v$ of a \omterm{def:b1:graph-traversals:dfs}{depth-first search}, the intervals $[d(u), f(u)]$ and $[d(v), f(v)]$ are disjoint
+or one contains the other; and $[d(v), f(v)] \subset [d(u), f(u)]$ exactly when $v$ is a descendant of $u$, $v \neq
+u$.
+\end{theorem}
+
+\begin{proof}
+Say $d(u) < d(v)$. If $v$ is discovered while $u$ is open, $v$'s visit is called, directly or not, from $u$'s, so $v$
+is a descendant of $u$; and a call returns before its caller does, so $f(v) < f(u)$: nested. Otherwise $u$ finished
+before $d(v)$: disjoint. Conversely, a descendant of $u$ is discovered during $u$'s visit, so its interval is
+nested in $u$'s.
+\end{proof}
+
+Writing an opening bracket at each discovery and a closing one at each finish gives a well-bracketed word, hence the
+name. A second fact explains what the search finds: when $v$ is discovered, every \omterm{def:b1:graph-traversals:graph}{vertex} reachable from $v$ by a \omterm{def:b1:graph-traversals:path}{path}
+of unmarked \omterm{def:b1:graph-traversals:graph}{vertices} becomes a descendant of $v$ (the \emph{\omterm{def:b1:graph-traversals:path}{white-path}} property; take the first \omterm{def:b1:graph-traversals:graph}{vertex} of such a \omterm{def:b1:graph-traversals:path}{path}
+that would not be a descendant: its predecessor on the \omterm{def:b1:graph-traversals:path}{path} is one, and examines it before finishing).
+
+\begin{proposition}[Cycles and back edges]\label{prop:b1:graph-traversals:back}
+A \omterm{def:b1:graph-traversals:graph}{directed graph} is acyclic if and only if a \omterm{def:b1:graph-traversals:dfs}{depth-first search} finds no \omterm{def:b1:graph-traversals:edge-classes}{back edge}.
+\end{proposition}
+
+\begin{proof}
+A \omterm{def:b1:graph-traversals:edge-classes}{back edge} $u \to v$, with $v$ an ancestor of $u$, closes a \omterm{def:b1:graph-traversals:path}{cycle} with the tree \omterm{def:b1:graph-traversals:path}{path} from $v$ to $u$. Conversely, let
+$C$ be a \omterm{def:b1:graph-traversals:path}{cycle} and $v$ its first \omterm{def:b1:graph-traversals:graph}{vertex} to be discovered, and $u \to v$ the \omterm{def:b1:graph-traversals:graph}{arc} of $C$ that enters $v$. At $d(v)$ the
+rest of $C$ is unmarked, so $u$ becomes a descendant of $v$ by the \omterm{def:b1:graph-traversals:path}{white-path} property, and $u \to v$ is a \omterm{def:b1:graph-traversals:edge-classes}{back edge}.
+\end{proof}
+
+The recursive search can run out of Python's \omterm{def:b1:c-functions-and-stack:call-stack}{call stack} on a long \omterm{def:b1:graph-traversals:path}{path}. An explicit stack does the same work in a
+\omterm{def:b1:graph-traversals:graph}{loop}; pushing all the neighbours at once, it discovers the \omterm{def:b1:graph-traversals:graph}{vertices} in the same order, but it no longer knows when a
+\omterm{def:b1:graph-traversals:graph}{vertex} finishes. For \omterm{def:b1:graph-traversals:dfs}{finishing times}, the stack holds each open \omterm{def:b1:graph-traversals:graph}{vertex} with the \omterm{def:b1:linked-structures:iterator}{iterator} over its remaining \omterm{def:b1:graph-traversals:graph}{arcs}
+(\cref{lst:b1:graph-traversals:kosaraju}).
+
+\omcode{code/bachelor-1/24-graph-traversals/listings/dfs.py}{38}{48}{The order of discovery, with a
+stack}\label{lst:b1:graph-traversals:dfs-iterative}
+
+\section{Breadth-first search}\label{sec:b1:graph-traversals:bfs}
+
+\begin{definition}[Breadth-first search, BFS tree]\label{def:b1:graph-traversals:bfs}
+A \emph{breadth-first search}\index{breadth-first search} from $s$ keeps a queue of discovered \omterm{def:b1:graph-traversals:graph}{vertices}, initially $s$;
+it removes the \omterm{def:b1:graph-traversals:graph}{vertex} $u$ at the head and discovers each undiscovered neighbour $v$ of $u$, setting $\code{dist}[v] =
+\code{dist}[u] + 1$ and the parent of $v$ to $u$, and adds it at the tail. The parent links form the \emph{BFS
+tree}\index{BFS tree}, rooted at $s$.
+\end{definition}
+
+\omcode{code/bachelor-1/24-graph-traversals/listings/bfs.py}{8}{19}{\omterm{def:b1:graph-traversals:bfs}{Breadth-first search} with a
+queue}\label{lst:b1:graph-traversals:bfs}
+
+\begin{theorem}[Breadth-first search computes distances]\label{thm:b1:graph-traversals:bfs}
+At the end of a \omterm{def:b1:graph-traversals:bfs}{breadth-first search} from $s$, the discovered \omterm{def:b1:graph-traversals:graph}{vertices} are those reachable from $s$, $\code{dist}[v] =
+\delta(s, v)$ for each, and the \omterm{def:b1:graph-traversals:path}{path} of parents from $v$ up to $s$, read backwards, is a shortest \omterm{def:b1:graph-traversals:path}{path}.
+\end{theorem}
+
+\begin{proof}
+Invariant: the values of \code{dist} in the queue, from head to tail, are non-decreasing and differ by at most 1. It
+holds for $[s]$; removing the head $u$, of value $k$, and appending \omterm{def:b1:graph-traversals:graph}{vertices} of value $k + 1$ keeps it, since the other
+values were between $k$ and $k + 1$. So \omterm{def:b1:graph-traversals:graph}{vertices} leave the queue by non-decreasing \code{dist}. Each $\code{dist}[v]$
+is the length of the parent \omterm{def:b1:graph-traversals:path}{path}, so $\code{dist}[v] \geq \delta(s, v)$. Suppose some $v$ has $\code{dist}[v] >
+\delta(s, v) = k$, with $k$ smallest; $k \geq 1$, and let $u$ be the \omterm{def:b1:graph-traversals:graph}{vertex} before $v$ on a shortest \omterm{def:b1:graph-traversals:path}{path}, so
+$\code{dist}[u] = \delta(s, u) = k - 1$. When $u$ left the queue, $v$ was discovered then, with value $k$, or before,
+from a \omterm{def:b1:graph-traversals:graph}{vertex} that left the queue no later than $u$, with value at most $k$: a contradiction. Reachable \omterm{def:b1:graph-traversals:graph}{vertices} are
+discovered by the same argument, with $\infty$ in place of a value.
+\end{proof}
+
+\omoutput{code/bachelor-1/24-graph-traversals/outputs/bfs.txt}{The places by number of roads from the Town Square, and a
+farthest one.}\label{out:b1:graph-traversals:bfs}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[omrecord, width=10cm, height=8.6cm, xlabel={$x$ (km)}, ylabel={$y$ (km)}, xmin=-0.2, xmax=6, ymin=-0.2,
+    ymax=5.1, axis equal image, grid=none]
+  \addplot[black!25, line width=0.6pt] table[x=x, y=y]{code/bachelor-1/24-graph-traversals/figures/roads.dat};
+  \addplot[omThm, line width=1.2pt, -{Stealth[length=2.5mm]}] table[x=x, y=y]
+    {code/bachelor-1/24-graph-traversals/figures/oneway.dat};
+  \addplot[only marks, mark=*, mark size=1.6pt, omDef, nodes near coords, point meta=explicit symbolic,
+    nodes near coords style={font=\tiny, black!70, anchor=south west, inner sep=1pt}]
+    table[x=x, y=y, meta=d]{code/bachelor-1/24-graph-traversals/figures/places.dat};
+  \node[font=\scriptsize, anchor=east] at (axis cs:4.22,1.43) {Town Square};
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Brenmoor's roads, drawn from the coordinates of the places by \code{figures/town_graphs.py}; the
+one-way road is the arrow. Each place carries its \omterm{def:b1:graph-traversals:distance}{distance} in roads from the Town Square: the layers of
+\cref{out:b1:graph-traversals:bfs}.}
+\end{omfigure}
+
+\omterm{def:b1:graph-traversals:bfs}{Breadth-first search} counts roads, not metres: the route it finds to the Hospital has the fewest roads, not the fewest
+kilometres. Lengths are the business of \cref{ch:b1:shortest-paths}.
+
+The same search two-colours a \omterm{def:b1:graph-traversals:graph}{graph}: colour $s$ with 0, and each newly discovered \omterm{def:b1:graph-traversals:graph}{vertex} with the colour its parent
+does not have. If an edge joins two \omterm{def:b1:graph-traversals:graph}{vertices} of the same colour, the \omterm{def:b1:graph-traversals:graph}{graph} is not \omterm{def:b1:graph-traversals:bipartite}{bipartite}, and the edge with the two
+tree \omterm{def:b1:graph-traversals:path}{paths} up to the common ancestor of its ends is an odd \omterm{def:b1:graph-traversals:path}{cycle}: the two \omterm{def:b1:graph-traversals:path}{paths} have lengths of the same parity, since
+the colours of their ends agree.
+
+\omcode{code/bachelor-1/24-graph-traversals/listings/bipartite.py}{8}{36}{Two colours, or an odd
+\omterm{def:b1:graph-traversals:path}{cycle}}\label{lst:b1:graph-traversals:bipartite}
+
+\omoutput{code/bachelor-1/24-graph-traversals/outputs/bipartite.txt}{The friendship \omterm{def:b1:graph-traversals:graph}{graph} is not \omterm{def:b1:graph-traversals:bipartite}{bipartite}: three
+people are friends with one another.}\label{out:b1:graph-traversals:bipartite}
+
+An odd \omterm{def:b1:graph-traversals:path}{cycle} is a \emph{certificate}: anyone can check in a moment that it is a \omterm{def:b1:graph-traversals:path}{cycle} of the \omterm{def:b1:graph-traversals:graph}{graph} and that its length
+is odd, and no \omterm{def:b1:propositional-logic:colouring}{two-colouring} survives it (\cref{exo:b1:graph-traversals:12}).
+
+\section{Applications}\label{sec:b1:graph-traversals:applications}
+
+\paragraph{\omterm{def:b1:graph-traversals:connected}{Connected components}.} One search from an unmarked \omterm{def:b1:graph-traversals:graph}{vertex} marks exactly its component; restarting from
+each unmarked \omterm{def:b1:graph-traversals:graph}{vertex} in turn finds them all, in time $O(n + m)$.
+
+\omcode{code/bachelor-1/24-graph-traversals/listings/components.py}{6}{22}{The \omterm{def:b1:graph-traversals:connected}{connected
+components}}\label{lst:b1:graph-traversals:components}
+
+\omoutput{code/bachelor-1/24-graph-traversals/outputs/components.txt}{The friendship \omterm{def:b1:graph-traversals:graph}{graph} has three components; the
+third is person 40 alone.}\label{out:b1:graph-traversals:components}
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[hide axis, width=10.5cm, height=9.5cm, axis equal image, xmin=-2.8, xmax=9.8, ymin=-8.6, ymax=2.8]
+  \addplot[black!35, line width=0.5pt] table[x=x, y=y]{code/bachelor-1/24-graph-traversals/figures/friend_edges.dat};
+  \addplot[omThm, line width=1.3pt] table[x=x, y=y]{code/bachelor-1/24-graph-traversals/figures/friend_bridges.dat};
+  \addplot[only marks, mark=*, mark size=1.4pt, omDef, nodes near coords, point meta=explicit symbolic,
+    nodes near coords style={font=\tiny, black!80, anchor=south west, inner sep=0.5pt, fill=white}]
+    table[x=x, y=y, meta=id]{code/bachelor-1/24-graph-traversals/figures/people.dat};
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small The friendship \omterm{def:b1:graph-traversals:graph}{graph}, drawn by \code{figures/town_graphs.py}: people 1--14, 15--27 and 28--39 on
+three circles, person 40 apart; the \omterm{def:b1:graph-traversals:bridge}{bridges} are thick.}
+\end{omfigure}
+
+\paragraph{\omterm{def:b1:graph-traversals:topo}{Topological order}.}
+
+\begin{definition}[Topological order]\label{def:b1:graph-traversals:topo}
+A \emph{topological order}\index{topological order} of a \omterm{def:b1:graph-traversals:graph}{directed graph} is an order of its \omterm{def:b1:graph-traversals:graph}{vertices} in which, for every
+\omterm{def:b1:graph-traversals:graph}{arc} $u \to v$, $u$ comes before $v$.
+\end{definition}
+
+A \omterm{def:b1:graph-traversals:graph}{graph} with a \omterm{def:b1:graph-traversals:path}{cycle} has none: the first \omterm{def:b1:graph-traversals:graph}{vertex} of the \omterm{def:b1:graph-traversals:path}{cycle} in the order would come after its predecessor on the
+\omterm{def:b1:graph-traversals:path}{cycle}. A DAG has one, and \omterm{def:b1:graph-traversals:dfs}{depth-first search} finds it.
+
+\begin{proposition}[Order by decreasing finishing time]\label{prop:b1:graph-traversals:topo}
+In a \omterm{def:b1:graph-traversals:dfs}{depth-first search} of a DAG, $f(v) < f(u)$ for every \omterm{def:b1:graph-traversals:graph}{arc} $u \to v$. So the \omterm{def:b1:graph-traversals:graph}{vertices} by decreasing \omterm{def:b1:graph-traversals:dfs}{finishing time}
+are in \omterm{def:b1:graph-traversals:topo}{topological order}.
+\end{proposition}
+
+\begin{proof}
+When $u \to v$ is examined, $v$ is not open: it would be an ancestor of $u$ and the \omterm{def:b1:graph-traversals:graph}{arc} a \omterm{def:b1:graph-traversals:edge-classes}{back edge}, which a DAG does
+not have (\cref{prop:b1:graph-traversals:back}). If $v$ is unmarked, it becomes a descendant of $u$ and finishes
+first (\cref{thm:b1:graph-traversals:parenthesis}); if it is finished, it finished before $u$, which is still open.
+\end{proof}
+
+Kahn's method works from the other end: a DAG has a \omterm{def:b1:graph-traversals:graph}{vertex} with no incoming \omterm{def:b1:graph-traversals:graph}{arc} (follow \omterm{def:b1:graph-traversals:graph}{arcs} backwards from any \omterm{def:b1:graph-traversals:graph}{vertex};
+without a \omterm{def:b1:graph-traversals:path}{cycle} the walk must stop). Output one, remove it with its \omterm{def:b1:graph-traversals:graph}{arcs}, and repeat. With \omterm{def:b1:graph-traversals:degree}{in-degrees} counted once and
+decreased as \omterm{def:b1:graph-traversals:graph}{vertices} go, it runs in $O(n + m)$; if \omterm{def:b1:graph-traversals:graph}{vertices} remain that all have incoming \omterm{def:b1:graph-traversals:graph}{arcs}, there is a \omterm{def:b1:graph-traversals:path}{cycle}.
+
+\omcode{code/bachelor-1/24-graph-traversals/listings/topo.py}{17}{47}{A \omterm{def:b1:graph-traversals:topo}{topological order}, by \omterm{def:b1:graph-traversals:dfs}{depth-first search} and by
+Kahn's method}\label{lst:b1:graph-traversals:topo}
+
+\omoutput{code/bachelor-1/24-graph-traversals/outputs/topo.txt}{Some chapters of this book in an order that respects
+which relies on which: two different orders, both valid.}\label{out:b1:graph-traversals:topo}
+
+\paragraph{\omterm{def:b1:graph-traversals:connected}{Strongly connected components}.}
+
+\begin{definition}[Component graph]\label{def:b1:graph-traversals:condensation}
+The \emph{component graph}\index{component graph}, or \emph{condensation}\index{condensation}, of a \omterm{def:b1:graph-traversals:graph}{directed graph} has
+its \omterm{def:b1:graph-traversals:connected}{strongly connected components} as \omterm{def:b1:graph-traversals:graph}{vertices}, and an \omterm{def:b1:graph-traversals:graph}{arc} $C \to C'$ when some \omterm{def:b1:graph-traversals:graph}{arc} of the \omterm{def:b1:graph-traversals:graph}{graph} goes from $C$ to
+$C' \neq C$.
+\end{definition}
+
+The \omterm{def:b1:graph-traversals:condensation}{component graph} is a DAG: a \omterm{def:b1:graph-traversals:path}{cycle} through $C$ and $C'$ would make their \omterm{def:b1:graph-traversals:graph}{vertices} reachable from one another, so
+$C = C'$. A search started in a component with no \omterm{def:b1:graph-traversals:graph}{arc} leaving it in the \omterm{def:b1:graph-traversals:condensation}{component graph} marks exactly that component;
+the difficulty is to find such a component first.
+
+\begin{method}[Kosaraju's algorithm]\label{met:b1:graph-traversals:kosaraju}
+\begin{enumerate}
+\item Run a \omterm{def:b1:graph-traversals:dfs}{depth-first search} of $G$ and list the \omterm{def:b1:graph-traversals:graph}{vertices} by decreasing \omterm{def:b1:graph-traversals:dfs}{finishing time}.
+\item Reverse every \omterm{def:b1:graph-traversals:graph}{arc} of $G$.
+\item In the reversed \omterm{def:b1:graph-traversals:graph}{graph}, take the \omterm{def:b1:graph-traversals:graph}{vertices} in that list; from each one not yet assigned, search, and assign every
+\omterm{def:b1:graph-traversals:graph}{vertex} reached that is not yet assigned to a new component.
+\end{enumerate}
+\end{method}
+
+\omcode{code/bachelor-1/24-graph-traversals/listings/kosaraju.py}{6}{43}{Kosaraju's algorithm, with an iterative
+search for the finishing order}\label{lst:b1:graph-traversals:kosaraju}
+
+\omoutput{code/bachelor-1/24-graph-traversals/outputs/kosaraju.txt}{The small \omterm{def:b1:graph-traversals:graph}{graph} of the figure below;
+the roads with their one one-way street, and with every road one-way in the direction the table lists
+it.}\label{out:b1:graph-traversals:kosaraju}
+
+The answer to the first question is yes: with road 1 one-way, the thirty places form a single \omterm{def:b1:graph-traversals:connected}{strongly connected
+component}. The second question needs care: making each road one-way in the direction the table happens to list it
+leaves every place alone in its component, since the table lists each road from the smaller place number to the
+larger, which makes a DAG.
+
+\begin{lemma}[Finishing times and components]\label{lem:b1:graph-traversals:finish}
+If $C$ and $C'$ are distinct \omterm{def:b1:graph-traversals:connected}{strongly connected components} and some \omterm{def:b1:graph-traversals:graph}{arc} goes from $C$ to $C'$, the largest \omterm{def:b1:graph-traversals:dfs}{finishing
+time} in $C$ is larger than the largest in $C'$.
+\end{lemma}
+
+\begin{proof}
+Let $x$ be the first \omterm{def:b1:graph-traversals:graph}{vertex} of $C \cup C'$ discovered. If $x \in C$, every \omterm{def:b1:graph-traversals:graph}{vertex} of $C \cup C'$ is reachable from $x$
+through unmarked \omterm{def:b1:graph-traversals:graph}{vertices}, so all are descendants of $x$ and finish before it. If $x \in C'$, no \omterm{def:b1:graph-traversals:graph}{vertex} of $C$ is
+reachable from $x$ (or $C$ and $C'$ would merge), so all of $C'$ finishes, as descendants of $x$, before any \omterm{def:b1:graph-traversals:graph}{vertex} of
+$C$ is discovered.
+\end{proof}
+
+The proof that Kosaraju's algorithm is correct is \cref{exo:b1:graph-traversals:10}: the \omterm{def:b1:graph-traversals:graph}{vertex} with the largest
+\omterm{def:b1:graph-traversals:dfs}{finishing time} lies in a component with no \omterm{def:b1:graph-traversals:graph}{arc} entering it, and in the reversed \omterm{def:b1:graph-traversals:graph}{graph} that component has no \omterm{def:b1:graph-traversals:graph}{arc}
+leaving it. Both searches cost $O(n + m)$, and so does reversing the \omterm{def:b1:graph-traversals:graph}{graph}.
+
+\begin{omfigure}
+\begin{tikzpicture}[v/.style={circle, draw, minimum size=6mm, inner sep=0pt, font=\small}, >=stealth,
+  comp/.style={rounded corners=3mm, fill=omDef!12, draw=omDef!50}]
+\fill[comp] (-0.5,-2.1) rectangle (2.7,0.5); \fill[comp] (3.4,-2.1) rectangle (6.0,-1.1);
+\fill[comp] (3.4,-0.4) rectangle (6.0,0.5); \fill[comp] (6.7,-2.0) rectangle (7.6,-1.2);
+\node[v] (a) at (0,0) {a}; \node[v] (b) at (2.2,0) {b}; \node[v] (c) at (1.1,-1.6) {c};
+\node[v] (d) at (3.9,0.05) {d}; \node[v] (e) at (5.5,0.05) {e};
+\node[v] (f) at (3.9,-1.6) {f}; \node[v] (g) at (5.5,-1.6) {g}; \node[v] (h) at (7.15,-1.6) {h};
+\foreach \u/\w in {a/b, b/c, c/a, b/d, c/f, e/g, g/h} \draw[->, thick] (\u) -- (\w);
+\draw[->, thick] (d) to[bend left=20] (e); \draw[->, thick] (e) to[bend left=20] (d);
+\draw[->, thick] (f) to[bend left=20] (g); \draw[->, thick] (g) to[bend left=20] (f);
+\begin{scope}[xshift=90mm, yshift=-8mm, n/.style={draw, rounded corners=2mm, fill=omDef!12, font=\small,
+  minimum height=6mm}]
+\node[n] (A) at (0,0) {abc}; \node[n] (D) at (1.6,0.9) {de}; \node[n] (F) at (1.6,-0.9) {fg}; \node[n] (H) at (3.2,-0.9)
+{h};
+\draw[->, thick] (A) -- (D); \draw[->, thick] (A) -- (F); \draw[->, thick] (D) -- (F); \draw[->, thick] (F) -- (H);
+\end{scope}
+\end{tikzpicture}
+\par\smallskip{\small Left, a \omterm{def:b1:graph-traversals:graph}{directed graph} and its four \omterm{def:b1:graph-traversals:connected}{strongly connected components} (shaded); right, its
+\omterm{def:b1:graph-traversals:condensation}{component graph}, a DAG. Kosaraju's second search, on the reversed \omterm{def:b1:graph-traversals:graph}{arcs}, starts in \code{abc}, which no \omterm{def:b1:graph-traversals:graph}{arc} enters:
+reversed, no \omterm{def:b1:graph-traversals:graph}{arc} leaves it, so the search stays inside.}
+\end{omfigure}
+
+\paragraph{\omterm{def:b1:graph-traversals:bridge}{Bridges}.}
+
+\begin{definition}[Bridge]\label{def:b1:graph-traversals:bridge}
+A \emph{bridge}\index{bridge} of an undirected \omterm{def:b1:graph-traversals:graph}{graph} is an edge whose removal increases the number of \omterm{def:b1:graph-traversals:connected}{connected
+components}.
+\end{definition}
+
+An edge is a \omterm{def:b1:graph-traversals:bridge}{bridge} exactly when it lies on no \omterm{def:b1:graph-traversals:path}{cycle}: if $uv$ is on a \omterm{def:b1:graph-traversals:path}{cycle}, the rest of the \omterm{def:b1:graph-traversals:path}{cycle} still joins $u$
+and $v$; if it is not, no other \omterm{def:b1:graph-traversals:path}{path} joins them. In a \omterm{def:b1:graph-traversals:dfs}{depth-first search} of an undirected \omterm{def:b1:graph-traversals:graph}{graph} there are no \omterm{def:b1:graph-traversals:edge-classes}{cross
+edges} (an edge to a finished \omterm{def:b1:graph-traversals:graph}{vertex} not a descendant would have been taken from the earlier one), so every non-tree
+edge joins a \omterm{def:b1:graph-traversals:graph}{vertex} to an ancestor. Let $\mathrm{low}(v)$ be the smallest \omterm{def:b1:graph-traversals:dfs}{discovery time} reachable from the \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} of
+$v$ by going down \omterm{def:b1:graph-traversals:edge-classes}{tree edges} and then along at most one other edge. A \omterm{def:b1:graph-traversals:edge-classes}{tree edge} $u v$, with $u$ the parent, is on a
+\omterm{def:b1:graph-traversals:path}{cycle} exactly when some edge leaves the \omterm{def:b1:induction-and-termination:rooted-tree}{subtree} of $v$ for $u$ or above, that is when $\mathrm{low}(v) \leq d(u)$. The
+low points are computed on the way back up, in one search.
+
+\begin{theorem}[Robbins' theorem]\label{thm:b1:graph-traversals:robbins}
+The \omterm{def:b1:graph-traversals:graph}{edges} of a \omterm{def:b1:graph-traversals:connected}{connected} undirected \omterm{def:b1:graph-traversals:graph}{graph} can be oriented so that the resulting \omterm{def:b1:graph-traversals:graph}{directed graph} is \omterm{def:b1:graph-traversals:connected}{strongly connected}
+if and only if the \omterm{def:b1:graph-traversals:graph}{graph} has no \omterm{def:b1:graph-traversals:bridge}{bridge}.
+\end{theorem}
+
+Robbins proved it in 1939, in a paper whose title names its application, traffic control. The proof, the \omterm{def:b1:graph-traversals:bridge}{bridges} and
+the orientation of Brenmoor's roads are the weekend problem.
+
+\section{Exercises}\label{sec:b1:graph-traversals:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:graph-traversals:1}
+A \omterm{def:b1:graph-traversals:graph}{graph} on the \omterm{def:b1:graph-traversals:graph}{vertices} 1 to 6 has the \omterm{def:b1:graph-traversals:graph}{edges} $12, 13, 23, 24, 35, 45, 56$. Give the \omterm{def:b1:graph-traversals:degree}{degrees}, check the handshake lemma,
+and list the \omterm{def:b1:graph-traversals:graph}{vertices} of odd \omterm{def:b1:graph-traversals:degree}{degree}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:graph-traversals:2}
+Run \code{dfs} on the \omterm{def:b1:graph-traversals:graph}{arcs} $1 \to 2$, $1 \to 3$, $2 \to 4$, $3 \to 4$, $4 \to 1$, $3 \to 5$, $5 \to 6$, $6 \to 5$, added
+in this order. Give the times and the class of each \omterm{def:b1:graph-traversals:graph}{arc}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:graph-traversals:3}
+Give the \omterm{def:b1:graph-traversals:distance}{distances} from \omterm{def:b1:graph-traversals:graph}{vertex} 1 in the \omterm{def:b1:graph-traversals:graph}{graph} of \cref{exo:b1:graph-traversals:1}, and a \omterm{def:b1:graph-traversals:bfs}{BFS tree}.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:graph-traversals:4}
+Dinner: boiling water comes before cooking pasta, chopping onions before frying them, the fried onions and an opened tin
+before the sauce, the pasta and the sauce before serving. Give a \omterm{def:b1:graph-traversals:topo}{topological order} by Kahn's method and one by
+\omterm{def:b1:graph-traversals:dfs}{depth-first search}.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:graph-traversals:5}
+This search marks a \omterm{def:b1:graph-traversals:graph}{vertex} only when its visit ends. Explain the two lines of output; what happens on a \omterm{def:b1:graph-traversals:graph}{graph} with
+a \omterm{def:b1:graph-traversals:path}{cycle}, and why does a DAG survive?
+\omcode{code/bachelor-1/24-graph-traversals/listings/exo_mark_exit.py}{8}{14}{Marked on exit}
+\omoutput[2-3]{code/bachelor-1/24-graph-traversals/outputs/exo_mark_exit.txt}{A chain of ten diamonds, and a
+\omterm{def:b1:graph-traversals:graph}{two-vertex} \omterm{def:b1:graph-traversals:path}{cycle}.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:graph-traversals:6}
+Find the \omterm{def:b1:graph-traversals:graph}{graph} this test misjudges, and repair it.
+\omcode{code/bachelor-1/24-graph-traversals/listings/exo_bipartite_one.py}{8}{19}{A \omterm{def:b1:graph-traversals:bipartite}{bipartite} test}
+\omoutput[2-2]{code/bachelor-1/24-graph-traversals/outputs/exo_bipartite_one.txt}{A \omterm{def:b1:graph-traversals:path}{path} 1--2--3--4 and a triangle 5,
+6, 7.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:graph-traversals:7}
+Modify \omterm{def:b1:graph-traversals:bfs}{breadth-first search} to count, for every \omterm{def:b1:graph-traversals:graph}{vertex} $v$, the shortest \omterm{def:b1:graph-traversals:path}{paths} from $s$ to $v$, in time $O(n + m)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:graph-traversals:8}
+Write a function that returns a \omterm{def:b1:graph-traversals:path}{cycle} of a \omterm{def:b1:graph-traversals:graph}{directed graph}, as a list of \omterm{def:b1:graph-traversals:graph}{vertices}, or \code{None} if the \omterm{def:b1:graph-traversals:graph}{graph} is
+acyclic, in time $O(n + m)$.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:graph-traversals:9}
+Show that a \omterm{def:b1:graph-traversals:free-tree}{free tree} with $n$ \omterm{def:b1:graph-traversals:graph}{vertices} has $n - 1$ \omterm{def:b1:graph-traversals:graph}{edges}, and that a \omterm{def:b1:graph-traversals:connected}{connected graph} with $n$ \omterm{def:b1:graph-traversals:graph}{vertices} and $n - 1$
+\omterm{def:b1:graph-traversals:graph}{edges} is a \omterm{def:b1:graph-traversals:free-tree}{free tree}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:graph-traversals:10}
+Prove that Kosaraju's algorithm finds the \omterm{def:b1:graph-traversals:connected}{strongly connected components}.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:graph-traversals:11}
+An \emph{Euler circuit} goes along every edge of a \omterm{def:b1:graph-traversals:graph}{graph} exactly once and returns to its start. Write a function that
+finds one in a \omterm{def:b1:graph-traversals:connected}{connected graph} whose \omterm{def:b1:graph-traversals:degree}{degrees} are all even, in time $O(n + m)$, and test it.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:graph-traversals:12}
+Prove that an undirected \omterm{def:b1:graph-traversals:graph}{graph} is \omterm{def:b1:graph-traversals:bipartite}{bipartite} if and only if it has no \omterm{def:b1:graph-traversals:path}{cycle} of odd length.
+\end{exercise}
+
+\section{Problem: Robbins' town}\label{sec:b1:graph-traversals:problem}
+
+\begin{problem}[{Weekend problem --- Robbins' town}]\label{pb:b1:graph-traversals:1}
+The town council of Brenmoor wants every road one-way, and every place still reachable from every other. Before the
+roads, the friendship \omterm{def:b1:graph-traversals:graph}{graph} serves as a warm-up.
+\omcode{code/bachelor-1/24-graph-traversals/listings/bridges.py}{7}{32}{\omterm{def:b1:graph-traversals:bridge}{Bridges} by low
+points}\label{lst:b1:graph-traversals:bridges}
+\omoutput{code/bachelor-1/24-graph-traversals/outputs/bridges.txt}{\omterm{def:b1:graph-traversals:bridge}{Bridges} among friends, and among
+roads.}\label{out:b1:graph-traversals:bridges}
+\omcode{code/bachelor-1/24-graph-traversals/listings/orient.py}{9}{25}{Orienting the roads by a \omterm{def:b1:graph-traversals:dfs}{depth-first
+search}}\label{lst:b1:graph-traversals:orient}
+\omoutput{code/bachelor-1/24-graph-traversals/outputs/orient.txt}{Every road one-way, and the town still \omterm{def:b1:graph-traversals:connected}{strongly
+connected}.}\label{out:b1:graph-traversals:orient}
+
+\medskip\noindent\textbf{Part I --- The friendship graph.}
+\begin{enumerate}
+\item Using \cref{out:b1:graph-traversals:graph}, how many friendships does person 40 have, and what is the average
+\omterm{def:b1:graph-traversals:degree}{degree}?
+\item Why does \cref{out:b1:graph-traversals:components} count person 40 as a component?
+\item What do the components tell about the three groups of friends drawn in \cref{sec:b1:graph-traversals:applications}?
+\item Why does the triangle of \cref{out:b1:graph-traversals:bipartite} prove that the \omterm{def:b1:graph-traversals:graph}{graph} is not \omterm{def:b1:graph-traversals:bipartite}{bipartite}?
+\item Could two of the components be \omterm{def:b1:graph-traversals:bipartite}{bipartite} while the whole \omterm{def:b1:graph-traversals:graph}{graph} is not? What would the program print?
+\item What is the cost of the component and \omterm{def:b1:graph-traversals:bipartite}{bipartite} searches, in $n$ and $m$?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part II --- The roads and the one-way street.}
+\begin{enumerate}[resume]
+\item How many \omterm{def:b1:graph-traversals:graph}{arcs} would the road \omterm{def:b1:graph-traversals:graph}{graph} have if road 1 were two-way?
+\item Explain the single component of \cref{out:b1:graph-traversals:kosaraju}: which \omterm{def:b1:graph-traversals:path}{path} leads from the Library back
+to the Town Square?
+\item Why does listing each road from its smaller place number make a DAG, and why does a DAG have only components of one
+\omterm{def:b1:graph-traversals:graph}{vertex}?
+\item In the \omterm{def:b1:graph-traversals:condensation}{component graph} of the roads oriented as listed, which \omterm{def:b1:graph-traversals:graph}{vertices} have no incoming \omterm{def:b1:graph-traversals:graph}{arc}?
+\item What is the cost of Kosaraju's algorithm on the roads?
+\item Why does reversing every \omterm{def:b1:graph-traversals:graph}{arc} leave the \omterm{def:b1:graph-traversals:connected}{strongly connected components} unchanged?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part III --- Bridges.}
+\begin{enumerate}[resume]
+\item Show that an edge is a \omterm{def:b1:graph-traversals:bridge}{bridge} if and only if it lies on no \omterm{def:b1:graph-traversals:path}{cycle}.
+\item Why does a \omterm{def:b1:graph-traversals:dfs}{depth-first search} of an undirected \omterm{def:b1:graph-traversals:graph}{graph} have no \omterm{def:b1:graph-traversals:edge-classes}{cross edges}?
+\item Prove that a \omterm{def:b1:graph-traversals:edge-classes}{tree edge} $u v$, $u$ the parent, is a \omterm{def:b1:graph-traversals:bridge}{bridge} if and only if $\mathrm{low}(v) > d(u)$.
+\item Why does \code{visit} skip the edge back to the parent, and only once?
+\item The friendship \omterm{def:b1:graph-traversals:graph}{graph} has 12 \omterm{def:b1:graph-traversals:bridge}{bridges}: what do they say about the groups of friends?
+\item Why can the road \omterm{def:b1:graph-traversals:graph}{graph} have no \omterm{def:b1:graph-traversals:bridge}{bridge}, given how its roads were laid (each place joined to its three nearest)? Is
+this a proof?
+\end{enumerate}
+
+\medskip\noindent\textbf{Part IV --- Robbins' theorem.}
+\begin{enumerate}[resume]
+\item Show that a \omterm{def:b1:graph-traversals:graph}{graph} with a \omterm{def:b1:graph-traversals:bridge}{bridge} has no \omterm{def:b1:graph-traversals:connected}{strongly connected} orientation.
+\item In \code{orient}, why is every edge oriented exactly once?
+\item Show that in the orientation, every \omterm{def:b1:graph-traversals:graph}{vertex} is reachable from the root.
+\item Show that, if the \omterm{def:b1:graph-traversals:graph}{graph} has no \omterm{def:b1:graph-traversals:bridge}{bridge}, the root is reachable from every \omterm{def:b1:graph-traversals:graph}{vertex} in the orientation.
+\item Deduce Robbins' theorem.
+\item Why does road 1 keep the direction it has today?
+\item State the named result, \emph{Robbins' theorem}, and what the program checked on Brenmoor.
+\end{enumerate}
+\end{problem}

@@ -1,0 +1,104 @@
+\section*{Chapter \ref{ch:b3:code-generation} --- Intermediate Code and Code Generation}
+
+\begin{solution}{exo:b3:code-generation:1}
+\texttt{t4 = a * b}, \texttt{t5 = t4 + c}, \texttt{x = t5}: two temporaries besides the four variables, one per operator; the assignment is a copy (\code{exercise_1_tac_of_an_assignment}).
+\end{solution}
+
+\begin{solution}{exo:b3:code-generation:2}
+The loop takes the labels L1 (top), L2 (body) and L3 (exit), the \code{if} L4, L5 and L6. The \omterm{def:b3:code-generation:cfg}{leaders} are \texttt{i = 0} (the first instruction), \texttt{L1:}, \texttt{goto L3} (after the branch of the loop's test), \texttt{L2:}, \texttt{goto L5} (after the branch of \code{i == 1}), \texttt{L4:}, \texttt{L5:}, \texttt{L6:} and \texttt{L3:}: nine blocks (\code{exercise_2_leaders}). \texttt{L5:} and \texttt{L6:} are consecutive labels, so the block of \texttt{L5:} holds that label alone.
+\end{solution}
+
+\begin{solution}{exo:b3:code-generation:3}
+The array holds $0, 1, 4, \dots, 81$, whose sum is $\sum_{i < 10} i^2 = 285$: \code{rv} prints \code{285}. \code{main} returns 285, and \code{rv} exits with $285 \bmod 256 = 29$ (\code{exercise_3_sum_array_on_rv}).
+\end{solution}
+
+\begin{solution}{exo:b3:code-generation:4}
+$4 \times 7 + 4 = 32$, already a multiple of 16: 32 bytes, \code{ra} at \code{28(sp)}. $4 \times 8 + 4 = 36$, rounded up to 48: \code{ra} at \code{44(sp)}, and bytes 32 to 43 are padding (\code{frames_of_fib_and_main}).
+\end{solution}
+
+\begin{solution}{exo:b3:code-generation:5}
+With input 1, \code{fib(1)} makes no call, so \code{ra} still holds the address \code{main}'s \code{call} put there, and the return is right. With input 2, \code{fib(2)} calls \code{fib(1)} and then \code{fib(0)}, and the second call leaves in \code{ra} the address of the line after it, \code{sw a0, 16(sp)}. When \code{fib(2)} returns, it pops its \omterm{def:b3:code-generation:frame}{frame} and jumps there: it runs the end of its own body again, in \code{main}'s \omterm{def:b3:code-generation:frame}{frame} this time, and returns again to the same place, $32$ bytes higher. \code{sp} started at \texttt{0x7ffffff0} and \code{main} lowered it by 16, so the second time round \code{sp} is $\texttt{0x7fffffe0} + 32 = \texttt{0x80000000}$, above the top of the stack, and \code{16(sp)} is \texttt{0x80000010}, an address \code{rv} does not map (\code{exercise_5_ra_not_saved}). A wrong output can take this shape: nothing fails where the bug is, in the prologue, and the fault comes two returns later.
+\end{solution}
+
+\begin{solution}{exo:b3:code-generation:6}
+The hook selects \code{rem t0, t0, t1} for \texttt{\%} and \code{neg t0, t0}, which is \code{sub t0, zero, t0}, for unary minus, with the same loads and store as \cref{lst:b3:code-generation:bin}. The four values are $2$, $-2$, $17$ and $3$, and the program exits with $-17 \bmod 7 + 10 = 7$ in both semantics (\code{exercise_6_rem_and_neg}). For the test to pass, the processor's remainder must follow the interpreter's rules: rounding toward zero, so that the remainder has the sign of the dividend, and a remainder by zero equal to the dividend, with no trap. RISC-V's \code{rem} does both, % ledger: b2:rv-div
+which is why chapter~\ref{ch:b3:semantic-analysis} chose these rules for Moor.
+\end{solution}
+
+\begin{solution}{exo:b3:code-generation:7}
+The \omterm{def:b3:code-generation:tac}{three-address code} is \texttt{t1 = a[i]}, \texttt{t2 = t1 + 1}, \texttt{a[i] = t2}. The load is 6 instructions (\code{lw}, \code{slli}, \code{la}, \code{add} for the address, then \code{lw} and \code{sw}), the addition 3, the store 6: 15 instructions, 17 words since each of the two \code{la} is two (\code{exercise_7_instructions_for_an_increment}). Tiled as a tree, the load side is \code{la a}, \code{slli}, \code{add}, \code{lw 0(r)}, \code{addi 1}: 6 words; the store recomputes the address (4 words) and stores (1): 11 words. If the address is computed once and used twice, the tree becomes a graph with a shared node, and 7 words suffice; \omterm{def:b3:code-generation:tiling}{tiling} graphs optimally is harder than \omterm{def:b3:code-generation:tiling}{tiling} trees, which is one reason selectors work on trees.
+\end{solution}
+
+\begin{solution}{exo:b3:code-generation:8}
+By induction on $e$, with the claim: the code of \code{cond(e, yes, no)} computes only fresh temporaries, ends with a jump to \code{yes} if $e$ is true and to \code{no} if it is false, and never falls off its end. A comparison: the branch goes to \code{yes} exactly when the relation holds, and otherwise the jump goes to \code{no}; by \cref{thm:b3:code-generation:expr} the operands hold their values. Another boolean $e$: the same, the relation being $e \ne 0$. $\lnot a$: the code of $a$ with the labels swapped reaches \code{no} when $a$ is true, that is when $\lnot a$ is false. $a \mathbin{\&\&} b$: by induction, the code of $a$ jumps to \code{no} if $a$ is false, which is right since then $a \mathbin{\&\&} b$ is false, and to \code{mid} if $a$ is true. The label \code{mid} is fresh and placed just before the code of $b$, and the code of $a$ never falls through, so the only way into the code of $b$ is the jump to \code{mid}: $b$ runs only when $a$ is true. Then $a \mathbin{\&\&} b$ has the value of $b$, and by induction the code of $b$ jumps to the right label. $a \mathbin{||} b$ is the mirror image.
+\end{solution}
+
+\begin{solution}{exo:b3:code-generation:9}
+Ten blocks: B0 \texttt{L1:} and the test \texttt{n > 0} (successors B2 taken, B1); B1 \texttt{goto L3} (B8); B2 \texttt{L2:} and the test \texttt{n == 3} (B4, B3); B3 \texttt{goto L5} (B6); B4 \texttt{L4: return 1} (exit); B5 \texttt{goto L6}, the jump after the \code{then} part (B7); B6 \texttt{L5:}, the empty \code{else} (B7); B7 \texttt{L6:}, \texttt{n = n - 1} and \texttt{goto L1} (B0); B8 \texttt{L3: return 0} (exit); B9 the final \texttt{return} (exit). B5 and B9 follow a \code{return} and no jump targets them: they have no predecessor. B0, the entry, has one, the back edge from B7 (\code{exercise_9_cfg_of_a_loop_with_return}).
+\end{solution}
+
+\begin{solution}{exo:b3:code-generation:10}
+(a) The tree \code{(+ (* x y) z)} with \code{x}, \code{y}, \code{z} in registers: \omterm{def:b3:lexical-analysis:munch}{maximal munch} takes the multiply-add at the root, cost 3; \code{mul} then \code{add} cost 2.
+
+(b) Take a root $r$ with two children $c$ and $c'$, where $c$ has a child $d$, and allow the two-node \omterm{def:b3:code-generation:tiling}{tiles} $(r, c)$, $(r, c')$ and $(c, d)$, a node with one of its children, besides a one-node \omterm{def:b3:code-generation:tiling}{tile} for each node. Both \omterm{def:b3:code-generation:tiling}{tiles} at the root cover two nodes, so \omterm{def:b3:lexical-analysis:munch}{maximal munch} may take $(r, c)$; then $d$ and $c'$ need a \omterm{def:b3:code-generation:tiling}{tile} each, and the \omterm{def:b3:code-generation:tiling}{tiling} costs 3. The \omterm{def:b3:code-generation:tiling}{tiles} $(r, c')$ and $(c, d)$ cover the four nodes for 2. The choice at the root depends on what lies below, which a top-down greedy rule does not look at. The program of \cref{thm:b3:code-generation:tiling} computes $\mathrm{best}(c) = 1$ and $\mathrm{best}(c') = 1$ before choosing at $r$, so it finds $\min(1 + \mathrm{best}(d) + \mathrm{best}(c'), 1 + \mathrm{best}(c)) = \min(3, 2) = 2$ for the \omterm{def:b3:code-generation:tiling}{tile} $(r, c)$ or $(r, c')$ respectively, and takes the second.
+\end{solution}
+
+\begin{solution}{exo:b3:code-generation:11}
+Sufficient, by induction: a leaf needs one register. For an operator with children needing $x \ge y$, evaluate the first child with $x$ registers, keep its result in one, and evaluate the second with $y$ of the others; at most $\max(x, 1 + y)$ registers are busy, which is $x$ if $x > y$ and $x + 1$ if $x = y$. Necessary, by induction: each child alone needs its own number, so the operator needs at least $\max(x, y)$; and if $x = y$, whichever child is finished first holds its result in a register while the other, which needs $x$, is evaluated, so $x + 1$ are needed. A left comb \code{((a op b) op c) op d} needs 2, and left first uses 2; a right comb \code{a op (b op (c op d))} also needs 2, but left first keeps \code{a}, then \code{b}, then \code{c} while it descends and uses 4 (\code{exercise_11_register_need}). Sethi and Ullman's 1970 paper is this analysis, with stores for trees that need more registers than the machine has. % ledger: b3:sethi-ullman-1970
+\end{solution}
+
+\begin{solution}{exo:b3:code-generation:12}
+The generator draws three initial values, then up to four statements, nested to depth 2, from assignments of random expressions of depth 3, \code{print}, \code{if} with an \code{else}, and \code{while} loops with a counter that bounds them; conditions mix comparisons with \code{&&}, \code{||} and \code{!}. Every program ends by printing the three variables and returning an expression of them, so a wrong value anywhere is seen. The test \code{exercise_12_random_programs} runs 60 programs. On its first run it found a disagreement: the parser reads \code{-7} as unary minus applied to 7, the \omterm{def:b3:code-generation:selection}{code generator} had no instructions for unary minus, and every program with a negative constant was refused by \code{moorc} while the interpreter ran it. The arm for negative literals in \cref{lst:b3:code-generation:expr} fixed it, and the 60 programs now agree in output and exit code. The oracle found the bug because it wrote programs no one had thought to write; its limit is the generator, which never makes a function call, an array or a division by a variable that may be zero.
+\end{solution}
+
+\begin{solution}{pb:b3:code-generation:1}
+\textbf{1.} \texttt{if n < 2 goto L1}; \texttt{goto L2}; \texttt{L1:}; \texttt{return n}; \texttt{goto L3}; \texttt{L2:}; \texttt{L3:}; \texttt{t1 = n - 1}; \texttt{t2 = call fib(t1)}; \texttt{t3 = n - 2}; \texttt{t4 = call fib(t3)}; \texttt{t5 = t2 + t4}; \texttt{return t5}; \texttt{return}. Each of the two subtractions, the two calls and the addition makes one \omterm{def:b3:code-generation:tac}{temporary}.
+
+\textbf{2.} For $n = 1$: B0, then B2, which returns. For $n = 5$: B0, B1, B4, B5, which returns; the two calls in B5 run their own blocks. B3 and B6 never run.
+
+\textbf{3.} \texttt{if n < 2 goto L1; goto L2; L1:} then the \code{then} part, \texttt{return n}: instructions 0 to 3, as \cref{lst:b3:code-generation:cond} produces them.
+
+\textbf{4.} Three temporaries: the result of \code{read} at \code{0(sp)}, \code{n} at \code{4(sp)}, the result of \code{fib} at \code{8(sp)}; \code{ra} at \code{12(sp)}; $4 \times 3 + 4 = 16$ bytes.
+
+\textbf{5.} It uses only \code{t0}, \code{t1}, \code{a0} and \code{a7}, which a callee may overwrite; it writes no \code{s} register, so it has none to give back. It saves \code{ra} because its own calls overwrite it.
+
+\textbf{6.} The prologue is lines 4 to 6 of \code{fib.S} (\omterm{def:b3:code-generation:frame}{frame}, \code{ra}, the argument into \code{n}'s slot); the calls are lines 21 and 27; the epilogue is lines 37 to 40.
+
+\textbf{7.} 11: \code{addi}, \code{sw ra}, \code{sw a0}, \code{lw}, \code{li}, \code{blt} (taken), \code{lw a0}, \code{j}, \code{lw ra}, \code{addi}, \code{ret}.
+
+\textbf{8.} 28: the six of the prologue and the test, the \code{j} to \code{.Lfib_2}, the 18 instructions of lines 17 to 34, from \code{lw t0, 0(sp)} to the jump to the epilogue, the two \code{call}s included, and the three of the epilogue: $6 + 1 + 18 + 3 = 28$.
+
+\textbf{9.} 21: prologue 2, \code{read} 3 with its store, the copy into \code{n} 2, the call of \code{fib} with its argument and result 3, \code{print} 6, \code{return 0} 2, epilogue 3.
+
+\textbf{10.} Loads: 3 per leaf call, 9 per inner call, 4 in \code{main}. Stores: 2, 7 and 4.
+
+\textbf{11.} One, the \code{blt} of the test; it is taken exactly when $n < 2$.
+
+\textbf{12.} $c(0) = c(1) = 1$ and $c(n) = 1 + c(n-1) + c(n-2)$ for $n \ge 2$.
+
+\textbf{13.} By induction: $2F(1) - 1 = 2F(2) - 1 = 1$; and $1 + (2F(n) - 1) + (2F(n-1) - 1) = 2(F(n) + F(n-1)) - 1 = 2F(n+1) - 1$ (\code{calls_are_2_f_minus_1}).
+
+\textbf{14.} The leaves satisfy $\ell(0) = \ell(1) = 1$ and $\ell(n) = \ell(n-1) + \ell(n-2)$, the recurrence of $F(n+1)$ with the same start.
+
+\textbf{15.} $c(n) - \ell(n) = F(n+1) - 1$.
+
+\textbf{16.} For $n = 10$: $F(11) = 89$, and the column says $177 = 2 \times 89 - 1$; \code{rv} counted 177 branches, one per call, of which 89 were taken, one per leaf.
+
+\textbf{17.} $11F(n+1) + 28(F(n+1) - 1) + 21 = 39F(n+1) - 7$: $a = 39$, $b = -7$.
+
+\textbf{18.} $39 - 7 = 32$; $39 \times 89 - 7 = 3464$; $39 \times 10946 - 7 = 426887$. All three are in the table, and the test \code{instructions_are_39_f_minus_7} checks every $n \le 20$.
+
+\textbf{19.} Loads $3F + 9(F - 1) + 4 = 12F(n+1) - 5$, stores $2F + 7(F - 1) + 4 = 9F(n+1) - 3$: for $n = 20$, $131347$ and $98511$, as in the table.
+
+\textbf{20.} $(12 + 9)/39 = 21/39$, about 54\,\%. More than half of the work moves values between the \omterm{def:b3:code-generation:frame}{frame} and the registers and back, which is the price of the \omterm{def:b3:code-generation:naive}{naive allocator}.
+
+\textbf{21.} $F(41) = 165{,}580{,}141$, so $39 F(41) - 7 = 6{,}457{,}625{,}492$: about $6.5 \times 10^9$ instructions, $\varphi^{20}$, about 15{,}000, times the count for $n = 20$.
+
+\textbf{22.} 4 per leaf, 17 per inner call: $4F(n+1) + 17(F(n+1) - 1) = 21F(n+1) - 17$.
+
+\textbf{23.} Gone: the stores of \code{n} and of the five temporaries and their reloads. Added: saving and restoring \code{s0} and \code{s1}, and two moves into them. An inner call becomes about 19 instructions (\code{addi}, three saves, \code{mv s0, a0}, \code{li}, \code{blt}, then \code{addi a0, s0, -1}, \code{call}, \code{mv s1, a0}, \code{addi a0, s0, -2}, \code{call}, \code{add}, \code{j}, then three restores, \code{addi}, \code{ret}), but a leaf becomes about 13, since it too saves and restores, so $a \approx 32$: hardly better. With the test before the prologue, a leaf is \code{li}, \code{blt}, \code{ret}, 3 instructions, and $a \approx 22$, close to gcc's 21. Where the \omterm{def:b3:code-generation:frame}{frame} is built matters as much as what is kept in registers.
+
+\textbf{24.} With the loop of \code{exercises/pb_fibloop.moor}, which keeps $F(i)$ and $F(i+1)$ in two variables and adds them $n$ times, \code{rv} counts $19n + 39$ instructions (\code{problem_loop_version_is_linear}): linear, against exponential.
+
+\textbf{25.} The naive code executes exactly $39F(n+1) - 7$ instructions: 11 per leaf call, 28 per inner call, 21 in \code{main}, of which 21 out of every 39 are memory accesses. An allocator and a better placement of the \omterm{def:b3:code-generation:frame}{frame} can bring the 39 down towards 21. The factor $F(n+1)$ comes from the algorithm, and no compiler of this kind removes it: the loop of question 24 does.
+\end{solution}

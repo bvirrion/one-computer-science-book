@@ -1,0 +1,10 @@
+$ count() { objdump -d --no-show-raw-insn x | awk '/<main>:/,/^$/' | grep -c '^ '; }
+$ build() { gcc -std=c17 -O2 $2 $1 -o x && printf '%-18s %-22s main: %3d instructions, file %6d bytes\n' $1 $2 $(count) $(stat -c %s x); }
+$ build toy_login.c -fno-stack-protector
+toy_login.c        -fno-stack-protector   main:  58 instructions, file  16280 bytes
+$ build toy_login.c -fstack-protector-all
+toy_login.c        -fstack-protector-all  main:  67 instructions, file  16328 bytes
+$ build toy_login_fixed.c -fno-stack-protector
+toy_login_fixed.c  -fno-stack-protector   main:  69 instructions, file  16288 bytes
+$ build toy_login.c -fsanitize=address
+toy_login.c        -fsanitize=address     main: 136 instructions, file  21896 bytes

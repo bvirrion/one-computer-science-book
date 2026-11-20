@@ -1,0 +1,152 @@
+% Solutions of 16-hash-tables.
+\section*{Chapter \ref{ch:b1:hash-tables} --- Hash Tables}
+
+\begin{solution}{exo:b1:hash-tables:1}
+\omterm{def:b1:hash-tables:hash-table}{Buckets} 4, 4, 4, 1 and 0: 15, 26 and 37 collide (they differ by multiples of 11).
+\end{solution}
+
+\begin{solution}{exo:b1:hash-tables:2}
+18 goes to 5, 41 to 2, 22 to 9; 44 (home 5) to 6; 59 to 7; 32 (home 6) probes 6, 7 and lands in 8; 31 (home 5) probes
+5 to 9 and lands in 10; 73 (home 8) probes 8, 9, 10 and lands in 11. Slots 0 to 12: \code{- - 41 - - 18 44 59 32 22 31
+73 -}. The run from slot 5 to slot 11 is one cluster of seven.
+\end{solution}
+
+\begin{solution}{exo:b1:hash-tables:3}
+The \omterm{def:b1:hash-tables:hash-table}{buckets} are 0, 0, 0, 1 and 1: chains of length 3 and 2, and eight empty \omterm{def:b1:hash-tables:hash-table}{buckets}.
+\end{solution}
+
+\begin{solution}{exo:b1:hash-tables:4}
+After 17 insertions, $m = 32$ and $\alpha = 17/32 \approx 0.53$; after 33, $m = 64$, $\alpha \approx 0.52$; after 100 (the
+65th doubled again), $m = 128$, $\alpha \approx 0.78$.
+\end{solution}
+
+\begin{solution}{exo:b1:hash-tables:5}
+10, 17 and 24 all have home slot 3; they sit in slots 3, 4 and 5, and 5 (home 5) went to slot 6. Deleting 17 frees slot
+4, and the search for 24, starting at 3, stops at the free slot 4: 24 is lost although it is still in slot 5. The search
+for 5 starts at 5 and is not affected. The repair marks the slot with a \omterm{def:b1:hash-tables:collisions}{tombstone} (a third value, say \code{-2}) that
+\code{find} skips and \code{put} may reuse, as \cref{lst:b1:hash-tables:probe} does.
+\end{solution}
+
+\begin{solution}{exo:b1:hash-tables:6}
+The first characters are capital letters, at most 26 values, which stay distinct modulo any $m \geq 26$: the longest
+chain is the number of people sharing the commonest initial, 9, whatever $m$, and only the 26 \omterm{def:b1:hash-tables:hash-table}{buckets} of the initials
+used can be occupied, so $127 - 26 = 101$ stay empty. With \omterm{def:b1:hash-tables:collisions}{linear probing} the 26 home slots are close together, their
+clusters merge into one long run, and a search costs about 50 probes, as the table shows.
+\end{solution}
+
+\begin{solution}{exo:b1:hash-tables:7}
+\omcodes{code/bachelor-1/16-hash-tables/exercises/intset.c}{10-44}{A set of integers by \omterm{def:b1:hash-tables:collisions}{linear probing}}
+The home slot multiplies the key by a large odd constant before taking it modulo $m$, which spreads consecutive
+integers. Before an insertion that would pass three quarters, every key is placed again in an \omterm{def:b1:pointers-and-arrays:array}{array} twice as large.
+The test adds 50\,000 random values below 100\,000 and checks every value against an \omterm{def:b1:pointers-and-arrays:array}{array} of booleans, and the load
+after every insertion.
+\end{solution}
+
+\begin{solution}{exo:b1:hash-tables:8}
+\code{exercises/wordfreq.c} reads characters, lowers the letters of each word, and calls \code{chain_get} then
+\code{chain_put} with the count plus one; a second \omterm{def:b1:pointers-and-arrays:array}{array} remembers the order of first appearance for the printing. The
+Python test compiles it with \code{chain.c}, runs it on a text, and compares the result with
+\code{Counter(words)} for the same split of the text into words.
+\end{solution}
+
+\begin{solution}{exo:b1:hash-tables:9}
+A \omterm{def:b1:hash-tables:hash-table}{bucket} of $\ell$ \omterm{def:b1:hash-tables:dictionary}{keys} holds $\binom{\ell}{2}$ colliding pairs. One \omterm{def:b1:hash-tables:hash-table}{bucket} of $n$: $n(n - 1)/2$. Evenly, $m$ \omterm{def:b1:hash-tables:hash-table}{buckets} of
+$n/m$: $m \cdot \frac{(n/m)(n/m - 1)}{2} = \frac{n(n - m)}{2m} \approx \frac{n^2}{2m}$ when $m \ll n$, and about $m$ times
+fewer pairs.
+\end{solution}
+
+\begin{solution}{exo:b1:hash-tables:10}
+The doublings happen from $m_0 = 8$, $m_1 = 16$, \dots, $m_j = 8 \cdot 2^j$ slots, each when the table holds $\frac34 m_i +
+1$ \omterm{def:b1:hash-tables:dictionary}{keys}, which it moves. In all: $\sum_{i=0}^{j} (\frac34 m_i + 1) = \frac34 (2m_j - 8) + j + 1 = \frac32 m_j + j - 5$.
+The last doubling happened at or before the $n$-th insertion, so $\frac34 m_j + 1 \leq n$, that is $\frac32 m_j \leq 2n -
+2$, and $j = \log_2 (m_j/8) < \log_2 n$: the moves total at most $2n + j - 7 < 2n + \log_2 n$. Right after a doubling,
+$n = \frac34 m_j + 1$ and the total is $2n + j - 7$, so the ratio is close to 2; it falls to about 1 just before the next
+doubling, when $n \approx \frac32 m_j$ insertions have shared the same $\frac32 m_j$ moves.
+The output shows 1.966 at $n = 100\,000$, just past the doubling at 98\,305 \omterm{def:b1:hash-tables:dictionary}{keys}, and 1.229 at $n = 10\,000$, long after
+the one at 6145. Amortised, a rehash costs a constant per insertion.
+\end{solution}
+
+\begin{solution}{exo:b1:hash-tables:11}
+\omcode{code/bachelor-1/16-hash-tables/exercises/collide.py}{14}{18}{Strings made of equal-hash blocks}
+Split $s$ into $L/2$ blocks of two characters: $h(s) = \sum_j v_j\, 31^{L - 2 - 2j} \bmod 2^{64}$ with $v_j = 31 s_{2j} +
+s_{2j+1}$ the value of block $j$. Both \code{Aa} and \code{BB} have value 2112, so every string made of such blocks has
+the same sum, as an integer and so modulo $2^{64}$; there are $2^{L/2}$ of them. The test checks 1000 strings of length
+20.
+\end{solution}
+
+\begin{solution}{exo:b1:hash-tables:12}
+Addition is commutative: the sum of the characters does not depend on their order. Over the $26^4 = 456\,976$ words of
+four letters, the sums run from $4 \cdot 97 = 388$ to $4 \cdot 122 = 488$, 101 values, and the most common, 438, is
+shared by 11\,726 words (\code{exercises/additive_count.py}, tested). The distribution of a sum of four independent
+uniform letters is symmetric about its mean $4 \cdot 109.5 = 438$ and increases up to it: the number of ways to write a
+sum grows while every letter still has room on both sides.
+\end{solution}
+
+\begin{solution}{pb:b1:hash-tables:1}
+\textbf{1.} $\lceil 120/31 \rceil = 4$. None reaches it: the first letter gives 9 (with 5 empty \omterm{def:b1:hash-tables:hash-table}{buckets}), the additive
+hash and FNV-1a 10, the polynomial 18; random positions typically give a longest chain of 8 or 9, so these are ordinary.
+
+\textbf{2.} Modulo 31, every term $s_i 31^{L-1-i}$ but the last is 0: for a name short enough not to wrap modulo
+$2^{64}$, the \omterm{def:b1:hash-tables:hash-table}{bucket} is its last character modulo 31. Eighteen names end in \code{y}, and $121 \bmod 31 = 28$: fifteen
+of them, the short ones, fill \omterm{def:b1:hash-tables:hash-table}{bucket} 28. For $m = 64$ or 127 the multiplier 31 is invertible modulo $m$ and every
+character counts.
+
+\textbf{3.} At most 26 initials, distinct modulo $m \geq 26$ (\cref{exo:b1:hash-tables:6}).
+
+\textbf{4.} It ignores the order of the characters, so anagrams always collide (question 19), and short \omterm{def:b1:hash-tables:dictionary}{keys} have
+sums in a narrow range: the $26^4$ words of four letters take only 101 values, so a table of a thousand \omterm{def:b1:hash-tables:hash-table}{buckets} would use
+at most 101 of them.
+
+\textbf{5.} FNV-1a: it uses every byte, mixes them, and has no relation with any $m$; the polynomial hash is as good when
+$m$ is coprime with 31.
+
+\textbf{6.} A search looks only in the key's \omterm{def:b1:hash-tables:hash-table}{bucket}, so equal \omterm{def:b1:hash-tables:dictionary}{keys} must meet there. Unequal \omterm{def:b1:hash-tables:dictionary}{keys} cannot all have
+different values: there are infinitely many strings and finitely many \omterm{def:b1:hash-tables:hash-function}{hash values}.
+
+\textbf{7.} $\alpha = 3.87, 1.875, 0.945$ give $1 + \alpha/2 = 2.94, 1.94, 1.47$; the table shows 2.92, 1.89, 1.47.
+
+\textbf{8.} $127(1 - \frac{1}{127})^{120} \approx 127 e^{-0.945} \approx 49$. The table shows 51 for FNV-1a, 53 and 43 for
+the others.
+
+\textbf{9.} The key in position $j$ of its chain costs $j$ comparisons; a chain of $\ell_b$ \omterm{def:b1:hash-tables:dictionary}{keys} costs $1 + \dots +
+\ell_b$ in all; divide by $n$.
+
+\textbf{10.} If two chains have lengths $\ell_1 \geq \ell_2 + 2$, moving a key from the first to the second changes the
+sum by $(\ell_2 + 1) - \ell_1 < 0$: the minimum has all lengths within one of each other.
+
+\textbf{11.} The whole chain: $n$ in the worst case, $\alpha$ on average under uniform hashing.
+
+\textbf{12.} To compare the \omterm{def:b1:hash-tables:hash-function}{hash functions} at fixed $m$; a resizing table would change $m$ during the experiment.
+
+\textbf{13.} $\alpha = 0.945$ and $0.478$; the formula gives 9.6 and 1.46, the measurement 7.17 and 1.42.
+
+\textbf{14.} The 26 home slots form one long cluster holding the 120 \omterm{def:b1:hash-tables:dictionary}{keys}; a key sits on average about half a cluster
+from its home.
+
+\textbf{15.} A key whose home is any slot of the cluster, or the free slot right after it, ends at the end of the
+cluster: a cluster of length $c$ grows with probability about $(c + 1)/m$, and long clusters also merge.
+
+\textbf{16.} Every key occupies its own slot of the \omterm{def:b1:pointers-and-arrays:array}{array}.
+
+\textbf{17.} A free slot was free when every key now present was inserted, so no probe sequence ever passed it; a
+\omterm{def:b1:hash-tables:collisions}{tombstone} was occupied, and a later key may have gone past it.
+
+\textbf{18.} They disappear: only the live entries are inserted into the new \omterm{def:b1:pointers-and-arrays:array}{array}.
+
+\textbf{19.} The additive hash is invariant under permutation, and $k$ distinct letters have $k!$ distinct orders: $k!$
+different \omterm{def:b1:hash-tables:dictionary}{keys}, one \omterm{def:b1:hash-tables:hash-function}{hash value}, one \omterm{def:b1:hash-tables:hash-table}{bucket}.
+
+\textbf{20.} 1 \omterm{def:b1:hash-tables:hash-table}{bucket} for the additive hash; all 127 for the polynomial, the largest holding 12 \omterm{def:b1:hash-tables:dictionary}{keys}.
+
+\textbf{21.} In one chain, the $i$-th insertion first searches the $i - 1$ \omterm{def:b1:hash-tables:dictionary}{keys}: $\Theta(n^2)$. Spread over $m \geq n$
+\omterm{def:b1:hash-tables:hash-table}{buckets}: $\Theta(n)$ expected.
+
+\textbf{22.} $2^{10} = 1024$, all with one \omterm{def:b1:hash-tables:hash-function}{hash value}.
+
+\textbf{23.} Which \omterm{def:b1:hash-tables:dictionary}{keys} collide depends on the seed, and an attacker who does not know it cannot build colliding \omterm{def:b1:hash-tables:dictionary}{keys} in
+advance; once the seed is known, the attack works again.
+
+\textbf{24.} \emph{The anagram attack}: under the additive hash, a set of $k$ distinct letters gives $k!$ \omterm{def:b1:hash-tables:dictionary}{keys} in one
+\omterm{def:b1:hash-tables:hash-table}{bucket} (question 19). For $k = 6$, the 720 orders of \code{dorset} fill a single \omterm{def:b1:hash-tables:hash-table}{bucket} of 127 under the additive hash,
+and spread over all 127 under the polynomial hash, at most 12 per \omterm{def:b1:hash-tables:hash-table}{bucket}.
+\end{solution}

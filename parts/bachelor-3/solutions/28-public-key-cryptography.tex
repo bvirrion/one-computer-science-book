@@ -1,0 +1,99 @@
+\section*{Chapter \ref{ch:b3:public-key-cryptography} --- Public-Key Cryptography and Secure Protocols}
+
+\begin{solution}{exo:b3:public-key-cryptography:1}
+$4^2 = 16$, $4^4 = 256 \equiv 3$, so $A = 4^3 = 64 \equiv 18$ and $B = 4^7 = 4^4 \cdot 4^2 \cdot 4 \equiv 3 \cdot 16 \cdot 4 = 192 \equiv 8 \pmod{23}$. The town hall computes $B^a = 8^3 = 512 \equiv 6$; the library computes $A^b = 18^7 \equiv (-5)^7$, and $5^2 \equiv 2$, $5^4 \equiv 4$, $5^7 \equiv 4 \cdot 2 \cdot 5 = 40 \equiv 17$, so $(-5)^7 \equiv -17 \equiv 6$. Both get 6. And $4^{11} \equiv 1$: with $4^{11} = 4^4 \cdot 4^4 \cdot 4^2 \cdot 4 \equiv 3 \cdot 3 \cdot 16 \cdot 4 = 576 = 25 \cdot 23 + 1$.
+\end{solution}
+
+\begin{solution}{exo:b3:public-key-cryptography:2}
+$n = 61 \cdot 53 = 3233$, $\varphi(n) = 60 \cdot 52 = 3120$. The extended Euclidean algorithm on 3120 and 17 gives $d = 2753$: $17 \cdot 2753 = 46{,}801 = 15 \cdot 3120 + 1$. Encryption: $65^{17} \bmod 3233 = 2790$; decryption: $2790^{2753} \bmod 3233 = 65$. A test checks the four numbers.
+\end{solution}
+
+\begin{solution}{exo:b3:public-key-cryptography:3}
+The signature guarantees that the budget was not changed and that it comes from the holder of the town hall's private key, and, since anyone can check it, the town hall cannot deny it to a third party. It does not hide the budget: confidentiality needs encryption. A MAC with a key shared by the town hall and the library also shows that the budget was not changed and, to the library, that it comes from the town hall; but the library could have computed the same tag, so a third party learns nothing from it, and there is no undeniability.
+\end{solution}
+
+\begin{solution}{exo:b3:public-key-cryptography:4}
+$m = \lceil \sqrt{1{,}000{,}003}\, \rceil = 1001$, since $1000^2 = 1{,}000{,}000 < 1{,}000{,}003$. The program always makes the 1001 baby steps and reports $m + i$, where $i$ is the index of the successful giant step, between 0 and $m - 1$: at least 1001, when $x < 1001$, and at most 2001.
+\end{solution}
+
+\begin{solution}{exo:b3:public-key-cryptography:5}
+$g$ has order $q$, so $g^{s + q} = g^s$, and $(r, s + q)$ passes the check $g^{s'} = r y^e$: the buggy verifier of the exercise file accepts it. The signer never produced that pair, yet it signs the same message, so the scheme is malleable: if a system names a payment by the hash of its signed record, anyone can make a second, valid record of the same payment with a different name, and the payer may be asked to pay twice or see a payment reported as missing. The fix restores $0 \le s < q$, and also checks that $r$ is a group element, as \code{verify} in \code{schnorr.py} does; the test checks that the twin is then refused on ten signatures.
+\end{solution}
+
+\begin{solution}{exo:b3:public-key-cryptography:6}
+\code{exercises/ex6_crt.py}. First, $c^{d \bmod (p - 1)} \equiv c^d \pmod p$: if $p \mid c$ both sides are 0; otherwise $c^{p-1} \equiv 1$ by Fermat's little theorem, so exponents count modulo $p - 1$. So $m_p \equiv m \pmod p$ and $m_q \equiv m \pmod q$. Recombination: $h = q^{-1}(m_p - m_q) \bmod p$ and $m' = m_q + hq$. Modulo $q$, $m' \equiv m_q$; modulo $p$, $m' \equiv m_q + (m_p - m_q) = m_p$. And $0 \le m' \le (q - 1) + (p - 1)q = pq - 1$. By the Chinese remainder theorem, the only number in $[0, n)$ congruent to $m$ modulo $p$ and $q$ is $m$, so $m' = m$. The test compares it with plain decryption on 20 random messages and on messages divisible by $p$ or $q$; \code{rsa_demo.py} uses it for its count.
+\end{solution}
+
+\begin{solution}{exo:b3:public-key-cryptography:7}
+Facts used: Fermat's little theorem; the Chinese remainder theorem. Write $ed = 1 + k(p - 1)(q - 1)$. Modulo $p$: if $p \mid m$, then $m^{ed} \equiv 0 \equiv m$; otherwise $m^{p-1} \equiv 1$ and $m^{ed} = m \cdot (m^{p-1})^{k(q-1)} \equiv m$. In the same way $m^{ed} \equiv m \pmod q$. So $m^{ed} - m$ is divisible by the distinct primes $p$ and $q$, hence by $n$, for every $m$. The proof never divides by $m$, which is why it covers the case that Euler's theorem leaves out.
+\end{solution}
+
+\begin{solution}{exo:b3:public-key-cryptography:8}
+Let $m = \lceil \sqrt{q}\, \rceil$ and $0 \le x < q \le m^2$; write $x = im + j$ with $i = \lfloor x/m \rfloor$ and $j = x \bmod m$, so $0 \le i, j < m$. The table holds $g^j \mapsto j$ for $j < m$; these powers are distinct since $m \le q$ and $g$ has order $q$. At giant step $i$, $h g^{-im} = g^{x - im} = g^j$ is in the table, so the method stops at step $i$ or earlier. If it stops earlier, at $i' < i$ with $h g^{-i'm} = g^{j'}$, then $x \equiv i'm + j' \pmod q$ with $0 \le i'm + j' < im \le x < q$, so the two are equal, which contradicts $i'm + j' < x$. So the answer is $x$. Cost: $m$ multiplications for the table, one for $g^{-m}$ by fast exponentiation (a few dozen, not counted), and $i + 1 \le m$ table look-ups with at most $m - 1$ multiplications: at most $2m$. If $x$ is uniform, $i$ is nearly uniform on $\{0, \ldots, m - 1\}$, so about $m/2$ giant steps are expected, $1.5\sqrt{q}$ steps in all, as \cref{out:b3:public-key-cryptography:bsgs} shows.
+\end{solution}
+
+\begin{solution}{exo:b3:public-key-cryptography:9}
+The printed rates are about 3 million SHA-256 guesses and about 36 scrypt guesses per second; the numbers vary from run to run, the ratio less. One SHA-256 hash: $10^9$ guesses in about 320 seconds, five minutes. One scrypt hash: about $2.7 \times 10^7$ seconds, some ten months. A table of a million unsalted accounts costs no more than one: each guess is hashed once and looked up among all the stored values. With \omterm{def:b3:public-key-cryptography:passwords}{salts} each account must be attacked separately: a million times longer, about ten years of one core for SHA-256 and hundreds of thousands of years for scrypt. \omterm{def:b3:public-key-cryptography:passwords}{Salts} multiply the attacker's work by the number of accounts; the slow function multiplies the cost of each guess.
+\end{solution}
+
+\begin{solution}{exo:b3:public-key-cryptography:10}
+The session key is derived from $g^{ab}$ and the public transcript only. The long-term keys enter the session only through signatures over the transcript; they are not inputs to the key derivation. An attacker who later steals them holds $g^a$, $g^b$ and the transcript from the recording, plus the long-term private keys, which tell nothing about $a$ or $b$: those were chosen independently and erased. So computing the session key from what it holds is the Diffie--Hellman problem on $(g^a, g^b)$, with no help from the stolen keys. Stolen signing keys only let the attacker impersonate a party in future sessions. With static \omterm{def:b3:public-key-cryptography:rsa}{RSA} key transport, the session key is encrypted under the server's long-term key and sent: whoever later obtains that private key decrypts every recorded session. That is why TLS 1.3 removed it.
+\end{solution}
+
+\begin{solution}{exo:b3:public-key-cryptography:11}
+Facts used: $q$ is prime, so every non-zero residue has an inverse modulo $q$. Let $e_i = H(r \,\|\, m_i)$. Then $s_1 \equiv k + e_1 x$ and $s_2 \equiv k + e_2 x \pmod q$, so $s_1 - s_2 \equiv (e_1 - e_2) x$, and if $e_1 \not\equiv e_2$, $x = (s_1 - s_2)(e_1 - e_2)^{-1} \bmod q$. The formula fails only when $e_1 \equiv e_2$, which for different messages requires a collision of the hash modulo $q$. A predictable \omterm{def:b3:symmetric-cryptography:stream}{nonce} leaks the key too: if $k_2 = k_1 + 1$, then $s_2 - s_1 - 1 \equiv (e_2 - e_1)x$, and the same division gives $x$; any known relation between two \omterm{def:b3:symmetric-cryptography:stream}{nonces} gives one linear equation too many. \code{schnorr.py} and a test recover the key this way.
+\end{solution}
+
+\begin{solution}{exo:b3:public-key-cryptography:12}
+\code{exercises/ex12_hkdf.py}: \code{extract} is $\mathrm{HMAC}(\mathit{salt}, \mathit{ikm})$, with 32 zero bytes when the \omterm{def:b3:public-key-cryptography:passwords}{salt} is empty; \code{expand} chains $T(1), T(2), \ldots$, each the \omterm{def:b3:symmetric-cryptography:mac}{HMAC} under the PRK of the previous block, the info and the block number as one byte, and keeps the first \code{length} bytes, refusing more than $255 \cdot 32$. The test passes test cases 1, 2 and 3 of RFC 5869: in case 2, 82 output bytes need three blocks; in case 3 the \omterm{def:b3:public-key-cryptography:passwords}{salt} and info are empty.
+\end{solution}
+
+\begin{solution}{pb:b3:public-key-cryptography:1}
+\textbf{1.} 23 is prime, so the order of 2 is 1 or 23; $2 \ne 1$, and $2^{23} \equiv 1 \pmod{47}$, which a test checks, so the order is 23.
+
+\textbf{2.} $A = 2^5 = 32$ and $B = 2^9 = 512 \equiv 42 \pmod{47}$.
+
+\textbf{3.} $B^a = 42^5 \equiv 24$ and $A^b = 32^9 = 2^{45} \equiv 24 \pmod{47}$.
+
+\textbf{4.} All the non-zero residues modulo 47 form a group of order 46: its elements' powers reveal the exponent modulo 2, by checking whether the 23rd power is 1, so an eavesdropper learns one bit of $a$ for free, and in general the discrete logarithm splits along the factors of the group's order. A subgroup of prime order has no smaller pieces.
+
+\textbf{5.} At most 22 tries, the exponents 1 to 22; here the fifth power is the first to give 32.
+
+\textbf{6.} $p$, $g$, $A$ and $B$ are public; $a$, $b$ and the shared value 24 are secret.
+
+\textbf{7.} The town hall computed with $E_2$, believing it came from the library, so its key is $g^{a e_2}$, which Eve can compute from $A$ and $e_2$; likewise the library's key is $g^{b e_1}$. Neither key involves both $a$ and $b$.
+
+\textbf{8.} Decrypt each record with one key, read it, change it if she likes, re-encrypt it with the other key, and pass it on; or drop it, or inject new ones.
+
+\textbf{9.} No: $E_2$ is an element of the group like any other, and nothing in it says who chose it.
+
+\textbf{10.} Its Diffie--Hellman share, or better the whole transcript of the exchange including both shares, with the key its \omterm{def:b3:public-key-cryptography:certificate}{certificate} names; the town hall checks the \omterm{def:b3:public-key-cryptography:certificate}{certificate chain} and then the signature.
+
+\textbf{11.} The signature check: the server signed the transcript containing its own share $g^b$, while the client's transcript contains Eve's share; the Finished MAC fails too, since the two sides derived different keys. To repair it Eve would have to sign the altered transcript with the library's private key, which she does not have.
+
+\textbf{12.} Only if a CA the town hall trusts issued a \omterm{def:b3:public-key-cryptography:certificate}{certificate} binding her key to the library's name. Issuing such \omterm{def:b3:public-key-cryptography:certificate}{certificates} only to the owners of the names is the CA's whole job, and a chain that Eve signs herself ends at no \omterm{def:b3:public-key-cryptography:certificate}{trust anchor}, as \cref{out:b3:public-key-cryptography:cert} shows.
+
+\textbf{13.} By about 4, the square root of 16: from 4,963 to 18,739 between 24 and 28 bits, and from 71,277 to 349,149 between 32 and 36, the means of 20 random logarithms.
+
+\textbf{14.} The largest counts, 1,509, 6,673, 24,429, 92,242 and 455,172, are below $2\sqrt{q}$ in each row. The program counts $m + i$ with $i < m$, so at most $2m - 1$ with $m = \lceil \sqrt{q}\, \rceil$, which is $2\sqrt{q}$ up to rounding.
+
+\textbf{15.} Every run makes the $m$ baby steps; the giant step that succeeds has an index $i$ nearly uniform between 0 and $m - 1$, so about $m/2$ on average: $1.5m \approx 1.5\sqrt{q}$.
+
+\textbf{16.} $2^{18}$ entries for $q \approx 2^{36}$, tens of megabytes as Python objects. For $q \approx 2^{64}$, $2^{32}$ entries: at 16 bytes per entry in a compact table, 64 GiB, and several times more in Python. Memory, not time, limits the method first; variants trade some time back for less memory.
+
+\textbf{17.} $q \approx 1.2 \times 10^{19}$, so about $1.5\sqrt{q} \approx 5.2 \times 10^9$ steps on average and $7 \times 10^9$ at most: hours of computation, with a table of a few billion entries.
+
+\textbf{18.} The values $A$ and $B$ and the encrypted records can be recorded tonight and attacked whenever the attacker is ready: solving the logarithm later still yields the key, and with it every recorded record.
+
+\textbf{19.} About $\sqrt{q} = 2^{b}$ operations, so $q$ needs $2b$ bits.
+
+\textbf{20.} A 256-bit $q$.
+
+\textbf{21.} NIST's table pairs $q$ of 256 bits with $p$ of 3072 bits. \omterm{met:b3:public-key-cryptography:bsgs}{Baby-step giant-step} only uses the group operation, so it depends on $q$; but the integers modulo $p$ also allow methods that use their arithmetic, beyond this chapter, whose cost depends on the size of $p$.
+
+\textbf{22.} An elliptic-curve group of 256 to 383 bits, such as the one X25519 uses: keys and shares of 32 bytes instead of 384, and faster operations, because no method better than the generic ones is known on such curves.
+
+\textbf{23.} NIST counts 112-bit strength acceptable for protecting data only through 2030, and asks that protection not be applied with an algorithm whose lifetime ends before the data's security life does: records that must stay secret until 2035 need 128-bit strength now.
+
+\textbf{24.} \omterm{met:b3:public-key-cryptography:bsgs}{Baby-step giant-step} solved logarithms in groups of order $2^{20}$ to $2^{36}$ in at most about $2\sqrt{q}$ steps, $1.5\sqrt{q}$ on average, so a group gives only half its size in bits of security. 128-bit security needs $q \approx 2^{256}$, with a 3072-bit $p$, or a 256-bit elliptic-curve group; and whatever the size, the exchange must be authenticated, or Eve simply sits in the middle.
+\end{solution}

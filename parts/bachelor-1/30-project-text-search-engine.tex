@@ -1,0 +1,474 @@
+% Book 3, Year 1, chapter 30 -- project: a search engine for a folder of texts, in C.
+% Provenance (never printed): sources/book3/BRIEFS.md, chapter 30.
+% ledger: b1:tfidf, b1:zipf
+\chapter{Project: A Search Engine for a Folder of Texts}\label{ch:b1:project-text-search-engine}
+
+A folder holds four hundred texts, 1.9 megabytes in all, and someone wants to know which of them mention
+\emph{quartzite}. Reading every file answers the question in a few milliseconds. Now the same person asks a second
+question, then a hundred, then a thousand, and each time the program reads the whole folder again, although the texts
+have not changed. A search engine reads them once, writes down where every word occurs, and answers each question from
+that record. This chapter builds one in C, in six milestones, from a specification to a measurement. Nothing in it is
+new: it puts together the files of \cref{ch:b1:c-strings-structs-files}, the modules and tests of
+\cref{ch:b1:c-modules-make-tests}, the history of \cref{ch:b1:version-control}, the \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic arrays} of
+\cref{ch:b1:dynamic-arrays}, the \omterm{def:b1:hash-tables:hash-table}{hash tables} of \cref{ch:b1:hash-tables} and the heaps of \cref{ch:b1:heaps}. What is
+new is making them work together, and showing that they do.
+
+\begin{recall}
+A file is read through a stream, in binary mode when every byte matters, and a robust reader checks every call
+(\cref{sec:b1:c-strings-structs-files:robust}). A module is a header (its interface) and a \omterm{def:b1:compilation-pipeline:source-file}{source file}; a \omterm{def:b1:c-modules-make-tests:makefile}{makefile}
+rebuilds what is out of date (\cref{def:b1:c-modules-make-tests:makefile}). A \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic array} doubles its capacity when
+it is full, at amortised constant cost per push (\cref{def:b1:dynamic-arrays:amortised}). A \omterm{def:b1:hash-tables:hash-table}{hash table} with \omterm{def:b1:hash-tables:collisions}{separate
+chaining} finds a key in expected constant time while its \omterm{def:b1:hash-tables:load-factor}{load factor} stays bounded
+(\cref{def:b1:hash-tables:load-factor}). The $k$ largest elements of a stream are kept in a min-heap of size $k$
+(\cref{lst:b1:heaps:topk}).
+\end{recall}
+
+\section{Specification and corpus}\label{sec:b1:project-text-search-engine:spec}
+
+The program is called \code{search}. Run as \code{search DIR WORD...}, it reads every file of the folder \code{DIR}
+whose name ends in \code{.txt}, and prints how many of them contain \emph{every} word of the query, then the ten best of
+them, best first, each with its score; a word is matched whatever its case. Run with a folder and no word, it prints the
+size of what it built. Its \omterm{def:b1:the-shell:exit-status}{exit status} says what happened: 0 when some document matches, 1 when none does, 2 when the
+command is misused or the folder cannot be read, so that a script can tell ``nothing found'' from ``something broke''.
+It is built by a \omterm{def:b1:c-modules-make-tests:makefile}{makefile}, tested by \omterm{def:b1:c-modules-make-tests:unit-test}{unit tests} and by a comparison with a simpler program, kept in a Git \omterm{def:b1:version-control:repository}{repository},
+and measured against that simpler program, which reads every file for every query.
+
+\omimg{book3/ai/b1-project-text-search-engine-desk.jpg}{0.5\linewidth}{Four hundred texts are a desk of folders:
+searching it once by reading everything is fine; searching it a thousand times is not.}
+
+\paragraph{The corpus.} The texts are generated, not downloaded, by a script seeded so that every run writes the same
+400 files. Each document has between 200 and 2000 words drawn from an invented vocabulary of 5000 words made of
+syllables. The word of rank $r$ is drawn with probability proportional to $1/r$, so a handful of short words fill
+most of every text and most words are rare, as in real prose. Three words that the vocabulary cannot produce (its
+syllables have no \emph{q}, \emph{x}, \emph{y} or \emph{z}) are planted in known documents, so that tests know the
+answer in advance: \emph{quixotic} in two documents, \emph{xylograph} in one and \emph{quartzite} in four. One
+document in fifty starts with \emph{Café}, whose last letter is not ASCII, and one in forty has no final newline.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/make_corpus.py}{22}{39}{One document: words drawn with
+weights $1/r$, the planted words, the traps, and lines of ten words}\label{lst:b1:project-text-search-engine:corpus}
+
+\omoutput{code/bachelor-1/30-project-text-search-engine/outputs/make_corpus.txt}{The corpus: the word of rank $r$
+occurs about $47\,500 / r$ times, so rank times count is nearly constant.}\label{out:b1:project-text-search-engine:corpus}
+
+The product in the last column is the law that George Kingsley Zipf described in 1949 for the words of real texts:
+in a large text, the frequency of a word is roughly inversely proportional to its rank. The script imposes it here on
+purpose; it matters for the engine, because it says that a few words occur in every document and most occur in very
+few.
+
+\paragraph{The first version.} Before any index, the specification is met by the simplest program that could meet it,
+\code{naive}: for each query, read every file, count each query word in it, and score the files that contain them all.
+It is slow, but it is short enough to be checked by reading, and it will serve as the \emph{oracle} of the tests: the
+fast program must print, for every query, exactly what the slow one prints.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/scan.c}{11}{42}{The naive scan: every file, every word,
+compared with every term}\label{lst:b1:project-text-search-engine:scan}
+
+Both programs share the code that cuts a text into words, the score and the printing, so that a difference between
+them can only come from the index. The whole design fits in one picture.
+
+\begin{omfigure}
+\begin{tikzpicture}[>={Stealth[length=1.8mm]}, font=\small,
+  m/.style={draw, rounded corners=2pt, fill=omCode!8, minimum height=8mm, align=center, inner sep=3pt},
+  d/.style={draw, dashed, minimum height=8mm, align=center, inner sep=3pt}]
+\node[d] (dir) at (0,0) {folder\\\code{*.txt}};
+\node[m] (fold) at (2.4,0) {\code{folder}\\list, sort};
+\node[m] (tok) at (5.0,0) {\code{tokenize}\\words};
+\node[m] (ix) at (7.7,0) {\code{index}\\hash table};
+\node[d] (q) at (0,-2.0) {query\\words};
+\node[m] (qr) at (5.0,-2.0) {\code{query}\\AND, tf--idf};
+\node[m] (tk) at (7.7,-2.0) {\code{topk}\\heap of 10};
+\node[m] (out) at (10.2,-2.0) {\code{main}\\print};
+\draw[->] (dir) -- (fold);
+\draw[->] (fold) -- (tok);
+\draw[->] (tok) -- node[above, font=\scriptsize] {words} (ix);
+\draw[->] (q) -- node[above, font=\scriptsize] {\code{split_words}} (qr);
+\draw[->] (ix) -- node[left, font=\scriptsize] {posting lists} (qr.north east);
+\draw[->] (qr) -- node[above, font=\scriptsize] {hits} (tk);
+\draw[->] (tk) -- (out);
+\node[m, fill=omThm!10] (sc) at (2.4,-3.6) {\code{scan}\\(the oracle)};
+\draw[->, omThm] (fold) to[bend right=30] (sc.north west);
+\draw[->, omThm] (sc.east) -| (tk.south);
+\end{tikzpicture}
+\par\smallskip{\small The modules of the search engine and the data that flows between them. The texts are read once,
+to build the index; each query then touches only the \omterm{def:b1:project-text-search-engine:inverted-index}{posting lists} of its words. The naive scan reuses the \omterm{def:b1:project-text-search-engine:tokenizer}{tokenizer}
+and the heap but reads every file for every query.}
+\end{omfigure}
+
+\section{Splitting files into words}\label{sec:b1:project-text-search-engine:tokenize}
+
+\begin{definition}[Tokenizer]\label{def:b1:project-text-search-engine:tokenizer}
+A \emph{tokenizer}\index{tokenizer} is a function that cuts a text into a sequence of \emph{tokens}, the units that the
+rest of a program works with, by a rule that says which characters belong to a token and which separate tokens.
+\end{definition}
+
+Here a token is a word, and the rule is short: a word is a maximal run of ASCII letters, lowercased; every other byte
+separates words. The rule works on bytes, so it never has to decode the text. Its cost is a documented choice about
+the other alphabets. In UTF-8 the letter \emph{é} is the two bytes \code{0xC3 0xA9}, neither of which is an ASCII
+letter, so \emph{Café} becomes the word \emph{caf}. That is wrong for a reader of French, and a real engine decodes the
+text and folds accents. It is consistent, though: the query \emph{Café} is cut by the same function into the same
+\emph{caf}, so it still finds its documents. A word longer than 63 letters is cut to its first 63, so that it fits in a
+fixed buffer without overflowing it.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/tokenize.c}{8}{24}{The \omterm{def:b1:project-text-search-engine:tokenizer}{tokenizer}: skip separators, then
+copy letters, lowercased, until the next separator}\label{lst:b1:project-text-search-engine:next-word}
+
+The bit trick on line 18 lowercases an ASCII letter: \emph{A} is \code{0x41} and \emph{a} is \code{0x61}, so setting bit
+5 maps every capital to its small letter and leaves small letters alone. Note what the function does at the end of the
+text: the second loop stops at \code{len} as well as at a separator, so the last word of a file without a final newline
+is kept (\cref{exo:b1:project-text-search-engine:5} shows a \omterm{def:b1:project-text-search-engine:tokenizer}{tokenizer} that loses it).
+
+The file is read whole into memory, in binary mode, by doubling a buffer until \code{fread} returns nothing more, and
+every failure gives back \code{NULL} with nothing left allocated.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/tokenize.c}{26}{48}{Reading a whole file into a growing
+buffer}\label{lst:b1:project-text-search-engine:read-file}
+
+The \omterm{def:b1:project-text-search-engine:tokenizer}{tokenizer} gets its own \omterm{def:b1:c-modules-make-tests:unit-test}{unit tests}, on inputs chosen for their edges: an apostrophe, two dashes, capitals, a
+non-ASCII letter, a digit inside a word, a word too long for the buffer, and a text whose last byte is a letter.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/units_test.c}{14}{29}{\omterm{def:b1:c-modules-make-tests:unit-test}{Unit tests} of the \omterm{def:b1:project-text-search-engine:tokenizer}{tokenizer} on
+tricky inputs}\label{lst:b1:project-text-search-engine:tok-test}
+
+\section{The inverted index}\label{sec:b1:project-text-search-engine:index}
+
+\begin{definition}[Inverted index, posting list]\label{def:b1:project-text-search-engine:inverted-index}
+Let a collection of documents be numbered $0, 1, \dots, N - 1$. The \emph{posting list}\index{posting list} of a word
+is the list of the documents that contain it, in increasing order, each with the number of times the word occurs in
+it; each element is a \emph{posting}. An \emph{inverted index}\index{inverted index} of the collection is a \omterm{def:b1:hash-tables:dictionary}{dictionary}
+that maps each word occurring in it to its posting list.
+\end{definition}
+
+A document is a list of words; the index turns that around and gives, for each word, its documents, hence the name.
+It is built in one pass. The documents are read in order of their names, so the numbers are the same on every run, and
+each word of document $d$ either adds a posting $(d, 1)$ at the end of its list or, if the last posting is already
+$(d, c)$, makes it $(d, c + 1)$. Since $d$ only grows, every list stays sorted without being sorted. The \omterm{def:b1:hash-tables:dictionary}{dictionary} is
+a \omterm{def:b1:hash-tables:hash-table}{hash table} with \omterm{def:b1:hash-tables:collisions}{separate chaining}, hashed by FNV-1a, whose number of \omterm{def:b1:hash-tables:hash-table}{buckets} doubles when there are more words than
+\omterm{def:b1:hash-tables:hash-table}{buckets}; each \omterm{def:b1:project-text-search-engine:inverted-index}{posting list} is a \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic array} of postings.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/index.h}{6}{28}{The types of the index: a posting, a
+\omterm{def:b1:project-text-search-engine:inverted-index}{posting list}, a \omterm{def:b1:hash-tables:hash-table}{bucket} entry, the index}\label{lst:b1:project-text-search-engine:index-h}
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/index.c}{41}{80}{Finding a word's entry, adding an
+occurrence, and indexing a text}\label{lst:b1:project-text-search-engine:index}
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, >={Stealth[length=1.6mm]},
+  b/.style={draw, minimum width=8mm, minimum height=6mm},
+  e/.style={draw, rounded corners=1.5pt, fill=omCode!8, minimum height=6mm, inner sep=2pt},
+  p/.style={draw, minimum width=10mm, minimum height=6mm, font=\scriptsize, fill=omThm!8}]
+\foreach \i in {0,...,4} {\node[b] (k\i) at (0,-\i*0.8) {}; \node[font=\scriptsize, anchor=east] at (-0.5,-\i*0.8) {\i};}
+\node[font=\scriptsize, anchor=east] at (-0.5,-4.4) {$\vdots$};
+\node[e] (e1) at (2.2,-0.8) {\emph{cat}};
+\node[e] (e2) at (4.0,-0.8) {\emph{hat}};
+\node[e] (e3) at (2.2,-2.4) {\emph{the}};
+\node[e] (e4) at (2.2,-3.2) {\emph{a}};
+\draw[->] (k1.center) -- (e1);
+\draw[->] (e1) -- (e2);
+\draw[->] (k3.center) -- (e3);
+\draw[->] (k4.center) -- (e4);
+\foreach \t/\x in {0\,{,}\,1/0, 1\,{,}\,1/1, 2\,{,}\,1/2} {\node[p] at (6.8+\x*1.05,0.1) {(\t)};}
+\node[font=\scriptsize, anchor=east] (lc) at (6.2,0.1) {list of \emph{cat}};
+\draw[->, omThm] (e1.north) to[bend left=25] (lc.west);
+\foreach \t/\x in {0\,{,}\,2/0, 1\,{,}\,2/1} {\node[p] at (6.8+\x*1.05,-2.4) {(\t)};}
+\draw[->, omThm] (e3.east) -- (6.25,-2.4);
+\foreach \t/\x in {2\,{,}\,3/0} {\node[p] at (6.8+\x*1.05,-3.2) {(\t)};}
+\draw[->, omThm] (e4.east) -- (6.25,-3.2);
+\node[font=\scriptsize, align=left, anchor=west] at (6.25,-1.2) {postings (document, count),\\sorted by document};
+\end{tikzpicture}
+\par\smallskip{\small Part of the \omterm{def:b1:project-text-search-engine:inverted-index}{inverted index} of three small documents (those of
+\cref{exo:b1:project-text-search-engine:2}). The \omterm{def:b1:pointers-and-arrays:array}{array} of \omterm{def:b1:hash-tables:hash-table}{buckets} holds \omterm{def:b1:pointers-and-arrays:pointer}{pointers} to chains of entries; \emph{cat} and
+\emph{hat} share a \omterm{def:b1:hash-tables:hash-table}{bucket} (the \omterm{def:b1:hash-tables:hash-table}{bucket} numbers are made up). Each entry owns its word and its \omterm{def:b1:project-text-search-engine:inverted-index}{posting list}, a \omterm{def:b1:dynamic-arrays:dynamic-array}{dynamic array} of (document,
+count) pairs.}
+\end{omfigure}
+
+How big is it? The function \code{index_memory} adds up what the index allocated: the \omterm{def:b1:pointers-and-arrays:array}{array} of \omterm{def:b1:hash-tables:hash-table}{buckets}, the entries,
+the copies of the words, the posting \omterm{def:b1:pointers-and-arrays:array}{arrays} at their capacity (not their size, since the slack is allocated too) and the
+file names. On the corpus, the engine prints its statistics when it is given no word:
+
+\omoutput[24-25]{code/bachelor-1/30-project-text-search-engine/outputs/build.txt}{The index of the corpus: 5004 distinct
+words, 193\,455 postings, 2.46 million bytes.}\label{out:b1:project-text-search-engine:stats}
+
+The corpus has 434\,742 words, and the index has 193\,455 postings: each posting stands for all the occurrences of a word
+in a document, which is why there are fewer than half as many. The index is a little bigger than the texts, nine tenths of it
+posting \omterm{def:b1:pointers-and-arrays:array}{arrays}, almost a third of whose capacity is the slack that doubling leaves (\cref{exo:b1:project-text-search-engine:11}).
+The 5004 words are the vocabulary of 5000, every one of which occurs somewhere, the three planted words, and the
+fragment \emph{caf}.
+
+\section{Answering queries}\label{sec:b1:project-text-search-engine:queries}
+
+A query of $k$ words asks for the documents that contain all of them: the intersection of their \omterm{def:b1:project-text-search-engine:inverted-index}{posting lists}. Two
+sorted lists are intersected by merging, as in \omterm{def:b1:sorting:merge-sort}{merge sort}: walk through both with one index each, advance the one that
+points at the smaller document, and keep a document when both point at it. Every step advances at least one index, so
+the merge of lists of lengths $\ell$ and $m$ costs at most $\ell + m$ steps. For $k$ words, the lists are taken
+shortest first. The running result is then never longer than the shortest list, and it shrinks as the merges go on.
+
+\begin{omfigure}
+\begin{tikzpicture}[font=\small, c/.style={draw, minimum width=7mm, minimum height=6mm},
+  k/.style={c, fill=omThm!25}, >={Stealth[length=1.5mm]}]
+\node[anchor=east] at (-0.45,0) {word 1};
+\node[anchor=east] at (-0.45,-1.3) {word 2};
+\node[anchor=east] at (-0.45,-2.6) {both};
+\foreach \v/\x/\s in {3/0/k, 8/1/c, 12/2/k, 19/3/k, 27/4/c} {\node[\s] (a\x) at (\x*0.85,0) {\v};}
+\foreach \v/\x/\s in {1/0/c, 3/1/k, 4/2/c, 12/3/k, 15/4/c, 19/5/k, 30/6/c} {\node[\s] (b\x) at (\x*0.85,-1.3) {\v};}
+\foreach \v/\x in {3/0, 12/1, 19/2} {\node[k] (r\x) at (\x*0.85,-2.6) {\v};}
+\draw[<->, omCode] (a0.south) -- (b1.north);
+\draw[<->, omCode] (a2.south) -- (b3.north);
+\draw[<->, omCode] (a3.south) -- (b5.north);
+\node[font=\scriptsize, align=left, anchor=west] at (6.6,-0.65) {8 steps: each advances\\one list, or both on a match};
+\end{tikzpicture}
+\par\smallskip{\small The AND of two words as a merge of their sorted lists of document numbers. The shaded documents
+are in both. Document 8 is passed on the first list because the second has jumped from 4 to 12; documents 1, 4 and 15
+are passed on the second. After 27 is compared with 30, the first list runs out and the merge stops.}
+\end{omfigure}
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/query.c}{33}{56}{The AND query: look up every term, sort
+the lists by length, and merge them into the running result}\label{lst:b1:project-text-search-engine:merge}
+
+A word that occurs in no document has no \omterm{def:b1:project-text-search-engine:inverted-index}{posting list} at all; then no document can contain every word, and the
+function stops at once (line 39). Which of the survivors are the best? A document that uses a query word often is
+probably about it, and a rare word says more about a document than a word that every document uses. The usual score
+combines the two.
+
+\begin{definition}[Term frequency, document frequency, tf--idf score]\label{def:b1:project-text-search-engine:tfidf}
+In a collection of $N$ documents, the \emph{term frequency}\index{term frequency} $\mathrm{tf}(t, d)$ of a word $t$ in a
+document $d$ is the number of times $t$ occurs in $d$, and its \emph{document frequency}\index{document frequency}
+$\mathrm{df}(t)$ is the number of documents that contain it. The \emph{tf--idf score}\index{tf--idf score} of a document
+$d$ for a query of words $t_1, \dots, t_k$ is
+\[
+  \mathrm{score}(d) = \sum_{i=1}^{k} \mathrm{tf}(t_i, d) \cdot \ln \frac{N}{\mathrm{df}(t_i)} .
+\]
+\end{definition}
+
+The factor $\ln (N / \mathrm{df})$ is the \emph{inverse \omterm{def:b1:project-text-search-engine:tfidf}{document frequency}}: zero for a word in every document, which
+therefore cannot tell documents apart, and largest for a word in only one. It is a choice, not a theorem. Other
+engines dampen the \omterm{def:b1:project-text-search-engine:tfidf}{term frequency} (a word used ten times is not ten times as relevant) or divide by the length of the
+document, and their results differ; this one is the plain textbook form. Both factors are already in the index: the
+\omterm{def:b1:project-text-search-engine:tfidf}{term frequency} is the count of a posting, and the \omterm{def:b1:project-text-search-engine:tfidf}{document frequency} is the length of the \omterm{def:b1:project-text-search-engine:inverted-index}{posting list}.
+
+\begin{history}[Inverse document frequency]
+% ledger: b1:tfidf
+In 1972, Karen Spärck Jones published in the \emph{Journal of Documentation} ``A statistical interpretation of term
+specificity and its application in retrieval''. She argued that a term matching many documents should count for
+less than one matching few, and weighted each term by a function of the number of documents it occurs in. The
+logarithmic weight became known as the inverse \omterm{def:b1:project-text-search-engine:tfidf}{document frequency}. Combined with the \omterm{def:b1:project-text-search-engine:tfidf}{term frequency}, it is still the
+starting point of most ranking functions in search engines.
+\end{history}
+
+The query computes the score of each surviving document, finding each term's count in its sorted \omterm{def:b1:project-text-search-engine:inverted-index}{posting list} by
+binary search, and keeps the best ten in a min-heap of size ten, the method of \cref{lst:b1:heaps:topk}: a new hit only
+has to be compared with the worst hit kept, at the root.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/topk.c}{34}{46}{Keeping the $k$ best hits: \omterm{def:b1:heaps:sift}{sift up} while
+there is room, then replace the root only by a better hit}\label{lst:b1:project-text-search-engine:topk}
+
+``Better'' is defined by \code{hit_better}: a higher score or, on equal scores, a smaller document number. Ties are
+frequent here, since two documents in which the query words occur equally often get the same score, and without this
+rule the order of equal hits would depend on the order of the heap's operations. The naive scan would then print the
+same documents in another order, and the test that compares them would fail for a reason that is not an error.
+With the rule, the order of the hits is a property of the hits alone.
+
+\omoutput[26-41]{code/bachelor-1/30-project-text-search-engine/outputs/build.txt}{Two queries. Quixotic is in two
+documents, once each: $\ln(400/2) = 5.2983$. Of the 34 documents with nodo and beli, the best uses nodo twice and beli
+four times.}\label{out:b1:project-text-search-engine:queries}
+
+The first score can be checked by hand: \emph{nodo} is in 45 documents and \emph{beli} in 265, so the best document
+scores $2 \ln(400/45) + 4 \ln(400/265) = 4.3697 + 1.6469 = 6.0165$. The query \emph{Quixotic}, capital included, is cut
+by the same \omterm{def:b1:project-text-search-engine:tokenizer}{tokenizer} and found.
+
+\section{Tests, makefile and Git history}\label{sec:b1:project-text-search-engine:tests}
+
+The project has five modules, three programs and one test program, so the \omterm{def:b1:c-modules-make-tests:makefile}{makefile} of
+\cref{lst:b1:c-modules-make-tests:makefile} grows a little: one variable lists the core modules that every program
+links, and each program adds what it needs.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/Makefile}{1}{35}{The project's
+\omterm{def:b1:c-modules-make-tests:makefile}{makefile}}\label{lst:b1:project-text-search-engine:makefile}
+
+\omoutput[1-18]{code/bachelor-1/30-project-text-search-engine/outputs/build.txt}{A build from scratch, then the \omterm{def:b1:c-modules-make-tests:unit-test}{unit
+tests}.}\label{out:b1:project-text-search-engine:make}
+
+The \omterm{def:b1:c-modules-make-tests:unit-test}{unit tests} check each module on its own, on small inputs whose answers are known: the \omterm{def:b1:project-text-search-engine:tokenizer}{tokenizer} on the line of
+\cref{lst:b1:project-text-search-engine:tok-test}; the index on four documents of a few words, then after 3000 more
+words, which make the table grow; the heap on a stream of seven scores with a tie. They catch an error close to where
+it is. They cannot show that the modules fit together, that the program reads the folder it is given, or that its
+output is the one the specification asks for. That is the job of another kind of test.
+
+\begin{definition}[End-to-end test]\label{def:b1:project-text-search-engine:end-to-end}
+An \emph{end-to-end test}\index{end-to-end test} runs a whole program as its users do, from its real inputs (here a
+folder and a command line) to its real outputs (the printed text and the \omterm{def:b1:the-shell:exit-status}{exit status}), and checks those outputs,
+without looking inside the program.
+\end{definition}
+
+Here the \omterm{def:b1:project-text-search-engine:end-to-end}{end-to-end test} has an oracle: the naive scan, which shares the \omterm{def:b1:project-text-search-engine:tokenizer}{tokenizer}, the score and the printing with
+the engine, but not the index. The test builds both programs with the \omterm{def:b1:c-modules-make-tests:makefile}{makefile} in a fresh temporary folder, generates
+the corpus, and runs both on the 200 seeded queries of one to three words, plus the planted words, a query with a
+capital and a punctuation mark, and a word found nowhere. For every query the two outputs and the two exit statuses
+must be identical, byte for byte.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/tests/test_end_to_end.py}{15}{44}{The \omterm{def:b1:project-text-search-engine:end-to-end}{end-to-end test}: build,
+generate, and compare with the oracle on every query}\label{lst:b1:project-text-search-engine:e2e}
+
+The scores are printed with four decimals, so the comparison is exact only because both programs add the same
+terms in the same order, through the same function \code{tfidf}; two different orders of addition can round
+differently in the last bit. The test also builds the engine with the address and undefined-behaviour sanitizers and
+requires them to stay silent on twenty queries, an empty query and a word found nowhere. That covers the paths that
+free memory early, such as the word with no \omterm{def:b1:project-text-search-engine:inverted-index}{posting list}. Here is such a run by hand:
+
+\omoutput{code/bachelor-1/30-project-text-search-engine/outputs/asan.txt}{The engine built with the sanitizers: the
+same answers, and not a word on the error stream.}\label{out:b1:project-text-search-engine:asan}
+
+\omoutput[42-49]{code/bachelor-1/30-project-text-search-engine/outputs/build.txt}{The two programs agree on a query, and
+the exit statuses 1 (nothing found) and 2 (no such folder).}\label{out:b1:project-text-search-engine:status}
+
+\paragraph{The history.} The project was kept in Git from its first milestone, with one \omterm{def:b1:version-control:commit}{commit} per milestone, so that each
+\omterm{def:b1:version-control:commit}{commit} is a version that does one more thing. The session below replays that history in a fresh \omterm{def:b1:version-control:repository}{repository}: it copies
+the files of each milestone and \omterm{def:b1:version-control:commit}{commits} them, then shows the log, the content of one \omterm{def:b1:version-control:commit}{commit}, and a \omterm{def:b1:version-control:staging}{working tree} with
+nothing left to \omterm{def:b1:version-control:commit}{commit} after a build, since the \code{.gitignore} lists the programs, the \omterm{def:b1:compilation-pipeline:compiler}{object files} and the
+generated corpus.
+
+\omoutput{code/bachelor-1/30-project-text-search-engine/outputs/history.txt}{The project's history, one \omterm{def:b1:version-control:commit}{commit} per
+milestone, and the clean \omterm{def:b1:version-control:staging}{working tree} after a build.}\label{out:b1:project-text-search-engine:history}
+
+Generated files stay out of the \omterm{def:b1:version-control:repository}{repository}: the corpus is 1.9 megabytes that the script rewrites in a second, and a
+committed copy could drift from the script that is supposed to make it.
+
+\section{Measured against the naive scan}\label{sec:b1:project-text-search-engine:measure}
+
+Is the index worth its cost? Building it reads every file once, as one naive query does, and also fills a \omterm{def:b1:hash-tables:hash-table}{hash table}.
+After that, a query touches only the \omterm{def:b1:project-text-search-engine:inverted-index}{posting lists} of its words. A small program, \code{measure}, times the building of
+the index, the 200 queries answered ten times over from the index, and the first twenty queries answered by the scan.
+It checks that the two methods agree on those twenty, and prints the number of queries from which the index has paid
+for itself.
+
+\omoutput{code/bachelor-1/30-project-text-search-engine/outputs/timing.txt}{The index against the naive scan, measured on
+the author's laptop.}\label{out:b1:project-text-search-engine:timing}
+
+One query from the index takes about three microseconds, against nearly six milliseconds for the scan, which reads
+1.9 megabytes and compares every word of them with every term: nearly two thousand times faster. The index costs about
+two scans to build (more than one, since it also hashes every word and grows the table), so it pays for itself from the
+third query on.
+
+\begin{omfigure}
+\begin{tikzpicture}
+\begin{axis}[width=0.8\linewidth, height=5.6cm, xlabel={number of queries $q$}, ylabel={total time (ms)},
+  xmin=0, xmax=10, ymin=0, ymax=60, legend pos=north west, legend style={font=\small, draw=none},
+  tick label style={font=\small}, label style={font=\small}, grid=major, grid style={black!10}]
+\addplot[omCode, very thick, mark=*, mark size=1.4pt] table[x=q, y=scan]
+  {code/bachelor-1/30-project-text-search-engine/figures/measure.dat};
+\addlegendentry{scan every file for every query}
+\addplot[omThm, very thick, mark=square*, mark size=1.4pt] table[x=q, y=index]
+  {code/bachelor-1/30-project-text-search-engine/figures/measure.dat};
+\addlegendentry{build the index once, then query it}
+\end{axis}
+\end{tikzpicture}
+\par\smallskip{\small Total time of $q$ queries on the corpus, from the measured output above. The scan's line rises by
+almost six milliseconds per query; the index's line starts at its building time and stays flat, its queries far too
+fast to show at this scale. The lines cross between the second and third queries.}
+\end{omfigure}
+
+The saving grows with the corpus. The scan's cost is proportional to the total size of the texts, while a query on the
+index costs in proportion to the lengths of the \omterm{def:b1:project-text-search-engine:inverted-index}{posting lists} of its words. For the rare words that make good queries,
+those lists are short, and Zipf's law says that most words are rare. The cost of the index is memory, a little more than
+the texts here, and the time to build it again when a text changes. A real engine updates it piece by piece, which
+this one cannot do.
+
+\paragraph{What would come next.} Three improvements are classic. \emph{Stemming} would let \emph{index} match
+\emph{indexes}, by cutting words to a common root, a rule that depends on the language. \emph{Phrase queries}, such as
+the five words of a title in that order, need the positions of the words in the postings, and
+\cref{exo:b1:project-text-search-engine:10} adds them. \emph{Compressing the postings} would make the index smaller
+than the texts: the gaps between successive document numbers are small, and small numbers fit in a byte or less. The
+algorithms on texts in the next volume go further, and \cref{exo:b1:project-text-search-engine:12} makes the index
+survive the end of the program by writing it to a file.
+
+\section{Exercises}\label{sec:b1:project-text-search-engine:exercises}
+
+\begin{exercise}[$\star$]\label{exo:b1:project-text-search-engine:1}
+Give the words that \code{next_word} (\cref{lst:b1:project-text-search-engine:next-word}) finds in the UTF-8 line
+\texttt{It's 9:30-{}-{}Ünal's "e-{}mail" (v2.0)!}, in order. Which of them would a reader not call words, and why does
+the query \emph{Ünal} still find this line?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:project-text-search-engine:2}
+Three documents are indexed in this order: document 0, \emph{the cat sat on the mat}; document 1, \emph{The Cat and
+the Hat}; document 2, \emph{a cat, a hat; a bat}. Write the \omterm{def:b1:project-text-search-engine:inverted-index}{posting lists} of \emph{the}, \emph{cat}, \emph{hat} and
+\emph{a}, and give the number of distinct words and the number of postings of the index.
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:project-text-search-engine:3}
+Merge the \omterm{def:b1:project-text-search-engine:inverted-index}{posting lists} of documents $[2, 5, 9, 14, 20, 31]$ and $[1, 5, 6, 14, 31, 40, 41]$ as the loop of
+\cref{lst:b1:project-text-search-engine:merge} does. Give the result and the number of times the loop's body runs.
+Why does the loop stop before the end of the second list?
+\end{exercise}
+
+\begin{exercise}[$\star$]\label{exo:b1:project-text-search-engine:4}
+A heap of size $k = 3$ (\cref{lst:b1:project-text-search-engine:topk}) receives hits of scores 4, 8, 1, 6, 9, 3, 7, for
+documents 0 to 6 in this order. Give the heap's \omterm{def:b1:pointers-and-arrays:array}{array} after each push, and the three hits that \code{topk_sorted}
+returns.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:project-text-search-engine:5}
+A colleague counts words with the function below, a word being a run of ASCII letters. On the three texts of the
+output it prints 4, 4 and 3. Explain the 3, give the class of input it fails on, and correct the function with one
+line. Why does \code{next_word} not have this error?
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/exo_last_word.c}{5}{18}{Counting words at the
+separators}
+\omoutput[2-4]{code/bachelor-1/30-project-text-search-engine/outputs/exo_last_word.txt}{Three texts, the last without a
+final newline.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:project-text-search-engine:6}
+The program below builds the \omterm{def:b1:project-text-search-engine:inverted-index}{posting list} of \emph{cat} for document 0, \emph{cat cat the}, and document 1, \emph{dog
+cat}. Explain its output, including the negative inverse \omterm{def:b1:project-text-search-engine:tfidf}{document frequency}, and say which line of
+\cref{lst:b1:project-text-search-engine:index} prevents the error in the engine. What would the error do to the
+answers of the \omterm{def:b1:project-text-search-engine:end-to-end}{end-to-end test}?
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/exo_twice.c}{9}{20}{A \omterm{def:b1:project-text-search-engine:inverted-index}{posting list} that never looks at
+its last posting}
+\omoutput[2-3]{code/bachelor-1/30-project-text-search-engine/outputs/exo_twice.txt}{The \omterm{def:b1:project-text-search-engine:inverted-index}{posting list} of cat.}
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:project-text-search-engine:7}
+Write a function \code{query_or}, with the same arguments as \code{query_and}, that finds the documents containing
+\emph{at least one} of the terms, scored by the sum of the tf--idf terms of the words they contain. Test it against a
+brute-force count on small documents. How does its cost compare with that of \code{query_and}?
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:project-text-search-engine:8}
+Add an option \texttt{-{}-{}count} to \code{search}: \texttt{search DIR -{}-{}count WORD}\dots{} prints only the number of documents
+that contain every word, with the same \omterm{def:b1:the-shell:exit-status}{exit status}. Write the counting function so that it allocates nothing and does
+not compute a single score.
+\end{exercise}
+
+\begin{exercise}[$\star\star$]\label{exo:b1:project-text-search-engine:9}
+An AND query has $k \ge 2$ words whose \omterm{def:b1:project-text-search-engine:inverted-index}{posting lists} have lengths $\ell_1 \le \ell_2 \le \dots \le \ell_k$.
+\begin{enumerate}
+\item Prove that the merges of \cref{lst:b1:project-text-search-engine:merge}, shortest list first, run their loop body
+at most $(k - 1)\ell_1 + \ell_2 + \dots + \ell_k$ times in all.
+\item Another method takes each document of the shortest list and looks for it in each other list by binary search.
+Show that it costs $\Oh{\ell_1 \log \ell_k \cdot k}$ comparisons.
+\item Compare the two for the query \emph{xylograph ba}, where \emph{ba} is in all 400 documents.
+\end{enumerate}
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:project-text-search-engine:10}
+Add phrase queries: the documents in which the words $w_1, \dots, w_k$ occur consecutively, in this order. Store with
+each occurrence its position in the document (its rank among the document's words), and find the positions $p$ such
+that $w_i$ occurs at $p + i - 1$ for every $i$, by merging lists of (document, position) pairs. Test it on documents
+where the words occur in both orders.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:project-text-search-engine:11}
+Write the memory counted by \code{index_memory} as a function of the number of \omterm{def:b1:hash-tables:hash-table}{buckets} $B$, the number of distinct
+words $W$, their total length $L$, the capacities $c_t$ of the \omterm{def:b1:project-text-search-engine:inverted-index}{posting lists}, and the documents' names, on a machine
+where \omterm{def:b1:pointers-and-arrays:pointer}{pointers} take 8 bytes and \code{int} 4. On the corpus, $W = 5004$, $L = 30\,203$, $\sum_t c_t = 274\,086$, and the
+400 names have 10 characters each. Find $B$ from the growth rule of the table, check the total of
+\cref{out:b1:project-text-search-engine:stats}, and say what fraction of the posting \omterm{def:b1:pointers-and-arrays:array}{arrays} is slack.
+\end{exercise}
+
+\begin{exercise}[$\star\star\star$]\label{exo:b1:project-text-search-engine:12}
+Make the index persist: write \code{index_save}, which writes the index into a \omterm{def:b1:c-strings-structs-files:text-binary}{binary file}, and \code{index_load},
+which reads it back into an index that gives the same \omterm{def:b1:project-text-search-engine:inverted-index}{posting lists}, counts and document numbers. Specify the file's
+format, make the loader refuse a truncated or corrupted file rather than crash, and write a round-trip test. Why is the
+file not portable between machines as it stands?
+\end{exercise}
