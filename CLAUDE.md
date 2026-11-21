@@ -22,6 +22,11 @@ record: `OUTLINE.md` (approved 2026-11-19). Conventions: `CONTRIBUTING.md`; fami
   file's first or last five lines (put it last when the printed program must start at line 1). `code/shared/` (toy machine, town, sqlrun, rv) is frozen.
 - **Gates:** `tools/gates.sh <year>` (prose, structure, calibration, ledger, code references) and
   `tools/gates.sh --log <N>`.
+- **CI and releases:** `.github/workflows/release.yml` (added 2026-11-21) runs on a `v*` tag and on a manual run. One
+  `code` job per directory of `code/` runs `OCS_TESTS=fast tools/test_code.sh <year>` with Python 3.12, gcc/g++ 11 and
+  Rust 1.97.1 (outputs are not rerun there); one `build` job per edition builds with texlive-full and checks the log
+  0/0/0. On a tag, when all are green, the `release` job publishes the PDFs, each versioned and under its plain name.
+  A manual run never releases. A new edition is registered in `matrix.edition` only.
 - **Weekly limit:** `sources/PAUSE` stops the writers (created at 90 % of the week by default; a run may set another threshold).
 - No commits; no dataset download without the user's approval; nothing personal in print (capture prints the
   account as `ada`, the machine as `laptop`); no curriculum or university names in printed text.
