@@ -55,8 +55,10 @@ def load(spec, root=ROOT):
             for part in tok.group(1).split("+"):
                 keys.update(load(part, root))
             continue
+        # [Group1] and [group1] are indices (type[group1]="..."), not legends: xkeyboard-config 2.41 writes the
+        # lower-case form, and after the legends.
         lists = [x for x in re.findall(r"\[([^\]]*)\]", tok.group(3))
-                 if not re.fullmatch(r"\s*Group\d+\s*", x)]
+                 if not re.fullmatch(r"\s*group\d+\s*", x, re.IGNORECASE)]
         if lists:
             keys[tok.group(2)] = [x.strip() for x in lists[-1].split(",")]
     return keys
