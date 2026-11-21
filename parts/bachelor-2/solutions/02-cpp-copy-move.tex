@@ -62,9 +62,10 @@ may still move it.
 
 \begin{solution}{exo:b2:cpp-copy-move:7}
 \omcode{code/bachelor-2/02-cpp-copy-move/exercises/unique_ptr.hpp}{5}{32}{\code{UniquePtr}}
-The move assignment tests \code{this != &o}: without the test, a self-move would \code{reset} with the pointer it
-just took from itself and leave a null pointer behind, after deleting nothing; with \code{reset} written as above, the
-order ``store the new pointer, then delete the old'' also keeps the class correct when the deleted object's
+The move assignment tests \code{this != &o}. With \code{reset} written as above, a self-move would be a no-op even
+without the test: the pointer is taken, which leaves \code{p_} null, then put back, and the old \code{p_} deleted is
+null, so nothing is deleted. The test only saves the two exchanges; it is needed with a \code{reset} that deletes the old
+pointer before storing the new one. The order ``store the new pointer, then delete the old'' also keeps the class correct when the deleted object's
 \omterm{def:b2:cpp-classes-raii:constructor}{destructor} reaches back to its owner. \code{tests/exercises_test.cpp} counts live objects: a hundred
 \code{UniquePtr} pushed into a vector, which moves them at each regrowth, are freed exactly once each when the vector
 goes, and a moved-from pointer is null.
@@ -91,13 +92,13 @@ it moves from one vector to the other, and the test checks that \code{&mill} is 
 \end{solution}
 
 \begin{solution}{exo:b2:cpp-copy-move:10}
-\omcodes{code/bachelor-2/02-cpp-copy-move/exercises/small_string.hpp}{11-40,46-55}{\code{SmallString}}
+\omcodes{code/bachelor-2/02-cpp-copy-move/exercises/small_string.hpp}{11-34,44-55}{\code{SmallString}}
 A small string's pointer points into the object's own array \code{buf_}. Stealing it would leave the target pointing
 into the source, which is about to die; the \omterm{def:b2:cpp-copy-move:move}{move constructor} must copy the characters into its own array and point
 to that. So moving a small string costs what copying it costs, at most 16 bytes, while moving a long one takes its
-block. The move assignment destroys the target and rebuilds it in place with the \omterm{def:b2:cpp-copy-move:move}{move constructor}, which is correct
-because that \omterm{def:b2:cpp-classes-raii:constructor}{constructor} cannot throw (otherwise a throw would leave a destroyed object behind); a swap-based
-version would be as good. \code{tests/exercises_test.cpp} covers copies and moves between small and long strings,
+block. The move assignment frees the target's block, if it has one, and then takes the source's state with \code{take}, the
+helper the \omterm{def:b2:cpp-copy-move:move}{move constructor} also uses: nothing in it can throw. Destroying the target and rebuilding it in place
+with placement \code{new} would also work here, but it is a fragile habit, wrong as soon as the class is used as a base. \code{tests/exercises_test.cpp} covers copies and moves between small and long strings,
 self-assignment and self-move, and a vector of fifty strings that grows by moving them.
 \end{solution}
 
@@ -115,9 +116,9 @@ amortised cost.
 
 \begin{solution}{exo:b2:cpp-copy-move:12}
 \code{station count 3}: \code{s} and the \code{source} of each display. When \code{main} returns, \code{s} goes and
-the station's count falls to 2; each display is owned once, by the station's vector. The four objects own each
+the station's count falls to 2; each display is owned once, by the station's vector. The three objects own each
 other in two cycles (station and hall, station and office), nothing outside reaches them, and LeakSanitizer reports
-four blocks. The fix makes \code{Display::source} a \code{std::weak_ptr<Station>}. The other edge cannot be the weak
+four blocks: the three objects, each with its control block, and the station's vector of two pointers. The fix makes \code{Display::source} a \code{std::weak_ptr<Station>}. The other edge cannot be the weak
 one: the station's vector is the only owner of each display, so with weak edges there the displays would die as soon
 as \code{watch} returned.
 \omcode{code/bachelor-2/02-cpp-copy-move/exercises/observers_fixed.hpp}{10}{29}{The fixed classes (they also count

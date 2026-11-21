@@ -1,4 +1,3 @@
-# capture: scratch
 import csv
 
 with open("loans.csv", encoding="utf-8") as f:
@@ -17,3 +16,4 @@ with open("report.txt", "w", encoding="utf-8") as f:
 
 with open("report.txt", encoding="utf-8") as f:
     print(f.read(), end="")
+# capture: scratch

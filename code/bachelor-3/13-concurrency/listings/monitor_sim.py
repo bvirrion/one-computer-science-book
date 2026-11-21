@@ -14,7 +14,7 @@ def consumer(buf, use_while):
 def producer(buf):
     buf.append("item")
     yield "signal"  # wake one waiting consumer
-    return "puts an item"
+    return "leaves"
 
 
 def run(script, hoare, use_while):
@@ -29,6 +29,8 @@ def run(script, hoare, use_while):
             log.append(f"{name} {end.value}")
             done.add(name)
             return
+        if event == "signal":
+            log.append(f"{name} puts an item and signals")
         if event == "wait":
             log.append(f"{name} waits")
             waiting.append(name)

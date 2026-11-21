@@ -37,7 +37,7 @@ class Handler(BaseHTTPRequestHandler):
             self.search(parse_qs(url.query))
         elif url.path == "/count":
             self.count()
-        elif (FILES / url.path.lstrip("/")).is_file() and ".." not in url.path:
+        elif ".." not in url.path and (FILES / url.path.lstrip("/")).is_file():
             file = FILES / url.path.lstrip("/")
             self.reply(200, file.read_bytes(), TYPES[file.suffix])
         else:

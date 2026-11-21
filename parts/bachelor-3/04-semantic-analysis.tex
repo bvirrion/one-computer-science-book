@@ -8,7 +8,7 @@ The parser accepts \code{var flag = count + true;} without a murmur: it is a wel
 A hash table maps keys to values in expected constant time per operation (Year 1 volume). The \omterm{def:b3:top-down-parsing:ast}{abstract syntax tree} of Moor (chapter~\ref{ch:b3:top-down-parsing}) has a node per construct and a span per node; it is frozen. Moor's types are \code{int} and \code{bool}, as in the languages of the school volumes.
 \end{recall}
 
-The phases after the parser need facts the tree does not hold: which declaration a name refers to, the type of each expression, later the place of each variable in memory. There are two ways to attach them. A compiler can add fields to the nodes, filled in as the phases run (\emph{in-tree annotation}). Or it can keep the tree as the parser built it and store each fact in a \emph{side table}, a map from a node's identifier to the fact. Moor's tree is frozen, so this book takes the second way, and it needs node identifiers. The spans give them for free: two uses of names never start at the same byte of the source, so the byte offset where a node starts identifies it. A side table also keeps the phases independent: the type checker reads the resolver's table and writes its own, and a later phase can drop a table it no longer needs.
+The phases after the parser need facts the tree does not hold: which declaration a name refers to, the type of each expression, later the place of each variable in memory. There are two ways to attach them. A compiler can add fields to the nodes, filled in as the phases run (\emph{in-tree annotation}). Or it can keep the tree as the parser built it and store each fact in a \emph{side table}, a map from a node's identifier to the fact. Moor's tree is frozen, so this book takes the second way, and it needs node identifiers. The spans give them for free: two uses of names never start at the same byte of the source, so the byte offset where a use of a name, or a declaring statement, starts identifies it. The side tables are keyed by those only: a general node would need more, since an expression such as \code{a + b} starts at the same byte as its left operand \code{a}. A side table also keeps the phases independent: the type checker reads the resolver's table and writes its own, and a later phase can drop a table it no longer needs.
 
 \begin{definition}[Tree-walking interpreter]\label{def:b3:semantic-analysis:interpreter}
 A \emph{tree-walking interpreter}\index{tree-walking interpreter} runs a program by evaluating its \omterm{def:b3:top-down-parsing:ast}{abstract syntax tree} directly, one node at a time, with a recursive function per kind of node.
@@ -288,7 +288,7 @@ Extend Moor with local declarations without an initialiser, \texttt{var x:\ int;
 \begin{problem}[{Weekend problem --- The parish register script}]\label{pb:b3:semantic-analysis:1}
 Brenmoor's parish keeps its registers as nested records, and a clerk's program writes them out as generated Moor scripts: $d$ nested blocks, $m$ declarations in each, every declaration \code{var v}$_{i,j}$\code{ = reg + }$j$\code{;} reading a register \code{reg} declared first in the outermost block. Some scripts are 1,000 blocks deep. The file \code{exercises/pb_register.rs} writes them (\code{script(d, m, None)}) and resolves them with three \omterm{def:b3:semantic-analysis:symbol-table}{symbol tables}, counting the work. Write $n = dm$.
 
-\medskip\noindent\textbf{Part I --- Scopes by hand.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Scopes by hand.}
 \begin{enumerate}
 \item Write the script for $d = m = 2$ and draw the stack of maps after each declaration.
 \item To which declaration does each use of \code{reg} refer? Why must it be found from every block?
@@ -298,7 +298,7 @@ Brenmoor's parish keeps its registers as nested records, and a clerk's program w
 \item How many declarations and how many uses does a script have, as functions of $d$ and $m$?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Three tables.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Three tables.}
 \begin{enumerate}[resume]
 \item With a list of (name, declaration) pairs searched from the newest end, how many name comparisons does the lookup of \code{reg} cost in the $k$-th declaration of the script?
 \item Deduce the total for the whole script. Does it depend on $d$?
@@ -308,7 +308,7 @@ Brenmoor's parish keeps its registers as nested records, and a clerk's program w
 \item For $d = 1$, compare the three totals.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Counted.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Counted.}
 \begin{enumerate}[resume]
 \item For $n = 10{,}000$, run the counts for $d = 1$, 10, 100 and 1,000 and fill a table with the three totals.
 \item Explain from question 8 why the list's column does not change.
@@ -318,7 +318,7 @@ Brenmoor's parish keeps its registers as nested records, and a clerk's program w
 \item Why does the book count operations rather than time them?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Errors counted.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Errors counted.}
 \begin{enumerate}[resume]
 \item The clerk misspells \code{reg} as \code{rge} in block 3 of a script with $d = 5$, $m = 4$. How many messages does the \omterm{def:b3:lexical-analysis:phases}{front end} give?
 \item Why is there no message about the \code{+} in which each misspelt name appears?

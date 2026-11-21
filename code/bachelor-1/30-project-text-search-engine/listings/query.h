@@ -5,7 +5,8 @@
 #include "topk.h"
 
 // The documents that contain every term; the best k go into top, best first, and
-// *nfound gets how many there are. Returns the number of matching documents.
+// *nfound gets how many there are. Returns the number of matching documents, or -1
+// when out of memory.
 int query_and(const Index *ix, char **terms, int nterms, Hit *top, int k, int *nfound);
 
 // tf-idf of a document for the terms, summed in the order given, as the scan does too.

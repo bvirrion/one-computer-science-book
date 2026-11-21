@@ -21,7 +21,7 @@ static char *get_str(FILE *f) {
     if (!get_int(f, &n) || n < 0 || n > 4096)
         return NULL;
     char *s = malloc(n + 1);
-    if (fread(s, 1, n, f) != (size_t)n) {
+    if (s == NULL || fread(s, 1, n, f) != (size_t)n) {
         free(s);
         return NULL;
     }
@@ -51,15 +51,20 @@ typedef struct {
     size_t len, cap;
 } Buffer;
 
-static void append(Buffer *b, const char *word) {  // word and a space
+static int append(Buffer *b, const char *word) {  // word and a space; 0, or -1: no memory
     size_t n = strlen(word);
     if (b->len + n + 1 >= b->cap) {
-        b->cap = 2 * (b->len + n + 1);
-        b->text = realloc(b->text, b->cap);
+        size_t cap = 2 * (b->len + n + 1);
+        char *text = realloc(b->text, cap);
+        if (text == NULL)
+            return -1;
+        b->text = text;
+        b->cap = cap;
     }
     memcpy(b->text + b->len, word, n);
     b->len += n;
     b->text[b->len++] = ' ';
+    return 0;
 }
 
 // Rebuild each document as its words, each repeated count times, and index those
@@ -69,6 +74,7 @@ int index_load(Index *ix, const char *path) {
     int n = 0, nwords, ok = f != NULL && get_int(f, &n) && n >= 0;
     char **names = calloc(n > 0 ? n : 1, sizeof *names);
     Buffer *docs = calloc(n > 0 ? n : 1, sizeof *docs);
+    ok = ok && names != NULL && docs != NULL;
     for (int d = 0; ok && d < n; d++)
         ok = (names[d] = get_str(f)) != NULL;
     ok = ok && get_int(f, &nwords);
@@ -80,16 +86,16 @@ int index_load(Index *ix, const char *path) {
         for (int j = 0; ok && j < size; j++) {
             ok = fread(&p, sizeof p, 1, f) == 1 && p.doc >= 0 && p.doc < n && p.count > 0;
             for (int c = 0; ok && c < p.count; c++)
-                append(&docs[p.doc], word);
+                ok = append(&docs[p.doc], word) == 0;
         }
         free(word);
     }
     if (f != NULL)
         fclose(f);
-    index_init(ix);
-    for (int d = 0; d < n; d++) {
+    ok = index_init(ix) == 0 && ok;
+    for (int d = 0; names != NULL && docs != NULL && d < n; d++) {
         if (ok)
-            index_add_text(ix, names[d], docs[d].text ? docs[d].text : "", docs[d].len);
+            ok = index_add_text(ix, names[d], docs[d].text ? docs[d].text : "", docs[d].len) >= 0;
         free(names[d]);
         free(docs[d].text);
     }

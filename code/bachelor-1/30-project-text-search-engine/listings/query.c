@@ -33,12 +33,23 @@ static int count_in(const PostingList *l, int doc) {  // binary search: the list
 int query_and(const Index *ix, char **terms, int nterms, Hit *top, int k, int *nfound) {
     const PostingList **lists = malloc(nterms * sizeof *lists);
     const PostingList **sorted = malloc(nterms * sizeof *sorted);
-    int matches = 0;
+    int matches = -1, *docs = NULL, *tf = NULL, *df = NULL;  // -1: out of memory
+    *nfound = 0;
+    if (lists == NULL || sorted == NULL)
+        goto done;
+    matches = 0;
     for (int i = 0; i < nterms; i++)
         if ((lists[i] = sorted[i] = index_lookup(ix, terms[i])) == NULL)
             goto done;  // a word in no document: no document has them all
     qsort(sorted, nterms, sizeof *sorted, by_length);
-    int *docs = malloc(sorted[0]->size * sizeof *docs), n = sorted[0]->size;
+    int n = sorted[0]->size;
+    docs = malloc(n * sizeof *docs);
+    tf = malloc(nterms * sizeof *tf);
+    df = malloc(nterms * sizeof *df);
+    if (docs == NULL || tf == NULL || df == NULL) {
+        matches = -1;
+        goto done;
+    }
     for (int j = 0; j < n; j++)
         docs[j] = sorted[0]->items[j].doc;
     for (int i = 1; i < nterms && n > 0; i++) {  // merge: keep the docs also in list i
@@ -56,7 +67,6 @@ int query_and(const Index *ix, char **terms, int nterms, Hit *top, int k, int *n
     }
     TopK t;
     topk_init(&t, top, k);
-    int *tf = malloc(nterms * sizeof *tf), *df = malloc(nterms * sizeof *df);
     for (int j = 0; j < n; j++) {
         for (int i = 0; i < nterms; i++)
             tf[i] = count_in(lists[i], docs[j]), df[i] = lists[i]->size;
@@ -64,12 +74,10 @@ int query_and(const Index *ix, char **terms, int nterms, Hit *top, int k, int *n
     }
     *nfound = topk_sorted(&t);
     matches = n;
+done:
     free(tf);
     free(df);
     free(docs);
-done:
-    if (matches == 0)
-        *nfound = 0;
     free(lists);
     free(sorted);
     return matches;

@@ -183,7 +183,7 @@ We prove: if \code{unify} is called with a substitution $S$, and $U$ is any unif
 \emph{Type inference}\index{type inference} computes a type for an expression whose variables carry no annotations. A \emph{principal type}\index{principal type} of a closed expression is a type of which every type it has is an instance.
 \end{definition}
 
-The algorithm, called W, walks the expression once. A $\lambda$-bound variable gets a fresh \omterm{def:b3:type-systems:polymorphism}{type variable}. An application $e_1\,e_2$ infers $\tau_1$ and $\tau_2$, takes a fresh $\beta$ and unifies $\tau_1$ with $\tau_2 \to \beta$. A use of a \code{let}-bound name takes a fresh instance of its scheme; at the \code{let} itself the inferred type is \emph{generalised}: the variables it still contains, and that no type in the environment mentions, are quantified. A \code{letrec} binds the function to a fresh variable inside its own body, monomorphically, and generalises after.
+The algorithm, called W (here in its imperative form, often called J, which keeps one substitution and extends it in place), walks the expression once. A $\lambda$-bound variable gets a fresh \omterm{def:b3:type-systems:polymorphism}{type variable}. An application $e_1\,e_2$ infers $\tau_1$ and $\tau_2$, takes a fresh $\beta$ and unifies $\tau_1$ with $\tau_2 \to \beta$. A use of a \code{let}-bound name takes a fresh instance of its scheme; at the \code{let} itself the inferred type is \emph{generalised}: the variables it still contains, and that no type in the environment mentions, are quantified. A \code{letrec} binds the function to a fresh variable inside its own body, monomorphically, and generalises after.
 
 \omcode{code/bachelor-3/06-type-systems/listings/infer.rs}{36}{56}{Instantiation renames a scheme's quantified variables; generalisation quantifies the variables the environment does not mention.}\label{lst:b3:type-systems:gen}
 
@@ -214,7 +214,7 @@ In natural deduction, the introduction rule of $A \Rightarrow B$ derives it from
 Put rule \textsc{abs} beside the introduction of implication, with the expressions erased, and they are the same rule; \textsc{app} is modus ponens; the pair rules are the rules of conjunction. This is no coincidence.
 
 \begin{definition}[Curry--Howard correspondence]\label{def:b3:type-systems:curry-howard}
-The \emph{Curry--Howard correspondence}\index{Curry--Howard correspondence} pairs types with propositions and programs with proofs: a closed term of type $\tau$ is a proof of the proposition $\tau$ read with $\to$ as implication and $\times$ as conjunction, and reducing the term simplifies the proof.
+The \emph{Curry--Howard correspondence}\index{Curry--Howard correspondence} pairs types with propositions and programs with proofs: in the simply typed $\lambda$-calculus, where every term terminates, a closed term of type $\tau$ is a proof of the proposition $\tau$ read with $\to$ as implication and $\times$ as conjunction, and reducing the term simplifies the proof.
 \end{definition}
 
 \begin{omfigure}
@@ -234,7 +234,7 @@ simplifying a proof & reduction & running the program\\
 \par\smallskip{\small The correspondence, line by line. Read down the middle column, a type is a formula; read down the last, its proofs are the programs of that type.}
 \end{omfigure}
 
-The \omterm{def:b3:type-systems:inference}{principal type} of \code{swap} in \cref{out:b3:type-systems:poly}, $\alpha \times \beta \to \beta \times \alpha$, is the tautology $A \wedge B \Rightarrow B \wedge A$, and \code{swap} is its proof. Rust's generics play the same game: a function generic in \code{A} and \code{B} cannot inspect values of those types, so its body can only rearrange what it is given, and a well-typed body is a proof.
+The \omterm{def:b3:type-systems:inference}{principal type} of \code{swap} in \cref{out:b3:type-systems:poly}, $\alpha \times \beta \to \beta \times \alpha$, is the tautology $A \wedge B \Rightarrow B \wedge A$, and \code{swap} is its proof. Rust's generics play the same game: a function generic in \code{A} and \code{B} cannot inspect values of those types, so its body can only rearrange what it is given, and a well-typed body that returns is a proof. The proviso matters: a body that loops for ever or calls \code{panic!} has every type, as does a recursive definition that never stops, so a language with general recursion, read as a logic, proves everything. The correspondence holds for the total, terminating fragment.
 
 \omcode{code/bachelor-3/06-type-systems/listings/curry_howard.rs}{1}{23}{Three proofs as generic functions: commutativity of conjunction, modus ponens, and the transitivity of implication.}\label{lst:b3:type-systems:ch}
 
@@ -324,7 +324,7 @@ The program \texttt{let f0 = \textbackslash{}x.\ (x, x) in let f1 = \textbacksla
 
 \omoutput{code/bachelor-3/06-type-systems/outputs/blowup.txt}{For each $n$: the program's length in characters, the calls to \code{unify}, the leaves of $T_n$, and its distinct subtrees.}\label{out:b3:type-systems:blowup}
 
-\medskip\noindent\textbf{Part I --- By hand.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- By hand.}
 \begin{enumerate}
 \item Infer the \omterm{def:b3:type-systems:inference}{principal type} of \texttt{\textbackslash{}x.\ (x, x)}, writing every equation.
 \item Infer the type of \texttt{let f0 = \textbackslash{}x.\ (x, x) in \textbackslash{}x.\ f0 (f0 x)}. Where are the two instances of $f_0$'s scheme used?
@@ -334,7 +334,7 @@ The program \texttt{let f0 = \textbackslash{}x.\ (x, x) in let f1 = \textbacksla
 \item How does the program's length grow with $n$?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- The family.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- The family.}
 \begin{enumerate}[resume]
 \item Show that $T_k = T_{k-1}[\text{\ttfamily\textquotesingle a} := T_{k-1}]$ for $k \ge 1$, with $T_0 = \text{\ttfamily\textquotesingle a} \times \text{\ttfamily\textquotesingle a}$.
 \item Deduce the number of leaves $\ell_k$ of $T_k$: give a recurrence, then a closed form.
@@ -344,7 +344,7 @@ The program \texttt{let f0 = \textbackslash{}x.\ (x, x) in let f1 = \textbacksla
 \item What would the row $n = 5$ say? Why does the program not print it?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Where the time goes.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Where the time goes.}
 \begin{enumerate}[resume]
 \item The unify calls grow by 6 per line. Which equations does each \code{let} line contribute?
 \item If unification is called so few times, where does the work of inference go when types are trees?
@@ -355,7 +355,7 @@ The program \texttt{let f0 = \textbackslash{}x.\ (x, x) in let f1 = \textbacksla
 What does this add to the observation of the previous question?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Why it does not happen.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Why it does not happen.}
 \begin{enumerate}[resume]
 \item Which feature of the family produces the growth: the pairs, the nesting of \code{let}, or the doubling? Remove each in turn and say what remains.
 \item Real programs nest \code{let}s deeply. Why do their types stay small?

@@ -1,5 +1,5 @@
 secret = int(input("Player 1, the secret number (1 to 100): "))
-print("\n" * 3)          # push the secret up, out of sight
+print("\n" * 3)          # a few empty lines before player 2 plays
 guesses = 1
 guess = int(input("Player 2, your guess: "))
 while guess != secret:

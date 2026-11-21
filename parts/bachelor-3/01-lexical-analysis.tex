@@ -1,6 +1,6 @@
 \chapter{Lexical Analysis}\label{ch:b3:lexical-analysis}
 
-Type \code{if n<=0} into a compiler and it sees nine characters: \code{i}, \code{f}, a space, \code{n}, \code{<}, \code{=}, \code{0}. It does not yet know that \code{if} is a keyword, that \code{<=} is one operator and not two, or that the space mattered only because it kept \code{if} away from \code{n}: \code{ifn<=0} would have been a single name followed by an operator and a number. The first job of a compiler is to cut the characters into words. This chapter builds the part that does it, twice: once by hand, the way production compilers are usually written, and once from regular expressions, the way a \omterm{def:b3:lexical-analysis:generator}{scanner generator} does it, and checks that the two agree on thousands of inputs. On the way it meets the rule that decides where a word ends, a \omterm{def:b3:lexical-analysis:token}{token} set on which that rule makes the \omterm{def:b3:lexical-analysis:scanner}{scanner} read a quadratic number of characters, and a fix.
+Type \code{if n<=0} into a compiler and it sees seven characters: \code{i}, \code{f}, a space, \code{n}, \code{<}, \code{=}, \code{0}. It does not yet know that \code{if} is a keyword, that \code{<=} is one operator and not two, or that the space mattered only because it kept \code{if} away from \code{n}: \code{ifn<=0} would have been a single name followed by an operator and a number. The first job of a compiler is to cut the characters into words. This chapter builds the part that does it, twice: once by hand, the way production compilers are usually written, and once from regular expressions, the way a \omterm{def:b3:lexical-analysis:generator}{scanner generator} does it, and checks that the two agree on thousands of inputs. On the way it meets the rule that decides where a word ends, a \omterm{def:b3:lexical-analysis:token}{token} set on which that rule makes the \omterm{def:b3:lexical-analysis:scanner}{scanner} read a quadratic number of characters, and a fix.
 
 The whole of Part I builds one compiler, for a small language called Moor (after the town of Brenmoor), in Rust. Each chapter adds one module and never edits the earlier ones: this chapter's files are included unchanged by every later one.
 
@@ -200,11 +200,11 @@ The automaton may read past the end of the \omterm{def:b3:lexical-analysis:token
 Going back is usually cheap: a \omterm{def:b3:lexical-analysis:scanner}{scanner} reads one or two characters too many and backs up. With some \omterm{def:b3:lexical-analysis:token}{token} sets it is not.
 
 \begin{proposition}[Maximal munch can be quadratic]\label{prop:b3:lexical-analysis:quadratic}
-With the two rules \code{a} and \code{a*b}, \omterm{def:b3:lexical-analysis:munch}{maximal munch} reads $n(n+1)/2$ characters to cut $a^n$ into $n$ \omterm{def:b3:lexical-analysis:token}{tokens}. With any \omterm{def:b3:lexical-analysis:token}{token} set, it reads at most $n(n+1)/2 + n$ characters on an input of length $n$.
+With the two rules \code{a} and \code{a*b}, \omterm{def:b3:lexical-analysis:munch}{maximal munch} reads $n(n+1)/2$ characters to cut $a^n$ into $n$ \omterm{def:b3:lexical-analysis:token}{tokens}. With any \omterm{def:b3:lexical-analysis:token}{token} set, it reads at most $n(n+1)/2$ characters on an input of length $n$, so the first example is the worst case.
 \end{proposition}
 
 \begin{proof}
-From position $i$ the automaton can still reach \code{a*b}'s accepting state, so it never stops early: it reads the $n - i$ remaining characters, finds no \code{b}, and returns the one-character \omterm{def:b3:lexical-analysis:token}{token} \code{a} it accepted first. The scan then starts again at $i + 1$. In all it reads $n + (n-1) + \dots + 1 = n(n+1)/2$ characters. For the bound: every scan returns a \omterm{def:b3:lexical-analysis:token}{token} of at least one character, so the scans start at distinct positions $i$, and a scan from $i$ reads at most the $n - i$ remaining characters plus one on which the automaton has no move. The total is at most $\sum_{i=0}^{n-1}(n - i + 1) = n(n+1)/2 + n$.
+From position $i$ the automaton can still reach \code{a*b}'s accepting state, so it never stops early: it reads the $n - i$ remaining characters, finds no \code{b}, and returns the one-character \omterm{def:b3:lexical-analysis:token}{token} \code{a} it accepted first. The scan then starts again at $i + 1$. In all it reads $n + (n-1) + \dots + 1 = n(n+1)/2$ characters. For the bound: every scan returns a \omterm{def:b3:lexical-analysis:token}{token} of at least one character, so the scans start at distinct positions $i$, and a scan from $i$ reads at most the $n - i$ remaining characters, the one on which the automaton has no move included. The total is at most $\sum_{i=0}^{n-1}(n - i) = n(n+1)/2$.
 \end{proof}
 
 \Cref{lst:b3:lexical-analysis:munch} measures it; the figure after the output shows the first scans of $a^4$.
@@ -240,7 +240,7 @@ Real \omterm{def:b3:lexical-analysis:scanner}{scanners} avoid the question diffe
 Keywords are not rules of their own in \cref{lst:b3:lexical-analysis:next}. The loop reads the longest identifier, and a lookup in the keyword list (\code{keyword} in \cref{lst:b3:lexical-analysis:token}) turns \code{while} into a keyword and leaves \code{whilst} an identifier. That is \omterm{def:b3:lexical-analysis:munch}{maximal munch} and the \omterm{def:b3:lexical-analysis:munch}{priority rule} again, decided in a different order; it also keeps the automaton small (exercise~\ref{exo:b3:lexical-analysis:9} counts how small).
 
 \begin{remark}[Two scanners, one test]\label{rem:b3:lexical-analysis:agree}
-The chapter's tests build a generated \omterm{def:b3:lexical-analysis:scanner}{scanner} from Moor's 39 rules (eleven keywords first, then identifiers, numbers, twenty-five operators, white space and comments) and compare its \omterm{def:b3:lexical-analysis:token}{tokens} with the hand-written \omterm{def:b3:lexical-analysis:scanner}{scanner}'s on 2,000 generated lines. They agree. A hand-written \omterm{def:b3:lexical-analysis:scanner}{scanner} is faster to run and easier to give good error messages; the generated one is the specification it is tested against.
+The chapter's tests build a generated \omterm{def:b3:lexical-analysis:scanner}{scanner} from Moor's 40 rules (eleven keywords first, then identifiers, numbers, twenty-five operators, white space and comments) and compare its \omterm{def:b3:lexical-analysis:token}{tokens} with the hand-written \omterm{def:b3:lexical-analysis:scanner}{scanner}'s on 2,000 generated lines. They agree. A hand-written \omterm{def:b3:lexical-analysis:scanner}{scanner} is faster to run and easier to give good error messages; the generated one is the specification it is tested against.
 \end{remark}
 
 \Cref{out:b3:lexical-analysis:demo} runs the hand-written \omterm{def:b3:lexical-analysis:scanner}{scanner} on \cref{lst:b3:lexical-analysis:hello}, printing each \omterm{def:b3:lexical-analysis:token}{token}'s line, column, class and \omterm{def:b3:lexical-analysis:token}{lexeme}.
@@ -327,7 +327,7 @@ Brenmoor's town hall publishes its opening hours as plain text files. A line loo
 \code{time} \code{[0-9][0-9]:[0-9][0-9]}, \code{number} \code{[0-9]+}, \code{name} \code{[A-Z][a-z]*}, \code{word} \code{[a-z]+}, \code{arrow} \code{-+>}, \code{dash} \code{-}, \code{space} \texttt{[\textvisiblespace\textbackslash n]+}.
 The file \code{exercises/pb_timetable.rs} builds this \omterm{def:b3:lexical-analysis:scanner}{scanner} with the chapter's modules; reason each answer out before checking it.
 
-\medskip\noindent\textbf{Part I --- Rules and conflicts.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Rules and conflicts.}
 \begin{enumerate}
 \item Write the \omterm{def:b3:lexical-analysis:token}{tokens} of \code{Library 09:45-12:30 room 3}, with their classes.
 \item Which rules match a prefix of \code{09:45}? Which \omterm{def:b3:lexical-analysis:token}{token} does \omterm{def:b3:lexical-analysis:munch}{maximal munch} return, and which for \code{0945}?
@@ -337,7 +337,7 @@ The file \code{exercises/pb_timetable.rs} builds this \omterm{def:b3:lexical-ana
 \item A clerk writes \code{9:45}. What does the \omterm{def:b3:lexical-analysis:scanner}{scanner} do? Propose a change to one rule that accepts it, and say what it costs for \code{number}.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- The automaton, by hand and by program.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- The automaton, by hand and by program.}
 \begin{enumerate}[resume]
 \item Count the states of each rule's Thompson fragment, and of the whole automaton, with \cref{prop:b3:lexical-analysis:thompson-size}.
 \item Follow the subset construction from the start state on the digits: which deterministic states does \code{09:45} visit, and which of them accept?
@@ -348,7 +348,7 @@ The file \code{exercises/pb_timetable.rs} builds this \omterm{def:b3:lexical-ana
 \item The table stores one 4-byte entry per state and character. How many bytes does it take with 128 columns, and with one column per class plus a 128-byte map from characters to classes?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- What maximal munch costs.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- What maximal munch costs.}
 \begin{enumerate}[resume]
 \item How many characters does the \omterm{def:b3:lexical-analysis:scanner}{scanner} read on \texttt{-{}-{}-{}>}, and how many \omterm{def:b3:lexical-analysis:token}{tokens} does it return?
 \item Each day ends with a rule line of $n$ dashes. Show that the \omterm{def:b3:lexical-analysis:scanner}{scanner} returns $n$ \code{dash} \omterm{def:b3:lexical-analysis:token}{tokens} and reads $n(n+1)/2$ characters.
@@ -358,7 +358,7 @@ The file \code{exercises/pb_timetable.rs} builds this \omterm{def:b3:lexical-ana
 \item Rewrite the \omterm{def:b3:lexical-analysis:token}{token} set so that no rule line costs more than linear time without a memo table, and say what the parser must then do to recognise an arrow.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- The memoised scanner.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- The memoised scanner.}
 \begin{enumerate}[resume]
 \item Run the memoised \omterm{def:b3:lexical-analysis:scanner}{scanner} of exercise~\ref{exo:b3:lexical-analysis:12} by hand on five dashes: list the pairs it marks and the characters each scan reads.
 \item Prove that on $n \ge 2$ dashes it reads exactly $3n - 3$ characters.

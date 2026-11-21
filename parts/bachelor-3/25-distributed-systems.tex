@@ -43,7 +43,7 @@ No protocol in which every run sends finitely many messengers solves the \omterm
 \end{theorem}
 
 \begin{proof}
-Suppose a protocol solves it. Let $R$ be the run in which no messenger is captured; it has finitely many deliveries, say $d$, and both generals attack. Build runs $R_d = R, R_{d-1}, \ldots, R_0$: the run $R_{j-1}$ is $R_j$ in which the last delivered messenger is captured instead, together with every messenger sent after it. We show by descending induction on $j$ that both generals attack in $R_j$. It holds for $R_d$. Assume it for $R_j$, $j \ge 1$, and let $m$ be the last messenger delivered in $R_j$, sent by general $X$. In $R_j$, nothing reaches $X$ after $m$ arrives, since $m$ is the last delivery; in $R_{j-1}$, $X$ receives exactly the same messengers. A general's decision depends only on the messengers it has received, so $X$ decides alike in both runs: it attacks in $R_{j-1}$. By agreement, the other general attacks too. In $R_0$, then, both attack; but no messenger reaches anyone in $R_0$, so B has heard nothing of the plan and does not attack. This contradiction proves the theorem.
+Suppose a protocol solves it. Let $R$ be the run in which no messenger is captured; it has finitely many deliveries, say $d$, and both generals attack. Build runs $R_d = R, R_{d-1}, \ldots, R_0$: the run $R_{j-1}$ is $R_j$ in which the last delivered messenger, $m$, is captured instead, together with every messenger sent at or after the moment $m$ arrived. Every other delivery of $R_j$ happened before that moment, of a messenger sent before it, so $R_{j-1}$ keeps them all and has $j - 1$ deliveries; and up to that moment both generals receive, and so do, the same in both runs. We show by descending induction on $j$ that both generals attack in $R_j$. It holds for $R_d$. Assume it for $R_j$, $j \ge 1$, and let $m$ be the last messenger delivered in $R_j$, sent by general $X$. In $R_j$, nothing reaches $X$ after $m$ arrives, since $m$ is the last delivery; in $R_{j-1}$, $X$ receives exactly the same messengers. A general's decision depends only on the messengers it has received, so $X$ decides alike in both runs: it attacks in $R_{j-1}$. By agreement, the other general attacks too. In $R_0$, then, both attack; but no messenger reaches anyone in $R_0$, so B has heard nothing of the plan and does not attack. This contradiction proves the theorem.
 \end{proof}
 
 The proof never used the number of messengers: adding confirmations of confirmations only lengthens the chain of runs. The program below checks the theorem by brute force for the protocol in which messengers shuttle back and forth, each answering the last, up to $k$ of them. A general's whole knowledge is then the number of messengers it received, so a protocol is a pair of tables from that number to a decision, and every pair can be tried against every run.
@@ -216,9 +216,9 @@ The bank's program runs 1,000 transfers of random amounts between its five branc
 
 \omcode{code/bachelor-3/25-distributed-systems/listings/snapshot.py}{33}{57}{A branch's part of the algorithm: record and send markers; on a transfer, count it in every snapshot still recording that channel; on a marker, record if needed and close the channel.}\label{lst:b3:distributed-systems:snapshot}
 
-\omoutput{code/bachelor-3/25-distributed-systems/outputs/snapshot.txt}{Every Chandy--Lamport snapshot adds up to the bank's 5,000, with between about 200 and 250 in transit; every naive one is short.}\label{out:b3:distributed-systems:snapshot}
+\omoutput{code/bachelor-3/25-distributed-systems/outputs/snapshot.txt}{Every Chandy--Lamport snapshot adds up to the bank's 5,000, with 225, 245 and 211 in transit in the three printed; every naive one is short.}\label{out:b3:distributed-systems:snapshot}
 
-The naive auditor can err both ways: it misses a transfer that left a branch already asked and reached one asked later, and counts twice one that left a branch asked later and reached one asked earlier. Here the money in transit, which it never sees, outweighs both. A snapshot is of no use for knowing the balance of a branch at a given moment, since it describes a state that may never have existed all at once; it is exactly what is needed for a \emph{stable} property, one that stays true once it is true, such as ``every branch is idle and no transfer is in transit'', or a \omterm{def:b3:concurrency:deadlock}{deadlock}: a cycle of processes each waiting for the next. Exercise~\ref{exo:b3:distributed-systems:11} proves that a snapshot sees such a property if it held when the snapshot started.
+The naive auditor can err both ways: it counts twice a transfer that left a branch already asked and reached one asked later, and misses one that left a branch asked later and reached one asked earlier. Here the money in transit, which it never sees, outweighs both. A snapshot is of no use for knowing the balance of a branch at a given moment, since it describes a state that may never have existed all at once; it is exactly what is needed for a \emph{stable} property, one that stays true once it is true, such as ``every branch is idle and no transfer is in transit'', or a \omterm{def:b3:concurrency:deadlock}{deadlock}: a cycle of processes each waiting for the next. Exercise~\ref{exo:b3:distributed-systems:11} proves that a snapshot sees such a property if it held when the snapshot started.
 
 \section{Exercises}\label{sec:b3:distributed-systems:exercises}
 
@@ -275,7 +275,7 @@ Let $S$ be the global state recorded by a Chandy--Lamport snapshot, $S_0$ the st
 \begin{problem}[{Weekend problem --- The five branches of the Brenmoor savings bank}]\label{pb:b3:distributed-systems:1}
 The Brenmoor savings bank has five branches, B1 to B5, each starting with 1,000. They send each other money all day, and the bank's total, 5,000, never changes. The auditors want a picture of all the money at once, taken while the transfers go on. \Cref{lst:b3:distributed-systems:snapshot} and \cref{out:b3:distributed-systems:snapshot} are the bank's program and one day of it.
 
-\medskip\noindent\textbf{Part I --- Transfers as messages.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Transfers as messages.}
 \begin{enumerate}
   \item What are the processes, the messages and the channels of the bank's system? Is it synchronous or asynchronous in the simulator?
   \item At snapshot 0, what is the sum of the five recorded balances? Where is the rest?
@@ -285,7 +285,7 @@ The Brenmoor savings bank has five branches, B1 to B5, each starting with 1,000.
   \item Could the bank make a transfer reliable over a lossy channel by retrying, and what must the receiving branch then do to avoid crediting it twice?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Clocks.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Clocks.}
 \begin{enumerate}[resume]
   \item Read the run of \code{lamport.py} as three branches and four transfers. Which events of P2 happened before c3?
   \item Which of P2's events can a transfer received at c2 have been caused by?
@@ -295,7 +295,7 @@ The Brenmoor savings bank has five branches, B1 to B5, each starting with 1,000.
   \item Could the auditors use Lamport timestamps alone to pick a set of states, one per branch, that is consistent? Explain.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Snapshots during the day.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Snapshots during the day.}
 \begin{enumerate}[resume]
   \item How many markers does the day's run send, and how many per snapshot?
   \item How does the number of markers compare with the number of transfers, and why?
@@ -305,7 +305,7 @@ The Brenmoor savings bank has five branches, B1 to B5, each starting with 1,000.
   \item Give a scenario in which the naive auditor counts a transfer twice.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- What a snapshot can tell.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- What a snapshot can tell.}
 \begin{enumerate}[resume]
   \item Snapshot 99 records 1,529 for B2. Did B2 hold 1,529 at the moment snapshot 99 started? Could it never have held it while the other branches held their recorded balances?
   \item Is ``the total is 5,000'' a stable property? Is ``B2 holds more than 1,000''?

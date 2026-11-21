@@ -54,7 +54,7 @@ if __name__ == "__main__":
     link(line, "B", "C", 1)
     tables, _ = converge(line)
     del line["B"]["C"], line["C"]["B"]         # the link from B to C fails
-    print("link B-C fails; distances to C:")
+    print("line A-B-C (costs 1), link B-C fails; distances to C:")
     for r in range(1, 20):
         tables = dv_round(line, tables)
         (a, via_a), (b, via_b) = tables["A"]["C"], tables["B"]["C"]

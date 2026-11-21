@@ -35,7 +35,7 @@ of finding every occurrence.
 
 The cost measure in this chapter is the number of comparisons of two letters, which the listings count.
 
-\omcode{code/bachelor-2/25-text-algorithms/listings/naive.py}{4}{16}{The naive search: every shift, letters compared
+\omcode{code/bachelor-2/25-text-algorithms/listings/naive.py}{4}{17}{The naive search: every shift, letters compared
 from the left until a difference}\label{lst:b2:text-algorithms:naive}
 
 \begin{proposition}[Cost of the naive search]\label{prop:b2:text-algorithms:naive}
@@ -100,8 +100,11 @@ shift $s'$ is not an \omterm{def:b2:text-algorithms:matching}{occurrence}. If $j
 When the bad character does not occur in the pattern, the jump is $j + 1$, up to $m$; on ordinary text with a long
 pattern, most shifts are skipped unread, which explains the tenfold saving of \cref{out:b2:text-algorithms:search}. The
 worst case is still $m(n - m + 1)$, on $a^n$ with $ba^{m-1}$. Boyer and Moore's algorithm adds a second rule, the
-\emph{good \omterm{def:b2:finite-automata:factor}{suffix}}, which uses the part already matched; with it the worst case becomes linear. KMP reaches that bound
-with the matched part alone, and from the left.
+\emph{good \omterm{def:b2:finite-automata:factor}{suffix}}, which uses the part already matched; with it, the search for the first \omterm{def:b2:text-algorithms:matching}{occurrence} becomes
+linear. Reporting all \omterm{def:b2:text-algorithms:matching}{occurrences} in linear time needs one more refinement (Galil's rule): on $a^n$ with $a^m$ every
+shift is an \omterm{def:b2:text-algorithms:matching}{occurrence}, and the good \omterm{def:b2:finite-automata:factor}{suffix} moves by one and reads the $m$ letters again
+(\cref{exo:b2:text-algorithms:3}). KMP reaches the linear bound for all \omterm{def:b2:text-algorithms:matching}{occurrences} with the matched part alone, and
+from the left.
 
 \section{Knuth--Morris--Pratt}\label{sec:b2:text-algorithms:kmp}
 
@@ -257,8 +260,8 @@ window with $P$ letter by letter: report it if they agree, count a \omterm{def:b
 otherwise.\index{Rabin--Karp algorithm}
 \end{method}
 
-\omcode{code/bachelor-2/25-text-algorithms/listings/rabin_karp.py}{7}{26}{Rabin--Karp: one multiplication and one
-addition per shift, and a check on equal hashes}\label{lst:b2:text-algorithms:rabin-karp}
+\omcode{code/bachelor-2/25-text-algorithms/listings/rabin_karp.py}{7}{26}{Rabin--Karp: a constant number of
+arithmetic operations per shift, and a check on equal hashes}\label{lst:b2:text-algorithms:rabin-karp}
 
 \begin{proposition}[Expected spurious hits]\label{prop:b2:text-algorithms:spurious}
 If every window different from $P$ has $h_s = h(P)$ with probability at most $1/q$, the expected number of \omterm{def:b2:text-algorithms:rolling}{spurious
@@ -383,7 +386,8 @@ $abababa$; a decoder without it works on most inputs and fails on these (\cref{e
 LZW, with each code written on just enough bits for the dictionary's size, codes repeated words; zlib combines
 both.}\label{out:b2:text-algorithms:ratio}
 
-Huffman saves the bytes' unequal frequencies: 63 distinct bytes need about 5 bits each. LZW saves the repetitions, and
+Huffman saves the bytes' unequal frequencies: 63 distinct bytes would need 6 bits each with a fixed code, and their
+unequal frequencies bring Huffman's average down to 4.9 bits. LZW saves the repetitions, and
 its gain grows with the text, as its dictionary learns the archive's phrases (\cref{pb:b2:text-algorithms:1}).
 
 \begin{inpractice}
@@ -408,7 +412,9 @@ runs.}\label{out:b2:text-algorithms:bench}
 \begin{omfigure}
 \begin{tikzpicture}
 \begin{axis}[omrecord, width=0.72\linewidth, height=5cm, xlabel={text length $n$ (millions of letters)},
-    ylabel={time (ms)}, xmin=0, xmax=1.7, ymin=0, ymax=60, legend style={font=\scriptsize}, legend pos=north west]
+    ylabel={time (ms)}, xmode=log, ymode=log, xmin=0.15, xmax=1.8, ymin=0.01, ymax=100, log basis x=10,
+    xtick={0.2,0.5,1,1.5}, xticklabels={0.2,0.5,1,1.5}, ytick={0.01,0.1,1,10,100}, yticklabels={0.01,0.1,1,10,100},
+    legend style={font=\scriptsize}, legend pos=south east]
   \addplot[omDef, thick, mark=*, mark size=1pt] table[x expr=\thisrow{n}/1e6, y=naive]
     {code/bachelor-2/25-text-algorithms/figures/kmp_bench.dat};
   \addlegendentry{naive, $m(n - m + 1)$ comparisons}
@@ -417,8 +423,9 @@ runs.}\label{out:b2:text-algorithms:bench}
   \addlegendentry{KMP, $2n - m$ comparisons}
 \end{axis}
 \end{tikzpicture}
-\par\smallskip{\small Both costs are linear in $n$ for a fixed pattern, with slopes in the ratio of about $m/2$: the
-naive search pays for every letter of the pattern at every shift, KMP for at most two comparisons per text letter.}
+\par\smallskip{\small On logarithmic axes, both times are lines of slope 1: both costs are linear in $n$ for a fixed
+pattern. The comparisons are in the ratio $m/2 = 50$, the measured times about 33 apart: the naive search pays for
+every letter of the pattern at every shift, KMP for at most two comparisons per text letter.}
 \end{omfigure}
 
 The ratio of the times, about 33, is smaller than the ratio of the comparisons, 50: KMP's loop does more work around
@@ -485,7 +492,9 @@ the longest proper \omterm{def:b2:finite-automata:factor}{suffix} of its word th
 \end{exercise}
 
 \begin{exercise}[$\star\star\star$]\label{exo:b2:text-algorithms:12}
-Prove that LZW codes $a^n$ in exactly $\lceil (\sqrt{8n+1}-1)/2 \rceil$ codes.
+Prove that, whatever the text, the $i$-th code that LZW writes stands for at most $i$ letters. Deduce that no text of
+$n$ letters is coded in fewer than $\lceil (\sqrt{8n+1}-1)/2 \rceil$ codes, and say what a text must look like for
+each code to reach its limit. Check with \code{exo_lzw_bound.py}.
 \end{exercise}
 
 \section{Problem: The town archive}\label{sec:b2:text-algorithms:problem}
@@ -497,7 +506,7 @@ and the whole stored in less space. The program below gathers the measurements.
 \omoutput{code/bachelor-2/25-text-algorithms/outputs/archive_problem.txt}{The archive searched, its 60 borrowers' names in
 a \omterm{def:b2:text-algorithms:trie}{trie}, LZW on $a^n$, and LZW on growing parts of the archive.}\label{out:b2:text-algorithms:problem}
 
-\medskip\noindent\textbf{Part I --- Searching.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Searching.}\par\nopagebreak
 \begin{enumerate}
 \item Each line of the archive starts with \texttt{On 2025-}. What does this mean for the naive search of
 \texttt{On 2025-12-1}, compared with a phrase that starts with a rare letter?
@@ -509,7 +518,7 @@ which letters of the archive give the longest jumps.
 \item The archive grows by a line a day. Which of the three searches can continue from where it stopped yesterday?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- KMP against naive, counted.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- KMP against naive, counted.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item Compute the \omterm{def:b2:text-algorithms:border}{failure function} of \texttt{returned Under the}.
 \item From it, explain why KMP and the naive search make almost the same number of comparisons on the archive.
@@ -522,7 +531,7 @@ not?
 \item Draw the \omterm{def:b2:text-algorithms:automaton}{string-matching automaton} of \texttt{aab} over $\{a, b\}$.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- A trie for autocompletion.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- A trie for autocompletion.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item The 60 names have 751 letters and the \omterm{def:b2:text-algorithms:trie}{trie} 600 nodes, 599 below the root. What do the 152 letters saved correspond to?
 \item How many nodes does a lookup of \texttt{Leo B} visit, and how does that depend on the number of names?
@@ -533,7 +542,7 @@ each letter?
 \item Should the \omterm{def:b2:text-algorithms:trie}{trie} store first names and last names separately for completing either? Discuss the size.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Compression.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Compression.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item Encode $a^{10}$ by hand and list the entries added.
 \item Prove that LZW codes $a^n$ in $\lceil (\sqrt{8n+1}-1)/2 \rceil$ codes, and check the values printed for $n = 55$,

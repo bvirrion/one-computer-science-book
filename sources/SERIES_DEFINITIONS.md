@@ -138,7 +138,7 @@ policy handles g2–g9; the typing appendix, which comes last, needs a protect r
 | byte order, sign extension | Book 3 ch. 6 | Book 4 recalls (Book 2 owns two's complement at school) |
 | return address | Book 3 ch. 3 | |
 | exit status, environment variable, hard link, symbolic link | Book 3 ch. 8 | Book 4 owns inode, link count, built-in command |
-| process, signal, file descriptor | Book 4 | Book 3 says "running program" in prose |
+| signal, file descriptor | Book 4 | *process*, *system call*, *race condition*, *critical section*, *mutual exclusion* and *lock* are Book 2 g12-10's: Book 4 ch. 13 and 15 recall them in remarks (2026-11-21, R4-040/045); Book 3 says "running program" in prose |
 | pipeline (shell) | Book 3 ch. 8 | *pipe* (kernel object) is Book 4's |
 | iterator | Book 3 ch. 15 | Book 4: iterator ranges, categories, invalidation, *lazy iterator* |
 | cut of a graph | Book 3 ch. 26 | Book 4: cut of a flow network, its capacity |
@@ -161,7 +161,8 @@ policy handles g2–g9; the typing appendix, which comes last, needs a protect r
 | resolution, unification | Book 4 predicate logic | Book 5 recalls (logic programming, Horn-SAT) |
 | subtype polymorphism, static polymorphism, abstract class | Book 4 | bare *interface* is not defined |
 | parametric polymorphism | Book 5 | |
-| deadlock, decision problem, recursive descent, query plan, reference counting, interrupt, trap, certificate, lazy evaluation | Book 5 | Book 4 uses the words without defining them, or avoids them |
+| decision problem, recursive descent, query plan, reference counting, trap, certificate, lazy evaluation | Book 5 | Book 4 uses the words without defining them, or avoids them |
+| deadlock, interrupt | Book 2 g12-10 | Book 5 re-founds them at university rigour (deadlock with livelock and the Coffman conditions, ch. 13; interrupt with trap, ch. 10); Book 4 uses the words without defining them |
 | Amdahl's law, speed-up | Book 5 | Book 4's pipelining chapter does not name Amdahl |
 
 A university book never `\cref`s another: "defined in the Year 1 volume" in prose.

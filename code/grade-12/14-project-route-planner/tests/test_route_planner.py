@@ -56,11 +56,12 @@ def test_exercises():
         pass
     g = ex.graph_both_ways(p.conn)
     assert g.arc_count() == 106 and ex.dijkstra(g, 3)[0][1] == 98
-    d, _ = ex.dijkstra(ex.graph_by_roads(p.conn), p.place_id("Old Mill"))
+    d, par = ex.dijkstra(ex.graph_by_roads(p.conn), p.place_id("Old Mill"))
     assert d[p.place_id("Post Office")] == 7
-    fewest = ["Old Mill", "Football Ground", "Swimming Pool", "North Bridge", "Town Square",
-              "Garden Centre", "East Gate", "Post Office"]
-    assert (p.cost_of(fewest), p.cost_of(fewest, "distance")) == (770, 8420)
+    fewest = [p.names[x] for x in ex.rebuild(par, p.place_id("Post Office"))]  # the algorithm's own
+    assert fewest == ["Old Mill", "South School", "Bakery Corner", "Market Hall", "Hill Park",
+                      "Town Hall", "Sports Hall", "Post Office"]
+    assert (p.cost_of(fewest), p.cost_of(fewest, "distance")) == (985, 9650)
     slowest = p.route("Old Mill", "Post Office")[0]
     assert (p.cost_of(slowest), p.cost_of(slowest, "distance")) == (675, 9130)
     path, seconds = p.route("Station", "Library")

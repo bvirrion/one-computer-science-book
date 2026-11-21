@@ -1,6 +1,7 @@
 """Grade 8, chapter 4: searching and sorting."""
 
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -67,8 +68,10 @@ def test_exercises():
     r = subprocess.run([sys.executable, "insertion_bug.py"], cwd=HERE / "exercises",
                        capture_output=True, text=True)
     assert r.stdout == "[5, 1, 3]\n"
+    # the pupil saves the file next to binary_search.py; here the listings folder is put on the path
     r = subprocess.run([sys.executable, "max_guesses.py"], cwd=HERE / "exercises",
-                       capture_output=True, text=True)
+                       capture_output=True, text=True,
+                       env={**os.environ, "PYTHONPATH": str(HERE / "listings")})
     assert r.stdout == "at most 10 guesses for 1 to 1000\n"
     books = [{"year": "2001", "title": "B"}, {"year": "1999", "title": "Z"},
              {"year": "2001", "title": "A"}]

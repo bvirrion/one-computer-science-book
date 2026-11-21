@@ -31,12 +31,16 @@ int main(void) {
     node *head = range(5);
     list_insert_after(head->next->next->next->next, 5);  // after the last cell
     head = list_reverse(head);
-    for (int x = 5; x >= 0; x--, head = head->next) {
-        assert(head->value == x);
-        if (x == 0) list_free(head);
-    }
+    int expect = 5;  // six cells: 5, 4, ..., 0
+    for (const node *p = head; p != NULL; p = p->next, expect--)
+        assert(p->value == expect);
+    assert(expect == -1);
+    list_free(head);  // the whole list, from its head
+    node *one = range(1);  // a list of length 1
+    assert(list_reverse(one) == one && one->value == 0 && one->next == NULL);
+    list_free(one);
     assert(list_reverse(NULL) == NULL);
-    for (int n = 0; n < 30; n++) {
+    for (int n = 0; n <= 30; n++) {
         static node cells[30];
         for (int i = 0; i < n; i++) cells[i] = (node){i, i + 1 < n ? &cells[i + 1] : NULL};
         assert(!has_cycle(n ? cells : NULL));

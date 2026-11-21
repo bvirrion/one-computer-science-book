@@ -1,4 +1,3 @@
-# ruff: noqa: UP003  (the type of a literal value is the lesson)
 print(type(12))
 print(type(12.5))
 print(type("twelve"))

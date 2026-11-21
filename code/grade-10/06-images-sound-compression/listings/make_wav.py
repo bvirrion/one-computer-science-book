@@ -1,4 +1,3 @@
-# capture: scratch
 import math
 import wave
 from pathlib import Path
@@ -17,3 +16,4 @@ with wave.open("tone.wav", "wb") as w:
 print("first samples:", list(samples[:10]))
 size = Path("tone.wav").stat().st_size
 print("file size:", size, "bytes for", len(samples), "samples")
+# capture: scratch

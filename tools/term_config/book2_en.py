@@ -54,5 +54,6 @@ NO_CAPITAL = set()
 EXTRA = {}
 DROP = set()
 DERIVED = {}
-EXTRA_PROTECT = []
+# angles, not the degree of a vertex (g10-09 Ex 11, latitude and longitude)
+EXTRA_PROTECT = [r"latitude\s+as\s+degrees", r"decimal\s+degrees"]
 AMBIG_POLICY = "nearest-preceding"

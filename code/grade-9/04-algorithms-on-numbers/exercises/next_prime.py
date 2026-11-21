@@ -1,20 +1,15 @@
+from is_prime import is_prime
+
+
 def next_prime(n):
     """The smallest prime above n, and the divisions tried to find it."""
-    divisions = 0
     candidate = n + 1
-    while True:
-        if candidate >= 2:
-            d = 2
-            prime = True
-            while d * d <= candidate:
-                divisions = divisions + 1
-                if candidate % d == 0:
-                    prime = False
-                    break
-                d = d + 1
-            if prime:
-                return candidate, divisions
+    prime, divisions = is_prime(candidate)
+    while not prime:
         candidate = candidate + 1
+        prime, tried = is_prime(candidate)
+        divisions = divisions + tried
+    return candidate, divisions
 
 
 if __name__ == "__main__":

@@ -18,8 +18,17 @@ int folder_list(Folder *f, const char *dir) {
     for (struct dirent *de; (de = readdir(d)) != NULL;) {
         size_t k = strlen(de->d_name);
         if (k > 4 && strcmp(de->d_name + k - 4, ".txt") == 0) {
-            f->names = realloc(f->names, (f->n + 1) * sizeof *f->names);
-            f->names[f->n++] = strdup(de->d_name);
+            char **names = realloc(f->names, (f->n + 1) * sizeof *names);
+            char *copy = names != NULL ? strdup(de->d_name) : NULL;
+            if (names != NULL)
+                f->names = names;  // the old block is gone once realloc succeeded
+            if (copy == NULL) {  // out of memory: give back what was listed
+                closedir(d);
+                folder_free(f);
+                *f = (Folder){0};
+                return -1;
+            }
+            f->names[f->n++] = copy;
         }
     }
     closedir(d);

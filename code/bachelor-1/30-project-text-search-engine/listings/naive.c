@@ -19,7 +19,10 @@ int main(int argc, char **argv) {
     int n = split_words(argc - 2, argv + 2, words, terms, MAX_TERMS);
     Hit top[SHOWN];
     int shown, matches = scan_and(argv[1], &f, terms, n, top, SHOWN, &shown);
-    print_hits(f.names, top, shown, matches);
+    if (matches < 0)
+        fprintf(stderr, "naive: out of memory\n");
+    else
+        print_hits(f.names, top, shown, matches);
     folder_free(&f);
-    return matches > 0 ? 0 : 1;
+    return matches > 0 ? 0 : matches == 0 ? 1 : 2;
 }

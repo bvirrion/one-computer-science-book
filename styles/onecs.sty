@@ -897,7 +897,18 @@
 \DeclareSIUnit{\cycle}{cycles}
 % Inline code: \code{x = 3} (typewriter, never broken inside a token);
 % \key{Shift} draws a keyboard key; \menu{File > Save} a menu path.
-\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+% Straight quotes and no comma ligature (main session, 2026-11-21, reader R1-042): T1 lmtt printed ' as a
+% curly quote and turned ,, into a low double quote, so \code{"a,b,,c"} read "a,b„c" and '' looked like ".
+\ExplSyntaxOn
+\tl_new:N \l__omcode_tl
+\NewDocumentCommand \code { m }
+  {
+    \tl_set:Ne \l__omcode_tl { \detokenize {#1} }
+    \tl_replace_all:Nnn \l__omcode_tl { ' } { \textquotesingle }
+    \tl_replace_all:Nnn \l__omcode_tl { ` } { \textasciigrave }
+    \texttt { \frenchspacing \l__omcode_tl }  % R2-046: one space after : . ? ! as in the listings
+  }
+\ExplSyntaxOff
 \newcommand{\key}[1]{\tikz[baseline=(k.base)]\node[draw=black!60,rounded corners=1.5pt,
   fill=black!4,inner xsep=2.5pt,inner ysep=1.2pt,minimum height=1.6ex,font=\footnotesize\sffamily](k){\strut #1};}
 \newcommand{\menu}[1]{\textsf{#1}}
@@ -1863,7 +1874,7 @@
 % Book 4: no hyphen ligatures in typewriter type either: \code{--it} and \code{cargo build --release}
 % printed an en dash (T1 lmtt turns -- into one). Repeats Book 2's < and > so the set stays whole.
 \ifpdftex
-  \DisableLigatures[<,>,-]{encoding = T1, family = tt*}
+  \DisableLigatures[<,>,-,{,}]{encoding = T1, family = tt*}% {,}: \code{a,,b} (R1-042)
 \fi
 
 % Book 4: the weekend-problem look-ahead above saw only blank lines, but every chapter writes

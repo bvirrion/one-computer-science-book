@@ -23,7 +23,8 @@ How each suffix runs (cwd = listings/, environment pinned below):
          after "$ " before it runs, in a fresh empty directory, as a terminal session
 A compiler's error is the listing's output, so a staged compile failure can be printed.
 
-Directives, in a comment in the first five lines of a listing (`# capture: ...` or `// capture: ...`):
+Directives, in a comment in the first or the last five lines of a listing (`# capture: ...` or `// capture: ...`;
+at the end when the printed program must start at line 1, e.g. when its traceback quotes line numbers):
   cflags=<flags>        replace the C/C++ optimisation and warning flags (e.g. cflags=-O0 -g -fsanitize=address)
   args=<words>          command-line arguments for the program
   timeout=<seconds>     default 120
@@ -121,7 +122,8 @@ def mask(text: str) -> str:
 def directives(path: Path) -> dict:
     out = {}
     try:
-        head = path.read_text(encoding="utf8", errors="replace").splitlines()[:5]
+        lines = path.read_text(encoding="utf8", errors="replace").splitlines()
+        head = lines[:5] + lines[5:][-5:]  # first or last five lines (last: the printed program starts at line 1)
     except OSError:
         return out
     for line in head:

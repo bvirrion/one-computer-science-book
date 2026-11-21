@@ -5,17 +5,20 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 OUT = HERE / "friends_graph.tex"
-GROUPS = [(range(1, 15), (0.0, 0.0), 2.3), (range(15, 28), (7.2, 0.0), 2.1),
-          (range(28, 40), (3.6, -4.6), 2.0)]
+# people, centre, radius, and a turn in degrees, chosen so that no edge
+# between two groups passes over a vertex
+GROUPS = [(range(1, 15), (0.0, 0.0), 2.3, 247.5),
+          (range(15, 28), (7.2, 0.0), 2.1, 217.5),
+          (range(28, 40), (3.6, -4.6), 2.0, 37.5)]
 BRIDGES = {(1, 28), (5, 37), (12, 20), (25, 37)}  # edges between the three groups
 
 
 def positions():
     pos = {}
-    for people, (cx, cy), r in GROUPS:
+    for people, (cx, cy), r, turn in GROUPS:
         n = len(people)
         for k, p in enumerate(people):
-            angle = math.pi / 2 - 2 * math.pi * k / n
+            angle = math.pi / 2 - 2 * math.pi * k / n + math.radians(turn)
             x, y = cx + r * math.cos(angle), cy + r * math.sin(angle)
             pos[p] = (round(x, 3), round(y, 3))
     pos[40] = (8.6, -4.6)

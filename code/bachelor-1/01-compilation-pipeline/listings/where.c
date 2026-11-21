@@ -9,6 +9,8 @@ int main(void)
 {
     int depth = 0;                      // (e)
     char *buffer = malloc(64);          // (f) the 64 bytes
+    if (buffer == NULL)
+        return 1;
     buffer[0] = (char)(depth + limit + table[0] + motto[0]);
     free(buffer);
     return 0;

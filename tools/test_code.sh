@@ -4,10 +4,10 @@
 #   tools/test_code.sh grade-8                  one year
 #   tools/test_code.sh grade-8/04-searching-and-sorting   one chapter
 #   python : ruff + pytest, one process per tests/ directory
-#   C      : every *_test.c built with gcc -std=c17 -O2 -Wall -Wextra -Werror (plus the chapter's .c files
+#   C      : every *_test.c built with gcc -std=c17 -Wall -Wextra -Werror under ASan+UBSan (2026-11-21, R3-027) (plus the chapter's .c files
 #            named in its first-line `// test-with: a.c b.c`) and run
 #   C++    : every *_test.cpp (plus the files named in its first-line `// test-with: a.cpp`) built with
-#            g++ -std=c++20 -O2 -Wall -Wextra -Werror and run
+#            g++ -std=c++20 -Wall -Wextra -Werror under ASan+UBSan and run
 #   Rust   : every *_test.rs outside a Cargo crate built with rustc --edition 2021 --test and run
 #            (it reaches a listing with #[path = "../listings/x.rs"] mod x;)
 #   Rust   : cargo clippy -D warnings + cargo test --offline in every dir holding a Cargo.toml
@@ -61,7 +61,7 @@ while IFS= read -r t; do
   n=$((n+1)); d=$(dirname "$t"); exe="$tmp/$(basename "${t%.c}")_$n"
   extra=$(head -1 "$t" | sed -n 's|^// test-with: *||p')
   srcs=("$t"); for e in $extra; do srcs+=("$d/$e"); done
-  if gcc -std=c17 -O2 -Wall -Wextra -Werror -I"$d" -I"$d/../listings" "${srcs[@]}" -o "$exe" -lm \
+  if gcc -std=c17 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -Wall -Wextra -Werror -I"$d" -I"$d/../listings" "${srcs[@]}" -o "$exe" -lm \
      && (cd "$d" && timeout 300 "${CAP[@]}" "$exe"); then
     echo "ok   $t"; else echo "FAIL $t"; fail=1; fi
 done < <(find "${roots[@]}" -name '*_test.c' | sort)
@@ -73,7 +73,7 @@ while IFS= read -r t; do
   n=$((n+1)); d=$(dirname "$t"); exe="$tmp/$(basename "${t%.cpp}")_$n"
   extra=$(head -1 "$t" | sed -n 's|^// test-with: *||p')
   srcs=("$t"); for e in $extra; do srcs+=("$d/$e"); done
-  if g++ -std=c++20 -O2 -Wall -Wextra -Werror -I"$d" -I"$d/../listings" "${srcs[@]}" -o "$exe" -pthread \
+  if g++ -std=c++20 -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=undefined -Wall -Wextra -Werror -I"$d" -I"$d/../listings" "${srcs[@]}" -o "$exe" -pthread \
      && (cd "$d" && timeout 300 "${CAP[@]}" "$exe"); then
     echo "ok   $t"; else echo "FAIL $t"; fail=1; fi
 done < <(find "${roots[@]}" -name '*_test.cpp' | sort)

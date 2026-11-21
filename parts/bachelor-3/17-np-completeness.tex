@@ -37,14 +37,14 @@ SAT is in NP: an assignment is a certificate, checked clause by clause. Let $A$ 
   \item Accept: some cell of some row holds the accepting state, one clause.
   \item Windows: every $2 \times 3$ window, three adjacent cells of a row and the three below, is \emph{legal}, that is, occurs in some configuration and one of its successors.
 \end{itemize}
-Only one cell per row holds a state, and a step changes only the cells next to it; so if every window is legal, each row is a successor of the one above, and the tableau is an accepting run. Conversely an accepting run fills a tableau whose windows are all legal. So $\varphi_w$ is satisfiable if and only if $N$ accepts $w$. The legal windows form a fixed finite set, depending on $N$ only. The formula has $O(t^2)$ variables and $O(t^2)$ clauses of constant size, and is written in polynomial time.
+Only one cell per row holds a state, and a step changes only the cells next to it; so if every window is legal, each row is a successor of the one above, and the tableau is an accepting run. Conversely an accepting run fills a tableau whose windows are all legal, once its last configuration is repeated down to the last row: an accepting configuration counts as its own successor, as it does in \code{cook_levin.py}. So $\varphi_w$ is satisfiable if and only if $N$ accepts $w$. The legal windows form a fixed finite set, depending on $N$ only. The formula has $O(t^2)$ variables and $O(t^2)$ clauses of constant size, and is written in polynomial time.
 \end{proof}
 
 The window condition says ``one of the legal windows is here'', a disjunction of conjunctions. \code{cook_levin.py} writes it in conjunctive normal form with one new variable $y$ per window and position, a clause ``some $y$ is true'' and clauses $y \Rightarrow$ each of its six cells. It builds the formula for a three-state machine that guesses where the pair \texttt{11} begins in its input, and \code{dpll.py}, a plain DPLL solver that \cref{ch:b3:hard-problems} develops, finds the accepting run.
 
 \omcode{code/bachelor-3/17-np-completeness/listings/cook_levin.py}{41}{64}{The tableau formula: cells, start row, acceptance, windows.}\label{lst:b3:np-completeness:cook-levin}
 
-\omoutput{code/bachelor-3/17-np-completeness/outputs/cook_levin.txt}{The formula for three steps on \texttt{011}, and the tableau read from its satisfying assignment: the machine guessed right at the second 1.}\label{out:b3:np-completeness:cook-levin}
+\omoutput{code/bachelor-3/17-np-completeness/outputs/cook_levin.txt}{The formula for three steps on \texttt{011}, and the tableau read from its satisfying assignment: the machine guessed right at the first 1.}\label{out:b3:np-completeness:cook-levin}
 
 \begin{omfigure}
 \begin{tikzpicture}[font=\small]
@@ -192,7 +192,7 @@ Subset sum has the dynamic program of the Year~1 volume: the set of sums reachab
 
 \omoutput{code/bachelor-3/17-np-completeness/outputs/subset_dp.txt}{Four more bits per number multiply the table by about 16 while the input grows by 80 bits: exponential in the input size.}\label{out:b3:np-completeness:dp}
 
-The reduction from 3-SAT builds targets with $n + m$ digits, so the dynamic program does not contradict NP-completeness. With numbers written in unary, or bounded by a polynomial, subset sum is in P; it is not \omterm{def:b3:np-completeness:pseudo}{strongly NP-complete}. 3-colouring has no numbers at all, and is \omterm{def:b3:np-completeness:reduction}{NP-complete} in the strong sense automatically.
+The reduction from 3-SAT builds targets with $n + m$ digits, so the dynamic program does not contradict NP-completeness. With numbers written in unary, or bounded by a polynomial, subset sum is in P; so, unless P = NP, it is not \omterm{def:b3:np-completeness:pseudo}{strongly NP-complete}. 3-colouring has no numbers at all, and is \omterm{def:b3:np-completeness:reduction}{NP-complete} in the strong sense automatically.
 
 \section{Exercises}\label{sec:b3:np-completeness:exercises}
 
@@ -201,7 +201,7 @@ A student shows that a new scheduling problem $S$ is \omterm{def:b3:np-completen
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b3:np-completeness:2}
-Apply the chain of \cref{lst:b3:np-completeness:3sat} to the clause $x_1 \vee \neg x_2 \vee x_3 \vee x_4 \vee \neg x_5$. Check by hand that the result is satisfied by $x_4$ true and the rest false, and say how the new variables are set.
+Apply the chain of \cref{lst:b3:np-completeness:3sat} to the clause $x_1 \vee \neg x_2 \vee x_3 \vee x_4 \vee \neg x_5$. Check by hand that the result is satisfied when $x_4$ is the only true literal of the clause ($x_1$ and $x_3$ false, $x_2$ and $x_5$ true), and say how the new variables are set.
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b3:np-completeness:3}
@@ -249,7 +249,7 @@ Prove that if some \omterm{def:b3:np-completeness:reduction}{NP-complete} proble
 \begin{problem}[{Weekend problem --- Timetabling the town's exams}]\label{pb:b3:np-completeness:1}
 Brenmoor's school sets its exams in a few time slots; two exams taken by a common student must not share a slot. Exams are vertices, clashes are edges, slots are colours. This problem shows that three slots make the problem \omterm{def:b3:np-completeness:reduction}{NP-complete}, with the \omterm{def:b3:np-completeness:gadget}{gadgets} of \cref{lst:b3:np-completeness:col}, and that two slots do not.
 
-\medskip\noindent\textbf{Part I --- The decision problem.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- The decision problem.}
 \begin{enumerate}
   \item State the timetabling problem with $s$ slots as a \omterm{def:b3:complexity-classes:decision}{decision problem} on graphs.
   \item Show it is in NP for every $s$: what is the certificate, and how long does checking take?
@@ -258,7 +258,7 @@ Brenmoor's school sets its exams in a few time slots; two exams taken by a commo
   \item Why is the optimisation problem ``fewest slots'' no easier than the \omterm{def:b3:complexity-classes:decision}{decision problem} with $s = 3$?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- The gadgets.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- The gadgets.}
 \begin{enumerate}[resume]
   \item In the palette triangle, why can the names T, F and B be given to the colours after the colouring is found?
   \item Why is exactly one of $x$, $\neg x$ coloured T in any 3-colouring?
@@ -268,7 +268,7 @@ Brenmoor's school sets its exams in a few time slots; two exams taken by a commo
   \item Why does a clause with three false literals make the graph uncolourable?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Sizes.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Sizes.}
 \begin{enumerate}[resume]
   \item Count the vertices: $2n + 6m + 3$.
   \item Count the edges: $3n + 12m + 3$.
@@ -278,7 +278,7 @@ Brenmoor's school sets its exams in a few time slots; two exams taken by a commo
   \item What do the counts say about the size of the hard instances 3-colouring inherits from 3-SAT?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Two slots against three.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Two slots against three.}
 \begin{enumerate}[resume]
   \item Show that a graph has a 2-colouring if and only if it has no cycle of odd length.
   \item Give a linear-time algorithm for two slots, and say what it returns when there is no timetable.

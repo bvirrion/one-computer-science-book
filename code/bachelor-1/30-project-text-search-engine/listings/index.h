@@ -27,8 +27,8 @@ typedef struct {
     int ndocs, cap_docs;
 } Index;
 
-void index_init(Index *ix);
-int index_add_text(Index *ix, const char *name, const char *text, size_t len);
+int index_init(Index *ix);  // 0, or -1 when out of memory
+int index_add_text(Index *ix, const char *name, const char *text, size_t len);  // -1: no memory
 int index_directory(Index *ix, const char *dir);  // every *.txt, by name; -1 on error
 const PostingList *index_lookup(const Index *ix, const char *word);
 size_t index_memory(const Index *ix);  // bytes allocated, counted

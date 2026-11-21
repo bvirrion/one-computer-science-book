@@ -33,5 +33,9 @@ DERIVED = {}
 # conjunctive normal form is not a lambda-calculus normal form; a bar-code scanner is not a lexical scanner.
 EXTRA_PROTECT = [r"sorted\s+order", r"key\s+order", r"round-robin\s+order", r"increasing\s+order",
                  r"another\s+order", r"the\s+order\s+of\s+its\s+key", r"to\s+handle\b",
-                 r"(conjunctive|disjunctive)\s+normal\s+form", r"let\s+a\s+scanner\b"]
+                 r"(conjunctive|disjunctive)\s+normal\s+form", r"let\s+a\s+scanner\b",
+                 # reader report R5-011, -015, -027, -041, -053, -058: ordinary words, or another sense
+                 r"is\s+correct\s+by\s+hypothesis", r"definition\s+of\s+interference",
+                 r"transition\s+function\s+gives\s+the\s+next\s+state", r"level\s+above\s+spills",
+                 r"recognisable\s+bytes", r"revocation\s+is\s+one\s+deletion"]
 AMBIG_POLICY = "drop"

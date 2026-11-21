@@ -7,6 +7,11 @@
 int query_or(const Index *ix, char **terms, int nterms, Hit *top, int k, int *nfound) {
     double *score = calloc(ix->ndocs, sizeof *score);  // a score per document: simple
     char *seen = calloc(ix->ndocs, 1);
+    if (score == NULL || seen == NULL) {
+        free(score);
+        free(seen);
+        return -1;  // out of memory
+    }
     for (int i = 0; i < nterms; i++) {
         const PostingList *l = index_lookup(ix, terms[i]);
         for (int j = 0; l != NULL && j < l->size; j++) {

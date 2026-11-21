@@ -1,4 +1,6 @@
 """unify.py: Robinson's unification with the occurs check, and resolution on clauses."""
+from itertools import combinations
+
 from formulas import Fun, Var, free
 
 
@@ -53,3 +55,14 @@ def resolvents(c1, c2):
                 rest = (c1 - {(sign, p, args)}) | (c2 - {(sign2, p2, args2)})
                 yield frozenset((sg, q, tuple(walk(a, sigma) for a in xs))
                                 for sg, q, xs in rest), sigma
+
+
+def factors(c):
+    """Every factor of a clause: two of its literals of the same sign made equal."""
+    for (sign, p, args), (sign2, p2, args2) in combinations(sorted(c, key=repr), 2):
+        if p != p2 or sign != sign2:
+            continue
+        sigma = unify(Fun("", args), Fun("", args2))
+        if sigma is not None:  # the two literals become one
+            yield frozenset((sg, q, tuple(walk(a, sigma) for a in xs))
+                            for sg, q, xs in c), sigma

@@ -50,7 +50,7 @@ A \emph{buffer pool}\index{buffer pool} is a fixed set of frames in memory, each
 
 The \omterm{def:b3:database-storage:buffer}{buffer pool} is the operating system's page cache moved into the database, which then decides itself when a page goes to disk: a write-ahead log, told in \cref{ch:b3:transactions-and-recovery}, needs exactly that control. Victims are chosen by the \omterm{def:b3:virtual-memory:replacement}{clock algorithm}, skipping pinned frames.
 
-\omcode{code/bachelor-3/21-database-storage/listings/bufferpool.py}{18}{51}{Fetch, unpin and the clock: a miss writes back a dirty victim before reading the page.}\label{lst:b3:database-storage:bufferpool}
+\omcode{code/bachelor-3/21-database-storage/listings/bufferpool.py}{16}{49}{Fetch, unpin and the clock: a miss writes back a dirty victim before reading the page.}\label{lst:b3:database-storage:bufferpool}
 
 \omoutput{code/bachelor-3/21-database-storage/outputs/buffer_demo.txt}{Hit rate against pool size on 50,000 accesses to 1,000 pages, 80\,\% of them to a hot fifth. One access in ten changes its page.}\label{out:b3:database-storage:buffer}
 
@@ -154,7 +154,7 @@ Neither rehashes the whole file when it grows: a split moves the keys of one buc
 
 \omoutput{code/bachelor-3/21-database-storage/outputs/extendible.txt}{The same keys with eight insertions, each bucket printed once under the bits its keys share. The keys 1, 9 and 25 agree on their last three bits, so inserting 25 doubles the directory three times; a good hash, below, keeps the directory as small as the buckets need.}\label{out:b3:database-storage:extendible}
 
-With $h(k) = k$, keys that agree on many low bits pile into one bucket and blow the directory up, eight entries for one split; the eight insertions end with 16 directory entries for 8 buckets. With a multiplicative hash, 100,000 keys in buckets of 64 need 2,048 directory entries and 2,048 buckets: one page read per lookup when the directory is in memory. \Cref{exo:b3:database-storage:11} builds \omterm{def:b3:database-storage:hashing}{linear hashing}.
+With $h(k) = k$, keys that agree on many low bits pile into one bucket and blow the directory up: inserting 25 alone splits three times and multiplies the directory by eight; the eight insertions end with 16 directory entries for 8 buckets. With a multiplicative hash, 100,000 keys in buckets of 64 need 2,048 directory entries and 2,048 buckets: one page read per lookup when the directory is in memory. \Cref{exo:b3:database-storage:11} builds \omterm{def:b3:database-storage:hashing}{linear hashing}.
 
 A hash index cannot answer \texttt{WHERE out\_date > '2025-06-01'}: neighbouring keys land in unrelated buckets. That is why the \omterm{def:b3:database-storage:bptree}{B+ tree} is the default index of almost every database, and a hash index the special case.
 
@@ -192,7 +192,7 @@ Its price is paid twice. An entry is rewritten at every compaction that touches 
 
 \omoutput{code/bachelor-3/21-database-storage/outputs/lsm_demo.txt}{200,000 random writes. Every entry is written about ten times on its way down; a lookup reads one run when the key is present, and almost never one when it is absent.}\label{out:b3:database-storage:lsm}
 
-Each level holds a single run, rewritten whenever the level above \omterm{def:b3:program-optimisation:spill}{spills} into it, so an entry is written once by the flush and then, at each level, about $T/2$ times more on average; \cref{exo:b3:database-storage:9} turns this into a bound. The smaller ratio rewrites less per level but needs more levels: the two balance here at 9.0 and 11.5. Absent keys cost 0.014 and 0.024 runs read per lookup, the false-positive rates of filters with 10 bits per key summed over the levels. Each insertion into the \omterm{def:b3:database-storage:bptree}{B+ tree} of the previous section writes at least one whole page, 4,096 bytes for one 16-byte entry: an LSM tree that writes each entry ten times in big sequential runs writes far fewer pages, and \cref{exo:b3:database-storage:12} counts both.
+Each level holds a single run, rewritten whenever the level above spills into it, so an entry is written once by the flush and then, at each level, about $T/2$ times more on average; \cref{exo:b3:database-storage:9} turns this into a bound. The smaller ratio rewrites less per level but needs more levels; with these sizes the two effects net out to a \omterm{def:b3:file-systems:flash}{write amplification} of 9.0 for $T = 4$ and 11.5 for $T = 10$. Absent keys cost 0.014 and 0.024 runs read per lookup, the false-positive rates of filters with 10 bits per key summed over the levels. Each insertion into the \omterm{def:b3:database-storage:bptree}{B+ tree} of the previous section writes at least one whole page, 4,096 bytes for one 16-byte entry: an LSM tree that writes each entry ten times in big sequential runs writes far fewer pages, and \cref{exo:b3:database-storage:12} counts both.
 
 \section{Choosing an index}\label{sec:b3:database-storage:choosing}
 
@@ -216,7 +216,7 @@ In the \omterm{def:b3:database-storage:page}{slotted page} of \cref{lst:b3:datab
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b3:database-storage:2}
-Give the greatest and the least height of a \omterm{def:b3:database-storage:bptree}{B+ tree} of \omterm{def:b3:database-storage:bptree}{order} 100 holding $10^7$ keys, every node full in the first case, every non-root node at its minimum in the second.
+Give the least and the greatest height of a \omterm{def:b3:database-storage:bptree}{B+ tree} of \omterm{def:b3:database-storage:bptree}{order} 100 holding $10^7$ keys, every node full in the first case, every non-root node at its minimum in the second.
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b3:database-storage:3}
@@ -268,7 +268,7 @@ The town archive wants one index over every document it will ever hold, keyed by
 
 \omoutput{code/bachelor-3/21-database-storage/outputs/archive.txt}{Heights from the formula, the measured million-key trees, and the cost of a lookup with the top levels in the \omterm{def:b3:database-storage:buffer}{buffer pool}.}\label{out:b3:database-storage:archive}
 
-\medskip\noindent\textbf{Part I --- Fan-out.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Fan-out.}
 \begin{enumerate}
   \item An internal node has a 16-byte header, keys of 8 bytes and child page numbers of 8 bytes. How many children fit in a page?
   \item Check that 255 children fit and 256 do not, counting keys and pointers exactly.
@@ -278,7 +278,7 @@ The town archive wants one index over every document it will ever hold, keyed by
   \item SQLite's page header is 8 or 12 bytes. Why can a real database not quite reach the fan-out of question~1?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Heights.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Heights.}
 \begin{enumerate}[resume]
   \item Compute the number of leaves and of nodes at each level for $10^9$ full leaves and nodes, and the height.
   \item Do the same for $10^6$ keys.
@@ -288,7 +288,7 @@ The town archive wants one index over every document it will ever hold, keyed by
   \item Apply \cref{thm:b3:database-storage:height} to bound the height of $10^9$ keys in the worst case. Compare with the half-full line of \cref{out:b3:database-storage:archive}.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Measured.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Measured.}
 \begin{enumerate}[resume]
   \item Explain the 3,955 pages of the bulk-loaded million-key tree.
   \item The tree built by random insertion has 5,705 pages and leaves 69\,\% full. Where do the empty quarters come from?
@@ -298,7 +298,7 @@ The town archive wants one index over every document it will ever hold, keyed by
   \item How could a database avoid that half-full tree when keys arrive in \omterm{def:b3:database-storage:bptree}{order}?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Caching.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Caching.}
 \begin{enumerate}[resume]
   \item Explain the four cache lines of \cref{out:b3:database-storage:archive}.
   \item For a billion keys in full nodes, how much memory keeps the top two levels, and the top three?

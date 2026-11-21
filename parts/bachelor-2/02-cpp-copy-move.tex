@@ -221,7 +221,8 @@ optimisation}), but is not required to; if it does not, the return moves.
 % ledger: b2:cpp17-elision
 This is the first line of \cref{out:b2:cpp-copy-move:hook}: \code{make_readings} returns its local vector \code{v}
 by name, the compiler built \code{v} in the caller's \code{r}, and had it not done so the return would have moved the
-vector, which copies three pointers. Returning a large object by value is therefore cheap in C++, and the usual
+vector, which copies three pointers and touches no element. The first line counts element copies and moves, so it
+would read the same either way: what it shows is that no element was copied, not which of the two happened. Returning a large object by value is therefore cheap in C++, and the usual
 style.
 
 \begin{inpractice}[When to write std::move]
@@ -411,9 +412,9 @@ program below measures both for vectors of \code{double} of growing length.
 \omoutput{code/bachelor-2/02-cpp-copy-move/outputs/copy_vs_move.txt}{One run on the author's laptop; the digits
 change from run to run.}\label{out:b2:cpp-copy-move:copy-vs-move}
 
-The copy grows with $n$: a few hundredths of a nanosecond per element while the vectors fit in the processor's
-caches, and about ten times more once they do not (\cref{ch:b2:caches}). The move stays at a nanosecond or two
-whatever the length, because it copies three pointers and empties the source.
+The copy grows with $n$: from a few hundredths to about a tenth of a nanosecond per element while the vectors fit in
+the processor's caches, and about half a nanosecond once they do not (\cref{ch:b2:caches}). The move stays below two
+nanoseconds whatever the length, because it copies three pointers and empties the source.
 
 \section{Exercises}\label{sec:b2:cpp-copy-move:exercises}
 
@@ -427,7 +428,7 @@ moves, or neither, and give the two numbers the program prints.
 The class \code{Text} below has a copy assignment written the obvious way. The program assigns an object to
 itself. Run under AddressSanitizer, it stops at once. Explain the report, then fix the assignment twice: with a test
 for self-assignment, and with \cref{met:b2:cpp-copy-move:copy-and-swap}. Which fix also gives the strong guarantee?
-\omcode{code/bachelor-2/02-cpp-copy-move/listings/exo_selfassign.cpp}{5}{31}{An assignment to oneself}
+\omcode{code/bachelor-2/02-cpp-copy-move/listings/exo_selfassign.cpp}{5}{32}{An assignment to oneself}
 \omoutput[1-8]{code/bachelor-2/02-cpp-copy-move/outputs/run_selfassign.txt}{The beginning of the report.}
 \end{exercise}
 
@@ -490,7 +491,7 @@ moves between every combination of small and long strings, self-assignment, and 
 (a) Show that the bound of \cref{prop:b2:cpp-copy-move:growth-moves} cannot be improved to $\frac{r}{r-1}(n-1)
 \cdot \alpha$ for any $\alpha < 1$: exhibit, for $r = 2$, values of $n$ for which the number of transfers divided by
 $2(n-1)$ tends to $1$. (b) What does the proof give for $r = 1.5$, and how many transfers does a growth from 1 by
-\emph{rounded} factor 1.5 (capacities $1, 2, 3, 4, 6, 9, \dots$) make up to $n = 100$? (c) An array that grows by a
+the factor 1.5 rounded down, but by at least one place (capacities $1, 2, 3, 4, 6, 9, \dots$), make up to $n = 100$? (c) An array that grows by a
 fixed number $d$ of places instead of a factor makes how many transfers for $n$ elements? Conclude about the
 amortised cost.
 \end{exercise}
@@ -515,7 +516,7 @@ album.
 \omcodes{code/bachelor-2/02-cpp-copy-move/listings/pipeline.cpp}{9-22,24-29,31-49}{An editing
 pipeline}\label{lst:b2:cpp-copy-move:pipeline}
 
-\medskip\noindent\textbf{Part I --- Counting copies.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Counting copies.}\par\nopagebreak
 \begin{enumerate}[beginpenalty=10000]
 \item How many bytes does one copy of an \code{Image} allocate and copy?
 \item In version 1, which statements copy an \code{Image} when \code{a} is computed? Predict the count of copies and
@@ -528,7 +529,7 @@ used again?
 \item Why does the result of \code{brighten2} reach the parameter of \code{darken2} with neither a copy nor a move?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Adding moves.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Adding moves.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item Predict the third report (with \code{std::move(photo)}). What may the program do with \code{photo} afterwards?
 \item Predict the fourth report: the three \code{push_back} calls, with the vector growing from capacity 0 as in
@@ -542,7 +543,7 @@ drop, and what would the class then do on a copy and a move?
 function, from the counts above.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Albums and photos.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Albums and photos.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item The library now lets one photo belong to several albums, and an album keeps its photos with
 \code{std::vector<std::shared_ptr<Photo>>}. Why is \code{std::unique_ptr} no longer possible?
@@ -557,7 +558,7 @@ expired entries, using \code{expired()} or \code{lock()}.
 moment by another part of the program. Which call gives the drawing code that guarantee?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- What a copy costs.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- What a copy costs.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item In \cref{out:b2:cpp-copy-move:copy-vs-move}, estimate the time per element of a copy for $n = 10^3$ and for
 $n = 10^7$. Why do they differ?

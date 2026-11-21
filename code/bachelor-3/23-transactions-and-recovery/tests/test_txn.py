@@ -200,6 +200,38 @@ def test_mvcc_and_doctors(capsys):
     assert died == 52
 
 
+def test_read_only_anomaly_passes_the_simple_check():
+    """Fekete's read-only anomaly: the check of mvcc.py looks at a transaction only at
+    its own commit, so a pivot that commits before its incoming antidependency
+    appears is never caught. The chapter says so; this test documents it."""
+    s = mvcc.Store({"X": 0, "Y": 0}, ssi=True)
+    t2 = s.begin("T2")
+    seen = t2.read("X") + t2.read("Y")  # 0: no deposit yet
+    t1 = s.begin("T1")
+    t1.write("Y", t1.read("Y") + 20)
+    assert t1.commit() == "T1 commits at 1"
+    t3 = s.begin("T3")
+    t2.write("X", t2.read("X") - 10 - (1 if seen - 10 < 0 else 0))  # withdrawal, penalty
+    assert t2.commit() == "T2 commits at 2"
+    view = (t3.read("X"), t3.read("Y"))
+    assert t3.commit() == "T3 commits at 3"
+    assert view == (0, 20) and s.latest() == {"X": -11, "Y": 20}
+    # Serial orders: T3 sees Y = 20 so T1 precedes T3; T3 sees X = 0 so T3 precedes T2;
+    # then T2 follows T1 and would have seen the deposit and paid no penalty (X = -10).
+    for order in (("T1", "T3", "T2"), ("T3", "T1", "T2"), ("T1", "T2", "T3"),
+                  ("T2", "T1", "T3"), ("T2", "T3", "T1"), ("T3", "T2", "T1")):
+        x, y = 0, 0
+        t3_view = None
+        for t in order:
+            if t == "T1":
+                y += 20
+            elif t == "T2":
+                x = x - 10 - (1 if x + y - 10 < 0 else 0)
+            else:
+                t3_view = (x, y)
+        assert not (t3_view == (0, 20) and (x, y) == (-11, 20))
+
+
 def test_recovery_everywhere():
     db = crash_all.workload()
     assert len(db.events) == 23

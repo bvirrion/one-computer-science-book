@@ -1,4 +1,3 @@
-# capture: timeout=2
 coins = 0
 while coins != 50:
     coins = coins + 3

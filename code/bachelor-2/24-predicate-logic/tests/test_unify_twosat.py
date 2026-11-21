@@ -6,7 +6,7 @@ from hypothesis import strategies as st
 
 from formulas import Fun, Var
 from twosat import solve
-from unify import unify, walk
+from unify import factors, resolvents, unify, walk
 
 terms = st.recursive(st.sampled_from([Var("x"), Var("y"), Var("z"), Fun("a"), Fun("b")]),
                      lambda t: st.builds(lambda u: Fun("f", (u,)), t)
@@ -54,6 +54,44 @@ def test_most_general_found():
 
 def test_occurs_check():
     assert unify(Var("x"), Fun("f", (Var("x"),))) is None
+
+
+def lit(sign, *args, p="P"):
+    return (sign, p, tuple(args))
+
+
+def test_factor():
+    x, y = Var("x"), Var("y")
+    c = frozenset({lit(True, x), lit(True, Fun("f", (y,))), lit(True, x, p="Q")})
+    found = [f for f, _ in factors(c)]
+    assert found == [frozenset({lit(True, Fun("f", (y,))), lit(True, Fun("f", (y,)), p="Q")})]
+    assert list(factors(frozenset({lit(True, x), lit(False, y)}))) == []
+
+
+def shape(c):
+    """A clause on the unary P, up to renaming: its signs and its number of variables."""
+    return tuple(sorted(s for s, _, _ in c)), len({a for _, _, args in c for a in args})
+
+
+def test_binary_resolution_alone_is_incomplete():
+    """P(x) | P(y) and ~P(x) | ~P(y) have no model; their binary resolvents, up to
+    renaming, are closed among three clauses of two literals: no empty clause."""
+    x, y = Var("x"), Var("y")
+    pos, neg = frozenset({lit(True, x), lit(True, y)}), frozenset({lit(False, x), lit(False, y)})
+    mixed = frozenset({lit(True, x), lit(False, y)})
+    closed = {shape(pos), shape(neg), shape(mixed)}
+    for a in (pos, neg, mixed):
+        for b in (pos, neg, mixed):
+            for r, _ in resolvents(a, b):
+                assert len(r) == 2 and shape(r) in closed
+
+
+def test_factoring_refutes():
+    x, y = Var("x"), Var("y")
+    pos, neg = frozenset({lit(True, x), lit(True, y)}), frozenset({lit(False, x), lit(False, y)})
+    (p1, _), = factors(pos)
+    (n1, _), = factors(neg)
+    assert frozenset() in [r for r, _ in resolvents(p1, n1)]
 
 
 literals = st.integers(1, 5).flatmap(lambda k: st.sampled_from([k, -k]))

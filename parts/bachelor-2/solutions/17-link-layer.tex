@@ -9,7 +9,7 @@ byte are missed (\cref{prop:b2:link-layer:parity}).
 \end{solution}
 
 \begin{solution}{exo:b2:link-layer:2}
-The loop adds the words but never \omterm{def:b2:functional-programming:fold}{folds} \code{total}; the final \code{~total & 0xFFFF} then throws the
+The loop adds the words but never folds \code{total}; the final \code{~total & 0xFFFF} then throws the
 carries away instead of adding them back. For \code{LAMP}, $\mathtt{0x4c41} + \mathtt{0x4d50} = \mathtt{0x9991}$:
 no carry, so both versions agree. For \code{ff f0 00 20}, $\mathtt{0xfff0} + \mathtt{0x0020} = \mathtt{0x10010}$; the
 one's complement sum is $\mathtt{0x0010} + 1 = \mathtt{0x0011}$, whose complement is \code{ffee}, while dropping the
@@ -68,7 +68,7 @@ an even number of flipped bits. So every error with an odd number of flips is de
 \end{solution}
 
 \begin{solution}{exo:b2:link-layer:9}
-\omcode{code/bachelor-2/17-link-layer/listings/backoff_sim.py}{5}{23}{\omterm{prop:b2:link-layer:aloha}{Binary exponential backoff}}
+\omcode{code/bachelor-2/17-link-layer/listings/backoff_sim.py}{5}{23}{\omterm{def:b2:link-layer:aloha}{Binary exponential backoff}}
 \omoutput{code/bachelor-2/17-link-layer/outputs/backoff_sim.txt}{2000 runs per value of $k$.}
 A \omterm{def:b2:link-layer:mac-protocol}{collision} costs one slot here, an idealisation of \omterm{def:b2:link-layer:aloha}{CSMA/CD}. The mean delay of a \omterm{def:b2:link-layer:frame}{frame} grows about linearly, close to
 $2.4k$ slots: the stations spread out until the window is about as large as their number, and then go through
@@ -110,9 +110,12 @@ all $2^{N-r}$ multiples: a fraction $2^{-(r-1)}$ of them pass, twice the average
 
 \textbf{2.} $2n$ bytes (plus the two flags), when every byte of the payload is \code{7e} or \code{7d}.
 
-\textbf{3.} Two \omterm{def:b2:link-layer:frame}{frames} run together into one. Its last 16 bits are the second \omterm{def:b2:link-layer:frame}{frame}'s check, computed for the second
-\omterm{def:b2:link-layer:frame}{frame} alone, so the merged \omterm{def:b2:link-layer:frame}{frame} is in effect a \omterm{def:b2:link-layer:frame}{frame} with a large error: it passes with probability about $2^{-16}$,
-and is otherwise dropped. Both commands are lost, but no false command is accepted.
+\textbf{3.} Two \omterm{def:b2:link-layer:frame}{frames} run together into one, of 12 bytes. The CRC does not catch it: it is accepted every time, not
+with probability $2^{-16}$. Each \omterm{def:b2:link-layer:frame}{frame} $T_1$, $T_2$, check included, is a multiple of $g$, and with a register that
+starts at zero and no final complement the merged \omterm{def:b2:link-layer:frame}{frame} is $T_1(x)\,x^{48} + T_2(x)$, a multiple of $g$ too, so its
+check is 0. Only a length check (6 bytes expected) rejects it, or a CRC whose register starts at all ones, as real
+\omterm{def:b2:link-layer:frame}{links} use: then the second \omterm{def:b2:link-layer:frame}{frame}'s check no longer matches what comes before it. (With one flag lost the \omterm{def:b2:link-layer:frame}{frames} stay
+apart, since \code{stuffing.py} puts two flags between \omterm{def:b2:link-layer:frame}{frames}.)
 
 \textbf{4.} The check protects the command, whatever the framing; the receiver removes the stuffing first, then
 checks. The check bytes are stuffed like the payload, so a check that contains \code{7e} cannot end a \omterm{def:b2:link-layer:frame}{frame} early.

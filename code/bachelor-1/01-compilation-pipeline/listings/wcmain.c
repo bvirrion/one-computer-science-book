@@ -6,6 +6,8 @@
 int main(void)
 {
     char *title = malloc(16);
+    if (title == NULL)
+        return 1;  // no memory: stop before writing through NULL
     int c;
     snprintf(title, 16, "standard input");
     while ((c = getchar()) != EOF)

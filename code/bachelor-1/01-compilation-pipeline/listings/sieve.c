@@ -10,6 +10,8 @@ int main(void)
     struct timespec t0, t1;
     timespec_get(&t0, TIME_UTC);
     char *composite = calloc(N, 1);
+    if (composite == NULL)
+        return 1;
     long count = 0;
     for (long i = 2; i < N; i++) {
         if (composite[i])

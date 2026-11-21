@@ -4,11 +4,12 @@
 #include "../listings/index.h"
 #include "../listings/topk.h"
 
-// Exercise 7: documents that contain at least one term, scored by tf-idf.
+// Exercise 7: documents that contain at least one term, scored by tf-idf; -1: no memory.
 int query_or(const Index *ix, char **terms, int nterms, Hit *top, int k, int *nfound);
 // Exercise 8: how many documents contain every term, for search --count.
 int count_and(const Index *ix, char **terms, int nterms);
-// Exercise 10: documents containing the words consecutively; docs[] gets them in order.
+// Exercise 10: documents containing the words consecutively; docs[] gets them in order;
+// -1 when out of memory.
 int phrase_docs(const char **texts, int ndocs, char **words, int nwords, int *docs);
 // Exercise 12: the index to a binary file and back; 0 on success.
 int index_save(const Index *ix, const char *path);

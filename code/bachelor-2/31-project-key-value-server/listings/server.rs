@@ -45,10 +45,16 @@ pub fn handle(stream: TcpStream, shared: &Shared) -> io::Result<()> {
     }
 }
 
+/// A failed accept (a client gone before it was accepted, no descriptor left) costs one
+/// client, not the server: report it and go on.
+fn accepted(stream: io::Result<TcpStream>) -> Option<TcpStream> {
+    stream.map_err(|e| eprintln!("accept: {e}")).ok()
+}
+
 /// M2: one connection at a time; the next client waits for the previous one.
 pub fn serve_one_at_a_time(listener: TcpListener, shared: Arc<Shared>) -> io::Result<()> {
-    for stream in listener.incoming() {
-        let _ = handle(stream?, &shared);
+    for stream in listener.incoming().filter_map(accepted) {
+        let _ = handle(stream, &shared);
     }
     Ok(())
 }
@@ -56,8 +62,8 @@ pub fn serve_one_at_a_time(listener: TcpListener, shared: Arc<Shared>) -> io::Re
 /// M3: a new thread for every connection.
 pub fn serve_thread_per_connection(listener: TcpListener, shared: Arc<Shared>)
     -> io::Result<()> {
-    for stream in listener.incoming() {
-        let (stream, shared) = (stream?, Arc::clone(&shared));
+    for stream in listener.incoming().filter_map(accepted) {
+        let shared = Arc::clone(&shared);
         thread::spawn(move || handle(stream, &shared));
     }
     Ok(())
@@ -80,8 +86,8 @@ pub fn serve_pool(listener: TcpListener, shared: Arc<Shared>, workers: usize)
             }
         });
     }
-    for stream in listener.incoming() {
-        queue.send(stream?).expect("a worker is alive");
+    for stream in listener.incoming().filter_map(accepted) {
+        queue.send(stream).expect("a worker is alive");
     }
     Ok(())
 }

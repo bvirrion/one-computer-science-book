@@ -10,7 +10,7 @@ impl Shape for Circle { fn area(&self) -> f64 { 3.0 * self.r * self.r } }
 impl Shape for Rect { fn area(&self) -> f64 { self.w * self.h } }
 
 fn parts(s: &dyn Shape) -> (usize, usize) {
-    // a &dyn Shape is (address of the value, address of the type's table)
+    // a &dyn Shape is (value's address, table's address): today's order, not a promise
     let [data, table]: [usize; 2] = unsafe { std::mem::transmute(s) };
     (data, table)
 }

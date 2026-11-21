@@ -11,10 +11,12 @@ static size_t home(long x, size_t m) {  // multiply by a large odd constant, the
     return (size_t)((unsigned long)x * 11400714819323198485u % m);
 }
 
-void intset_init(intset *s) {
+bool intset_init(intset *s) {  // false when out of memory
     s->m = 8, s->n = 0;
     s->slot = malloc(s->m * sizeof *s->slot);
+    if (s->slot == NULL) return false;
     for (size_t i = 0; i < s->m; i++) s->slot[i] = -1;
+    return true;
 }
 
 bool intset_has(const intset *s, long x) {
@@ -29,10 +31,11 @@ static void place(long *slot, size_t m, long x) {
     slot[i] = x;
 }
 
-void intset_add(intset *s, long x) {  // precondition: x >= 0
-    if (intset_has(s, x)) return;
+bool intset_add(intset *s, long x) {  // precondition: x >= 0; false when out of memory
+    if (intset_has(s, x)) return true;
     if (4 * (s->n + 1) > 3 * s->m) {  // rehash into twice as many slots
         long *bigger = malloc(2 * s->m * sizeof *bigger);
+        if (bigger == NULL) return false;  // the set is left as it was
         for (size_t i = 0; i < 2 * s->m; i++) bigger[i] = -1;
         for (size_t i = 0; i < s->m; i++)
             if (s->slot[i] != -1) place(bigger, 2 * s->m, s->slot[i]);
@@ -41,6 +44,7 @@ void intset_add(intset *s, long x) {  // precondition: x >= 0
     }
     place(s->slot, s->m, x);
     s->n++;
+    return true;
 }
 
 void intset_free(intset *s) { free(s->slot); }

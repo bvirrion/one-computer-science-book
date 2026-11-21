@@ -141,7 +141,7 @@ regions faults.}
 Arrays and strings are walked with a pointer that a loop advances by the element size; a structure is a base
 address and fixed offsets, padding included.
 
-\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/array_sum.S}{6}{17}{A pointer walk: the loop
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/array_sum.S}{6}{20}{A pointer walk: the loop
 ends when the pointer reaches the end}\label{lst:b2:assembly-and-calling-convention:array}
 
 \omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/array_sum.txt}{The sum of the six page
@@ -150,7 +150,7 @@ counts.}
 A C string has no length stored anywhere: the code walks bytes until it meets the NUL, and the length is the
 difference of two pointers.
 
-\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/strlen.S}{5}{11}{\code{strlen}: one byte per
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/strlen.S}{5}{15}{\code{strlen}: one byte per
 turn, \code{lbu} because a byte above 127 is not negative text}\label{lst:b2:assembly-and-calling-convention:strlen}
 
 \omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/strlen.txt}{The length of the street
@@ -213,8 +213,8 @@ checks that $v$ is in range, loads the entry at index $v$, and jumps to it with 
 whatever the number of cases.
 \end{definition}
 
-\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/switch_table.S}{2}{19}{A table of four case
-addresses, and the bounds check}\label{lst:b2:assembly-and-calling-convention:switch}
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/switch_table.S}{2}{37}{A table of four case
+addresses, the bounds check, the cases and the printing loop}\label{lst:b2:assembly-and-calling-convention:switch}
 
 \omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/switch_table.txt}{The kinds 1, 0, 3, 7 and 2;
 kind 7 fails the bounds check.}\label{out:b2:assembly-and-calling-convention:switch}
@@ -370,7 +370,7 @@ unused). Each \code{fact(n)} saved its caller's \code{n}, which it restores on t
 The convention is a promise each function makes to its callers; breaking it breaks code far away. Here a helper
 uses \code{s0} without saving it:
 
-\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/clobber_bug.S}{5}{30}{A callee that clobbers
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/clobber_bug.S}{5}{31}{A callee that clobbers
 \code{s0}}\label{lst:b2:assembly-and-calling-convention:clobber}
 
 \omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/clobber_bug.txt}{61 instead of
@@ -379,6 +379,12 @@ uses \code{s0} without saving it:
 \code{fine} sets \code{s0} to 21 at each call, so the caller's running total restarts from 21: $21 + 0$, then $21 +
 40 = 61$. Nothing in either function alone is wrong for its own purpose; the bug is the broken contract, which is why
 it is so hard to find in a large program. \code{fine} should use \code{t0}, which it may change freely.
+
+This \code{main}, like the short ones before it, uses \code{s0}, \code{s1} and \code{s2} without saving them,
+which the convention forbids to a callee. Here it is harmless only because \code{rv} starts \code{main} with
+\code{ra} at its exit address: nothing runs after \code{main} returns, so nothing needs those registers kept. A
+\code{main} called by real start-up code is a callee like any other and must save the \code{s} registers it uses, as
+\code{count.S} does in the problem.
 
 \section{Reading a compiler's output}\label{sec:b2:assembly-and-calling-convention:compiler}
 
@@ -411,14 +417,14 @@ the ground truth; the convention tells you which values the caller can still tru
 \begin{exercise}[$\star$]\label{exo:b2:assembly-and-calling-convention:1}
 Predict, in decimal, the values of \code{a1} to \code{a5} after these instructions, then check with the register
 dump in the solution.
-\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/exo_regs.S}{3}{8}{Shifts, comparisons and
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/exo_regs.S}{3}{10}{Shifts, comparisons and
 \code{xori}}
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b2:assembly-and-calling-convention:2}
 This program prints 1. Explain why with \cref{met:b2:assembly-and-calling-convention:compile-loop}, and fix the
 branch.
-\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/exo_bge.S}{2}{10}{A loop that runs once}
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/exo_bge.S}{2}{11}{A loop that runs once}
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b2:assembly-and-calling-convention:3}
@@ -440,7 +446,7 @@ Decode by hand the five words \code{00b50633}, \code{00452283}, \code{fe0518e3},
 \begin{exercise}[$\star\star$]\label{exo:b2:assembly-and-calling-convention:6}
 This program never ends; \code{rv} stops it at the step limit. Explain, following \code{ra}, where each \code{ret}
 goes, and fix \code{double_plus_two}.
-\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/exo_ra.S}{12}{18}{A non-leaf function}
+\omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/exo_ra.S}{3}{19}{A non-leaf function}
 \omoutput[2]{code/bachelor-2/10-assembly-and-calling-convention/outputs/exo_ra.txt}{The step limit.}
 \end{exercise}
 
@@ -489,7 +495,7 @@ The library's book codes end with a check digit computed from the other digits, 
 the desk. This problem compiles the function by hand, calls a helper under the convention, and proves exactly how many
 instructions it executes.
 
-\medskip\noindent\textbf{Part I --- The C function.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- The C function.}\par\nopagebreak
 \omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/check_digit.c}{4}{18}{The check digit in C}
 \begin{enumerate}[beginpenalty=10000]
 \item Compute by hand the check digit of 4006, and compare with the output in the solution.
@@ -502,7 +508,7 @@ caught?
 \item How large a code fits in a 32-bit unsigned word, in digits?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Compiled by hand.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Compiled by hand.}\par\nopagebreak
 \omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/count.S}{5}{22}{The \omterm{def:b2:assembly-and-calling-convention:prologue}{prologue} and the loop}
 \begin{enumerate}[resume, beginpenalty=10000]
 \item Which registers hold \code{code}, \code{i} and \code{sum}, and why \code{s} registers?
@@ -513,7 +519,7 @@ caught?
 \item The final expression uses \code{remu} twice. Could the first be avoided?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- A helper under the convention.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- A helper under the convention.}\par\nopagebreak
 \omcode{code/bachelor-2/10-assembly-and-calling-convention/listings/count.S}{40}{46}{\code{weigh}, a leaf}
 \begin{enumerate}[resume, beginpenalty=10000]
 \item Why does \code{weigh} need no \omterm{def:b2:assembly-and-calling-convention:prologue}{prologue} at all?
@@ -527,7 +533,7 @@ How would that change the count?
 \item The chapter's test also runs the codes 12, 123456789 and 100000000. Predict their instruction counts.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Every instruction counted.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Every instruction counted.}\par\nopagebreak
 \omoutput{code/bachelor-2/10-assembly-and-calling-convention/outputs/run_count.txt}{\code{rv --stats} on codes of
 1, 4 and 9 digits.}
 \begin{enumerate}[resume, beginpenalty=10000]

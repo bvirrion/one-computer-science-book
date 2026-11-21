@@ -112,10 +112,12 @@ An arithmetic operator of C works on two operands of one type. When the types di
 The \emph{integer promotion}\index{integer promotion} converts an operand of a type narrower than \code{int}
 (\code{char}, \code{short}, their unsigned forms, \code{bool}) to \code{int}, since \code{int} can represent all
 their values. The \emph{usual arithmetic conversions}\index{usual arithmetic conversions} then bring both
-operands of a binary operator to a common type: if either is floating, to the wider floating type; otherwise,
-after promotion, to the \omterm{def:b1:c-types-and-control:integer-type}{integer type} of greater rank (\code{int} $<$ \code{long} $<$ \code{long long}), and when
-the two have the same rank and one is unsigned, to the unsigned type. A signed operand converted to an unsigned
-type of \omterm{def:b1:c-types-and-control:integer-type}{width} $N$ takes its value modulo $2^N$.
+operands of a binary operator to a common type: if either is floating, to the wider floating type. Otherwise,
+after promotion, with the ranks \code{int} $<$ \code{long} $<$ \code{long long}: (i) if both operands are signed or
+both unsigned, to the \omterm{def:b1:c-types-and-control:integer-type}{integer type} of greater rank; (ii) if the unsigned operand has a rank greater than or
+equal to the other's, to its unsigned type; (iii) if the signed operand has the greater rank, to that signed type
+when it can represent every value of the unsigned one, and otherwise to the unsigned type of the same rank. A signed
+operand converted to an unsigned type of \omterm{def:b1:c-types-and-control:integer-type}{width} $N$ takes its value modulo $2^N$.
 \end{definition}
 
 \begin{definition}[Cast]\label{def:b1:c-types-and-control:cast}
@@ -131,11 +133,12 @@ truncation}\label{lst:b1:c-types-and-control:conversions}
 foresaw.}\label{out:b1:c-types-and-control:conversions}
 
 \begin{example}[Why \code{-1 < 1u} is false]\label{ex:b1:c-types-and-control:minus-one}
-In \code{minus_one < one}, both operands have rank \code{int} and one is unsigned, so \code{minus_one} is converted
-to \code{unsigned}: $-1 \bmod 2^{32} = 4294967295$, which is not less than 1. In \code{big < one}, \code{big} is a
-\code{long}, of greater rank, and on this machine \code{long} can hold every \code{unsigned} value: \code{one} is
-converted to \code{long}, and $-1 < 1$ is true. The same expression gives the opposite answer on a system where
-\code{long} has 32 bits.
+In \code{minus_one < one}, both operands have rank \code{int} and one is unsigned, so by case (ii)
+\code{minus_one} is converted to \code{unsigned}: $-1 \bmod 2^{32} = 4294967295$, which is not less than 1. In
+\code{big < one}, \code{big} is a \code{long}, of greater rank, and on this machine \code{long} can hold every
+\code{unsigned} value: by case (iii) \code{one} is converted to \code{long}, and $-1 < 1$ is true. The same
+expression gives the opposite answer on a system where \code{long} has 32 bits: \code{long} then cannot hold
+4294967295, so case (iii) sends both operands to \code{unsigned long}, and \code{big} becomes 4294967295 again.
 \end{example}
 
 \begin{omfigure}
@@ -152,13 +155,18 @@ converted to \code{long}, and $-1 < 1$ is true. The same expression gives the op
 \draw[->, thick, omDef] (c) -- node[right, font=\scriptsize\rmfamily] {promotion} (i);
 \draw[->] (i) -- (l); \draw[->] (l) -- (ll);
 \draw[->] (u) -- (ul); \draw[->] (ul) -- (ull);
-\draw[->] (i) -- node[above, font=\scriptsize\rmfamily] {same rank} (u);
+\draw[->] (i) -- node[above, font=\scriptsize\rmfamily] {(ii)} (u);
 \draw[->] (l) -- (ul); \draw[->] (ll) -- (ull);
 \draw[->] (ull) -- node[above, font=\scriptsize\rmfamily] {floating} (d);
+\draw[->, dashed, omThm] (u.north west) -- node[above, sloped, font=\scriptsize\rmfamily] {(iii)} (l.south east);
+\draw[->, dashed, omThm] (ul.north west) -- node[above, sloped, font=\scriptsize\rmfamily] {(iii)} (ll.south east);
 \end{tikzpicture}
 \par\smallskip{\small Where the \omterm{def:b1:c-types-and-control:promotion}{usual arithmetic conversions} lead two operands. Narrow types are first promoted to
-\code{int}; then the operand of lower rank moves up its column, and at equal rank a signed operand moves right
-to the unsigned type. A floating operand makes the whole operation floating.}
+\code{int}. Two signed or two unsigned operands meet at the greater rank, up their column (i). A signed operand goes
+to the unsigned operand's type when that rank is equal or greater: right at the same rank, then up (ii). When the signed
+operand has the greater rank, the unsigned one moves to it along a dashed arrow if that type holds all its values,
+as \code{unsigned} into a 64-bit \code{long}; if not, both go to the unsigned type of the greater rank (iii). A floating
+operand makes the whole operation floating.}
 \end{omfigure}
 
 C converts without asking because it trusts the programmer; Python refuses \code{"3" + 4} at run time, C would
@@ -370,7 +378,8 @@ Write \code{bool mul_overflows(int64_t a, int64_t b)}, true exactly when the pro
 \end{exercise}
 
 \begin{exercise}[$\star\star\star$]\label{exo:b1:c-types-and-control:12}
-For which values of \code{n} (an \code{int}) does the loop \code{for (int i = 0; i <= n; i += 2) total += i;} have
+With \code{long long total = 0;}, for which values of \code{n} (an \code{int}) does the loop
+\code{for (int i = 0; i <= n; i += 2) total += i;} have
 \omterm{def:b1:c-types-and-control:ub}{undefined behaviour}? Prove your answer, then give a version that is correct for every \code{n}.
 \end{exercise}
 
@@ -390,6 +399,7 @@ loop}\label{lst:b1:c-types-and-control:fixed}
 \omoutput{code/bachelor-1/02-c-types-and-control/outputs/problem.txt}{The four
 computations.}\label{out:b1:c-types-and-control:problem}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part I --- Widths and the specification.}
 \begin{enumerate}
 \item What is the range of $t_i$, and how many tenths of a degree does it allow? Is it enough for a town's weather?
@@ -399,6 +409,7 @@ computations.}\label{out:b1:c-types-and-control:problem}
 \item How many bits does the exact sum $\sum w_i w_{i+1}$ need, at most, for $n = 731$?
 \end{enumerate}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part II --- Arithmetic modulo $2^{32}$.}
 \begin{enumerate}[resume]
 \item Prove that $(a + b) \bmod m = \bigl((a \bmod m) + (b \bmod m)\bigr) \bmod m$ for natural numbers $a$, $b$ and
@@ -411,12 +422,14 @@ it produce?
 \item Could B use \code{uint16_t} for the \omterm{def:b1:c-types-and-control:cast}{cast} instead? Explain.
 \end{enumerate}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part III --- The promotion trap.}
 \begin{enumerate}[resume]
 \item In A's loop, what type do \code{w[i]} and \code{w[i + 1]} have when they are multiplied, and why?
 \item Show that $w_i w_{i+1}$ overflows that type exactly when $w_i w_{i+1} > 2^{31} - 1$.
 \item Find the smallest $a$ such that $a \cdot a$ overflows \code{int}. (Compute $46340^2$ and $46341^2$.)
-\item Which temperatures $t_i$ give $w_i \geq 46341$? Conclude that only products of two such readings can overflow.
+\item Which temperatures $t_i$ give $w_i \geq 46341$? For readings of at least $-1919.5$ degrees, as every real
+one is, conclude that a product overflows exactly when both of its readings are negative.
 \item The sanitizer reported $65535 \times 65533$. Which two consecutive readings were they?
 \item The Python specification counted 2 products above \code{INT_MAX} among 730. The second involves readings of
 $-2.3$ and $-0.9$ degrees. Give its two words and check that their product exceeds $2^{31} - 1$.
@@ -424,6 +437,7 @@ $-2.3$ and $-0.9$ degrees. Give its two words and check that their product excee
 fraction of all pairs is it, roughly?
 \end{enumerate}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part IV --- Luck, and the fix.}
 \begin{enumerate}[resume]
 \item All four computations printed 73\,402\,730. Explain why A's program printed the right value on this machine,

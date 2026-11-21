@@ -45,5 +45,12 @@ EXTRA = {}
 DROP = set()
 DERIVED = {}
 # "in place of" (instead of), and a cost that is an algorithm's, not a code's.
-EXTRA_PROTECT = [r"in\s+place\s+of", r"cost\s+of\s+the\s+algorithm", r"Sorting\s+costs"]
+# Reader R3-037/R3-041: the size of an element (not a dynamic array's size), the
+# memory cells of a dynamic array (not list cells), the rotations of a board (not
+# tree rotations), knapsack items ranked by value per unit of weight (not passing by
+# value), and an explicit loop (not a graph's loop).
+EXTRA_PROTECT = [r"in\s+place\s+of", r"cost\s+of\s+the\s+algorithm", r"Sorting\s+costs",
+                 r"size\s+of\s+an\s+element", r"1\s+to\s+4\s+cells",
+                 r"rotations\s+(?:or|and)\s+reflections", r"four\s+rotations",
+                 r"by\s+value\s+per\s+unit", r"work\s+in\s+a\s+loop"]
 AMBIG_POLICY = "drop"

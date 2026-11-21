@@ -52,7 +52,7 @@ processor cannot overlap them: a buffer is filled with pointers that form a sing
 blocks, and the program follows the pointers. The time per step is then the time of one load, and it depends on
 which level holds the buffer.
 
-\omcode{code/bachelor-2/12-caches/listings/sweep.c}{23}{44}{Following a random cycle of pointers through buffers of
+\omcode{code/bachelor-2/12-caches/listings/sweep.c}{23}{47}{Following a random cycle of pointers through buffers of
 growing size}
 
 \omoutput{code/bachelor-2/12-caches/outputs/sweep.txt}{One run on the author's laptop: the time of a load, by the size
@@ -213,7 +213,9 @@ ever used; the valid bit tells an empty set from a set holding tag 0.}
 
 The same simulator can be fed with real programs. \code{matrix_sum.S} fills a $32 \times 32$ matrix of words and
 sums it in the order its input chooses; \code{trace_demo.py} runs it on \code{rv} and keeps the address of every
-load, through the \code{trace} callback met in \cref{ch:b2:processor-and-pipelining}.
+load, through the \code{trace} callback met in \cref{ch:b2:processor-and-pipelining}. Like the short programs of
+\cref{ch:b2:assembly-and-calling-convention}, its \code{main} uses \code{s} registers without saving them, which only
+\code{rv}, where nothing runs after \code{main}, tolerates.
 
 \omcode{code/bachelor-2/12-caches/listings/matrix_sum.S}{25}{40}{The sum: \code{s2} chooses which counter is the
 row}
@@ -295,7 +297,7 @@ verdict on the column-order sum, and on a loop that sweeps 33 lines over and ove
 In column order, 896 of the 1024 misses are conflicts. A column visits addresses 128 bytes apart; with 32-byte lines
 and 32 sets, the index is bits 5 to 9 of the address, and adding 128 adds 4 to it: the 32 lines of a column fall into
 the 8 sets whose index is a multiple of 4 (the column's first line decides which multiple), and the other 24 sets
-stay empty. Two ways do not help, because 32 lines still compete for 8 pairs. A \omterm{def:b2:caches:mapping}{fully associative cache} of the same
+stay empty. Two ways do not help: with 16 sets of two ways, the 32 lines then fall in 4 sets, 8 places for 32 lines. A \omterm{def:b2:caches:mapping}{fully associative cache} of the same
 size keeps the 32 lines and misses only on first use. The cyclic sweep shows the opposite case.
 
 \begin{proposition}[A cyclic sweep defeats LRU]\label{prop:b2:caches:cyclic}
@@ -306,9 +308,9 @@ A \omterm{def:b2:caches:mapping}{fully associative} LRU \omterm{def:b2:caches:ca
 The proof is \cref{exo:b2:caches:8}; the simulator checks it for several $C$ in the chapter's tests, and the output
 above shows it for $C = 32$: 330 accesses, 330 misses. The \omterm{def:b2:caches:mapping}{direct-mapped cache} does better on this sweep, 51 misses,
 because it evicts only the line that shares a set with the newcomer: lines $\ell_0$ and $\ell_{32}$ fight over set 0,
-and the 31 others stay. LRU, which is the best policy for most programs, is the worst possible one for a loop just
-too large for the \omterm{def:b2:caches:cache}{cache}, and capacity misses are fixed by making the loop's data smaller, not by changing the
-mapping.
+and the 31 others stay. LRU, a good policy for most programs, is the worst possible one for a loop just too large for the
+\omterm{def:b2:caches:cache}{cache}. The cure is to make the loop's data fit: the 18 misses left even in the \omterm{def:b2:caches:mapping}{direct-mapped cache} are still
+capacity misses.
 
 \begin{proposition}[Row and column order]\label{prop:b2:caches:traversal}
 Let an $N \times N$ matrix of $w$-byte elements be stored row after row, with each row a whole number of lines of
@@ -392,8 +394,10 @@ every record uses all of each line in the second layout and an eighth of it in t
 \omoutput{code/bachelor-2/12-caches/outputs/aos_soa.txt}{One run on the author's laptop, for $2^{22}$ books.}
 
 Each structure takes 64 bytes, a line's worth, of which the loop reads 8: it moves eight times as many bytes from
-memory as the arrays layout, and the measured ratio is about four, because the processor overlaps the independent
-misses of the loop. The array of structures is the right layout when every use of a record reads most of its fields,
+memory as the arrays layout, and the measured ratio is about four. The arrays loop is held back by its own chain of
+additions, each waiting for the one before (the compiler may not reorder a floating-point sum), rather than by
+memory: 2.85\,ms for $2^{22}$ additions is about 0.7\,ns each, while the structures loop moves 256\,MiB in
+12.39\,ms, about 22\,GB/s, a bandwidth figure. The array of structures is the right layout when every use of a record reads most of its fields,
 as when a book is displayed; the structure of arrays when loops read one field of many records.
 
 A program that tunes itself to the \omterm{def:b2:caches:cache}{cache} needs its parameters, and on Linux the C library reports them.
@@ -444,7 +448,8 @@ $h_2 = 3$, $h_3 = 16$ and $T = 130$\,ns. For local \omterm{def:b2:caches:cache}{
 \mathrm{AMAT} = 1 + 0.05\,\bigl(3 + 0.2\,(16 + 0.3 \times 130)\bigr) = 1 + 0.05\,(3 + 0.2 \times 55) = 1.7\ \text{ns}.
 \]
 Without any \omterm{def:b2:caches:cache}{cache} every access would take 150\,ns, about ninety times longer. The formula also tells where to work:
-halving $m_1$ saves $0.35$\,ns here, more than removing the L3's \omterm{def:b2:caches:amat}{miss penalty} would.
+halving $m_1$ saves $0.35$\,ns here, about as much as removing the trip to main memory altogether ($T = 0$ saves
+$0.39$\,ns), and more than twice what removing the L3's own extra time $h_3$ would ($0.16$\,ns).
 
 \section{Exercises}\label{sec:b2:caches:exercises}
 
@@ -531,7 +536,7 @@ square of $N \times N$ pixels of 4 bytes, stored row after row; the blur reads t
 output image, and leaves the border unchanged. Lines are 64 bytes, so a line holds 16 pixels of a row.
 \omcode{code/bachelor-2/12-caches/listings/blur.c}{17}{38}{One pixel of the blur, and two traversal orders}
 
-\medskip\noindent\textbf{Part I --- Counting by hand.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Counting by hand.}\par\nopagebreak
 \begin{enumerate}
 \item How many reads of the input does the blur of an $N \times N$ image perform? Give the number for $N = 256$.
 \item In row order, which input rows does the computation of output row $y$ read? Which of them were read for row
@@ -544,7 +549,7 @@ $1/144$ per read.
 column needs them?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- The simulator.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- The simulator.}\par\nopagebreak
 \omcode{code/bachelor-2/12-caches/listings/blur_sim.py}{19}{26}{The reads of the blur through a 4 KiB 4-way \omterm{def:b2:caches:cache}{cache}}
 \omoutput{code/bachelor-2/12-caches/outputs/run_blur_sim.txt}{The misses of four traversal orders, $N = 256$; the
 last column divides by the $254^2$ output pixels.}\label{out:b2:caches:blur-sim}
@@ -558,7 +563,7 @@ different lines from $x$. Deduce about $1 + 2/16$ misses per pixel, and compare 
 \item What is the least number of misses any order can have here?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Strips.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Strips.}\par\nopagebreak
 Some filters must go down the columns, for instance a vertical pass written for an image stored by columns. The
 remedy is to go down a strip of $w$ columns at a time, row by row inside the strip.
 \omcode{code/bachelor-2/12-caches/listings/blur.c}{40}{46}{The blur by strips of $w$ columns}
@@ -574,7 +579,7 @@ same sets on every row: what is then the widest strip it serves this way?
 \item Why is a strip of 16 worse than a strip of 64, although both use whole lines?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Measured on the laptop.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Measured on the laptop.}\par\nopagebreak
 \omoutput{code/bachelor-2/12-caches/outputs/blur.txt}{One run on the author's laptop: the blur of a $4096 \times 4096$
 generated image in four orders.}
 \begin{enumerate}[resume, beginpenalty=10000]

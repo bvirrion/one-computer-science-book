@@ -12,7 +12,7 @@ pipeline}\label{lst:b2:functional-programming:odd}
 
 The second form reads like a spreadsheet formula, \emph{sum the squares of the odd cells}: no counter, no variable
 that changes, no order of steps to follow. Functional programming builds programs from such expressions, functions
-passed to functions, and data that is never modified. This chapter shows the ideas in Rust, which \omterm{def:b2:rust-ownership:borrow}{borrows} them
+passed to functions, and data that is never modified. This chapter shows the ideas in Rust, which borrows them
 freely, and what each costs.
 
 \begin{recall}
@@ -131,14 +131,15 @@ asked.}\label{out:b2:functional-programming:infinite}
 On real data, a pipeline states the cleaning rules one per line. The weather log of
 \cref{ch:b2:rust-enums-and-errors} gives each station's mean temperature:
 
-\omcode{code/bachelor-2/09-functional-programming/listings/pipeline.rs}{5}{12}{A mean as a
+\omcode{code/bachelor-2/09-functional-programming/listings/pipeline.rs}{5}{13}{A mean as a
 \omterm{def:b2:functional-programming:fold}{fold}}\label{lst:b2:functional-programming:pipeline}
 
 \omoutput[2-4]{code/bachelor-2/09-functional-programming/outputs/run_pipeline.txt}{The duplicated Riverside line is
 counted here, unlike in \cref{ch:b2:rust-enums-and-errors}.}\label{out:b2:functional-programming:pipeline}
 
-The whole pipeline is one loop over the lines, with no intermediate vector: each line is split, tested, parsed and
-added before the next is read. Rust compiles such chains to the loop one would write by hand.
+The whole pipeline is one loop over the lines, with no vector of all the lines: each line is split, tested, parsed
+and added before the next is read. (Each line's fields are still collected into a small vector of their own, which
+\code{split} followed by \code{nth} would avoid.) Rust compiles such chains to the loop one would write by hand.
 
 \section{Immutable data}\label{sec:b2:functional-programming:persistent}
 
@@ -193,11 +194,11 @@ shared; \code{v1} still has its seven keys.}\label{out:b2:functional-programming
 \node[o] (r1) at (0,0) {189};
 \node[o] (a1) at (-1.8,-1) {65};
 \node[o] (b1) at (1.8,-1) {251};
-\node[o] (a2) at (-2.6,-2) {98};
 \node[o] (a3) at (-1.0,-2) {133};
+\node[o] (a2) at (-1.8,-3) {98};
 \node[o] (b2) at (2.6,-2) {412};
 \node[o] (b3) at (2.0,-3) {320};
-\draw[ptr] (r1) -- (a1); \draw[ptr] (r1) -- (b1); \draw[ptr] (a1) -- (a2); \draw[ptr] (a1) -- (a3);
+\draw[ptr] (r1) -- (a1); \draw[ptr] (r1) -- (b1); \draw[ptr] (a1) -- (a3); \draw[ptr] (a3) -- (a2);
 \draw[ptr] (b1) -- (b2); \draw[ptr] (b2) -- (b3);
 \node[above=1mm of r1] {\texttt{v1}};
 \node[c] (r2) at (-5.4,0) {189};
@@ -207,7 +208,7 @@ shared; \code{v1} still has its seven keys.}\label{out:b2:functional-programming
 \node[above=1mm of r2] {\texttt{v2}};
 \draw[ptr, omThm] (r2) -- (c1); \draw[ptr, omThm] (c1) -- (c3); \draw[ptr, omThm] (c3) -- (new);
 \draw[ptr, omThm, dashed] (r2.north) to[out=50, in=110] (b1.north);
-\draw[ptr, omThm, dashed] (c1.east) -- (a2.west);
+\draw[ptr, omThm, dashed] (c3.south east) to[out=-30, in=200] (a2.west);
 \end{tikzpicture}
 \par\smallskip{\small \omterm{def:b2:functional-programming:persistent}{Path copying}, from \cref{out:b2:functional-programming:pbst}. \code{v2} owns three copies (189,
 65, 133) and the new 140; its dashed pointers lead into \code{v1}'s nodes 251 and 98, with all that hangs below
@@ -346,7 +347,7 @@ Predict the lines printed, in order, then check in the solution. How many elemen
 \begin{exercise}[$\star$]\label{exo:b2:functional-programming:2}
 The program does not compile. Read the error in the solution, fix it in the signature of \code{for_each_loan}, and
 explain why the compiler cannot accept \code{Fn} here.
-\omcode{code/bachelor-2/09-functional-programming/listings/exo_fnmut.rs}{3}{17}{Counting late loans}
+\omcode{code/bachelor-2/09-functional-programming/listings/exo_fnmut.rs}{3}{18}{Counting late loans}
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b2:functional-programming:3}
@@ -379,7 +380,7 @@ alphabetically.
 
 \begin{exercise}[$\star\star$]\label{exo:b2:functional-programming:8}
 Prove by structural induction that $\mathrm{foldr}\,(:)\,[\,]\,xs = xs$ for every finite list: the right \omterm{def:b2:functional-programming:fold}{fold} of
-the list \omterm{def:b2:cpp-classes-raii:constructor}{constructor} is the identity. What does the left \omterm{def:b2:functional-programming:fold}{fold} of $(\lambda acc\,x.\ x : acc)$ from $[\,]$ give?
+the list constructor is the identity. What does the left \omterm{def:b2:functional-programming:fold}{fold} of $(\lambda acc\,x.\ x : acc)$ from $[\,]$ give?
 \end{exercise}
 
 \begin{exercise}[$\star\star$]\label{exo:b2:functional-programming:9}
@@ -401,8 +402,8 @@ versions against a \code{BTreeMap} snapshot taken at the same step.
 \end{exercise}
 
 \begin{exercise}[$\star\star\star$]\label{exo:b2:functional-programming:12}
-In the queue of \cref{exo:b2:functional-programming:9}, used one version after the other, each element is \omterm{def:b2:rust-ownership:move}{moved
-from} the back to the front once, so $n$ operations cost $O(n)$ in all: $O(1)$ amortised. Show that this bound fails
+In the queue of \cref{exo:b2:functional-programming:9}, used one version after the other, each element is moved
+from the back to the front once, so $n$ operations cost $O(n)$ in all: $O(1)$ amortised. Show that this bound fails
 for \omterm{def:b2:functional-programming:persistent}{persistent} use: give a sequence of operations on a queue of $n$ elements, reusing an old version, in which each of
 $m$ pops costs $n$ steps, so $m$ pops cost $mn$. Which assumption of the amortised argument breaks?
 \end{exercise}
@@ -414,7 +415,7 @@ A spreadsheet's undo button needs every earlier state of the sheet. Saving a ful
 per edit. This problem builds a sheet whose cells are kept in a \omterm{def:b2:functional-programming:persistent}{persistent} balanced search tree, with formulas as
 \omterm{def:b2:functional-programming:closure}{closures} evaluated only when asked, and counts what a thousand versions really cost.
 
-\medskip\noindent\textbf{Part I --- Formulas as closures.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Formulas as closures.}\par\nopagebreak
 \omcode{code/bachelor-2/09-functional-programming/listings/sheet.rs}{6}{26}{Cells, nodes and versions}
 \begin{enumerate}[beginpenalty=10000]
 \item What is the type of a formula? Why does it take a \code{&Sheet} rather than capturing one?
@@ -427,7 +428,7 @@ does it capture, and why must it be \code{move}?
 \item What does a formula that reads its own cell do when evaluated?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Cells evaluated lazily.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Cells evaluated lazily.}\par\nopagebreak
 \omcodes{code/bachelor-2/09-functional-programming/listings/sheet.rs}{50-57,70-80}{Making a version, and reading a
 value}
 \begin{enumerate}[resume, beginpenalty=10000]
@@ -440,7 +441,7 @@ cached value stays valid.
 \item Why is laziness useful when most of a thousand versions are never displayed?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Every version kept.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Every version kept.}\par\nopagebreak
 \omcode{code/bachelor-2/09-functional-programming/listings/sheet.rs}{38}{48}{Setting a cell by \omterm{def:b2:functional-programming:persistent}{path copying}}
 \begin{enumerate}[resume, beginpenalty=10000]
 \item \code{set} differs from \code{insert} of \cref{lst:b2:functional-programming:pbst}: the key always exists.
@@ -455,12 +456,13 @@ ancestors.)
 \item The edits go to cells $37i \bmod 90$. Why are all 90 number cells edited, and how often each?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Memory, proved and measured.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Memory, proved and measured.}\par\nopagebreak
 \omoutput[2-8]{code/bachelor-2/09-functional-programming/outputs/run_sheet.txt}{100 cells, 1000 edits, all versions
 kept.}
 \begin{enumerate}[resume, beginpenalty=10000]
 \item Prove that $k$ edits of an $n$-cell sheet built by \code{build} create at most $k(\lfloor \log_2 n \rfloor + 1)$
-nodes, so that all versions hold at most $n + k(\lceil \log_2 n \rceil + 1)$ nodes.
+nodes, so that all versions hold at most $n + k(\lfloor \log_2 n \rfloor + 1)$ nodes, and so at most the looser
+$n + k(\lceil \log_2 n \rceil + 1)$ that the program prints.
 \item Compare with the count printed. Why is the count below the bound?
 \item Full copies would hold $(k + 1)n$ nodes. What is the ratio here, and how does it grow with $n$?
 \item At 40 bytes per node, how much memory do the thousand versions take? Is the \code{Rc} count included in the 40?

@@ -58,10 +58,11 @@ denominator refused.}
 The function \code{gcd} is \code{static}: its name is visible only inside \code{ratio.c}
 (\cref{ch:b1:c-functions-and-stack}), so another module may have its own \code{gcd} without a clash at link time, and
 no user can come to depend on it. Because the type is opaque, the module can change its representation (keep fractions
-unreduced, store them in \code{long long}, cache a floating value) and \code{ratio_demo.c} needs no change; it only needs
-recompiling against the new \omterm{def:b1:compilation-pipeline:compiler}{object file}, if even that. The price is one heap block per fraction and a function call
-per field read, which is why the C library's own \code{FILE} is opaque but small structures such as a point usually
-are not.
+unreduced, store them in \code{long long}, cache a floating value) and \code{ratio_demo.c} needs no change and no
+recompilation: it is only linked again with the new \code{ratio.o}. The price is one heap block per fraction and a
+function call per field read. The C library's \code{FILE} is used the same way, only through \omterm{def:b1:pointers-and-arrays:pointer}{pointers} and library
+functions, as if it were opaque (its definition is in the header, but no program should read its fields); small
+structures such as a point are usually used directly.
 
 \section{Separate compilation and make}\label{sec:b1:c-modules-make-tests:make}
 
@@ -305,7 +306,7 @@ is a place in the program, usually a line, where the debugger stops it before ex
                     minimum height=15mm}, >={Stealth[length=2mm]}]
 \node[st, fill=omCode!8] (a) at (0,0) {\textbf{1. breakpoint}\\on line 13 of \code{crash.c}, then start the
 program};
-\node[st, fill=omCode!8] (b) at (3.6,0) {\textbf{2. stop}\\before line 13; show \code{s->name}:
+\node[st, fill=omCode!8] (b) at (3.6,0) {\textbf{2. stop}\\continue past the first call, then before line 13 of the second: \code{s->name} is
 \code{"Hilltop"}};
 \node[st, fill=omCode!8] (c) at (7.2,0) {\textbf{3. step}\\one line at a time; \code{s} becomes the address of
 \code{r}, then \code{NULL}};
@@ -318,8 +319,10 @@ program is built with \code{-g -O0}, so that each line of the source maps to mac
 \end{omfigure}
 
 A typical session on the crash above, with a \omterm{def:b1:c-modules-make-tests:debugger}{debugger} such as the GNU \omterm{def:b1:c-modules-make-tests:debugger}{debugger}: set a \omterm{def:b1:c-modules-make-tests:debugger}{breakpoint} on line 13, start the
-program, and it stops before the first comparison; print \code{s->name} and see \code{Hilltop}; step, and see \code{s}
-move to Riverside, then to the \omterm{def:b1:pointers-and-arrays:null}{null pointer}; at the next step the program receives its signal, and the backtrace command
+program, and it stops before the first comparison of the first call, the search for Riverside. Continue: that call
+ends (the program prints \code{Riverside: 1}) and the \omterm{def:b1:c-modules-make-tests:debugger}{debugger} stops again in the second call, the search for Harbour.
+Print \code{s->name} and see \code{Hilltop}; step, and see \code{s} move to Riverside, then to the
+\omterm{def:b1:pointers-and-arrays:null}{null pointer}; at the next step the program receives its signal, and the backtrace command
 prints the two frames of the sanitizer's report. A \omterm{def:b1:c-modules-make-tests:debugger}{debugger} answers questions that a crash report cannot: what a
 variable held three lines before, which branch was taken. No \omterm{def:b1:c-modules-make-tests:debugger}{debugger} is installed on the machine that ran this
 book's programs, so this one is told, not shown; the sanitizer's backtrace above is available wherever the \omterm{def:b1:compilation-pipeline:compiler}{compiler} is.
@@ -391,8 +394,9 @@ developed.)
 
 \begin{exercise}[$\star\star\star$]\label{exo:b1:c-modules-make-tests:10}
 In the \omterm{def:b1:c-modules-make-tests:makefile}{makefile} of the weekend problem, compute, for each of the seven \omterm{def:b1:compilation-pipeline:source-file}{source files}, the set of \omterm{def:b1:c-modules-make-tests:makefile}{targets} that
-\code{make} rebuilds after an edit to that file, using only the graph of the rules. Explain why the answer is the set of
-\omterm{def:b1:c-modules-make-tests:makefile}{targets} reachable from the edited file.
+a plain \code{make}, which builds the default \omterm{def:b1:c-modules-make-tests:makefile}{target} \code{checker}, rebuilds after an edit to that file, using only
+the graph of the rules. Explain why the answer is the set of \omterm{def:b1:c-modules-make-tests:makefile}{targets} reachable from the edited file on the way to
+\code{checker}.
 \end{exercise}
 
 \begin{exercise}[$\star\star\star$]\label{exo:b1:c-modules-make-tests:11}
@@ -422,6 +426,7 @@ input classes; the date module's first version, \code{date_v0.c}, differs from t
 \omoutput{code/bachelor-1/07-c-modules-make-tests/outputs/problem.txt}{Building, running, counting the \omterm{def:b1:compilation-pipeline:compiler}{compiler} runs after
 an edit to each file, testing, measuring coverage, and testing the first version.}\label{out:b1:c-modules-make-tests:problem}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part I --- Modules and interfaces.}
 \begin{enumerate}
 \item Draw the dependency graph of the checker: the seven \omterm{def:b1:compilation-pipeline:source-file}{source files}, the four \omterm{def:b1:compilation-pipeline:compiler}{object files} and the executable.
@@ -434,6 +439,7 @@ module, and what would it gain?
 (a loan not returned) produces a field, and why does that matter to \code{loan_parse}?
 \end{enumerate}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part II --- The makefile and the rebuilds it saves.}
 \begin{enumerate}[resume]
 \item The first build runs five commands. Which are \omterm{def:b1:compilation-pipeline:compiler}{compilations} and which is a link?
@@ -447,6 +453,7 @@ the stale program do wrong?
 \item \code{date_test} is not part of the default \omterm{def:b1:c-modules-make-tests:makefile}{target}. What does that change in the counts of question 8?
 \end{enumerate}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part III --- Tests from classes and boundaries.}
 \begin{enumerate}[resume]
 \item List the input classes of \code{is_leap} implied by the Gregorian rule, with one year of each from the tests.
@@ -460,6 +467,7 @@ the \omterm{def:b1:c-modules-make-tests:unit-test}{test suite} check?
 checker gives a wrong total.
 \end{enumerate}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part IV --- Defensive checks and a bug found by a test.}
 \begin{enumerate}[resume]
 \item The first version fails two checks. Which line of \code{date_v0.c} differs, and why do both failures come from it?

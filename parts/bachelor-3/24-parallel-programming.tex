@@ -12,13 +12,13 @@ The threads of a process share its memory and run interleaved, in an order nobod
 Let $T_1$ be the time of a computation on one processor and $T_p$ its time on $p$ processors. Its \emph{speed-up}\index{speed-up} on $p$ processors is $S_p = T_1 / T_p$, and its \emph{efficiency}\index{efficiency (parallel)} is $E_p = S_p / p$. A speed-up of $p$, efficiency 1, is linear.
 \end{definition}
 
-The first program splits two jobs over $p$ scoped threads. One adds $2^{25}$ numbers, a job of one addition per number read from memory; the other runs a loop of shifts and exclusive ors on as many numbers, a job of 120 operations per number that touches no memory at all.
+The first program splits two jobs over $p$ scoped threads. One adds $2^{25}$ numbers, a job of one addition per number read from memory; the other runs a loop of shifts and exclusive ors on as many numbers, a job of 120 shift-and-xor steps, 240 operations, per number that touches no memory at all.
 
 \omcode{code/bachelor-3/24-parallel-programming/listings/sum_threads.rs}{15}{42}{Each job cut into $p$ chunks, one scoped thread per chunk; the partial results are added after the threads are joined.}\label{lst:b3:parallel-programming:sum}
 
 \omoutput{code/bachelor-3/24-parallel-programming/outputs/sum_threads.txt}{One run on the author's laptop, best of five for each $p$: the memory-bound sum stops near 3.5, the compute-bound loop reaches between 5 and 6.}\label{out:b3:parallel-programming:sum}
 
-Neither job reaches 8. The compute-bound loop shares nothing, so its losses come from outside the program: the threads must be created and joined, and the laptop's cores also run other programs. The memory-bound sum stops earlier for a different reason, which no number of cores fixes: the cores share the path to memory, and a few of them already read as fast as it delivers.
+Neither job reaches 8. The compute-bound loop shares nothing, so its losses do not come from communication. Creating and joining eight threads costs microseconds, nothing against a run of 80 ms. The likelier causes are in the machine: the program gives every thread an equal chunk, but the laptop's processor mixes fast and slower cores, so the slowest thread decides when the job ends; cores also run at lower clock speeds when more of them are busy, and other programs share them. The curve bends after $p = 4$, as these causes predict. The memory-bound sum stops earlier for a different reason, which no number of cores fixes: the cores share the path to memory, and a few of them already read as fast as it delivers.
 
 Every program also has parts that do not split. If a fraction $f$ of its time on one processor is sequential, the rest gains at most $p$.
 
@@ -157,7 +157,7 @@ Blelloch's scan does $2(n - 1)$, in a tree. % ledger: b3:blelloch-1989
 
 \omcode{code/bachelor-3/24-parallel-programming/listings/scan.rs}{21}{52}{Blelloch's exclusive scan: the up-sweep leaves the sum of each subtree at its right end, the down-sweep hands each left subtree the total before it and each right subtree that total plus the left sum.}\label{lst:b3:parallel-programming:scan}
 
-\omoutput{code/bachelor-3/24-parallel-programming/outputs/scan.txt}{The scan traced on eight days of rain, then the counted additions and rounds of both scans: Blelloch's does twice the minimum \omterm{def:b3:parallel-programming:workspan}{work}, Hillis and Steele's $\log_2 n$ times as much.}\label{out:b3:parallel-programming:scan}
+\omoutput{code/bachelor-3/24-parallel-programming/outputs/scan.txt}{The scan traced on eight days of rain, then the counted additions and rounds of both scans: Blelloch's does twice the minimum \omterm{def:b3:parallel-programming:workspan}{work}, Hillis and Steele's about $\log_2 n - 1$ times as much.}\label{out:b3:parallel-programming:scan}
 
 \begin{omfigure}
 \begin{tikzpicture}[font=\small, x=0.9cm, y=0.62cm, cell/.style={draw, minimum width=0.85cm, minimum height=0.55cm, inner sep=0pt}, new/.style={cell, fill=omDef!25}]
@@ -166,7 +166,7 @@ Blelloch's scan does $2(n - 1)$, in a tree. % ledger: b3:blelloch-1989
     \node[cell] at (\c,0) {\v};
   }
   \foreach \row/\name/\vals/\hot in {
-      1/up 1/{0,62,0,29,8,42,0,0}/{2,6},
+      1/up 1/{0,62,0,29,8,42,0,0}/{2,4,6,8},
       2/up 2/{0,62,0,91,8,42,0,42}/{4,8},
       3/up 4/{0,62,0,91,8,42,0,133}/{8},
       4/down 4/{0,62,0,0,8,42,0,91}/{4,8},
@@ -184,7 +184,7 @@ Blelloch's scan does $2(n - 1)$, in a tree. % ledger: b3:blelloch-1989
     }
   }
 \end{tikzpicture}
-\par\smallskip{\small Blelloch's scan on the rain of eight days, in tenths of a millimetre, row by row as \code{scan.rs} prints it; shaded cells changed in that round. After the up-sweep the last cell holds the total, 133; it is replaced by 0 and the down-sweep ends with the exclusive running totals.}
+\par\smallskip{\small Blelloch's scan on the rain of eight days, in tenths of a millimetre, row by row as \code{scan.rs} prints it; shaded cells written in that round, even when the value stays the same. After the up-sweep the last cell holds the total, 133; it is replaced by 0 and the down-sweep ends with the exclusive running totals.}
 \end{omfigure}
 
 \begin{theorem}[Blelloch's scan]\label{thm:b3:parallel-programming:blelloch}
@@ -311,7 +311,7 @@ The town's two weather stations record the rain of every day. A running total an
 \par\smallskip{\small \omterm{def:b3:parallel-programming:speedup}{Speed-ups} measured on the author's laptop, from \cref{out:b3:parallel-programming:sum,out:b3:parallel-programming:weather}. The scan's are against the sequential scan, which does half its additions.}
 \end{omfigure}
 
-\medskip\noindent\textbf{Part I --- The sequential scan.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- The sequential scan.}
 \begin{enumerate}
   \item How many additions does the sequential scan of $n$ values do, and what are its \omterm{def:b3:parallel-programming:workspan}{work} and \omterm{def:b3:parallel-programming:workspan}{span} as a DAG?
   \item Which dependency makes it sequential?
@@ -321,7 +321,7 @@ The town's two weather stations record the rain of every day. A running total an
   \item What do the totals of the 8 days of \cref{out:b3:parallel-programming:scan} say about the first week?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Blelloch's algorithm.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Blelloch's algorithm.}
 \begin{enumerate}[resume]
   \item What are the \omterm{def:b3:parallel-programming:workspan}{work} and the number of rounds of Blelloch's scan for $n = 2^{24}$?
   \item Check in \cref{out:b3:parallel-programming:scan} that the \omterm{def:b3:parallel-programming:workspan}{work} for $n = 2^{20}$ is $2(n - 1)$.
@@ -331,7 +331,7 @@ The town's two weather stations record the rain of every day. A running total an
   \item What does the blocked scan of \cref{lst:b3:parallel-programming:weather} do differently from Blelloch's tree?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Brent's bound.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Brent's bound.}
 \begin{enumerate}[resume]
   \item Write Brent's bound for Blelloch's scan of $n = 2^{24}$ on $p$ processors.
   \item What \omterm{def:b3:parallel-programming:speedup}{speed-up} over the sequential scan does it guarantee on $p$ processors, counted in additions?
@@ -341,7 +341,7 @@ The town's two weather stations record the rain of every day. A running total an
   \item What would the bounds become on 1,000 processors?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Measured.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Measured.}
 \begin{enumerate}[resume]
   \item Why is the blocked scan on one thread slower than the sequential scan, but faster than half its speed?
   \item What \omterm{def:b3:parallel-programming:speedup}{speed-up} does the laptop measure on 8 threads, against the bound of question 16?

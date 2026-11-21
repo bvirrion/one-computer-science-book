@@ -26,7 +26,7 @@ def show(guess):
 
 guess = substitute(secret, secret_order, known_order)
 show(guess)
-guess = substitute(guess, "on", "no")          # "aod" must be "and"
+guess = substitute(guess, "on", "no")          # "pheo" looks like "when"
 show(guess)
 guess = substitute(guess, "ro", "or")          # "trdab" looks like "today"
 show(guess)

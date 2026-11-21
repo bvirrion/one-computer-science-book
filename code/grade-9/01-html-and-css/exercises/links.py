@@ -1,8 +1,4 @@
-from pathlib import Path
-import sys
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "listings"))
-from html_tree import name_of, tags  # noqa: E402
+from html_tree import name_of, tags
 
 
 def links(text):

@@ -47,6 +47,10 @@ def test_photo_trip():
 def test_exercises():
     pieces = load("cut10").cut("Meet me at the lighthouse at six.", 10)
     assert [p["data"] for p in pieces] == ["Meet me at", " the light", "house at s", "ix."]
+    assert [p["number"] for p in pieces] == [1, 2, 3, 4] and all(p["of"] == 4 for p in pieces)
+    assert [len(load("cut10").cut("x" * n, 10)) for n in (1, 10, 11, 20)] == [1, 1, 2, 2]
+    assert all(p["of"] == len(load("cut10").cut("x" * n, 10)) for n in (1, 10, 11, 20)
+               for p in load("cut10").cut("x" * n, 10))
     packets = cut("abcdefghijkl", 1, "a", "b")
     assert load("rebuild_bug").rebuild(packets) == "abklcdefghij"
     assert load("rebuild_fixed").rebuild(packets[::-1]) == "abcdefghijkl"

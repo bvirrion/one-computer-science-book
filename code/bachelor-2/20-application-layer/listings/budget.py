@@ -10,8 +10,8 @@ def visit(lookup_misses, cached_name=False, open_connection=False):
 
 
 for label, ms in (("first visit, resolver knows nothing", visit(3)),
-                  ("first visit, resolver knows test", visit(1)),
+                  ("first visit, resolver knows brenmoor.test", visit(1)),
                   ("first visit, resolver has the name", visit(0)),
                   ("revisit, name cached on the machine", visit(0, cached_name=True)),
                   ("revisit, connection still open", visit(0, True, True))):
-    print(f"{label:38} {ms:4} ms")
+    print(f"{label:42} {ms:4} ms")

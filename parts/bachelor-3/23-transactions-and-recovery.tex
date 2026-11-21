@@ -136,7 +136,7 @@ The doctors are a write skew. Each transaction reads both rows, writes a differe
 \end{omfigure}
 
 \omterm{def:b3:transactions-and-recovery:mvcc}{Snapshot isolation} rules out the lost update but allows write skew (exercise~\ref{exo:b3:transactions-and-recovery:12}). Fekete and his co-authors gave in 2005 a theory of when a program can run non-serialisably under \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation}, and ways to change a program so that it cannot; Cahill, Röhm and Fekete showed in 2008 that write skew is prevented by detecting and aborting dangerous triplets of concurrent transactions, and their method became the Serializable level of PostgreSQL~9.1. % ledger: b3:fekete-2005, b3:fekete-theory, b3:cahill-2008, b3:cahill-dangerous, b3:ssi-postgres
-The check in \code{mvcc.py} is the simplest form of the idea: it aborts any transaction with antidependencies both in and out, which aborts more often than needed, but never lets a cycle of antidependencies through.
+The check in \code{mvcc.py} is the simplest form of the idea: at its own commit, a transaction with antidependencies both in and out among concurrent transactions aborts. That aborts more often than needed, and it stops write skew, but it is not complete, since a transaction is checked only once, when it commits. Fekete's read-only anomaly passes it. $T_2$ reads two accounts, $X = 0$ and $Y = 0$; $T_1$ deposits 20 into $Y$ and commits; $T_3$ begins; $T_2$, which saw no deposit, withdraws 10 from $X$ with a penalty of 1 and commits, since no one has read $X$ yet; $T_3$ reads $X = 0$ and $Y = 20$ and commits. The cycle $T_2 \to T_1 \to T_3 \to T_2$ has a write--read edge, and $T_2$, its pivot, had committed before its incoming antidependency appeared; no \omterm{def:b3:transactions-and-recovery:schedule}{serial} order gives $T_3$ its view. Cahill's method keeps the flags of committed transactions, and aborts $T_3$ here. A test of the chapter runs this schedule through \code{mvcc.py} and finds all three committed.
 
 \section{Isolation levels in practice}\label{sec:b3:transactions-and-recovery:isolation}
 
@@ -287,7 +287,7 @@ The Brenmoor clinic's rule is that at least one of its two doctors, Alice and Bo
 
 \omoutput{code/bachelor-3/23-transactions-and-recovery/outputs/doctors.txt}{Every interleaving of the two transactions under four protocols: how often nobody is left on call, and how often a transaction is aborted.}\label{out:b3:transactions-and-recovery:doctors}
 
-\medskip\noindent\textbf{Part I --- The invariant.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- The invariant.}
 \begin{enumerate}
   \item Write the two transactions as schedules of reads and writes, $T_1$ for Alice and $T_2$ for Bob, the write being conditional.
   \item Show that each transaction alone keeps the rule.
@@ -297,7 +297,7 @@ The Brenmoor clinic's rule is that at least one of its two doctors, Alice and Bo
   \item Draw the \omterm{def:b3:transactions-and-recovery:schedule}{precedence graph} of the interleaving $R_1(A)\,R_2(A)\,R_1(B)\,R_2(B)\,W_1(A)\,W_2(B)$. Is it serialisable?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Every interleaving.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Every interleaving.}
 \begin{enumerate}[resume]
   \item Under \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation}, in which interleavings does each doctor see both on call?
   \item Why does first committer wins never fire here?
@@ -307,7 +307,7 @@ The Brenmoor clinic's rule is that at least one of its two doctors, Alice and Bo
   \item Why do the other interleavings run without a \omterm{def:b3:concurrency:deadlock}{deadlock}?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- The anomaly.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- The anomaly.}
 \begin{enumerate}[resume]
   \item Name the anomaly, and give the two read--write antidependencies of a broken night.
   \item Why does the dirty-read, non-repeatable-read and phantom check of an isolation level not see it?
@@ -317,7 +317,7 @@ The Brenmoor clinic's rule is that at least one of its two doctors, Alice and Bo
   \item Which lock would stop it?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- The fixes.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- The fixes.}
 \begin{enumerate}[resume]
   \item Materialise the conflict: both transactions also write one shared row of the rota. Why does \omterm{def:b3:transactions-and-recovery:mvcc}{snapshot isolation} now abort 68 interleavings and break none?
   \item \omterm{def:b3:transactions-and-recovery:mvcc}{Serialisable snapshot isolation} aborts the same 68 without the extra row. Which transaction does \code{mvcc.py} abort, and why?

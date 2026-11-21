@@ -33,15 +33,63 @@ STOP = {
     "Blocking", "Coherence", "Resolution",
     # loop blocking (caches) against blocking calls (sockets) and head-of-line blocking
     "blocking",
+    # the MAC broadcast address (ch. 17) is not the IP one (ch. 18)
+    "broadcast address",
 }
 NO_CAPITAL = set()
-EXTRA = {}
+# Book 2 owns process, system call, race condition, critical section, mutual exclusion and lock
+# (sources/SERIES_DEFINITIONS.md); Book 4 recalls them in remarks that keep the old labels, linked here.
+EXTRA = {
+    "process": "def:b2:processes-and-system-calls:process",
+    "processes": "def:b2:processes-and-system-calls:process",
+    "process identifier": "def:b2:processes-and-system-calls:process",
+    "system call": "def:b2:processes-and-system-calls:syscall",
+    "system calls": "def:b2:processes-and-system-calls:syscall",
+    "race condition": "def:b2:threads-and-synchronisation:race",
+    "race conditions": "def:b2:threads-and-synchronisation:race",
+    "critical section": "def:b2:threads-and-synchronisation:mutex-property",
+    "critical sections": "def:b2:threads-and-synchronisation:mutex-property",
+    "mutual exclusion": "def:b2:threads-and-synchronisation:mutex-property",
+    "Mutual exclusion": "def:b2:threads-and-synchronisation:mutex-property",
+    "lock": "def:b2:threads-and-synchronisation:lock",
+    "locks": "def:b2:threads-and-synchronisation:lock",
+    "Lock": "def:b2:threads-and-synchronisation:lock",
+}
 DROP = set()
 DERIVED = {}
 # "sequence" is not a sequent; a Poisson process is not an operating-system process; group commit is not a
 # transaction's commit; the good-suffix rule is not a word's suffix; nineteen-fold is not a fold.
 # "in process" means inside one process, not a link to its definition.
-EXTRA_PROTECT = [r"sequences?\b", r"Poisson\s+process", r"the\s+process\s+(goes|starts|repeats|begins|continues)",
+EXTRA_PROTECT = [r"sequences?\b", r"Poisson\s+process", r"[Tt]he\s+process\s+(goes|starts|repeats|begins|continues)",
                  r"group\s+commit", r"good-suffix", r"\w+-fold",
-                 r"[Ii]n\s+process\b", r"in-process"]
+                 r"[Ii]n\s+process\b", r"in-process",
+                 # Reader report 2026-11-21 (R4-018 ... R4-110): the same surface word in another sense.
+                 # A C++ move, a C table's move, a moved element: not Rust's move.
+                 r"a\s+move\s+transfers", r"a\s+move\s+would\s+also", r"which\s+moves\s+every\s+slot",
+                 r"nodes\s+do\s+not\s+move", r"is\s+moved\s+from\s+the\s+back",
+                 # a file's, an address's, a position's owner; a library's or a port's borrowing
+                 r"size,\s+owner", r"the\s+owner\s+and\s+group", r"chosen\s+by\s+its\s+owner",
+                 r"the\s+owner\s+of\s+the\s+position", r"may\s+(not\s+)?borrow(?!\s+that\s+function)", r"allowed\s+to\s+borrow",
+                 r"connections\s+borrow", r"members\s+who\s+borrow", r"borrow\s+books", r"which\s+borrows\s+them",
+                 # an exception to a rule, folding a sum, cross-validation folds, an IP header field
+                 r"is\s+an\s+exception\s+that", r"is\s+the\s+exception", r"tolerates\s+one\s+exception", r"never\s+folds",
+                 r"five\s+folds", r"offset\s+field\s+has\s+13",
+                 # constructors of an inductive set, of a list, Rust's associated functions, smart constructors
+                 r"base\s+elements\s+and\s+constructors", r"each\s+constructor\s+assuming",
+                 r"a\s+constructor\s+returning", r"list\s+constructor", r"smart\s+constructors",
+                 r"force\s+a\s+constructor",
+                 # the verb "tries", regex atomic groups, an atomic case of an induction
+                 r"tries\s+(widening|to\b|the\s+subsets|again)", r"atomic\s+groups", r"atomic\s+case",
+                 # an upper bound, a proof to complete, a flow's values on edges, "for example"
+                 r"bounds\s+the\s+size", r"gives\s+the\s+bound", r"[Tt]he\s+bound\s+(is|gives)",
+                 r"Complete\s+the\s+proof", r"whose\s+values\s+are", r"integer\s+values", r"with\s+values\s+in",
+                 r"[Ff]or\s+example", r"example\s+for\b",
+                 # Armstrong's decomposition rule is not a table's decomposition
+                 r"decomposition\}\s+rule", r"by\s+decomposition\b", r"Decomposition:",
+                 # a burst of requests, empty tokens, machine words, linear time
+                 r"burst\s+of\s+requests", r"empty\s+words\s+between", r"machine\s+word", r"64-bit\s+word",
+                 r"linear\s+time", r"exponential\s+to\s+linear",
+                 # a DNS record's lifetime, HTTP/2 multiplexing, a compound
+                 r"TTL,\s+time\s+to\s+live", r"Multiplexing\s+removes", r"two-router",
+                 r"listing\s+processes", r"sequential\s+processes"]
 AMBIG_POLICY = "drop"

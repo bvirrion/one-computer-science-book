@@ -83,7 +83,10 @@ with the \omterm{def:b1:compilation-pipeline:compiler}{compiler}'s checked multi
 The body runs for the even $i$ with $0 \leq i \leq n$; after the body with $i = 2k$, the loop computes $2k + 2$, which
 overflows exactly when $2k + 2 > \code{INT_MAX} = 2^{31} - 1$, that is when $2k = 2^{31} - 2$, the largest even
 \code{int}. That body runs iff $n \geq 2^{31} - 2$. So the behaviour is undefined exactly for $n = 2^{31} - 2$ and
-$n = 2^{31} - 1$, and defined for every other \code{n} (for $n < 0$ the loop does not run). A correct version
+$n = 2^{31} - 1$, and defined for every other \code{n} (for $n < 0$ the loop does not run). The sum itself is
+safe: it is at most $2 + 4 + \dots + (2^{31} - 2) < 2^{60}$, far below the largest \code{long long}; with an
+\code{int} \code{total} it would overflow from $n = 92\,682$ on, since $2 + 4 + \dots + 2m = m(m + 1)$ exceeds
+$2^{31} - 1$ from $m = 46\,341$. A correct version
 counts in a wider type: \code{for (long long i = 0; i <= n; i += 2)}; or it stops before stepping:
 \code{if (i > n - 2) break;} at the end of the body, where $n - 2$ cannot overflow because $n \geq 0$ there.
 \end{solution}
@@ -123,8 +126,9 @@ $2^{31} - 1$.
 
 \textbf{13.} $46340^2 = 2\,147\,395\,600 \leq 2\,147\,483\,647 < 46341^2 = 2\,147\,488\,281$: the smallest is $a = 46341$.
 
-\textbf{14.} $w \geq 46341$ iff $t < 0$ and $t + 65536 \geq 46341$, that is $-19195 \leq t \leq -1$: every negative
-reading of a real thermometer. A non-negative reading has $w \leq 32767$ and $32767 \cdot 65535 = 2\,147\,385\,345
+\textbf{14.} $w \geq 46341$ iff $t < 0$ and $t + 65536 \geq 46341$, that is $-19195 \leq t \leq -1$, in tenths of a
+degree: with readings of at least $-1919.5$ degrees, every negative reading. (Without that bound the claim fails:
+$t = -25536$ gives $w = 40000$, and $40000 \times 65535$ overflows.) A non-negative reading has $w \leq 32767$ and $32767 \cdot 65535 = 2\,147\,385\,345
 \leq 2^{31} - 1$, so it never overflows; and two readings in $[-19195, -1]$ give a product at least $46341^2$. So a
 product overflows exactly when two consecutive readings are both negative.
 

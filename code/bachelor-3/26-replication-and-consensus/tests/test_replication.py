@@ -131,7 +131,7 @@ def test_exercises_2_3_and_problem():
     assert got == [(True, 0), (False, 2), (True, 1), (True, 3), (False, 3)]
     logs = {
         "S1": [1, 1, 2],
-        "S2": [1, 1, 2, 3],
+        "S2": [1, 1, 3, 3],
         "S3": [1, 1],
         "S4": [1, 1, 2, 2],
         "S5": [1, 1, 3],
@@ -140,6 +140,11 @@ def test_exercises_2_3_and_problem():
     def key(log):
         return (log[-1], len(log))
 
+    for a in logs:  # the logs obey log matching: same term at an index, same prefix
+        for b in logs:
+            for i in range(min(len(logs[a]), len(logs[b]))):
+                if logs[a][i] == logs[b][i]:
+                    assert logs[a][: i + 1] == logs[b][: i + 1]
     winners = {c for c in logs if sum(key(logs[v]) <= key(logs[c]) for v in logs) >= 3}
     assert winners == {"S2", "S4", "S5"}
     out = (HERE / "outputs" / "raft_partition.txt").read_text()

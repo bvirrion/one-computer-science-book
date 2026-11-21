@@ -166,9 +166,9 @@ generator itself, shifted.
 % ledger: b2:crc32-ieee
 The 32-bit CRC of Ethernet uses a generator of degree 32 written \code{0x104c11db7} as a bit vector. Real CRCs add two
 details to the definition. The hardware sends each byte lowest bit first, so the bits are processed in that order,
-and the generator appears reversed, as \code{0xedb88320}. The register starts at all ones and the result is
+and the generator appears reversed, as \code{0xedb88320}. The register starts at all ones, so that leading zero bytes
 % ledger: b2:crc32-gzip
-complemented, so that leading zero bytes change the check. The same CRC-32 protects zip and gzip files and PNG images:
+change the check, and the result is complemented. The same CRC-32 protects zip and gzip files and PNG images:
 
 \omcode{code/bachelor-2/17-link-layer/listings/crc.py}{35}{58}{CRC-32 bit by bit, then a byte at a time from a
 table}\label{lst:b2:link-layer:crc32}
@@ -238,14 +238,14 @@ slots empty; too many waste them in \omterm{def:b2:link-layer:mac-protocol}{coll
 On a cable, a station can do better: listen first. \emph{Carrier sense multiple access with \omterm{def:b2:link-layer:mac-protocol}{collision} detection}
 (\omterm{def:b2:link-layer:aloha}{CSMA/CD}), the rule of the first Ethernets, sends only when the medium is quiet, keeps listening while sending, and
 stops as soon as it hears a \omterm{def:b2:link-layer:mac-protocol}{collision}. It then waits a random number of slots before trying again, chosen by
-\emph{binary exponential backoff}\index{binary exponential backoff}: after its $c$-th \omterm{def:b2:link-layer:mac-protocol}{collision} on a \omterm{def:b2:link-layer:frame}{frame}, a station
+\omterm{def:b2:link-layer:aloha}{binary exponential backoff} (defined below): after its $c$-th \omterm{def:b2:link-layer:mac-protocol}{collision} on a \omterm{def:b2:link-layer:frame}{frame}, a station
 waits a number of slots drawn uniformly from $0$ to $2^{\min(c,10)} - 1$. Each \omterm{def:b2:link-layer:mac-protocol}{collision} doubles the range, so the
 stations spread out until one gets through; \cref{exo:b2:link-layer:9} measures the delay.
 
 \begin{definition}[ALOHA, CSMA/CD, binary exponential backoff]\label{def:b2:link-layer:aloha}
 In \emph{ALOHA}\index{ALOHA} a station sends whenever it has a \omterm{def:b2:link-layer:frame}{frame} and, after a \omterm{def:b2:link-layer:mac-protocol}{collision}, again after a random
 delay; \emph{slotted ALOHA} sends only at the start of a time slot. \emph{CSMA/CD}\index{CSMA/CD} senses the medium
-before sending and stops on hearing a \omterm{def:b2:link-layer:mac-protocol}{collision}. \emph{\omterm{prop:b2:link-layer:aloha}{Binary exponential backoff}} draws the delay after the $c$-th
+before sending and stops on hearing a \omterm{def:b2:link-layer:mac-protocol}{collision}. \emph{Binary exponential backoff}\index{binary exponential backoff} draws the delay after the $c$-th
 \omterm{def:b2:link-layer:mac-protocol}{collision} uniformly among $0, \dots, 2^{\min(c,10)} - 1$ slots.
 \end{definition}
 
@@ -265,7 +265,7 @@ lost \omterm{def:b2:link-layer:frame}{frames} by the missing acknowledgement, an
 % ledger: b2:mac-bits
 A \emph{MAC address}\index{MAC address} is the 6-byte address of a network interface on its \omterm{def:b2:link-layer:frame}{link}, written as six
 hexadecimal bytes, \code{02:00:00:00:00:01}. In the first byte, the lowest bit marks a \emph{group} address (a \omterm{def:b2:link-layer:frame}{frame}
-for several receivers), and the next bit a \emph{locally administered} one, chosen by its \omterm{def:b2:rust-ownership:ownership}{owner} rather than by the
+for several receivers), and the next bit a \emph{locally administered} one, chosen by its owner rather than by the
 maker. The address \code{ff:ff:ff:ff:ff:ff}, the \emph{broadcast address}\index{broadcast address}, means every
 interface on the \omterm{def:b2:link-layer:frame}{link}.
 \end{definition}
@@ -381,9 +381,8 @@ encrypting what travels above the \omterm{def:b2:link-layer:frame}{link}, as the
 A radio \omterm{def:b2:link-layer:frame}{link} differs from a cable in three ways. The signal weakens quickly with distance and through walls, so its
 error rate is far higher, and many wireless \omterm{def:b2:link-layer:frame}{links} resend a \omterm{def:b2:link-layer:frame}{frame} themselves: the receiver acknowledges each \omterm{def:b2:link-layer:frame}{frame},
 and the sender repeats it when no acknowledgement comes. Second, a station cannot listen while it sends, its own
-signal drowning every other, so it cannot detect a \omterm{def:b2:link-layer:mac-protocol}{collision}. Third, not every station hears every other: $A$ and
-$C$ may both reach $B$ while being too far apart to hear each other, the \emph{hidden terminal}\index{hidden
-terminal} problem; both find the channel quiet, both send, and their \omterm{def:b2:link-layer:frame}{frames} collide at $B$. Wireless networks
+signal drowning every other, so it cannot detect a \omterm{def:b2:link-layer:mac-protocol}{collision}. Third, not every station hears every other: these are the
+\omterm{def:b2:link-layer:hidden}{hidden terminals} of \cref{def:b2:link-layer:hidden}, whose \omterm{def:b2:link-layer:frame}{frames} collide at the receiver. Wireless networks
 therefore \emph{avoid} \omterm{def:b2:link-layer:mac-protocol}{collisions} (CSMA/CA): a station waits a random backoff even when the channel is quiet, and
 may first reserve the channel with a short request that the receiver answers with a short ``clear to send'', which
 every station near the receiver, hidden or not, hears.
@@ -439,7 +438,7 @@ Prove \cref{prop:b2:link-layer:crc-odd}. Hint: for a polynomial $P$, $P(1)$ is t
 \end{exercise}
 
 \begin{exercise}[$\star\star$]\label{exo:b2:link-layer:9}
-Simulate $k$ stations that each have one \omterm{def:b2:link-layer:frame}{frame} to send at time 0 and follow \omterm{prop:b2:link-layer:aloha}{binary exponential backoff} on a slotted
+Simulate $k$ stations that each have one \omterm{def:b2:link-layer:frame}{frame} to send at time 0 and follow \omterm{def:b2:link-layer:aloha}{binary exponential backoff} on a slotted
 channel. Measure the mean number of slots until every \omterm{def:b2:link-layer:frame}{frame} is through and the mean delay of a \omterm{def:b2:link-layer:frame}{frame}, for $k = 2, 4,
 \dots, 32$. How do they grow with $k$?
 \end{exercise}
@@ -468,18 +467,19 @@ flips pass?
 The harbour sends short \omterm{def:b2:link-layer:frame}{frames} to the lighthouse over a radio \omterm{def:b2:link-layer:frame}{link}: a 4-byte command followed by 16 check bits of
 CRC-16, with $g(x) = x^{16} + x^{12} + x^5 + 1$. Noise comes in \omterm{def:b2:link-layer:burst}{bursts}.
 
-\medskip\noindent\textbf{Part I --- Framing.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Framing.}\par\nopagebreak
 \begin{enumerate}
 \item \omterm{def:b2:link-layer:frame}{Frames} are separated by the flag \code{0x7e}. Stuff the payload \code{7d 7e 00 7e}.
 \item What is the longest a stuffed payload of $n$ bytes can be, and for which payloads?
-\item A flag is lost in the noise. What does the receiver see, and how does the CRC limit the damage?
+\item Both flags between two \omterm{def:b2:link-layer:frame}{frames} are lost in the noise. What does the receiver see, and does the CRC of this
+problem catch it?
 \item Why does the CRC cover the payload before stuffing rather than after?
 \item The lighthouse could instead receive a length byte before each payload. Why is a length byte risky on a noisy
 \omterm{def:b2:link-layer:frame}{link}, where a flag is not?
 \item How many bytes cross the \omterm{def:b2:link-layer:frame}{link} for the command \code{LAMP}, its check and two flags?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Detecting errors.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Detecting errors.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item The last line of the output of \code{crc.py} gives the check bits of \code{LAMP}. Write the 6 bytes sent, and
 say why the receiver's CRC of the whole \omterm{def:b2:link-layer:frame}{frame} is 0.
@@ -492,7 +492,7 @@ does \cref{exo:b2:link-layer:12} predict? Compare with the output.
 \omoutput{code/bachelor-2/17-link-layer/outputs/random_errors.txt}{Random error patterns through CRC-16.}
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Sharing the radio channel.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Sharing the radio channel.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item Five buoys report to the harbour on the same channel with slotted \omterm{def:b2:link-layer:aloha}{ALOHA}. Each sends in a slot with
 probability $p$. What is the probability that a slot is useful?
@@ -504,7 +504,7 @@ say what it causes.
 \item Why does every \omterm{def:b2:link-layer:frame}{frame} need an acknowledgement on this \omterm{def:b2:link-layer:frame}{link}, when a cable often needs none?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Choosing a CRC.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Choosing a CRC.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item \omterm{def:b2:link-layer:burst}{Bursts} of up to 20 bits are common on this \omterm{def:b2:link-layer:frame}{link}. Is CRC-16 enough? What does CRC-32 guarantee instead?
 \item What does CRC-32 cost per \omterm{def:b2:link-layer:frame}{frame}, in bytes and in computation, against CRC-16?

@@ -68,8 +68,9 @@ def test_barcode():
         assert sum(m.is_valid(first12 * 10 + d) for d in range(10)) == 1
     assert out("listings", "one_digit")[1] == ["117 caught out of 117"]
     lines = out("listings", "swaps")[1]
-    assert lines[0] == "80 caught out of 90"
-    assert all(abs(a - b) == 5 for a, b in eval(lines[1].removeprefix("missed: ")))
+    assert lines[-1] == "80 caught out of 90"
+    missed = [line.split()[1:] for line in lines[:-1]]
+    assert len(missed) == 10 and all(abs(int(a) - int(b)) == 5 for a, b in missed)
 
 
 def test_exercise_solutions():

@@ -13,7 +13,7 @@ def receipt():
     total = total + show_line("bread", 1.80, 2)
     total = total + show_line("apples", 0.45, 6)
     total = total + show_line("milk", 1.10, 3)
-    print(f"{'TOTAL':23} {total:6.2f}")
+    print(f"{'TOTAL':22} {total:6.2f}")
 
 
 receipt()

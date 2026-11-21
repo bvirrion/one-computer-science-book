@@ -1,4 +1,3 @@
-# capture: scratch
 import wave
 from pathlib import Path
 
@@ -17,3 +16,4 @@ with wave.open("click.wav", "rb") as r:
     print("WAV:", r.getnchannels(), "channels,", 8 * r.getsampwidth(), "bits,",
           r.getframerate(), "Hz,", r.getnframes(), "frames")
 print(Path("click.wav").read_bytes()[:16])
+# capture: scratch

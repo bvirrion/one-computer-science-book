@@ -1,8 +1,10 @@
 def cut(text, size):
-    """Cut text into numbered pieces of at most size characters."""
+    """Cut text into pieces numbered from 1, each one knowing how many there are."""
+    total = (len(text) + size - 1) // size
     pieces = []
     for start in range(0, len(text), size):
-        pieces.append({"number": len(pieces), "data": text[start:start + size]})
+        data = text[start:start + size]
+        pieces.append({"number": len(pieces) + 1, "of": total, "data": data})
     return pieces
 
 

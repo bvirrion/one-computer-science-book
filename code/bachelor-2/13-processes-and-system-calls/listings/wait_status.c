@@ -1,4 +1,4 @@
-/* wait_status.c: three children end three ways; the parent reads how from the status. */
+/* wait_status.c: four children end four ways; the parent reads how from the status. */
 #define _POSIX_C_SOURCE 200809L
 #include <signal.h>
 #include <stdio.h>

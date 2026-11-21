@@ -12,7 +12,8 @@ public:
         : rows_(rows), cols_(cols), data_(checked(rows, cols), fill) {}
 
     Matrix(const Matrix &) = default;
-    Matrix &operator=(Matrix other) noexcept   // copy (or move) first, then swap: strong
+    Matrix &operator=(Matrix other) noexcept   // copy first, then swap: strong; no move
+                                               // (the declared copy constructor suppresses it)
     {
         std::swap(rows_, other.rows_);
         std::swap(cols_, other.cols_);

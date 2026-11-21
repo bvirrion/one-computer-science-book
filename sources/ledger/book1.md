@@ -36,6 +36,7 @@ Owned by the Book 1 writer; other books may cite these rows read-only.
 | W3C-CSS-BOX | W3C, CSS Box Model Module Level 3, Recommendation of 11 April 2024 | https://www.w3.org/TR/css-box-3/ |
 | OPENLIBRARY-BOOLE | Open Library record OL7150849M: George Boole, An investigation of the laws of thought (London, Walton and Maberly, 1854) | https://openlibrary.org/books/OL7150849M/An_investigation_of_the_laws_of_thought |
 | DSPACE-SHANNON | Library repository record 1721.1/11173: C. E. Shannon, A symbolic analysis of relay and switching circuits (M.S. thesis, 1940) | https://dspace.mit.edu/handle/1721.1/11173 |
+| WP-SHANNON-THESIS | Wikipedia, A Symbolic Analysis of Relay and Switching Circuits (written at MIT in 1937; published in the 1938 Transactions of the AIEE) | https://en.wikipedia.org/wiki/A_Symbolic_Analysis_of_Relay_and_Switching_Circuits |
 | CHM-TRANSISTOR | Computer History Museum, The Silicon Engine, ``1947: Invention of the Point-Contact Transistor'' | https://www.computerhistory.org/siliconengine/invention-of-the-point-contact-transistor/ |
 | NETPBM-PGM | Netpbm documentation, ``PGM Format Specification'' (plain PGM: P2) | https://netpbm.sourceforge.net/doc/pgm.html |
 | MACTUTOR-ERATOSTHENES | MacTutor History of Mathematics, Eratosthenes of Cyrene (biography) | https://mathshistory.st-andrews.ac.uk/Biographies/Eratosthenes/ |
@@ -125,7 +126,7 @@ Owned by the Book 1 writer; other books may cite these rows read-only.
 | g9:css-box | each box has a content area and optional surrounding padding, border and margin areas | 4 | area | W3C-CSS-BOX | 2026-11-20 |
 | g9:web-first-page | info.cern.ch, the world's first website and web server, on a NeXT computer at CERN; its first page (TheProject.html) linked to information about the WWW project itself, hypertext and setting up a web server | 1990 | year | CERN-WEB-HISTORY | 2026-11-20 |
 | g9:boole-1854 | George Boole, An investigation of the laws of thought, on which are founded the mathematical theories of logic and probabilities, London 1854 | 1854 | year | OPENLIBRARY-BOOLE | 2026-11-20 |
-| g9:shannon-1940 | Shannon's thesis A symbolic analysis of relay and switching circuits, dated 1940 in the repository record | 1940 | year | DSPACE-SHANNON | 2026-11-20 |
+| g9:shannon-1937 | Shannon's thesis A symbolic analysis of relay and switching circuits: written at MIT in 1937, published in 1938 (the repository record DSPACE-SHANNON dates the degree 1940) | 1937 | year | WP-SHANNON-THESIS | 2026-11-21 |
 | g9:transistor-1947 | 16 December 1947: Bardeen and Brattain's point-contact transistor at Bell Labs, two gold contacts on germanium, amplification up to 100 times; shown on 23 December | 1947 | year | CHM-TRANSISTOR | 2026-11-20 |
 | g9:pgm-format | plain PGM: magic number P2 instead of P5; width, height and maxval in ASCII decimal; each pixel an ASCII decimal number with whitespace around it; no line longer than 70 characters | 70 | character | NETPBM-PGM | 2026-11-20 |
 | g9:eratosthenes | Eratosthenes born 276 BC in Cyrene (now Shahhat, Libya), died 194 BC in Alexandria; third librarian of Alexandria about 240 BC; remembered for his prime number sieve, still used in modified form | 276 | year BC | MACTUTOR-ERATOSTHENES | 2026-11-20 |

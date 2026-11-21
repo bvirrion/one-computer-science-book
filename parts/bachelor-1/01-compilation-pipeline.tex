@@ -166,18 +166,18 @@ library, the default for the C library on Linux).
 \begin{omfigure}
 \begin{tikzpicture}[
   sym/.style={font=\footnotesize\ttfamily, anchor=west, inner sep=1pt},
-  obj/.style={draw, rounded corners=2pt, fill=omCode!6, minimum width=40mm, minimum height=21mm},
+  obj/.style={draw, rounded corners=2pt, fill=omCode!6, minimum width=40mm, minimum height=23mm},
   >={Stealth[length=2mm]}]
 \node[obj] (m) at (0,0) {};
 \node[font=\small\bfseries, anchor=south] at (m.north) {main.o};
-\node[sym] (m1) at (-1.8,0.55) {T main};
-\node[sym] (m3) at (-1.8,0.05) {U square};
-\node[sym] (m4) at (-1.8,-0.45) {U square\_calls};
-\node[sym] (m2) at (-1.8,-0.95) {U printf};
+\node[sym] (m1) at (-1.8,0.75) {T main};
+\node[sym] (m3) at (-1.8,0.25) {U square};
+\node[sym] (m4) at (-1.8,-0.25) {U square\_calls};
+\node[sym] (m2) at (-1.8,-0.75) {U printf};
 \node[obj] (s) at (6.5,0) {};
 \node[font=\small\bfseries, anchor=south] at (s.north) {square.o};
-\node[sym] (s1) at (4.7,0.05) {T square};
-\node[sym] (s2) at (4.7,-0.45) {B square\_calls};
+\node[sym] (s1) at (4.7,0.25) {T square};
+\node[sym] (s2) at (4.7,-0.25) {B square\_calls};
 \node[obj, minimum height=10mm] (l) at (6.5,-3) {};
 \node[font=\small\bfseries, anchor=north] at (l.south) {C library};
 \node[sym] (l1) at (4.7,-3) {T printf};
@@ -210,8 +210,8 @@ program still runs.}\label{out:b1:compilation-pipeline:warnings}
 Each warning gives the file, the line and the column, quotes the line, and names the option that enabled it in
 square brackets. The first says that \code{if (x = 0)} assigns 0 to \code{x} and tests the result, which is
 always false; the comparison is \code{x == 0}. The second says that \texttt{\%d} expects an \code{int} while
-\code{big} is a \code{long}: \code{printf} read the wrong number of bytes, and printed $-1294967296$ instead of
-three billion. The third says that \code{count} is used before any value was stored in it. Its printed value, 3,
+\code{big} is a \code{long}: the behaviour is undefined, and here \code{printf} took the low 32 bits of the
+\code{long} and printed $-1294967296$ instead of three billion. The third says that \code{count} is used before any value was stored in it. Its printed value, 3,
 is luck: an uninitialised variable may hold anything, and the next \omterm{def:b1:compilation-pipeline:compiler}{compiler} version may print something else.
 The fixed version (\code{warnings_fixed.c} in the chapter's code) compiles without a message and prints
 
@@ -229,7 +229,7 @@ When the operating system starts an executable, it gives the running program its
 regions. The program below creates one object of each kind, sorts their addresses and prints which comes first.
 It never prints an address itself: the numbers change from machine to machine, the order does not.
 
-\omcode{code/bachelor-1/01-compilation-pipeline/listings/regions.c}{2}{40}{Which object lies below which?}\label{lst:b1:compilation-pipeline:regions}
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/regions.c}{2}{41}{Which object lies below which?}\label{lst:b1:compilation-pipeline:regions}
 
 \omoutput{code/bachelor-1/01-compilation-pipeline/outputs/regions.txt}{The order of the regions on this
 machine.}\label{out:b1:compilation-pipeline:regions}
@@ -294,8 +294,8 @@ one and executes.
 
 \omcode{code/bachelor-1/01-compilation-pipeline/listings/bytecode.py}{2}{10}{Asking Python for its \omterm{def:b1:compilation-pipeline:interpreter}{bytecode}}
 
-\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/bytecode.txt}{The six \omterm{def:b1:compilation-pipeline:interpreter}{bytecode} instructions of
-\code{square_plus}.}\label{out:b1:compilation-pipeline:bytecode}
+\omoutput{code/bachelor-1/01-compilation-pipeline/outputs/bytecode.txt}{The \omterm{def:b1:compilation-pipeline:interpreter}{bytecode} of
+\code{square_plus}: \code{RESUME}, which starts the function, then six instructions.}\label{out:b1:compilation-pipeline:bytecode}
 
 The function became a stack machine program: push \code{x}, push \code{x}, multiply, push \code{y}, add, return.
 Each instruction is decoded by the \omterm{def:b1:compilation-pipeline:interpreter}{interpreter}'s loop at every execution, and the loop checks the types of
@@ -303,7 +303,7 @@ Each instruction is decoded by the \omterm{def:b1:compilation-pipeline:interpret
 decisions once, before the program ran. The price of the \omterm{def:b1:compilation-pipeline:interpreter}{interpreter}'s flexibility can be measured. Here is the
 sieve of Eratosthenes, written the same way in both languages.
 
-\omcode{code/bachelor-1/01-compilation-pipeline/listings/sieve.c}{2}{27}{The sieve in C, timed}\label{lst:b1:compilation-pipeline:sieve}
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/sieve.c}{2}{29}{The sieve in C, timed}\label{lst:b1:compilation-pipeline:sieve}
 
 \omcode{code/bachelor-1/01-compilation-pipeline/listings/pysieve.py}{2}{24}{The same sieve in Python}
 
@@ -360,7 +360,7 @@ other files or not, and for the variables whether they start at zero. Then guess
 
 \begin{exercise}[$\star$]\label{exo:b1:compilation-pipeline:3}
 In which region of the running program does each object (a) to (f) of the program below live, and how long?
-\omcode{code/bachelor-1/01-compilation-pipeline/listings/where.c}{2}{15}{Six objects to place}
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/where.c}{2}{17}{Six objects to place}
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b1:compilation-pipeline:4}
@@ -435,10 +435,11 @@ which reads the standard input.
 \omcode{code/bachelor-1/01-compilation-pipeline/listings/count.h}{2}{11}{The shared header}
 \omcode{code/bachelor-1/01-compilation-pipeline/listings/count.c}{2}{18}{Counting lines and words}
 \omcode{code/bachelor-1/01-compilation-pipeline/listings/report.c}{2}{15}{Printing a report}
-\omcode{code/bachelor-1/01-compilation-pipeline/listings/wcmain.c}{2}{16}{The main program}
+\omcode{code/bachelor-1/01-compilation-pipeline/listings/wcmain.c}{2}{18}{The main program}
 \omoutput{code/bachelor-1/01-compilation-pipeline/outputs/problem.txt}{Building and running the word
 counter.}\label{out:b1:compilation-pipeline:problem}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part I --- Preprocessing.}
 \begin{enumerate}
 \item Which files does the \omterm{def:b1:compilation-pipeline:source-file}{preprocessor} read to produce the expanded \code{count.c}? Why is the expansion more
@@ -452,6 +453,7 @@ from what the header contains.
 \omterm{def:b1:compilation-pipeline:compiler}{compiler} would receive and say whether it still compiles.
 \end{enumerate}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part II --- Object files.}
 \begin{enumerate}[resume]
 \item List the \omterm{def:b1:compilation-pipeline:compiler}{symbols} that \code{count.o} defines and the one it uses. Where does the used one come from?
@@ -465,6 +467,7 @@ where are the six bytes of \code{"words"} stored?
 program defines and those the C library defines.
 \end{enumerate}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part III --- Linking.}
 \begin{enumerate}[resume]
 \item Check \cref{prop:b1:compilation-pipeline:link} on the three \omterm{def:b1:compilation-pipeline:compiler}{object files}, ignoring the C library: list
@@ -477,6 +480,7 @@ each used \omterm{def:b1:compilation-pipeline:compiler}{symbol} and its unique d
 non-static ones?
 \end{enumerate}
 
+\needspace{4\baselineskip}
 \medskip\noindent\textbf{Part IV --- The running program.}
 \begin{enumerate}[resume]
 \item The program printed \code{2 lines, 5 words}. Trace \code{feed} on the input to check the 5.

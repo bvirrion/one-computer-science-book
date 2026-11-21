@@ -5,11 +5,9 @@
 
 int initialised_global = 42;   // static data, initialised
 int zero_global;               // static data, zero-initialised
-
 static int helper(int x) { return x + 1; }
 
 struct place { const char *name; uintptr_t addr; };
-
 static int by_addr(const void *a, const void *b)
 {
     uintptr_t x = ((const struct place *)a)->addr;
@@ -21,6 +19,7 @@ int main(void)
 {
     int local = helper(1);                    // the call stack
     int *block = malloc(sizeof *block);       // the heap
+    if (block == NULL) return 1;              // no memory
     const char *literal = "a string literal"; // read-only data
     struct place p[] = {
         {"local variable (stack)", (uintptr_t)&local},

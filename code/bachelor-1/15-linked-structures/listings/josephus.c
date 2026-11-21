@@ -10,6 +10,7 @@ typedef struct person {
 // simulation on a circular singly linked list; people numbered from 1
 static int simulate(int n, int k, int show) {
     person *people = malloc(n * sizeof *people);
+    if (people == NULL) return 0;  // out of memory: 0 names no one
     for (int i = 0; i < n; i++) people[i] = (person){i + 1, &people[(i + 1) % n]};
     person *before = &people[n - 1];  // the person before the next one to count
     for (int left = n; left > 1; left--) {

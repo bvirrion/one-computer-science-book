@@ -9,7 +9,7 @@ words of a short text.}\label{out:b2:files-pipes-signals:hook}
 
 The first \code{tr} turns every run of non-letters into a newline, the second lowers the case, \code{sort} brings
 equal words together, \code{uniq -c} counts each run, \code{sort -rn} puts the largest counts first, and \code{head}
-keeps six lines. Six processes run at once, each reading what the one before it writes. None of the six programs
+keeps six lines. Six \omterm{def:b2:processes-and-system-calls:process}{processes} run at once, each reading what the one before it writes. None of the six programs
 contains a word about \omterm{def:b2:files-pipes-signals:pipe}{pipes}: each reads its standard input and writes its standard output, and the shell arranged,
 before running them, that these be the ends of \omterm{def:b2:files-pipes-signals:pipe}{pipes}. This chapter opens the files, descriptors and \omterm{def:b2:files-pipes-signals:pipe}{pipes} underneath,
 builds the same pipeline in C, and ends with \omterm{def:b2:files-pipes-signals:signal}{signals}, the kernel's way of interrupting a \omterm{def:b2:processes-and-system-calls:process}{process}.
@@ -162,7 +162,7 @@ On a terminal the line would be flushed at its newline, before the fork, and app
 \section{Names, inodes and links}\label{sec:b2:files-pipes-signals:inodes}
 
 \begin{definition}[Inode, link count]\label{def:b2:files-pipes-signals:inode}
-An \emph{inode}\index{inode} is the record a file system keeps for one file: its type, size, \omterm{def:b2:rust-ownership:ownership}{owner}, permission bits,
+An \emph{inode}\index{inode} is the record a file system keeps for one file: its type, size, owner, permission bits,
 times, and where its bytes are stored, but not its name. Its \emph{link count}\index{link count} is the number of
 \omterm{def:b2:files-pipes-signals:dirent}{directory entries} that name it. \code{stat(path, &st)} copies an inode's fields into a \code{struct stat}.
 \end{definition}
@@ -286,7 +286,7 @@ most one \omterm{def:b2:files-pipes-signals:pipe}{pipe} end between forks}\label
 \draw[w] (pp2.east) -| node[pos=0.75, right, font=\scriptsize] {0} (b2.south);
 \end{scope}
 \end{tikzpicture}
-\par\smallskip{\small A \omterm{def:b2:files-pipes-signals:pipe}{pipe} before and after the wiring. Right after the fork, both processes hold both ends. Each
+\par\smallskip{\small A \omterm{def:b2:files-pipes-signals:pipe}{pipe} before and after the wiring. Right after the fork, both \omterm{def:b2:processes-and-system-calls:process}{processes} hold both ends. Each
 then keeps one: the writer's descriptor 1 and the reader's descriptor 0 become the ends, and every other copy is
 closed, so that the reader sees end of file when the writer is done.}
 \end{omfigure}
@@ -331,7 +331,7 @@ program looks at it. The commonest real handler reaps children, so that a progra
 \omcode{code/bachelor-2/14-files-pipes-signals/listings/sigchld_reap.c}{11}{18}{Reaping in the handler: every ended
 child, without waiting}
 
-\omcode{code/bachelor-2/14-files-pipes-signals/listings/sigchld_reap.c}{28}{37}{Waiting for the \omterm{def:b2:files-pipes-signals:signal}{signals} without
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/sigchld_reap.c}{28}{39}{Waiting for the \omterm{def:b2:files-pipes-signals:signal}{signals} without
 missing one}
 
 \omoutput{code/bachelor-2/14-files-pipes-signals/outputs/sigchld_reap.txt}{Five children, five reaped.}
@@ -387,7 +387,7 @@ program calls \code{lseek(fd, 20, SEEK_SET)} first?
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b2:files-pipes-signals:2}
-In \code{forgot_close.c}, the parent never closes \code{fd[1]}. Say which processes hold a descriptor of the write
+In \code{forgot_close.c}, the parent never closes \code{fd[1]}. Say which \omterm{def:b2:processes-and-system-calls:process}{processes} hold a descriptor of the write
 end when \code{wc} reads, and where to add the missing \code{close}. Would closing it after \code{waitpid} work?
 \end{exercise}
 
@@ -410,7 +410,8 @@ newline}
 
 \begin{exercise}[$\star\star$]\label{exo:b2:files-pipes-signals:6}
 This redirection swaps the arguments of \code{dup2}. Explain the output, and what \code{dup2(1, fd)} did.
-\omcode{code/bachelor-2/14-files-pipes-signals/listings/exo_swapped.c}{11}{15}{The child's side}
+\omcode{code/bachelor-2/14-files-pipes-signals/listings/exo_swapped.c}{11}{21}{The child's side, then the parent's
+check}
 \omoutput{code/bachelor-2/14-files-pipes-signals/outputs/exo_swapped.txt}{The text went to the wrong place.}
 \end{exercise}
 
@@ -446,17 +447,17 @@ less than the bytes.
 
 \begin{exercise}[$\star\star\star$]\label{exo:b2:files-pipes-signals:12}
 Add background jobs to the shell of \cref{exo:b2:files-pipes-signals:10}: a line ending with the word \code{&} is
-not waited for, a \code{SIGCHLD} handler reaps the processes that end, and the next prompt reports how many ended.
+not waited for, a \code{SIGCHLD} handler reaps the \omterm{def:b2:processes-and-system-calls:process}{processes} that end, and the next prompt reports how many ended.
 How do you keep the handler from reaping a foreground \omterm{def:b2:processes-and-system-calls:process}{process} before the shell's \code{waitpid}?
 \end{exercise}
 
 \section{Problem: The word-frequency pipeline in C}\label{sec:b2:files-pipes-signals:problem}
 
 \begin{problem}[{Weekend problem --- The word-frequency pipeline in C}]\label{pb:b2:files-pipes-signals:1}
-The problem follows the hook's pipeline through the kernel: its descriptors, its processes and \omterm{def:b2:files-pipes-signals:pipe}{pipes}, its
+The problem follows the hook's pipeline through the kernel: its descriptors, its \omterm{def:b2:processes-and-system-calls:process}{processes} and \omterm{def:b2:files-pipes-signals:pipe}{pipes}, its
 buffers, and its end.
 
-\medskip\noindent\textbf{Part I --- Descriptors.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Descriptors.}\par\nopagebreak
 \begin{enumerate}
 \item In \code{pipeline.c}, which descriptor does \code{open("words.txt", ...)} return, and why that one?
 \item After \code{dup2(in, 0)} and \code{close(in)}, what does descriptor 0 refer to? Which \omterm{def:b2:processes-and-system-calls:process}{process} will read it?
@@ -467,7 +468,7 @@ buffers, and its end.
 \item Which \omterm{def:b2:files-pipes-signals:inode}{inode} fields does \code{ls -l} show in \cref{out:b2:files-pipes-signals:links}?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Six processes and five pipes.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Six processes and five pipes.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item List, for each of the six children of \code{pipeline.c}, its descriptors 0 and 1 just before its \omterm{def:b2:processes-and-system-calls:exec}{exec}.
 \item How many \omterm{def:b2:files-pipes-signals:pipe}{pipe} descriptors does the parent hold, at most, at any moment? Prove it from the code.
@@ -478,7 +479,7 @@ buffers, and its end.
 report it.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Buffering measured.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Buffering measured.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item State \cref{prop:b2:files-pipes-signals:calls} and check it on every line of
 \cref{out:b2:files-pipes-signals:counts}.
@@ -492,7 +493,7 @@ bytes, if the buffer is 4096 bytes.
 than $b = 4096$?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- An early end.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- An early end.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item \code{head -6} exits after six lines. What happens to \code{sort -rn}'s next write if it has more to write?
 \item Use \cref{out:b2:files-pipes-signals:sigpipe} to say how \code{sort} ends in that case, and what status it has.

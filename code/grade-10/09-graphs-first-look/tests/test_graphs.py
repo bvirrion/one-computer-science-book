@@ -1,6 +1,7 @@
 import heapq
 import importlib.util
 import io
+import math
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -106,3 +107,12 @@ def test_layout_file():
     fig.main()
     text = fig.OUT.read_text()
     assert text.count("\\draw") == 50 and text.count("\\node") == 40
+    pos = fig.positions()
+    for a, b in fig.edges():                     # no edge passes over a vertex it does not join
+        (xa, ya), (xb, yb) = pos[a], pos[b]
+        for v, (x, y) in pos.items():
+            if v in (a, b) or (a, b) not in fig.BRIDGES and 40 not in (a, b):
+                continue
+            t = max(0, min(1, ((x - xa) * (xb - xa) + (y - ya) * (yb - ya))
+                           / ((xb - xa) ** 2 + (yb - ya) ** 2)))
+            assert math.hypot(x - xa - t * (xb - xa), y - ya - t * (yb - ya)) > 0.3, (a, b, v)

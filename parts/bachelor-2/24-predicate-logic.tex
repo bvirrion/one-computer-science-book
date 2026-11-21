@@ -3,7 +3,7 @@
 \chapter{Predicate Logic and Formal Proofs}\label{ch:b2:predicate-logic}
 
 The town library has rules: a person with a book out is a member, a book is out to one person at most, every member
-has a friend who reads. Each one speaks of \emph{all} the people and \emph{some} book, which propositional formulas
+has a friend. Each one speaks of \emph{all} the people and \emph{some} book, which propositional formulas
 cannot say. Written in a language with \omterm{def:b2:predicate-logic:formula}{quantifiers}, the rules can be checked against the town's tables by a program:
 
 \omcode{code/bachelor-2/24-predicate-logic/listings/evaluate.py}{5}{27}{Five rules about the library as formulas, each
@@ -13,8 +13,8 @@ evaluated on the town's tables, with the first counterexamples found}\label{lst:
 out to two people at once, and 41 members have no friend in the friendships table.}\label{out:b2:predicate-logic:evaluate}
 
 A check on the data says what holds \emph{today}. Some rules hold for a better reason: they follow from others, in
-every possible town. If whoever has a book out is a member, and every member may \omterm{def:b2:rust-ownership:borrow}{borrow}, then whoever has a book out
-may \omterm{def:b2:rust-ownership:borrow}{borrow}, whatever the tables contain. This chapter defines the language of such rules, what it means for a formula
+every possible town. If whoever has a book out is a member, and every member may borrow, then whoever has a book out
+may borrow, whatever the tables contain. This chapter defines the language of such rules, what it means for a formula
 to be true in a \omterm{def:b2:predicate-logic:structure}{structure}, and proofs: trees of small steps, each checked mechanically, with a theorem that a proved
 formula is true wherever its hypotheses are. It ends with two algorithmic tools of logic, unification and resolution,
 and a linear-time algorithm for 2-SAT.
@@ -147,16 +147,16 @@ relation on a finite \omterm{def:b2:predicate-logic:structure}{structure}, by in
 \begin{proposition}[Cost of evaluation]\label{prop:b2:predicate-logic:evaluation-cost}
 Let $A$ be a formula with $|A|$ nodes whose \omterm{def:b2:predicate-logic:formula}{quantifiers} are nested at most $q$ deep, and $\mathcal{A}$ a finite
 \omterm{def:b2:predicate-logic:structure}{structure} with domain $D$, in which a function or a relation is evaluated in constant time. The recursive evaluation of
-$\mathcal{A}, \rho \models A$ takes $\BigO(|D|^q \cdot |A| \cdot m)$ steps, where $m$ \omterm{def:b2:predicate-logic:free}{bounds} the size of the \omterm{def:b2:predicate-logic:term}{terms}.
+$\mathcal{A}, \rho \models A$ takes $\BigO(|D|^q \cdot |A| \cdot m)$ steps, where $m$ bounds the size of the \omterm{def:b2:predicate-logic:term}{terms}.
 \end{proposition}
 
 \begin{proof}
 A node of the tree of $A$ with $k$ \omterm{def:b2:predicate-logic:formula}{quantifiers} above it is evaluated at most once for each choice of values of those
 $k$ variables, so at most $|D|^k \leq |D|^q$ times. Each visit costs a constant, plus at most $m$ steps for the \omterm{def:b2:predicate-logic:term}{terms}
-of an \omterm{def:b2:predicate-logic:term}{atomic formula}. Summing over the $|A|$ nodes gives the \omterm{def:b2:predicate-logic:free}{bound}.
+of an \omterm{def:b2:predicate-logic:term}{atomic formula}. Summing over the $|A|$ nodes gives the bound.
 \end{proof}
 
-The \omterm{def:b2:predicate-logic:free}{bound} is exponential in $q$, not in $|A|$: a rule with three nested \omterm{def:b2:predicate-logic:formula}{quantifiers} on a domain of a thousand elements
+The bound is exponential in $q$, not in $|A|$: a rule with three nested \omterm{def:b2:predicate-logic:formula}{quantifiers} on a domain of a thousand elements
 costs a billion visits. Transitivity has three, and on the order $<$ of $\{0, \dots, n-1\}$ the count of \omterm{def:b2:predicate-logic:term}{atomic
 formulas} grows as $n^3$:
 
@@ -192,7 +192,8 @@ proves the sequent at its root. One writes $\Gamma \vdash A$ also for ``some pro
 \emph{Natural deduction}\index{natural deduction} is the system of rules drawn below.
 Each connective and \omterm{def:b2:predicate-logic:formula}{quantifier} has \emph{introduction rules}\index{introduction rule}, which conclude a formula with that
 symbol at its root, and \emph{elimination rules}\index{elimination rule}, which use such a formula among the premises.
-The rules marked \textsc{raa} (\emph{reductio ad absurdum}) and $\bot$\textsc{e} \omterm{def:b2:predicate-logic:soundness}{complete} it to classical logic.
+The rule \textsc{raa} (\emph{reductio ad absurdum}) makes it classical logic; without it, the logic is
+intuitionistic (\cref{exo:b2:predicate-logic:11}).
 \end{definition}
 
 \begin{omfigure}
@@ -335,7 +336,7 @@ For every \omterm{def:b2:predicate-logic:structure}{structure}, assignment $\rho
 For \omterm{def:b2:predicate-logic:term}{terms}, by induction on $s$. If $s$ is $x$, both sides are $d$. If $s$ is another variable $z$, both are $\rho(z)$.
 If $s = f(s_1, \dots, s_n)$, then $s[t/x] = f(s_1[t/x], \dots, s_n[t/x])$, and the induction hypothesis on each $s_i$
 gives the equality of the arguments, so of the values of $f$. The statement on formulas follows by induction on $A$; its
-\omterm{def:b2:threads-and-synchronisation:atomic}{atomic} case is the statement on \omterm{def:b2:predicate-logic:term}{terms}, and its \omterm{def:b2:predicate-logic:formula}{quantifier} case is where capture avoidance is needed
+atomic case is the statement on \omterm{def:b2:predicate-logic:term}{terms}, and its \omterm{def:b2:predicate-logic:formula}{quantifier} case is where capture avoidance is needed
 (\cref{exo:b2:predicate-logic:12}).
 \end{proof}
 
@@ -458,7 +459,7 @@ t_n)$ with the same symbol, replace the equation by $s_i = t_i$ for each $i$. Ot
 fail. When the list is empty, return $\sigma$.
 \end{method}
 
-\omcode{code/bachelor-2/24-predicate-logic/listings/unify.py}{5}{34}{Unification: \code{walk} applies the bindings found
+\omcode{code/bachelor-2/24-predicate-logic/listings/unify.py}{7}{36}{Unification: \code{walk} applies the bindings found
 so far; the \omterm{def:b2:predicate-logic:unification}{occurs check} stops $x = f(x)$}\label{lst:b2:predicate-logic:unify}
 
 \omoutput{code/bachelor-2/24-predicate-logic/outputs/unify_demo.txt}{Four pairs: a \omterm{def:b2:predicate-logic:unification}{unifier} found through a chain of
@@ -470,7 +471,7 @@ otherwise it fails.
 \end{theorem}
 
 \begin{proof}
-Write $\sigma\tau$ for $\sigma$ followed by $\tau$, with $\sigma$ applied until no \omterm{def:b2:predicate-logic:free}{bound variable} is left.
+Write $\sigma\tau$ for $\sigma$ followed by $\tau$, with $\sigma$ applied until no variable of $\sigma$'s domain is left.
 \emph{Invariant}: a \omterm{def:b2:predicate-logic:substitution}{substitution} $\tau$ unifies $s$ and $t$ if and only if $\sigma\tau = \tau$ and $\tau$ solves every
 equation of the list. It holds at the start, with $\sigma$ empty.
 Dropping an equation with equal sides, or replacing $f(\vec s) = f(\vec t)$ by its arguments, does not change the
@@ -483,27 +484,36 @@ $s$ and $t$ then have no \omterm{def:b2:predicate-logic:unification}{unifier}.
 
 \emph{Termination}: a binding removes the variable $x$ from all later equations, since they are walked through $\sigma$,
 and the \omterm{def:b2:predicate-logic:unification}{occurs check} ensures it never comes back, so at most as many bindings as variables happen; between two bindings,
-each decomposition removes a function symbol from the list. The pair (number of unbound variables, number of symbols in
-the list) decreases at each step in lexicographic order.
+each decomposition removes a function symbol from the list, dropping an equation with equal sides removes that
+equation, and turning $u = x$ round only changes its order. The triple (number of unbound variables, number of
+symbols in the list, variables included, number of equations of the form $u = x$ with $u$ not a variable) decreases at
+each step in lexicographic order.
 
-\emph{Result}: when the list is empty, $\sigma$ itself satisfies $\sigma\sigma = \sigma$, since no \omterm{def:b2:predicate-logic:free}{bound variable} occurs
-in what $\sigma$ gives, and so by the invariant $\sigma$ unifies $s$ and $t$; every \omterm{def:b2:predicate-logic:unification}{unifier} $\tau$ satisfies
+\emph{Result}: when the list is empty, $\sigma$ itself satisfies $\sigma\sigma = \sigma$, since no variable of $\sigma$'s domain
+occurs in what $\sigma$ gives, and so by the invariant $\sigma$ unifies $s$ and $t$; every \omterm{def:b2:predicate-logic:unification}{unifier} $\tau$ satisfies
 $\sigma\tau = \tau$, so $\sigma$ is most general.
 \end{proof}
 
 \begin{definition}[Resolvent, resolution]\label{def:b2:predicate-logic:resolution}
 Let $C_1 \vee L_1$ and $C_2 \vee \neg L_2$ be two clauses, their variables renamed so that they share none, with $L_1$
 and $L_2$ \omterm{def:b2:predicate-logic:term}{atomic formulas} on the same predicate and $\sigma$ a \omterm{def:b2:predicate-logic:unification}{most general unifier} of $L_1$ and $L_2$. Their
-\emph{resolvent}\index{resolvent} is $(C_1 \vee C_2)\sigma$. \emph{Resolution}\index{resolution (first-order)} is the
-proof system with this single rule; a \emph{refutation} of a set of clauses derives the empty clause from it.
+\emph{resolvent}\index{resolvent} is $(C_1 \vee C_2)\sigma$. When two literals $L$ and $L'$ of the same sign in a clause
+$C \vee L \vee L'$ have a \omterm{def:b2:predicate-logic:unification}{most general unifier} $\sigma$, the clause $(C \vee L)\sigma$ is a \emph{factor}\index{factor of a clause} of it.
+\emph{Resolution}\index{resolution (first-order)} is the proof system with these two rules, resolvents and factors;
+a \emph{refutation} of a set of clauses derives the empty clause from it.
 \end{definition}
 
-A \omterm{def:b2:predicate-logic:resolution}{resolvent} is a consequence of its two clauses, so a refutation proves that the set has no \omterm{def:b2:predicate-logic:consequence}{model}. To prove a goal from
-some rules, one refutes the rules together with the negation of the goal. Robinson proved the converse in 1965: a set
-of clauses with no \omterm{def:b2:predicate-logic:consequence}{model} has a refutation. A whole proof is found by trying all pairs, as \code{refute.py} does for ``p5
-may \omterm{def:b2:rust-ownership:borrow}{borrow}'':
+\omcode{code/bachelor-2/24-predicate-logic/listings/unify.py}{60}{68}{\omterm{def:b2:predicate-logic:resolution}{Factors}: two literals of the same sign made
+one}
 
-\omoutput{code/bachelor-2/24-predicate-logic/outputs/refute.txt}{\omterm{def:b2:predicate-logic:resolution}{Resolution} proves that \code{p5} may \omterm{def:b2:rust-ownership:borrow}{borrow}. Each new
+A \omterm{def:b2:predicate-logic:resolution}{resolvent} is a consequence of its two clauses, and a \omterm{def:b2:predicate-logic:resolution}{factor} of its clause, so a refutation proves that the set has no \omterm{def:b2:predicate-logic:consequence}{model}. To prove a goal from
+some rules, one refutes the rules together with the negation of the goal. Robinson proved the converse in 1965: a set
+of clauses with no \omterm{def:b2:predicate-logic:consequence}{model} has a refutation. His rule resolves several literals at once, which builds factoring in;
+binary \omterm{def:b2:predicate-logic:resolution}{resolvents} alone are not enough, and \cref{exo:b2:predicate-logic:3} gives two clauses with no \omterm{def:b2:predicate-logic:consequence}{model} from
+which they never reach the empty clause. A whole proof is found by trying all pairs, as \code{refute.py} does for ``p5
+may borrow'':
+
+\omoutput{code/bachelor-2/24-predicate-logic/outputs/refute.txt}{\omterm{def:b2:predicate-logic:resolution}{Resolution} proves that \code{p5} may borrow. Each new
 clause names its two parents and the \omterm{def:b2:predicate-logic:unification}{unifier}; clause (5) chains the two rules into one before any fact is
 used.}\label{out:b2:predicate-logic:refute}
 
@@ -580,9 +590,9 @@ The talks of a two-room meeting are a 2-SAT instance: $x_k$ says that talk $k$ i
 speaker in common must be in different rooms ($x_j \vee x_k$ and $\neg x_j \vee \neg x_k$), and a talk that needs the
 big room's screen gives the clause $x_k \vee x_k$.
 
-\omoutput{code/bachelor-2/24-predicate-logic/outputs/twosat_demo.txt}{A plan for five talks, then none once a sixth
-talk shares speakers with talk 4 and cannot be in the big room with talk 1; all 64 assignments confirm
-both.}\label{out:b2:predicate-logic:twosat}
+\omoutput{code/bachelor-2/24-predicate-logic/outputs/twosat_demo.txt}{A plan for the five talks, then none once a sixth
+talk shares speakers with talk 4 and cannot be in the big room with talk 1; all 64 assignments confirm both. Talk 6 is
+in no clause of the first formula, so its one plan counts twice: $2 = 1 \times 2$.}\label{out:b2:predicate-logic:twosat}
 
 % ledger: b2:aspvall-1979
 The algorithm is due to Bengt Aspvall, Michael Plass and Robert Tarjan, in 1979. It is the reason why 2-SAT, unlike
@@ -603,7 +613,9 @@ and why? Correct the function.
 
 \begin{exercise}[$\star$]\label{exo:b2:predicate-logic:3}
 Predict the result of unifying $P(f(x), y)$ with $P(y, f(a))$; $P(x, f(x))$ with $P(f(y), y)$; $P(x, y, z)$ with $P(y,
-z, a)$; $P(g(x), x)$ with $P(f(y), a)$. Check with \code{exo_unify.py}.
+z, a)$; $P(g(x), x)$ with $P(f(y), a)$. Check with \code{exo_unify.py}. Then show that the two clauses $P(x) \vee
+P(y)$ and $\neg P(x) \vee \neg P(y)$ have no \omterm{def:b2:predicate-logic:consequence}{model}, that binary \omterm{def:b2:predicate-logic:resolution}{resolvents} alone, however often repeated,
+only ever give clauses of two literals, and find a refutation that uses \omterm{def:b2:predicate-logic:resolution}{factors}. Check with \code{factor_demo.py}.
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b2:predicate-logic:4}
@@ -628,7 +640,7 @@ Write a \omterm{def:b2:predicate-logic:sequent}{proof tree} of $\neg(P \vee Q) \
 \end{exercise}
 
 \begin{exercise}[$\star\star$]\label{exo:b2:predicate-logic:8}
-\omterm{def:b2:predicate-logic:soundness}{Complete} the proof of \cref{thm:b2:predicate-logic:soundness} with the cases of $\to$\textsc{i} and $\vee$\textsc{e}.
+Complete the proof of \cref{thm:b2:predicate-logic:soundness} with the cases of $\to$\textsc{i} and $\vee$\textsc{e}.
 \end{exercise}
 
 \begin{exercise}[$\star\star$]\label{exo:b2:predicate-logic:9}
@@ -656,9 +668,9 @@ Prove the formula part of \cref{lem:b2:predicate-logic:substitution} by inductio
 \section{Problem: Checking the library's rules}\label{sec:b2:predicate-logic:problem}
 
 \begin{problem}[{Weekend problem --- Checking the library's rules}]\label{pb:b2:predicate-logic:1}
-The library keeps three rules: $H_1$, whoever has a book out is a member; $H_2$, every member may \omterm{def:b2:rust-ownership:borrow}{borrow}; $H_3$, a book
+The library keeps three rules: $H_1$, whoever has a book out is a member; $H_2$, every member may borrow; $H_3$, a book
 that is out has been borrowed by that person. It would like to know which other rules follow from them: $C_1$, whoever
-has a book out may \omterm{def:b2:rust-ownership:borrow}{borrow}; $C_2$, whoever has a book out is a member and has borrowed it; $C_3$, whoever may not \omterm{def:b2:rust-ownership:borrow}{borrow}
+has a book out may borrow; $C_2$, whoever has a book out is a member and has borrowed it; $C_3$, whoever may not borrow
 is not a member; $C_4$, every member has a book out.
 
 \omcode{code/bachelor-2/24-predicate-logic/listings/library.py}{10}{32}{The three rules and the proof of $C_1$, as data
@@ -667,7 +679,7 @@ for the checker}\label{lst:b2:predicate-logic:library}
 \omoutput{code/bachelor-2/24-predicate-logic/outputs/library.txt}{Three consequences proved and checked; the fourth
 refuted by a \omterm{def:b2:predicate-logic:structure}{structure} found among the 4096 on two elements.}\label{out:b2:predicate-logic:library}
 
-\medskip\noindent\textbf{Part I --- The rules as sentences.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- The rules as sentences.}\par\nopagebreak
 \begin{enumerate}
 \item Write $H_1$, $H_2$, $H_3$ and $C_1$ to $C_4$ as \omterm{def:b2:predicate-logic:free}{sentences} over $\mathit{Out}$, $\mathit{Member}$,
 $\mathit{MayBorrow}$ and $\mathit{Borrowed}$.
@@ -682,7 +694,7 @@ say what it means.
 \cref{prop:b2:predicate-logic:evaluation-cost} predict for their cost on the town?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- The rules on the town's data.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- The rules on the town's data.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item Which of the five rules of \cref{lst:b2:predicate-logic:evaluate} hold in the town?
 \item The rule ``out to one person at most'' has 8 counterexamples. Why 8, for 4 books?
@@ -692,7 +704,7 @@ say what it means.
 \item Rewrite the rule of question 4 as a search for its counterexamples by one pass over the loans, and give its cost.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Proofs in natural deduction.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Proofs in natural deduction.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item Draw the \omterm{def:b2:predicate-logic:sequent}{proof tree} of $C_1$ from \cref{lst:b2:predicate-logic:library}.
 \item Why are the two uses of $\forall$\textsc{i} in the proof of $C_1$ allowed?
@@ -703,7 +715,7 @@ say what it means.
 $\mathit{MayBorrow}(p5)$ and generalise from $p5$?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Checked mechanically, and a countermodel.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Checked mechanically, and a countermodel.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item What does the checker's acceptance of $C_1$ to $C_3$ prove, by \cref{thm:b2:predicate-logic:soundness}?
 \item Describe the \omterm{def:b2:predicate-logic:structure}{structure} found for $C_4$ in words: a library, a member, no loan.

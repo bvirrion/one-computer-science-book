@@ -136,18 +136,24 @@ implementation.}\label{out:b2:rust-traits-and-generics:shapes}
 8-byte pointers.}\label{out:b2:rust-traits-and-generics:fat}
 
 \begin{proposition}[A trait object reference is two pointers]\label{prop:b2:rust-traits-and-generics:fat}
-A reference or box to a \code{dyn Trait} occupies two machine words, the data pointer and the \omterm{def:b2:cpp-polymorphism:vtable}{vtable} pointer. All
-values of one type share one \omterm{def:b2:cpp-polymorphism:vtable}{vtable} for a given \omterm{def:b2:rust-traits-and-generics:trait}{trait}, and values of different types have different \omterm{def:b2:cpp-polymorphism:vtable}{vtables}.
+A reference or box to a \code{dyn Trait} occupies two machine words, the data pointer and the \omterm{def:b2:cpp-polymorphism:vtable}{vtable} pointer. One
+table per type and \omterm{def:b2:rust-traits-and-generics:trait}{trait} suffices for all the values of that type.
 \end{proposition}
 
 \begin{proof}
 A call \code{s.area()} on \code{s: &dyn Shape} must find, at run time, the code of \code{area} for the value's type,
 and, to drop a \code{Box<dyn Shape>}, its drop function and size. These depend on the type, not on the value, so one
-table per (type, \omterm{def:b2:rust-traits-and-generics:trait}{trait}) pair suffices and the compiler builds exactly one, a constant in the program; the value's
+table per (type, \omterm{def:b2:rust-traits-and-generics:trait}{trait}) pair suffices, a constant in the program; the value's
 address is a second word, since the value itself may be anywhere. The value is not changed, so the table address
 cannot be inside it: it travels in the pointer. Two words, as printed for \code{&dyn Shape} and \code{Box<dyn
 Shape>}; the slices \code{&[u32]} and \code{&str} are \omterm{def:b2:rust-traits-and-generics:trait-object}{fat pointers} too, with a length as second word.
 \end{proof}
+
+The compiler normally emits one table per type and \omterm{def:b2:rust-traits-and-generics:trait}{trait} in each compilation unit, which is what the last line of
+\cref{out:b2:rust-traits-and-generics:fat} sees in this one-file program. Rust promises neither that the address is
+unique (a table may be duplicated across units) nor that two types get different ones (identical tables may be
+merged), and the order of the two words is not a documented layout either: never compare \omterm{def:b2:cpp-polymorphism:vtable}{table pointers} to test a
+type.
 
 \begin{omfigure}
 \begin{tikzpicture}[font=\scriptsize, c/.style={draw, minimum width=17mm, minimum height=5mm}, v/.style={draw, fill=omDef!10, minimum width=26mm, minimum height=4.5mm}]
@@ -187,7 +193,7 @@ own, break this (the caller does not know the size of \code{Self}; a generic met
 type argument), unless they are excluded with \code{where Self: Sized}.
 \end{definition}
 
-\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/object_safety.rs}{3}{14}{A method that returns
+\omcode{code/bachelor-2/08-rust-traits-and-generics/listings/object_safety.rs}{3}{16}{A method that returns
 \code{Self}}\label{lst:b2:rust-traits-and-generics:object-safety}
 
 \omoutput[2-4,13-14]{code/bachelor-2/08-rust-traits-and-generics/outputs/object_safety.txt}{The message uses the
@@ -225,7 +231,8 @@ sums}\label{lst:b2:rust-traits-and-generics:dispatch}
 \omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/run_dispatch.txt}{Measured on the author's laptop, two
 runs; the times vary from run to run.}\label{out:b2:rust-traits-and-generics:dispatch}
 
-The generic loop is the fastest: no call at all remains, and the additions are vectorised. The enum costs a test
+The generic loop is the fastest: no call at all remains, and the loop is unrolled; what
+is left is one chain of additions. The enum costs a test
 per shape; \omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects} cost an indirect call, and a pointer to follow to each box, about twice the enum. A few
 nanoseconds per call matters only in inner loops: \omterm{def:b2:rust-traits-and-generics:trait-object}{trait objects} are the right tool for a list of plugins, handlers
 or shapes of open-ended kinds, an enum for a closed set of kinds, a generic for code that must be fast for each
@@ -299,7 +306,8 @@ so a vector of \code{f64} cannot call \code{sort}.
 \omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/float_sort.txt}{\code{float_sort.rs}: the comparisons
 of NaN, then three ways to sort \code{[4.3, -0.1, NaN, 12.5, 3.9, -2.0]}.}\label{out:b2:rust-traits-and-generics:float}
 
-\code{f64::total_cmp} is a total order on all bit patterns, \code{NaN} after $+\infty$. Treating \code{NaN} as
+\code{f64::total_cmp} is a total order on all bit patterns: a \code{NaN} with its sign bit clear, such as
+\code{f64::NAN}, comes after $+\infty$, and one with the sign bit set before $-\infty$. Treating \code{NaN} as
 equal to everything gives a relation that is not transitive ($-0.1 = \mathrm{NaN} = 12.5$, yet $-0.1 < 12.5$), and
 the sort, whose correctness assumes an order, returns a vector that is not sorted. The \code{unwrap} at least stops.
 
@@ -359,13 +367,13 @@ generics and \code{dyn}}
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b2:rust-traits-and-generics:2}
-\code{report} does not compile, with two errors. Find the bounds it needs, and write its signature with a
+\code{report} does not compile, with three errors, two of them from one line. Find the bounds it needs, and write its signature with a
 \code{where} clause.
 \omcode{code/bachelor-2/08-rust-traits-and-generics/listings/exo_bound.rs}{5}{15}{Printing and counting}
 \end{exercise}
 
 \begin{exercise}[$\star$]\label{exo:b2:rust-traits-and-generics:3}
-Write a type \code{Fraction} that is always in lowest terms with a positive denominator, a \omterm{def:b2:cpp-classes-raii:constructor}{constructor} returning
+Write a type \code{Fraction} that is always in lowest terms with a positive denominator, a constructor returning
 \code{None} for a zero denominator, and \code{Display} printing \code{3/4}, \code{-3/4}, or \code{2} for a whole
 number. Make \code{format!("{:>5}", f)} pad the fraction. Why does the derived \code{PartialEq} then compare values
 correctly?
@@ -441,7 +449,7 @@ thrusters by a factor of 4.45. The reconstructed trajectory passed 57\,km above 
 programs passed numbers, and a number does not carry its unit. This problem makes the unit part of the type and
 checks what it costs.
 
-\medskip\noindent\textbf{Part I --- Newtypes.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Newtypes.}\par\nopagebreak
 \omcode{code/bachelor-2/08-rust-traits-and-generics/listings/units.rs}{5}{27}{Three units and four
 operations}
 \begin{enumerate}[beginpenalty=10000]
@@ -454,7 +462,7 @@ What would the ground program have had to write?
 \item Why is a conversion function safer than a constant 4.45 multiplied in by each caller?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Operator traits.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Operator traits.}\par\nopagebreak
 \omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/run_units.txt}{The library at work, and two mistakes
 refused (\code{units_mix.rs}).}
 \begin{omfigure}
@@ -462,8 +470,8 @@ refused (\code{units_mix.rs}).}
 \node[u] (m) at (0,0) {\texttt{Metres}};
 \node[u] (s) at (6,0) {\texttt{Seconds}};
 \node[u] (v) at (3,-1.8) {\texttt{MetresPerSecond}};
-\draw[ptr] (m.south) -- node[left, xshift=-2pt] {\texttt{/ Seconds}} (v.north west);
-\draw[ptr] (v.north east) -- node[right, xshift=2pt] {\texttt{* Seconds}: \texttt{Metres}} (s.south);
+\draw[ptr] ([xshift=4mm]m.south) -- node[right, xshift=2pt] {\texttt{/ Seconds}} ([xshift=4mm]v.north west);
+\draw[ptr] (v.west) to[bend left=35] node[left, xshift=-2pt] {\texttt{* Seconds}} ([xshift=-6mm]m.south);
 \draw[ptr] ([xshift=-5mm]m.north) .. controls +(-0.2,0.9) and +(0.2,0.9) .. node[above] {\texttt{+ Metres}} ([xshift=5mm]m.north);
 \draw[ptr] ([xshift=-5mm]s.north) .. controls +(-0.2,0.9) and +(0.2,0.9) .. node[above] {\texttt{+ Seconds}} ([xshift=5mm]s.north);
 \node[omThm, align=left, anchor=west] at (8.0,-0.6) {refused:\\ \texttt{Metres + Seconds}\\ \texttt{let x: f64 = d;}\\ \texttt{Metres * Metres}};
@@ -482,7 +490,7 @@ multiplication by \code{Seconds}, back to \code{Metres}; every operation not dra
 output?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Generics over units.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Generics over units.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item Write \code{fn total<U: Add<Output = U> + Copy>(xs: &[U], zero: U) -> U}, and use it on lengths and on times.
 \item How many copies of \code{total} does your program then contain?
@@ -493,7 +501,7 @@ serve every unit. Sketch it.
 \item Name two units that a real library would add, and the operations between them.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Zero cost.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Zero cost.}\par\nopagebreak
 \omcode{code/bachelor-2/08-rust-traits-and-generics/listings/units_asm.rs}{6}{24}{The same trip, typed and
 untyped}
 \omoutput{code/bachelor-2/08-rust-traits-and-generics/outputs/run_asm.txt}{The object file's symbols, and the size

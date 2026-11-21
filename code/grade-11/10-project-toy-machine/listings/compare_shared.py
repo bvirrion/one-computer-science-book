@@ -7,7 +7,7 @@ from simulator_m4 import new_machine, run
 
 CODE = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(CODE / "shared" / "toymachine"))
-import toymachine  # noqa: E402
+import toymachine
 
 PROGRAMS = CODE / "grade-11" / "02-von-neumann-machine" / "listings"
 for path in sorted(PROGRAMS.glob("*.toy")):
@@ -18,8 +18,9 @@ for path in sorted(PROGRAMS.glob("*.toy")):
     theirs = toymachine.Machine(toymachine.assemble(text), inputs)
     run(ours)
     theirs.run()
-    same = (ours["mem"] == theirs.mem and ours["reg"] == theirs.reg
+    same = (ours["outputs"] == theirs.outputs
+            and ours["mem"] == theirs.mem and ours["reg"] == theirs.reg
             and ours["flags"] == theirs.flags and ours["steps"] == theirs.steps
             and ours["sp"] == theirs.sp and ours["pc"] == theirs.pc)
     print(f"{path.name:<20} bytes {assemble(text) == toymachine.assemble(text)!s:<5}"
-          f" outputs {str(ours['outputs']):<14} final state same: {same}")
+          f" outputs {str(ours['outputs']):<14} same outputs and state: {same}")

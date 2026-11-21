@@ -29,7 +29,7 @@ The program is called \code{search}. Run as \code{search DIR WORD...}, it reads 
 whose name ends in \code{.txt}, and prints how many of them contain \emph{every} word of the query, then the ten best of
 them, best first, each with its score; a word is matched whatever its case. Run with a folder and no word, it prints the
 size of what it built. Its \omterm{def:b1:the-shell:exit-status}{exit status} says what happened: 0 when some document matches, 1 when none does, 2 when the
-command is misused or the folder cannot be read, so that a script can tell ``nothing found'' from ``something broke''.
+command is misused, the folder cannot be read or memory runs out, so that a script can tell ``nothing found'' from ``something broke''.
 It is built by a \omterm{def:b1:c-modules-make-tests:makefile}{makefile}, tested by \omterm{def:b1:c-modules-make-tests:unit-test}{unit tests} and by a comparison with a simpler program, kept in a Git \omterm{def:b1:version-control:repository}{repository},
 and measured against that simpler program, which reads every file for every query.
 
@@ -50,7 +50,7 @@ weights $1/r$, the planted words, the traps, and lines of ten words}\label{lst:b
 \omoutput{code/bachelor-1/30-project-text-search-engine/outputs/make_corpus.txt}{The corpus: the word of rank $r$
 occurs about $47\,500 / r$ times, so rank times count is nearly constant.}\label{out:b1:project-text-search-engine:corpus}
 
-The product in the last column is the law that George Kingsley Zipf described in 1949 for the words of real texts:
+The product in the last column is the law that George Kingsley Zipf made famous in his 1949 book for the words of real texts:
 in a large text, the frequency of a word is roughly inversely proportional to its rank. The script imposes it here on
 purpose; it matters for the engine, because it says that a few words occur in every document and most occur in very
 few.
@@ -60,7 +60,7 @@ few.
 It is slow, but it is short enough to be checked by reading, and it will serve as the \emph{oracle} of the tests: the
 fast program must print, for every query, exactly what the slow one prints.
 
-\omcode{code/bachelor-1/30-project-text-search-engine/listings/scan.c}{11}{42}{The naive scan: every file, every word,
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/scan.c}{11}{47}{The naive scan: every file, every word,
 compared with every term}\label{lst:b1:project-text-search-engine:scan}
 
 Both programs share the code that cuts a text into words, the score and the printing, so that a difference between
@@ -148,8 +148,16 @@ a \omterm{def:b1:hash-tables:hash-table}{hash table} with \omterm{def:b1:hash-ta
 \omcode{code/bachelor-1/30-project-text-search-engine/listings/index.h}{6}{28}{The types of the index: a posting, a
 \omterm{def:b1:project-text-search-engine:inverted-index}{posting list}, a \omterm{def:b1:hash-tables:hash-table}{bucket} entry, the index}\label{lst:b1:project-text-search-engine:index-h}
 
-\omcode{code/bachelor-1/30-project-text-search-engine/listings/index.c}{41}{80}{Finding a word's entry, adding an
-occurrence, and indexing a text}\label{lst:b1:project-text-search-engine:index}
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/index.c}{44}{77}{Finding a word's entry, and adding an
+occurrence}\label{lst:b1:project-text-search-engine:index}
+
+Every allocation is checked, by the rule of \cref{ch:b1:dynamic-memory}. A full \omterm{def:b1:project-text-search-engine:inverted-index}{posting list} grows through a temporary
+\omterm{def:b1:pointers-and-arrays:pointer}{pointer}, so that a failed \code{realloc} leaves the list as it was, and the failure goes back up to the caller, which
+gives up: \code{search} then exits with status 2. Only the growth of the table may fail quietly, since a table that
+keeps its old size is slower but still correct.
+
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/index.c}{79}{101}{Indexing a text, one word at a
+time}\label{lst:b1:project-text-search-engine:index-text}
 
 \begin{omfigure}
 \begin{tikzpicture}[font=\small, >={Stealth[length=1.6mm]},
@@ -221,11 +229,11 @@ are in both. Document 8 is passed on the first list because the second has jumpe
 are passed on the second. After 27 is compared with 30, the first list runs out and the merge stops.}
 \end{omfigure}
 
-\omcode{code/bachelor-1/30-project-text-search-engine/listings/query.c}{33}{56}{The AND query: look up every term, sort
+\omcode{code/bachelor-1/30-project-text-search-engine/listings/query.c}{33}{67}{The AND query: look up every term, sort
 the lists by length, and merge them into the running result}\label{lst:b1:project-text-search-engine:merge}
 
 A word that occurs in no document has no \omterm{def:b1:project-text-search-engine:inverted-index}{posting list} at all; then no document can contain every word, and the
-function stops at once (line 39). Which of the survivors are the best? A document that uses a query word often is
+function stops at once (line 43); a failed allocation stops it too, with the answer $-1$. Which of the survivors are the best? A document that uses a query word often is
 probably about it, and a rare word says more about a document than a word that every document uses. The usual score
 combines the two.
 
@@ -320,14 +328,15 @@ same answers, and not a word on the error stream.}\label{out:b1:project-text-sea
 \omoutput[42-49]{code/bachelor-1/30-project-text-search-engine/outputs/build.txt}{The two programs agree on a query, and
 the exit statuses 1 (nothing found) and 2 (no such folder).}\label{out:b1:project-text-search-engine:status}
 
-\paragraph{The history.} The project was kept in Git from its first milestone, with one \omterm{def:b1:version-control:commit}{commit} per milestone, so that each
-\omterm{def:b1:version-control:commit}{commit} is a version that does one more thing. The session below replays that history in a fresh \omterm{def:b1:version-control:repository}{repository}: it copies
-the files of each milestone and \omterm{def:b1:version-control:commit}{commits} them, then shows the log, the content of one \omterm{def:b1:version-control:commit}{commit}, and a \omterm{def:b1:version-control:staging}{working tree} with
+\paragraph{The history.} The project was kept in Git from the start, in four \omterm{def:b1:version-control:commit}{commits}, each a version that does one
+more thing: the specification with the corpus and the naive scan, the index, the queries, then the \omterm{def:b1:c-modules-make-tests:makefile}{makefile}, the tests
+and the measurement. The session below replays that history in a fresh \omterm{def:b1:version-control:repository}{repository}: it copies
+the files of each version and \omterm{def:b1:version-control:commit}{commits} them, then shows the log, the content of one \omterm{def:b1:version-control:commit}{commit}, and a \omterm{def:b1:version-control:staging}{working tree} with
 nothing left to \omterm{def:b1:version-control:commit}{commit} after a build, since the \code{.gitignore} lists the programs, the \omterm{def:b1:compilation-pipeline:compiler}{object files} and the
 generated corpus.
 
-\omoutput{code/bachelor-1/30-project-text-search-engine/outputs/history.txt}{The project's history, one \omterm{def:b1:version-control:commit}{commit} per
-milestone, and the clean \omterm{def:b1:version-control:staging}{working tree} after a build.}\label{out:b1:project-text-search-engine:history}
+\omoutput{code/bachelor-1/30-project-text-search-engine/outputs/history.txt}{The project's history in four \omterm{def:b1:version-control:commit}{commits},
+and the clean \omterm{def:b1:version-control:staging}{working tree} after a build.}\label{out:b1:project-text-search-engine:history}
 
 Generated files stay out of the \omterm{def:b1:version-control:repository}{repository}: the corpus is 1.9 megabytes that the script rewrites in a second, and a
 committed copy could drift from the script that is supposed to make it.
@@ -345,7 +354,7 @@ the author's laptop.}\label{out:b1:project-text-search-engine:timing}
 
 One query from the index takes about three microseconds, against nearly six milliseconds for the scan, which reads
 1.9 megabytes and compares every word of them with every term: nearly two thousand times faster. The index costs about
-two scans to build (more than one, since it also hashes every word and grows the table), so it pays for itself from the
+two and a half scans to build (more than one, since it also hashes every word and grows the table), so it pays for itself from the
 third query on.
 
 \begin{omfigure}

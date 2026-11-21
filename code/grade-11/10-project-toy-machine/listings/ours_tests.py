@@ -8,7 +8,7 @@ from simulator_m4 import new_machine, run
 
 CODE = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(CODE / "shared" / "toymachine"))
-import toymachine  # noqa: E402
+import toymachine
 
 FOLDER = CODE / "grade-11" / "02-von-neumann-machine" / "listings"
 PROGRAMS = sorted(FOLDER.glob("*.toy"))

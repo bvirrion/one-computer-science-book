@@ -11,12 +11,12 @@ def plain(raw, heater):
     return to_celsius(raw) < TARGET
 
 
-def hysteresis(raw, heater, band=0.5):
-    """On below target - band, off above target + band; otherwise keep the state."""
+def hysteresis(raw, heater, half_band=0.5):
+    """On below target - half_band, off above target + half_band; else keep it."""
     t = to_celsius(raw)
-    if t < TARGET - band:
+    if t < TARGET - half_band:
         return True
-    if t > TARGET + band:
+    if t > TARGET + half_band:
         return False
     return heater
 

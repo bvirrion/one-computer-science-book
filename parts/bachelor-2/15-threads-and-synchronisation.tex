@@ -17,8 +17,9 @@ other window checked too. Neither line of the program is wrong; their \omterm{de
 builds the tools that rule the bad ones out: \omterm{def:b2:threads-and-synchronisation:lock}{locks}, \omterm{def:b2:threads-and-synchronisation:condvar}{condition variables} and \omterm{def:b2:threads-and-synchronisation:semaphore}{semaphores}, in C, C++ and Rust.
 
 \begin{recall}
-Book 2: two processes sharing a resource can produce a \emph{\omterm{def:b2:threads-and-synchronisation:race}{race condition}}, a result that depends on the order of
-their steps; \emph{\omterm{def:b2:threads-and-synchronisation:mutex-property}{mutual exclusion}} lets one use the resource at a time; a \emph{deadlock} is a set of processes each
+Book 2: two \omterm{def:b2:processes-and-system-calls:process}{processes} sharing a resource can produce a \emph{\omterm{def:b2:threads-and-synchronisation:race}{race condition}}, a result that depends on the order of
+their steps; a \emph{\omterm{def:b2:threads-and-synchronisation:mutex-property}{critical section}} uses the shared data, \emph{\omterm{def:b2:threads-and-synchronisation:mutex-property}{mutual exclusion}} lets one \omterm{def:b2:processes-and-system-calls:process}{process} at a time be
+in it, and a \emph{\omterm{def:b2:threads-and-synchronisation:lock}{lock}} provides it; a \emph{deadlock} is a set of \omterm{def:b2:processes-and-system-calls:process}{processes} each
 waiting for a resource another holds, and needs four conditions (\omterm{def:b2:threads-and-synchronisation:mutex-property}{mutual exclusion}, hold and wait, no preemption,
 circular wait). \cref{ch:b2:processes-and-system-calls}: a \omterm{def:b2:processes-and-system-calls:process}{process} has its own memory. \cref{ch:b2:rust-ownership}:
 an exclusive \omterm{def:b2:rust-ownership:borrow}{borrow} excludes every other \omterm{def:b2:rust-ownership:borrow}{borrow}, so two \omterm{def:b2:threads-and-synchronisation:thread}{threads} cannot both change one value.
@@ -33,7 +34,7 @@ and stack, and shares with the other threads of the \omterm{def:b2:processes-and
 \code{pthread_join(t, NULL)} waits for it to end.
 \end{definition}
 
-Two processes made by \code{fork} share nothing they do not arrange to share; two \omterm{def:b2:threads-and-synchronisation:thread}{threads} share all their global
+Two \omterm{def:b2:processes-and-system-calls:process}{processes} made by \code{fork} share nothing they do not arrange to share; two \omterm{def:b2:threads-and-synchronisation:thread}{threads} share all their global
 variables and the heap. That is what makes \omterm{def:b2:threads-and-synchronisation:thread}{threads} fast to communicate, and what made \code{seats_left} a single
 variable seen by both windows. On a machine with several cores the \omterm{def:b2:threads-and-synchronisation:thread}{threads} run at the same time; on one core the
 scheduler switches between them. Either way, a \omterm{def:b2:threads-and-synchronisation:thread}{thread}'s steps follow each other in its own order, and the steps of
@@ -61,8 +62,8 @@ correct, and the hook's bug may appear once a year. For a small model of a progr
 \section{Data races}\label{sec:b2:threads-and-synchronisation:races}
 
 \code{counter++} is not one step. The processor loads the counter into a register, adds 1, and stores it back.
-\code{race.c} writes the three steps out explicitly (with \omterm{def:b2:threads-and-synchronisation:atomic}{atomic} loads and stores, so that the compiler keeps them and
-the program stays defined), runs $k$ \omterm{def:b2:threads-and-synchronisation:thread}{threads} that each add 1 a million times, and compares:
+\code{race.c} writes the three steps out explicitly (with C11 \omterm{def:b2:threads-and-synchronisation:atomic}{atomic} loads and stores, defined below, so that the compiler keeps them
+and the program stays defined), runs $k$ \omterm{def:b2:threads-and-synchronisation:thread}{threads} that each add 1 a million times, and compares:
 
 \omcode{code/bachelor-2/15-threads-and-synchronisation/listings/race.c}{14}{22}{Load, add, store: an increment that
 can lose updates}
@@ -104,10 +105,10 @@ overlap, each overwrites the other's work. The precise numbers change from run t
 overlap, the larger the share of increments that one \omterm{def:b2:threads-and-synchronisation:thread}{thread} overwrites.}
 \end{omfigure}
 
-\begin{definition}[Race condition]\label{def:b2:threads-and-synchronisation:race}
-A program has a \emph{race condition}\index{race condition} when its result depends on the order in which the steps of
-its \omterm{def:b2:threads-and-synchronisation:thread}{threads} interleave, and some of those orders give a wrong result. The lost increments of \code{race.c} are one.
-\end{definition}
+\begin{remark}[Race condition, between threads]\label{def:b2:threads-and-synchronisation:race}\index{race condition}
+Book 2's \omterm{def:b2:threads-and-synchronisation:race}{race condition}, between \omterm{def:b2:processes-and-system-calls:process}{processes}, is the same bug between \omterm{def:b2:threads-and-synchronisation:thread}{threads}: the result depends on the order in which
+their steps interleave, and some of those orders give a wrong result. The lost increments of \code{race.c} are one.
+\end{remark}
 
 \begin{definition}[Data race]\label{def:b2:threads-and-synchronisation:data-race}
 Two accesses to the same memory location form a \emph{data race}\index{data race} when they come from different
@@ -150,17 +151,17 @@ schedules, 4 lose an update, and the explorer prints one. The two other models a
 
 \section{Mutual exclusion}\label{sec:b2:threads-and-synchronisation:mutex}
 
-\begin{definition}[Critical section, mutual exclusion]\label{def:b2:threads-and-synchronisation:mutex-property}
-A \emph{critical section}\index{critical section} is a part of a \omterm{def:b2:threads-and-synchronisation:thread}{thread}'s code that must not run while another
-\omterm{def:b2:threads-and-synchronisation:thread}{thread} runs a critical section on the same data. Critical sections are in \emph{mutual exclusion}\index{mutual
-exclusion} when at most one \omterm{def:b2:threads-and-synchronisation:thread}{thread} at a time is inside any of them.
-\end{definition}
+\begin{remark}[Critical section, mutual exclusion, between threads]\label{def:b2:threads-and-synchronisation:mutex-property}\index{critical section}\index{mutual exclusion}
+Book 2 defined these words between \omterm{def:b2:processes-and-system-calls:process}{processes}; between \omterm{def:b2:threads-and-synchronisation:thread}{threads} they mean the same. A \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical section} is a part of a
+\omterm{def:b2:threads-and-synchronisation:thread}{thread}'s code that must not run while another \omterm{def:b2:threads-and-synchronisation:thread}{thread} runs a \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical section} on the same data, and \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical sections} are
+in \omterm{def:b2:threads-and-synchronisation:mutex-property}{mutual exclusion} when at most one \omterm{def:b2:threads-and-synchronisation:thread}{thread} at a time is inside any of them.
+\end{remark}
 
-\begin{definition}[Lock]\label{def:b2:threads-and-synchronisation:lock}
-A \emph{lock}\index{lock} (or \emph{mutex}) is an object with two operations around \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical sections}, \emph{lock}
-and \emph{unlock}, such that at most one \omterm{def:b2:threads-and-synchronisation:thread}{thread} at a time is between the lock it called and its unlock: the sections
-it guards are in \omterm{def:b2:threads-and-synchronisation:mutex-property}{mutual exclusion}. A \omterm{def:b2:threads-and-synchronisation:thread}{thread} that calls lock while another holds it waits.
-\end{definition}
+\begin{remark}[Lock, between threads]\label{def:b2:threads-and-synchronisation:lock}\index{lock}\index{mutex}
+Book 2's \omterm{def:b2:threads-and-synchronisation:lock}{lock}, which provides \omterm{def:b2:threads-and-synchronisation:mutex-property}{mutual exclusion}, is for \omterm{def:b2:threads-and-synchronisation:thread}{threads} an object called a \emph{mutex}, with two operations
+around \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical sections}, \emph{\omterm{def:b2:threads-and-synchronisation:lock}{lock}} and \emph{unlock}: at most one \omterm{def:b2:threads-and-synchronisation:thread}{thread} at a time is between the \omterm{def:b2:threads-and-synchronisation:lock}{lock} it called
+and its unlock, and a \omterm{def:b2:threads-and-synchronisation:thread}{thread} that calls \omterm{def:b2:threads-and-synchronisation:lock}{lock} while another holds it waits.
+\end{remark}
 
 The naive \omterm{def:b2:threads-and-synchronisation:lock}{lock}, a shared flag tested and then set, fails for the hook's reason: both \omterm{def:b2:threads-and-synchronisation:thread}{threads} can test the flag before
 either sets it. The explorer finds 24 bad schedules among 42 (\cref{out:b2:threads-and-synchronisation:explorer}).
@@ -398,7 +399,7 @@ eats, 100\,000 times.}
 \draw[fill=omDef!6] (0,0) circle (1.9);
 \foreach \i in {0,...,4} {
   \pgfmathsetmacro{\a}{90 - 72*\i}
-  \pgfmathsetmacro{\f}{90 - 72*\i - 36}
+  \pgfmathsetmacro{\f}{90 - 72*\i + 36}
   \draw[fill=white] (\a:1.25) circle (0.32); \node at (\a:1.25) {P\i};
   \node[draw, fill=omThm!20, rounded corners=1pt, inner sep=1.5pt] at (\f:1.45) {\i};
   \node at (\a:2.3) {};
@@ -416,7 +417,7 @@ waits for 0\\ while holding nothing, and P3 can take fork 4: the circle is broke
 \begin{history}
 % ledger: b2:ewd123-semaphores, b2:ewd123-period, b2:ewd310-period, b2:lamport-bakery-1974, b2:peterson-1981
 Edsger Dijkstra's notes \emph{Cooperating sequential processes}, written in the mid-1960s, present Th.~J. Dekker's
-solution to \omterm{def:b2:threads-and-synchronisation:mutex-property}{mutual exclusion} for two processes, the first correct one, and introduce the \omterm{def:b2:threads-and-synchronisation:semaphore}{semaphore} with its
+solution to \omterm{def:b2:threads-and-synchronisation:mutex-property}{mutual exclusion} for two \omterm{def:b2:processes-and-system-calls:process}{processes}, the first correct one, and introduce the \omterm{def:b2:threads-and-synchronisation:semaphore}{semaphore} with its
 operations $P$ and $V$. A few years later, his notes \emph{Hierarchical ordering of sequential processes} posed the
 five dining philosophers. Leslie Lamport published the bakery algorithm in 1974; it needs no \omterm{def:b2:threads-and-synchronisation:atomic}{atomic operation} beyond
 reading and writing a number. Gary Peterson's \omterm{def:b2:threads-and-synchronisation:thread}{two-thread} algorithm, far shorter than Dekker's, appeared in 1981 in a
@@ -562,7 +563,7 @@ customer's purchase}
 \omoutput{code/bachelor-2/15-threads-and-synchronisation/outputs/office_model.txt}{Every schedule of each protocol,
 for two windows.}\label{out:b2:threads-and-synchronisation:office}
 
-\medskip\noindent\textbf{Part I --- The race.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- The race.}\par\nopagebreak
 \begin{enumerate}
 \item In \cref{lst:b2:threads-and-synchronisation:sell}, which lines form the check and which the sale? What does
 \code{pause_ms(50)} stand for?
@@ -575,7 +576,7 @@ schedules.
 \item Why does ThreadSanitizer report the race even in a run that happens to sell the seat once?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Locks.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Locks.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item In \code{locked}, the \omterm{def:b2:threads-and-synchronisation:lock}{lock} step has a guard. What does it model, and why is it one step?
 \item Explain why the locked version with one customer per window has only 2 schedules.
@@ -586,7 +587,7 @@ schedules.
 shorten the \omterm{def:b2:threads-and-synchronisation:mutex-property}{critical section}?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- A bounded queue.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- A bounded queue.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item The customers now queue in a hall that holds 8 people; a door lets someone in only if there is room. Which
 \omterm{def:b2:threads-and-synchronisation:semaphore}{semaphore} is the door, and what is its initial value?
@@ -598,7 +599,7 @@ can happen, and how does \cref{prop:b2:threads-and-synchronisation:order} preven
 \item In \code{semaphores.c}, what would happen if \code{put} took the mutex before \code{sem_wait(&empty)}?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Every interleaving checked.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Every interleaving checked.}\par\nopagebreak
 \begin{enumerate}[resume, beginpenalty=10000]
 \item In the protocol \code{atomic}, the seat is taken by one indivisible step. Which C function would implement it?
 \item Each window serves 4 customers in 2 steps each. Why does no guard reduce the number of schedules?

@@ -16,7 +16,7 @@ RULES = [
 ]
 
 A = town()
-print(f"{len(A.domain)} elements; {len(A.relations['Out'])} books out now")
+print(f"{len(A.domain)} elements; {len(A.relations['Out'])} loans out now")
 for words, text in RULES:
     A.atoms = 0
     bad = A.counterexamples(parse(text))

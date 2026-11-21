@@ -168,8 +168,9 @@ connection stays in the set. When the second piece arrives, \code{poll} reports 
 complete.
 
 \textbf{17.} Removing entry $i$ moves the last entry into slot $i$. Walking downwards, that last entry has already been
-handled in this round; walking upwards, it would be skipped or, worse, its \code{revents} would be those of the entry
-removed.
+handled in this round; walking upwards, it would be skipped in this round (the copy carries its own \code{revents}, but the loop has
+passed slot $i$), and since \code{poll} reports a ready descriptor again, it would be served only after the next
+call. Walking downwards serves every ready entry at once.
 
 \textbf{18.} The \omterm{def:b2:processes-and-system-calls:process}{process} per connection: a crash kills only that child. A \omterm{def:b2:threads-and-synchronisation:thread}{thread}'s crash kills the whole \omterm{def:b2:processes-and-system-calls:process}{process}, every
 \omterm{def:b2:threads-and-synchronisation:thread}{thread} with it; the \omterm{def:b2:sockets:event-loop}{event loop} is one \omterm{def:b2:threads-and-synchronisation:thread}{thread}, so it dies too.
@@ -187,9 +188,10 @@ user experiences; the server cannot know when the clients are done.
 $10\,917 / 3\,662 \approx 3.0$ times as fast as the \omterm{def:b2:processes-and-system-calls:process}{process} design.
 
 \textbf{23.} The fixed cost per connection would be paid once for a thousand requests, so the three designs would come
-close (\cref{exo:b2:sockets:11}); the \omterm{def:b2:threads-and-synchronisation:thread}{threads} and processes might even pull ahead, using several cores where the \omterm{def:b2:sockets:event-loop}{event
+close (\cref{exo:b2:sockets:11}); the \omterm{def:b2:threads-and-synchronisation:thread}{threads} and \omterm{def:b2:processes-and-system-calls:process}{processes} might even pull ahead, using several cores where the \omterm{def:b2:sockets:event-loop}{event
 loop} uses one.
 
-\textbf{24.} Requests per second on loopback for three server designs, on the laptop: about 12\,000 with a \omterm{def:b2:processes-and-system-calls:process}{process} per
-connection, 27\,000 with a \omterm{def:b2:threads-and-synchronisation:thread}{thread} per connection and 45\,000 with an \omterm{def:b2:sockets:event-loop}{event loop}, in the run printed.
+\textbf{24.} Requests per second on loopback for three server designs, on the laptop: about 3\,700 with a \omterm{def:b2:processes-and-system-calls:process}{process} per
+connection, 7\,300 with a \omterm{def:b2:threads-and-synchronisation:thread}{thread} per connection and 10\,900 with an \omterm{def:b2:sockets:event-loop}{event loop}, in the run printed
+(3662, 7331 and 10\,917).
 \end{solution}

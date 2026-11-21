@@ -72,7 +72,7 @@ def main():
     for n in (1000, 2000, 4000, 8000):
         ordered = list(range(n))
         shuffled = rng.sample(range(n), n)
-        k = n // 2  # the median
+        k = n // 2  # the upper median: rank n/2
         row = [count(quickselect, ordered, k), count(quickselect, shuffled, k),
                count(quickselect, ordered, k, random.Random(n)),
                count(mom_select, ordered, k), count(mom_select, shuffled, k)]

@@ -102,7 +102,8 @@ The \omterm{def:b3:program-optimisation:framework}{transfer function} of a block
   \draw[->] (b3.north) |- (b1.east);
   \node[lv, anchor=south west] at (b0.north east) {$\{n\}$};
   \node[lv, anchor=north west] at (b0.south east) {$\{n, s, i\}$};
-  \node[lv, anchor=north east] at (b1.south west) {$\{n, s, i\}$};
+  \node[lv, anchor=north, yshift=-1pt] at (b1.south) {$\{n, s, i\}$};
+  \node[lv, anchor=north] at (b3.south) {$\{n, s, i\}$};
   \node[lv, anchor=north west] at (b2.south east) {$\{s\}$};
   \node[lv, anchor=north west] at (b4.south east) {$\emptyset$};
 \end{tikzpicture}
@@ -144,7 +145,7 @@ Let $i \ge 1$ be the least index such that $x$ does not strictly dominate $u_i$;
 \end{proof}
 
 \begin{theorem}[Placing phi-functions]\label{thm:b3:program-optimisation:phi}
-Let $S$ be the blocks that define a variable $v$, the entry included if $v$ is a parameter, and place a $\phi$-function for $v$ at the start of every block of $\mathrm{DF}^{+}(S)$. Then (a) at every use of $v$, the last \omterm{def:b3:program-optimisation:reaching}{definition} of $v$ (an original one or a $\phi$) is the same on every path from the entry, and its block \omterm{def:b3:program-optimisation:dominator}{dominates} the use. (b) Every $\phi$ placed this way is at a block where two paths from different \omterm{def:b3:program-optimisation:reaching}{definitions} of $v$ first meet, so no placement with fewer $\phi$-functions has property (a).
+Let $S$ be the blocks that define a variable $v$, the entry included if $v$ is a parameter, and place a $\phi$-function for $v$ at the start of every block of $\mathrm{DF}^{+}(S)$. Then (a) at every use of $v$, the last \omterm{def:b3:program-optimisation:reaching}{definition} of $v$ (an original one or a $\phi$) is the same on every path from the entry, and its block \omterm{def:b3:program-optimisation:dominator}{dominates} the use. (b) Every $\phi$ placed this way is at a block where two paths from different \omterm{def:b3:program-optimisation:reaching}{definitions} of $v$ first meet: none is placed where only one \omterm{def:b3:program-optimisation:reaching}{definition} can arrive. Some may still be placed where $v$ is dead, and those can be left out without losing (a); pruned SSA leaves them out (\cref{exo:b3:program-optimisation:9}).
 \end{theorem}
 
 \begin{proof}
@@ -222,7 +223,7 @@ One more transformation is told and left as exercise~\ref{exo:b3:program-optimis
 \emph{Register allocation}\index{register allocation} decides, for each temporary, whether it \omterm{def:b3:program-optimisation:liveness}{lives} in a register, and which, or in memory. Two temporaries \emph{interfere} if one is written at a point where the other is \omterm{def:b3:program-optimisation:liveness}{live} and may hold a different value; the \emph{interference graph}\index{interference graph} has the temporaries as vertices and an edge between each pair that interferes.
 \end{definition}
 
-Two temporaries that do not interfere can share a register: wherever one of them holds a value that will be read, the other holds nothing that will. The \omterm{def:b3:program-optimisation:reaching}{definition}'s exception is for copies: after \code{x = y}, the two hold the same value, and sharing a register is harmless, even useful (it makes the copy disappear). \Cref{lst:b3:program-optimisation:interference} builds the graph from the \omterm{def:b3:program-optimisation:liveness}{live} sets after each instruction. The parameters arrive together, in \code{a0}, \code{a1}, \dots, so they interfere with each other and with whatever is \omterm{def:b3:program-optimisation:liveness}{live} at the entry.
+Two temporaries that do not interfere can share a register: wherever one of them holds a value that will be read, the other holds nothing that will. The exception in the definition of interference is for copies: after \code{x = y}, the two hold the same value, and sharing a register is harmless, even useful (it makes the copy disappear). \Cref{lst:b3:program-optimisation:interference} builds the graph from the \omterm{def:b3:program-optimisation:liveness}{live} sets after each instruction. The parameters arrive together, in \code{a0}, \code{a1}, \dots, so they interfere with each other and with whatever is \omterm{def:b3:program-optimisation:liveness}{live} at the entry.
 
 \omcode{code/bachelor-3/08-program-optimisation/listings/regalloc.rs}{31}{59}{The \omterm{def:b3:program-optimisation:regalloc}{interference graph}: each \omterm{def:b3:program-optimisation:reaching}{definition} against the temporaries \omterm{def:b3:program-optimisation:liveness}{live} after it, except the source of a copy.}\label{lst:b3:program-optimisation:interference}
 
@@ -359,7 +360,7 @@ The library of the series' invented town fines late returns: 10 cents a day for 
 
 \omoutput{code/bachelor-3/08-program-optimisation/outputs/pb_billing.txt}{The program at \code{-O0}, \code{-O1}, and \code{-O2} with 12 down to 1 registers, run on the 378 returned loans: counts for the whole run, then for the hot loop alone. All print 87 late loans, 24,305 cents in fines, and a largest fine of 500.}\label{out:b3:program-optimisation:pbcounts}
 
-\medskip\noindent\textbf{Part I --- Liveness.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Liveness.}
 \begin{enumerate}
 \item Which of \code{n}, \code{i}, \code{days}, \code{fine}, \code{total}, \code{count}, \code{worst}, \code{day_rate}, \code{week_rate} and \code{cap} are \omterm{def:b3:program-optimisation:liveness}{live} at the top of the loop in the source, before any optimisation?
 \item After \code{-O1}, \code{day_rate}, \code{week_rate} and \code{cap} have disappeared from the graph. Which pass removed them, and what did it put in their place?
@@ -369,7 +370,7 @@ The library of the series' invented town fines late returns: 10 cents a day for 
 \item What does the cost 82 of \code{i} count?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Colouring.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Colouring.}
 \begin{enumerate}[resume]
 \item Find a clique of seven vertices in the graph. What does it prove about the registers needed?
 \item Check that the colouring with seven registers is proper on the edges of \code{fine}.
@@ -379,7 +380,7 @@ The library of the series' invented town fines late returns: 10 cents a day for 
 \item Simulate simplify by hand with $k = 7$ for the first three vertices it removes.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Fewer registers.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Fewer registers.}
 \begin{enumerate}[resume]
 \item With six registers, which temporary is \omterm{def:b3:program-optimisation:spill}{spilled}, and why that one by the cost per neighbour?
 \item Count, from the program, the extra loads that spilling \code{t0} adds per iteration of each loop, and check against the table.
@@ -389,7 +390,7 @@ The library of the series' invented town fines late returns: 10 cents a day for 
 \item Plot or tabulate the instructions against $k$. Where is the largest step?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- The counts.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- The counts.}
 \begin{enumerate}[resume]
 \item In the hot loop, what fraction of \code{-O0}'s loads and stores does \code{-O1} remove, and what fraction of its instructions?
 \item In the hot loop, what fraction of \code{-O1}'s loads and stores does the allocator remove with 12 registers, and what fraction of its instructions? Compare with the whole run.

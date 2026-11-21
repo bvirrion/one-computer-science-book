@@ -1,4 +1,3 @@
-# capture: scratch
 import csv
 
 MENU = """1. loans by genre
@@ -146,3 +145,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# capture: scratch

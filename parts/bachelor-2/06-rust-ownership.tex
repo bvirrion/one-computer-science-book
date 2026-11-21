@@ -28,7 +28,7 @@ who may use it when. This chapter states them; they forbid the use after free, t
 Book 3: a block of the heap is obtained with \code{malloc} and given back with \code{free}; using it afterwards
 (use after free) or freeing it twice (double free) is undefined behaviour, which the address sanitizer detects at
 run time. \cref{ch:b2:cpp-classes-raii,ch:b2:cpp-copy-move}: in C++, an object that owns a resource frees it in its
-\omterm{def:b2:cpp-classes-raii:constructor}{destructor} (RAII), and a \omterm{def:b2:rust-ownership:move}{move} transfers the resource, leaving the source empty but still usable.
+\omterm{def:b2:cpp-classes-raii:constructor}{destructor} (RAII), and a move transfers the resource, leaving the source empty but still usable.
 \end{recall}
 
 \section{Rust in a few pages}\label{sec:b2:rust-ownership:basics}
@@ -115,7 +115,7 @@ buffers.}\label{out:b2:rust-ownership:move}
 \end{tikzpicture}
 \par\smallskip{\small A \omterm{def:b2:rust-ownership:move}{move} of a \code{String}. The three words of \code{a} are copied into \code{b}; the buffer
 stays where it is, with one \omterm{def:b2:rust-ownership:ownership}{owner}, \code{b}. The compiler forbids any use of \code{a} afterwards and \omterm{def:b2:rust-ownership:drop}{drops} only
-\code{b}, so the buffer is freed exactly once. In C++, a \omterm{def:b2:rust-ownership:move}{move} would also have emptied \code{a}, and run its
+\code{b}, so the buffer is freed exactly once. In C++, a move would also have emptied \code{a}, and run its
 \omterm{def:b2:cpp-classes-raii:constructor}{destructor} later; in Rust nothing runs on \code{a} at all.}
 \end{omfigure}
 
@@ -130,7 +130,8 @@ the source stays usable. A type that owns a resource, such as \code{String} or \
 \end{definition}
 
 A deliberate copy of a \code{String} is a \code{clone}: a new buffer with the same bytes. Clones are visible in the
-code, which is the point: a C++ \omterm{def:b2:cpp-copy-move:copy}{copy constructor} runs silently at an assignment, a Rust clone is written.
+code, which is the point: a C++ copy runs silently at an initialisation or an assignment (\omterm{def:b2:cpp-copy-move:copy}{copy constructor}, copy assignment), a Rust clone
+is written.
 
 \section{Borrowing}\label{sec:b2:rust-ownership:borrowing}
 
@@ -203,8 +204,10 @@ a whole family of errors that are not about freeing.
 \begin{proposition}[Aliasing excludes mutation]\label{prop:b2:rust-ownership:no-race}
 In a program accepted by the \omterm{def:b2:rust-ownership:checker}{borrow checker}, with no \code{unsafe} code, if at some point a value is changed through
 a path (its \omterm{def:b2:rust-ownership:ownership}{owner}, or an exclusive \omterm{def:b2:rust-ownership:borrow}{borrow}), then no other path to that value is in use at that point. In particular,
-two accesses to one value, one of which is a write, can never be in use at the same time: in one thread, a value
-does not change behind a reader; across threads, there is no data race.
+outside the types built for shared mutation (\code{Cell}, the atomics, \code{Mutex}, all built on \code{UnsafeCell};
+\cref{ch:b2:threads-and-synchronisation}), two accesses to one value, one of which is a write, can never be in use at
+the same time: in one thread, a value does not change behind a reader; across threads, there is no data race. Those
+types change a value through shared references, and still exclude data races.
 \end{proposition}
 
 \begin{proof}
@@ -253,7 +256,7 @@ or moved: what C calls a dangling pointer, and what the use after free of the op
 The \emph{lifetime of a reference}\index{lifetime (Rust)}, written \code{'a}, is the region of the program in which
 the reference may be used. It must lie within the lifetime of the object referred to, the span from its creation
 to its \omterm{def:b2:rust-ownership:drop}{drop} or \omterm{def:b2:rust-ownership:move}{move} (the lifetime of an object in Book 3's sense). A function whose result is a reference names, by
-lifetime parameters in its signature, the arguments the result may \omterm{def:b2:rust-ownership:borrow}{borrow} from.
+lifetime parameters in its signature, the arguments the result may borrow from.
 \end{definition}
 
 A function that returns a reference must \omterm{def:b2:rust-ownership:borrow}{borrow} it from one of its arguments: a reference to one of its own locals
@@ -296,7 +299,7 @@ shorter lifetime.}\label{out:b2:rust-ownership:longest-scope}
 \node[font=\scriptsize\rmfamily, text=red!70!black, anchor=west, align=left] at (8.0,-6.3) {b dropped: the result, which may\\ borrow from b, is still to be used};
 \end{tikzpicture}
 \par\smallskip{\small The lifetimes of \code{longest_scope.rs}, as vertical bars over its source lines. The result
-must be valid at the \code{println!}, line 7, but it may \omterm{def:b2:rust-ownership:borrow}{borrow} from \code{b}, which is dropped at the end of
+must be valid at the \code{println!}, line 7, but it may borrow from \code{b}, which is dropped at the end of
 line 6: no region \code{'a} lies within both, and the program is refused.}
 \end{omfigure}
 
@@ -346,9 +349,8 @@ time}\label{lst:b2:rust-ownership:char-boundary}
 stops (its first lines print a panic without the thread's number, which varies from run to
 run).}\label{out:b2:rust-ownership:char-boundary}
 
-A panic stops the thread with a message, in an orderly way: values are dropped and the exit status is 101.
-Indexing out of bounds, \code{unwrap} on a missing value and overflow in a debug build panic too. A panic is a bug
-reported, not memory corrupted; the safe ways to cut a string, \code{s.get(0..n)}, which returns \code{None}, or
+A panic, defined in \cref{ch:b2:rust-enums-and-errors}, stops the program in an orderly way: it is a bug reported,
+not memory corrupted. The safe ways to cut a string, \code{s.get(0..n)}, which returns \code{None}, or
 \code{char_indices}, are the subject of \cref{ch:b2:rust-enums-and-errors}.
 
 \begin{inpractice}[Owned or borrowed?]
@@ -449,9 +451,9 @@ A word counter in C, a hash table with open addressing in \code{dict.h}, worked 
 in three versions, each time after an innocent-looking change. This problem finds the three errors, ports the
 counter to Rust, and measures what the port costs.
 
-\medskip\noindent\textbf{Part I --- Three memory errors in C.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- Three memory errors in C.}\par\nopagebreak
 The function \code{dict_count(d, word)} returns a pointer to the counter of \code{word}, creating it at 0; an
-insertion may grow the table, which \omterm{def:b2:rust-ownership:move}{moves} every slot to a new block and frees the old one. Each version below is
+insertion may grow the table, which moves every slot to a new block and frees the old one. Each version below is
 built with \code{-DBUG=1}, 2 or 3, and run on the titles of the town's books.
 \omcode{code/bachelor-2/06-rust-ownership/listings/dict.c}{9}{36}{\code{dict.c}: the main program and its three
 versions}
@@ -467,7 +469,7 @@ why are some counts already wrong before the crash?
 \item Without the sanitizer, what might each version print? Which of the three is the most dangerous?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- An ownership design in Rust.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- An ownership design in Rust.}\par\nopagebreak
 \omcode{code/bachelor-2/06-rust-ownership/listings/dict_table.rs}{40}{52}{\code{Dict::count}, from
 \code{dict_table.rs}}
 \begin{enumerate}[resume, beginpenalty=10000]
@@ -482,7 +484,7 @@ word copied, and why could \code{grow} not simply read \code{self.slots} while f
 \item Write the order in which the memory of a \code{Dict} holding 34 words is freed at the end of \code{main}.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- The three errors, refused.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- The three errors, refused.}\par\nopagebreak
 \code{dict_bugs.rs} writes each bug in Rust; the session builds it three times.
 \omoutput[2-13,15-19,25-34]{code/bachelor-2/06-rust-ownership/outputs/run_dict_rs.txt}{The program
 without bugs, then the three refusals.}
@@ -498,7 +500,7 @@ not?
 \code{count} do that the comment did not?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- The two versions measured.}\par\nopagebreak
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- The two versions measured.}\par\nopagebreak
 The same 4 million words, drawn from 100\,000 by the same generator, are counted by \code{dict.h} and by
 \code{dict_table.rs}, three times each, on the author's laptop.
 \omoutput{code/bachelor-2/06-rust-ownership/outputs/run_bench.txt}{Three runs of each, on the author's laptop.}

@@ -1,4 +1,3 @@
-# capture: exit
 def average(t):
     """Return the mean of the numbers in the list t.
 
@@ -13,3 +12,4 @@ def average(t):
 
 print(average([12, 15, 9]))
 print(average([]))
+# capture: exit

@@ -61,7 +61,7 @@ The match on the pair (first word, list of arguments) lists the valid forms firs
 wrong number of arguments; the last arm catches every unknown word, lower-case ones included. The enums \code{Command}
 and \code{Reply} implement \code{Display}, so that a reply is printed by \code{writeln!} as it is, and a command is written back
 as the line it came from: the log of milestone 4 will store commands that way. The unit tests check every command and
-eleven malformed lines, one per error reason, and that printing a thousand random commands and parsing them gives the
+eleven malformed lines covering every error reason, and one line that is too long, and that printing a thousand random commands and parsing them gives the
 same commands back.
 
 \section{Milestone 2: one client at a time}\label{sec:b2:project-key-value-server:single}
@@ -75,11 +75,15 @@ closed after one \code{ERR}.
 apply it, answer it}\label{lst:b2:project-key-value-server:handle}
 
 The replies go through a \code{BufWriter} and are flushed when no request is waiting in the reader's buffer: one
-\code{write} for a \omterm{def:b2:link-layer:burst}{burst} of requests, and no reply left waiting while the client waits for it. The simplest server calls
+\code{write} for a burst of requests, and no reply left waiting while the client waits for it. The simplest server calls
 \code{handle} for each accepted connection in turn:
 
-\omcode{code/bachelor-2/31-project-key-value-server/listings/server.rs}{48}{54}{Milestone 2: one connection at a
+\omcode{code/bachelor-2/31-project-key-value-server/listings/server.rs}{48}{60}{Milestone 2: one connection at a
 time}\label{lst:b2:project-key-value-server:one}
+
+\code{accepted} keeps the server running when one \code{accept} fails, as it does when a client resets its connection
+before the server takes it, or when no \omterm{def:b2:files-pipes-signals:descriptor}{file descriptor} is left under load: writing \code{stream?} instead would end the
+whole server on the first such error, and in the pool below it would also close the queue and send every worker home.
 
 The client of \code{client.rs} connects (retrying while the server starts), sends a line and reads one line back. The
 demonstration program starts the server of the next milestones in a \omterm{def:b2:threads-and-synchronisation:thread}{thread} of its own \omterm{def:b2:processes-and-system-calls:process}{process}, runs a scripted session
@@ -100,7 +104,7 @@ everybody.
 
 The first remedy gives every connection a \omterm{def:b2:threads-and-synchronisation:thread}{thread} of its own:
 
-\omcode{code/bachelor-2/31-project-key-value-server/listings/server.rs}{56}{64}{A \omterm{def:b2:threads-and-synchronisation:thread}{thread} per
+\omcode{code/bachelor-2/31-project-key-value-server/listings/server.rs}{62}{70}{A \omterm{def:b2:threads-and-synchronisation:thread}{thread} per
 connection}\label{lst:b2:project-key-value-server:per-connection}
 
 The compiler checks the sharing: the closure moves an \code{Arc<Shared>} into the \omterm{def:b2:threads-and-synchronisation:thread}{thread}, and \code{Shared} holds a
@@ -113,7 +117,7 @@ A \emph{thread pool}\index{thread pool} is a fixed set of \omterm{def:b2:threads
 queue and run them one after another. Submitting a task puts it in the queue; no \omterm{def:b2:threads-and-synchronisation:thread}{thread} is created per task.
 \end{definition}
 
-\omcode{code/bachelor-2/31-project-key-value-server/listings/server.rs}{66}{87}{A pool of workers fed by one
+\omcode{code/bachelor-2/31-project-key-value-server/listings/server.rs}{72}{93}{A pool of workers fed by one
 channel}\label{lst:b2:project-key-value-server:pool}
 
 The receiving end of the channel is behind a mutex, since one worker at a time may take from it; the guard is a
@@ -244,10 +248,11 @@ after its $n$-th change.
 
 The proposition assumes that the damage is at the end. A flipped bit in the middle of the log, as in the third case of
 \cref{out:b2:project-key-value-server:crash}, also stops the \omterm{def:b2:project-key-value-server:log}{replay}, and the intact records after it are dropped with it:
-a crash cannot cause that, a failing disk can, and the honest behaviour is to report it. The kill test of the next
-milestone shows why a crash damages only the end: the server appends each record with one \code{write}, and a \omterm{def:b2:processes-and-system-calls:process}{process}
-killed by a signal never leaves a write half done; only the machine stopping, between the operating system's memory and
-the disk, can.
+a crash cannot cause that, a failing disk can, and the honest behaviour is to report it. A crash damages only the end because the log is only appended to: whatever a crash interrupts is
+the record being appended, the last one, since the records before it were complete before it began. POSIX does not
+promise that a \code{write} cut short by a signal is all or nothing, so a killed \omterm{def:b2:processes-and-system-calls:process}{process} may leave that last record
+short, and so may the machine stopping between the operating system's memory and the disk; the \omterm{def:b2:project-key-value-server:log}{replay} stops there and
+\code{open} cuts it. The kill test of the next milestone checks this on real runs.
 
 The log grows with every change, even when the map does not: a thousand \code{SET}s of one key leave a thousand
 records for one value. Compaction rewrites it:
@@ -303,13 +308,13 @@ TCP, and the cost of syncing the log.}\label{out:b2:project-key-value-server:loa
 \end{tikzpicture}
 \par\smallskip{\small The in-process part of \cref{out:b2:project-key-value-server:load}, measured on a laptop. With one
 \omterm{def:b2:threads-and-synchronisation:lock}{lock}, more \omterm{def:b2:threads-and-synchronisation:thread}{threads} do less work in all: they spend their time handing the \omterm{def:b2:threads-and-synchronisation:lock}{lock} to each other. With 16 \omterm{def:b2:project-key-value-server:shard}{shards}, the
-throughput grows with the \omterm{def:b2:threads-and-synchronisation:thread}{threads}.}
+throughput grows with the \omterm{def:b2:threads-and-synchronisation:thread}{threads}, though not at every step.}
 \end{omfigure}
 
 Three things stand out. In process, one \omterm{def:b2:threads-and-synchronisation:lock}{lock} gets \emph{slower} as \omterm{def:b2:threads-and-synchronisation:thread}{threads} are added, from about 4.5 million operations
 per second with one \omterm{def:b2:threads-and-synchronisation:thread}{thread} to about 1 million with eight, while the sharded store reaches about 7 million; with a single
-\omterm{def:b2:threads-and-synchronisation:thread}{thread} the \omterm{def:b2:project-key-value-server:shard}{shards} cost something, a hash and a reader--writer \omterm{def:b2:threads-and-synchronisation:lock}{lock} instead of a plain mutex. Over TCP, the difference
-nearly vanishes: a request costs on the order of 100 microseconds of \omterm{def:b2:processes-and-system-calls:syscall}{system calls} and loopback, and a \omterm{def:b2:threads-and-synchronisation:lock}{lock} held for a
+\omterm{def:b2:threads-and-synchronisation:thread}{thread} the \omterm{def:b2:project-key-value-server:shard}{shards} cost something, a hash and a reader--writer \omterm{def:b2:threads-and-synchronisation:lock}{lock} instead of a plain mutex. Over TCP the two stores are mostly within noise
+of each other (the 4-client row is the exception, and a single run does not tell why): a request costs on the order of 100 microseconds of \omterm{def:b2:processes-and-system-calls:syscall}{system calls} and loopback, and a \omterm{def:b2:threads-and-synchronisation:lock}{lock} held for a
 fraction of a microsecond is not the bottleneck; the throughput grows with the clients because each waits for its own
 round trip. And the policy of the log dominates everything when it syncs: a \code{sync_data} per \code{SET} costs
 milliseconds, and the server writes some tens of times fewer \code{SET}s than when it leaves the records to the operating
@@ -336,7 +341,7 @@ server on a port and a log given on its command line.
 \hline
 test & what it checks \\
 \hline
-protocol & every command; eleven malformed lines, one per reason; printing then parsing gives the command back \\
+protocol & every command; eleven malformed lines covering every reason, and one too long; printing then parsing gives the command back \\
 stores & both stores agree with a plain map on 3,000 random requests; 8 \omterm{def:b2:threads-and-synchronisation:thread}{threads} of 1,000 \code{SET}s lose none \\
 \omterm{def:b2:project-key-value-server:log}{replay} & a log cut at every byte \omterm{def:b2:project-key-value-server:log}{replays} to the map after its last complete record
 (\cref{prop:b2:project-key-value-server:replay}); a damaged byte stops the \omterm{def:b2:project-key-value-server:log}{replay} at its record \\

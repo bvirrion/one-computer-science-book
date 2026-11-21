@@ -11,17 +11,7 @@ public:
     SmallString(const char *s = "") { init(s, std::strlen(s)); }
     ~SmallString() { if (!is_small()) delete[] ptr_; }
     SmallString(const SmallString &o) { init(o.ptr_, o.n_); }
-    SmallString(SmallString &&o) noexcept : n_(o.n_)
-    {
-        if (o.is_small()) {
-            std::memcpy(buf_, o.buf_, n_ + 1);         // nothing to steal: copy the few bytes
-            ptr_ = buf_;
-        } else {
-            ptr_ = std::exchange(o.ptr_, o.buf_);      // steal the block
-        }
-        o.n_ = 0;
-        o.buf_[0] = '\0';
-    }
+    SmallString(SmallString &&o) noexcept { take(o); }
     SmallString &operator=(const SmallString &o)
     {
         if (this != &o) {
@@ -33,8 +23,9 @@ public:
     SmallString &operator=(SmallString &&o) noexcept
     {
         if (this != &o) {
-            this->~SmallString();
-            new (this) SmallString(std::move(o));      // reuse the move constructor
+            if (!is_small())
+                delete[] ptr_;                         // free our block, then take o's state
+            take(o);
         }
         return *this;
     }
@@ -49,6 +40,18 @@ private:
         ptr_ = n <= inline_cap ? buf_ : new char[n + 1];
         std::memcpy(ptr_, s, n);
         ptr_[n] = '\0';
+    }
+    void take(SmallString &o) noexcept                 // o is left empty and small
+    {
+        n_ = o.n_;
+        if (o.is_small()) {
+            std::memcpy(buf_, o.buf_, n_ + 1);         // nothing to steal: copy the few bytes
+            ptr_ = buf_;
+        } else {
+            ptr_ = std::exchange(o.ptr_, o.buf_);      // steal the block
+        }
+        o.n_ = 0;
+        o.buf_[0] = '\0';
     }
     std::size_t n_ = 0;
     char *ptr_ = buf_;

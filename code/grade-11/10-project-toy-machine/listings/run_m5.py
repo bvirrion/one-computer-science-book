@@ -9,7 +9,7 @@ from trace_m5 import run_traced
 
 CODE = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(CODE / "shared" / "toymachine"))
-from toymachine.__main__ import main as shared_tool  # noqa: E402
+from toymachine.__main__ import main as shared_tool
 
 program = CODE / "grade-11" / "02-von-neumann-machine" / "listings" / "max2.toy"
 ours, theirs = io.StringIO(), io.StringIO()

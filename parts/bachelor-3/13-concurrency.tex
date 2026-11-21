@@ -198,7 +198,7 @@ A \emph{read-modify-write operation}\index{read-modify-write operation} reads a 
 
 C11's \code{<stdatomic.h>} gives every atomic operation sequentially consistent ordering by default, and an \code{_explicit} form takes one of the weaker orders: relaxed, acquire, release, acquire-release, or the default. % ledger: b3:c11-seqcst-default
 Acquire and release are the pattern of a lock and of a message: write the data, then set a flag with a release store; the reader that sees the flag with an acquire load sees the data. On x86 they cost no extra instruction, only constraints on the compiler; % ledger: b3:x86-release-acquire
-the sequentially consistent store of the litmus test is the one that costs a barrier. The order that the release and acquire pairs build between threads is often called a happens-before order; programs whose threads only meet through such pairs, and through locks, behave as if the memory were sequentially consistent.
+the sequentially consistent store of the litmus test is the one that costs a barrier. The order that the release and acquire pairs build between threads is often called a happens-before order, and it is all they promise: what a thread wrote before a release is seen by the thread whose acquire reads that release's value. It is not \omterm{def:b3:concurrency:memory-model}{sequential consistency}. The store-buffering test written with release stores and acquire loads still allows $r_1 = r_2 = 0$, since nothing keeps a thread's store before its own later load of another location; on x86 that code compiles to the same plain moves as the relaxed run above, which shows the outcome 10,796 times. The guarantee that does hold is for programs without data races: if every shared location is either accessed under a lock or only through sequentially consistent atomic operations, the program behaves as if the memory were sequentially consistent.
 
 \section{Lock-free structures}\label{sec:b3:concurrency:lock-free}
 
@@ -335,7 +335,7 @@ The Brenmoor inn has a round table for $n$ guests and one fork between each pair
 
 \omoutput{code/bachelor-3/13-concurrency/outputs/waiter.txt}{The waiter's states, and a schedule, repeatable for ever, that starves guest 0.}\label{out:b3:concurrency:waiter}
 
-\medskip\noindent\textbf{Part I --- The naive protocol's deadlock.} Each guest takes the left fork, then the right one (fork $i$ is guest $i$'s left, fork $i + 1 \bmod n$ the right).
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part I --- The naive protocol's deadlock.} Each guest takes the left fork, then the right one (fork $i$ is guest $i$'s left, fork $i + 1 \bmod n$ the right).
 \begin{enumerate}
 \item For $n = 5$, give a schedule that reaches \omterm{def:b3:concurrency:deadlock}{deadlock} in five steps.
 \item Show that a state with no move has nobody eating, and then that every guest holds a fork: it is the state of \cref{out:b3:concurrency:philosophers}.
@@ -345,7 +345,7 @@ The Brenmoor inn has a round table for $n$ guests and one fork between each pair
 \item Why does testing a philosopher program a few hundred times often miss this \omterm{def:b3:concurrency:deadlock}{deadlock}, when it is always a few steps away?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part II --- Counting the states.} Position T thinks, H holds the left fork, E eats.
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part II --- Counting the states.} Position T thinks, H holds the left fork, E eats.
 \begin{enumerate}[resume]
 \item Show that a state is determined by the guests' positions alone: the owner of every fork follows.
 \item Show that a tuple of positions is possible if and only if no guest in E has a right neighbour in H or E.
@@ -355,7 +355,7 @@ The Brenmoor inn has a round table for $n$ guests and one fork between each pair
 \item Conclude: exactly one deadlocked state among $S(n)$ reachable states. Show that $S(n) = 2S(n - 1) + S(n - 2)$.
 \end{enumerate}
 
-\medskip\noindent\textbf{Part III --- Two fixes.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part III --- Two fixes.}
 \begin{enumerate}[resume]
 \item With ordered acquisition, which guest's order changes? Why does theorem~\ref{thm:b3:concurrency:ordering} apply?
 \item The ordered counts are 5, 12, 29, 70, 169 and 408. How many states does ordering remove for each $n$? Do these numbers satisfy the recurrence of question 12?
@@ -365,7 +365,7 @@ The Brenmoor inn has a round table for $n$ guests and one fork between each pair
 \item Which of the two fixes lets more guests eat at once?
 \end{enumerate}
 
-\medskip\noindent\textbf{Part IV --- Starvation under the waiter.}
+\needspace{4\baselineskip}\medskip\noindent\textbf{Part IV --- Starvation under the waiter.}
 \begin{enumerate}[resume]
 \item Check three steps of the schedule in \cref{out:b3:concurrency:waiter}: each is a legal move, and guest 0 stays hungry with a neighbour eating.
 \item The schedule is a closed walk in which every other guest moves. Why is this starvation, and neither \omterm{def:b3:concurrency:deadlock}{deadlock} nor \omterm{def:b3:concurrency:deadlock}{livelock}?

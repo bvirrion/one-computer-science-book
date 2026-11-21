@@ -11,6 +11,11 @@
 int scan_and(const char *dir, const Folder *f, char **terms, int nterms, Hit *top, int k,
              int *nfound) {
     int *tf = calloc((size_t)f->n * nterms, sizeof *tf), *df = calloc(nterms, sizeof *df);
+    if (tf == NULL || df == NULL) {  // out of memory
+        free(tf);
+        free(df);
+        return -1;
+    }
     for (int d = 0; d < f->n; d++) {
         char path[4096], word[MAX_WORD];
         size_t len, pos = 0;
